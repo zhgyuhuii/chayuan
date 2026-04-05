@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2" y="3" width="12" height="12" rx="2" ry="2"></rect>
-  <circle cx="5" cy="6" r="1"></circle>
-  <polyline points="10 9 5 14 2 12"></polyline>
-  <line x1="4" y1="17" x2="10" y2="17"></line>
-  <line x1="7" y1="14" x2="7" y2="20"></line>
-  <path d="M16 6l5 5M21 6l-5 5M21 11l-5-5M16 11l5-5"></path>
-</svg>
