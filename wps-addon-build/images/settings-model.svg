@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="settingsModelGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1890ff"/>
+      <stop offset="0.5" stop-color="#597ef7"/>
+      <stop offset="1" stop-color="#9254de"/>
+    </linearGradient>
+  </defs>
+  <!-- ??????? / ?????????? + ???? -->
+  <g stroke="url(#settingsModelGrad)" stroke-width="1.15" stroke-linecap="round" stroke-opacity="0.28" fill="none">
+    <path d="M5.5 6.5L8.5 12M5.5 6.5L15.5 12M12 6.5L8.5 12M12 6.5L15.5 12M18.5 6.5L8.5 12M18.5 6.5L15.5 12"/>
+    <path d="M8.5 12L12 17.5M15.5 12L12 17.5"/>
+  </g>
+  <circle cx="5.5" cy="6.5" r="2.35" fill="url(#settingsModelGrad)"/>
+  <circle cx="12" cy="6.5" r="2.35" fill="url(#settingsModelGrad)"/>
+  <circle cx="18.5" cy="6.5" r="2.35" fill="url(#settingsModelGrad)"/>
+  <circle cx="8.5" cy="12" r="2.05" fill="url(#settingsModelGrad)" opacity="0.95"/>
+  <circle cx="15.5" cy="12" r="2.05" fill="url(#settingsModelGrad)" opacity="0.95"/>
+  <circle cx="12" cy="17.5" r="2.5" fill="url(#settingsModelGrad)"/>
+</svg>

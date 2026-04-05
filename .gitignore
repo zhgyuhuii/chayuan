@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Local / secrets
+.env
+.env.*
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Large release artifacts (rebuild: npm run build:wps-pkg-macos / build:wps-deb / build:wps-exe)
+release/*.pkg
+release/*.deb
+release/*.exe
+release/*.7z
+release/.mac-pkg-root
+release/.mac-scripts

@@ -1,0 +1,20 @@
+察元AI文档助手（chayuan v1.0.0）
+
+说明：加载项前端为静态资源，Windows / Linux / 麒麟 / macOS（含 Apple Silicon 与 Intel）使用同一套构建产物；
+差异仅在于本机 WPS 安装路径与「开发工具 → 加载项」中的部署方式（在线 URL 或离线目录）。
+
+【在线部署】
+将 wps-addon-build/ 目录内文件部署到 HTTPS 静态服务器，并在 WPS 中配置对应加载项 URL。
+
+【离线部署 · 无需手抄文件】
+压缩包 chayuan.7z 内已含 publish.xml 与 chayuan_1.0.0 文件夹；安装包会自动拷入 WPS jsaddons。
+
+一键安装：
+- Windows：在项目根目录执行 npm run build:wps-exe，得到自解压 .exe，双击即可写入 %AppData%\Kingsoft\wps\jsaddons。
+- macOS：执行 bash scripts/build-macos-pkg.sh，双击 release 下的 .pkg（未签名时可能需右键 → 打开）。
+- Linux（Debian/Ubuntu）：执行 bash scripts/build-linux-deb.sh，sudo dpkg -i release/*.deb。
+
+常见 jsaddons 位置（安装脚本已覆盖；若手动排查可参考）：
+- Windows：%AppData%\Kingsoft\wps\jsaddons
+- Linux：~/.local/share/Kingsoft/wps/jsaddons
+- macOS：~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons

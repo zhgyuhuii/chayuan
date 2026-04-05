@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<JsPlugin>
+  <ApiVersion>1.0.0</ApiVersion>
+  <Name>察元AI文档助手</Name>
+  <Description>察元AI文档助手 WPS 加载项</Description>
+</JsPlugin>

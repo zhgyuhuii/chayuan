@@ -1,0 +1,227 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="ribbon.OnAddinLoad">
+    <ribbon startFromScratch="false">
+        <tabs>
+         
+            <!-- 察元助理菜单 -->
+            <tab id="tabAssistant" label="察元AI助理" > 
+                <!-- 关于分组 -->
+                <group id="groupAbout" label="关于" autoScale="true">
+                    <button id="btnAboutChayuan" label="关于察元AI助手" onAction="ribbon.OnAction" size="large" getImage="ribbon.GetImage"  />
+                    <!-- <button id="btnAIWebsites" label="AI网址大全" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  />
+                    <button id="btnRequirementCollection" label="需求征集" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  />
+                    <button id="btnChayuanDiscussionGroup" label="察元讨论组" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  /> -->
+                <separator id="Sep1" />
+                </group> 
+                <!-- AI助手分组 -->
+                <group id="groupAIAssistant" label="AI助手" autoScale="true">
+                    <button id="btnAIAssistant" label="AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnSpellGrammar" label="拼写与语法检查" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnGenerateSummary" label="生成摘要" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <menu id="menuTextAnalysis" label="文本分析" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" getImage="ribbon.GetImage" size="large">
+                        <button id="btnRewrite" label="换种方式重写" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnExpand" label="扩写" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAbbreviate" label="缩写" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnParagraphNumberingCheck" label="检查段落序号格式" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAiTraceCheck" label="AI 痕迹检查" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnCommentExplain" label="批注解释" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnHyperlinkExplain" label="超链接解释" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnCorrectSpellGrammar" label="纠正拼写和语法" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnExtractKeywords" label="提炼关键词" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                    </menu>
+                    <dynamicMenu id="menuTranslate" label="翻译" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" getContent="ribbon.GetTranslationMenuContent" getImage="ribbon.GetImage" size="large" invalidateContentOnDrop="true"/>
+                    <button id="btnTextToImage" label="文本转图像" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnTextToAudio" label="文本转语音" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnTextToVideo" label="文本转视频" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAssistantPrimarySlot1" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAssistantPrimarySlot2" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAssistantPrimarySlot3" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAssistantPrimarySlot4" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <dynamicMenu id="menuMoreAssistants" label="更多" getContent="ribbon.GetMoreAssistantsMenuContent" getImage="ribbon.GetImage" size="large" invalidateContentOnDrop="true"/>
+                <separator id="Sep2" />
+                </group>
+
+                 <group id="groupDocumentDeclassify" label="安全保密"  autoScale="true">
+                    <button id="btnDocumentDeclassifyCheck" label="保密检查" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnDocumentDeclassify" label="文档脱密" onAction="ribbon.OnAction" getEnabled="ribbon.OnGetEnabled" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnDocumentDeclassifyRestore" label="脱密复原" onAction="ribbon.OnAction" getEnabled="ribbon.OnGetEnabled" getImage="ribbon.GetImage" size="large"/>
+                <separator id="Sep9" />
+                </group>
+                
+                <!-- 正文批量分组 -->
+                <group id="groupTextBatch" label="文档批量" autoScale="true">
+                    <!-- <button id="btnSelectAllText" label="选中全部正文" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/> -->
+                    <button id="btnCleanUnusedStyles" label="清理未使用的样式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnStyleStatistics" label="统计已使用样式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnDeleteBlankRows" label="删除空白行" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+               <separator id="Sep3" />
+                </group>
+                
+                <!-- 表格与图像批量操作分组（menu 下拉菜单） -->
+                <group id="groupTableImageBatch" label="批量操作" autoScale="true">
+                    <menu id="menuTableBatch" label="表格批量操作" getImage="ribbon.GetImage" size="large">
+                        <button id="btnSelectAllTables" label="导出全部表格" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteAllTables" label="删除全部表格" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnTableAutoWidth" label="根据内容自动行宽" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnWindowAutoWidth" label="根据窗口自动行宽" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAutoRefreshStyle" label="根据第一表格刷新样式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteTextRow" label="删除文字所在行" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteTextColumn" label="删除文字所在列" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAppendReplaceText" label="追加替换文字" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAddFirstColNumber" label="首列添加序号" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnManualColWidth" label="手动列宽度" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnFirstColStyle" label="第一列指定样式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnFirstRowStyle" label="第一行指定样式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAddTableCaption" label="添加表格题注" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteTableCaption" label="删除表格题注" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                    </menu>
+                    <menu id="menuImageBatch" label="图像批量操作" getImage="ribbon.GetImage" size="large">
+                        <button id="btnSelectAllImages" label="导出全部图像" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteAllImages" label="删除全部图像" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnUniformImageFormat" label="统一图像格式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnClearImageFormat" label="清除图像格式" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnDeleteImageCaption" label="删除图像题注" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnAddImageCaption" label="添加图像题注" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                    </menu>
+                </group>
+                
+            </tab>
+            
+            <!-- 察元编审菜单 -->
+            <tab id="tabReview" label="察元AI编审">
+                
+                <!-- 表单辅助分组 -->
+                <group id="groupFormAssist" label="表单辅助" autoScale="true">
+                    <button id="btnAssistFill" getLabel="ribbon.OnGetLabel" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnFormContentPreview" label="表单内容" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnDocumentAudit" label="文档审计" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                <separator id="Sep6" />
+
+                </group>
+                <!-- 表单模板分组 -->
+                <group id="groupModelEdit" label="模板管理" autoScale="true">
+                    <button id="btnSaveDocument" label="导出模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnImportDocument" label="导入模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnDownloadTemplate" label="下载模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <separator id="Sep8" /> 
+                </group>
+                <!-- 规则分组 -->
+                <group id="groupFormTemplate" label="规则管理" autoScale="true">
+                    <button id="btnTemplateCreate" label="规则制作" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnTemplateImport" label="规则导入" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnTemplateExport" label="导出规则" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <separator id="Sep5" />
+                </group>
+                <!-- 设置分组 -->
+                <group id="groupSettings" label="察元设置" autoScale="true">
+                    <button id="btnTaskList" label="任务清单" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <!-- <button id="btnTaskOrchestration" label="任务编排" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/> -->
+                    <button id="btnSettings" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                </group>
+            </tab>
+             
+        </tabs>
+    </ribbon>
+    <!-- 右键菜单配置：正文/标题/表格单元格均显示固定入口，其余助手按配置显示 -->
+    <contextMenus>
+        <contextMenu idMso="ContextMenuText">
+            <button id="btnAddToChayuanAssistant"
+                    label="添加到察元"
+                    onAction="ribbon.OnContextMenuAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"/>
+            <dynamicMenu id="menuContextTextAnalysis"
+                    label="察元AI文本分析"
+                    getContent="ribbon.GetContextTextAnalysisMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"
+                    invalidateContentOnDrop="true"/>
+            <dynamicMenu id="menuContextTranslate"
+                    label="察元AI翻译"
+                    getContent="ribbon.GetContextTranslationMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"
+                    invalidateContentOnDrop="true"/>
+            <button id="btnContextAssistantSlot1"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot2"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot3"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot4"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <dynamicMenu id="menuContextAssistantMore"
+                    label="更多智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    getContent="ribbon.GetContextAssistantMoreMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"
+                    invalidateContentOnDrop="true"/>
+        </contextMenu>
+        <contextMenu idMso="ContextMenuTableCell">
+            <button id="btnAddToChayuanAssistantTableCell"
+                    label="添加到察元AI助手"
+                    onAction="ribbon.OnContextMenuAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"/>
+            <dynamicMenu id="menuContextTextAnalysisTableCell"
+                    label="察元AI文本分析"
+                    getContent="ribbon.GetContextTextAnalysisMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"
+                    invalidateContentOnDrop="true"/>
+            <dynamicMenu id="menuContextTranslateTableCell"
+                    label="察元AI翻译"
+                    getContent="ribbon.GetContextTranslationMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetContextMenuVisible"
+                    invalidateContentOnDrop="true"/>
+            <button id="btnContextAssistantSlot1TableCell"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot2TableCell"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot3TableCell"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <button id="btnContextAssistantSlot4TableCell"
+                    label="智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    onAction="ribbon.OnAction"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"/>
+            <dynamicMenu id="menuContextAssistantMoreTableCell"
+                    label="更多智能助手"
+                    getLabel="ribbon.OnGetLabel"
+                    getContent="ribbon.GetContextAssistantMoreMenuContent"
+                    getImage="ribbon.GetImage"
+                    getVisible="ribbon.OnGetVisible"
+                    invalidateContentOnDrop="true"/>
+        </contextMenu>
+    </contextMenus>
+</customUI>

@@ -1,0 +1,55 @@
+@import './base.css';
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0;
+  font-weight: normal;
+}
+
+a,
+.green {
+  text-decoration: none;
+  color: hsla(160, 100%, 37%, 1);
+  transition: 0.4s;
+  padding: 3px;
+}
+
+@media (hover: hover) {
+  a:hover {
+    background-color: hsla(160, 100%, 37%, 0.2);
+  }
+}
+
+/* 设置、弹窗等全屏路由需占满视口；避免 grid 导致内容不显示 */
+@media (min-width: 1024px) {
+  body:not(.dialog-page) {
+    display: flex;
+    place-items: center;
+  }
+  /* 非弹窗页才用 grid，弹窗页保持默认 block 以正确显示内容 */
+  #app:not(.dialog-page) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 0;
+  }
+  #app.dialog-page {
+    display: block;
+    max-width: none;
+    width: 100vw;
+    min-height: 100vh;
+  }
+}
+
+body.dialog-page {
+  margin: 0;
+  overflow: hidden;
+}
+
+#app.dialog-page {
+  width: 100vw;
+  min-height: 100vh;
+  max-width: none;
+}
