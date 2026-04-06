@@ -29,7 +29,6 @@
 </template>
 
 <script>
-import { onMounted } from 'vue'
 import axios from 'axios'
 import taskPane from './js/taskpane.js'
 export default {
@@ -39,6 +38,11 @@ export default {
       DemoSpan: '',
       docName: ''
     }
+  },
+  mounted() {
+    axios.get('/.debugTemp/NotifyDemoUrl').then((res) => {
+      this.DemoSpan = res.data
+    })
   },
   methods: {
     onbuttonclick(id) {
@@ -52,11 +56,6 @@ export default {
     }
   }
 }
-onMounted(() => {
-  axios.get('/.debugTemp/NotifyDemoUrl').then((res) => {
-    this.DemoSpan = res.data
-  })
-})
 </script>
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->

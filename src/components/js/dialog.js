@@ -12,7 +12,9 @@ function onbuttonclick(idStr, param) {
     case 'createTaskPane': {
       let tsId = window.Application.PluginStorage.getItem('taskpane_id')
       if (!tsId) {
-        let tskpane = window.Application.CreateTaskPane(Util.GetUrlPath() + '/taskpane')
+        let tskpane = window.Application.CreateTaskPane(
+          Util.GetUrlPath() + Util.GetRouterHash() + '/taskpane'
+        )
         let id = tskpane.ID
         window.Application.PluginStorage.setItem('taskpane_id', id)
         tskpane.Visible = true

@@ -146,6 +146,7 @@
 
 <script>
 import { loadRulesFromDoc, saveRulesToDoc, onRulesStorageSync } from '../utils/templateRules.js'
+import Util from './js/util.js'
 
 function normalizeRuleList() {
   return loadRulesFromDoc().map(rule => ({
@@ -313,12 +314,16 @@ export default {
       }
     },
     getDialogUrl(mode, id) {
-      const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
-      const path = (base || window.location.origin + window.location.pathname.replace(/\/?index\.html$/i, '')).replace(/#.*$/, '')
-      const hash = window.location.protocol === 'file:' ? '' : '/#'
-      let url = `${path}${hash}/template-form-dialog?mode=${mode}`
-      if (id) url += `&id=${encodeURIComponent(id)}`
-      return url
+      let path = `template-form-dialog?mode=${encodeURIComponent(mode)}`
+      if (id) path += `&id=${encodeURIComponent(id)}`
+      try {
+        const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
+        if (base) {
+          const u = Util.addonSpaUrlFromStorageBase(base, path)
+          if (u) return u
+        }
+      } catch (_) {}
+      return Util.GetUrlPath() + Util.GetRouterHash() + '/' + path
     },
     openAddForm() {
       try {
@@ -337,10 +342,16 @@ export default {
     },
     openSmartExtract() {
       try {
-        const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
-        const path = (base || window.location.origin + window.location.pathname.replace(/\/?index\.html$/i, '')).replace(/#.*$/, '')
-        const hash = window.location.protocol === 'file:' ? '' : '/#'
-        const url = `${path}${hash}/template-field-extract-dialog`
+        let url = ''
+        try {
+          const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
+          if (base) {
+            url = Util.addonSpaUrlFromStorageBase(base, 'template-field-extract-dialog')
+          }
+        } catch (_) {}
+        if (!url) {
+          url = Util.GetUrlPath() + Util.GetRouterHash() + '/template-field-extract-dialog'
+        }
         window.Application.ShowDialog(
           url,
           '智能提取',

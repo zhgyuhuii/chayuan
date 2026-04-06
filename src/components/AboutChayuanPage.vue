@@ -14,8 +14,13 @@ export default {
 </script>
 
 <style scoped>
+/* dialog 路由下 body 为 overflow:hidden，此处占满视口并自行纵向滚动 */
 .about-chayuan-page {
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
   background: #0f172a;
 }

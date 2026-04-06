@@ -295,6 +295,7 @@
 <script>
 import { loadRulesFromDoc, onRulesStorageSync, DATA_TYPES } from '../utils/templateRules.js'
 import { startFormAuditTask } from '../utils/formAuditService.js'
+import Util from './js/util.js'
 
 function getApplication() {
   return window.Application || window.opener?.Application || window.parent?.Application || null
@@ -371,12 +372,18 @@ function parseBookmarkMeta(fullName) {
   }
 }
 
-function getDialogBaseUrl() {
-  const app = getApplication()
-  const base = app?.PluginStorage?.getItem('AddinBaseUrl')
-  const path = (base || window.location.origin + window.location.pathname.replace(/\/?index\.html$/i, '')).replace(/#.*$/, '')
-  const hash = window.location.protocol === 'file:' ? '' : '/#'
-  return `${path}${hash}`
+function buildAddonDialogUrl(hashRouteQuery) {
+  const path = String(hashRouteQuery || '').replace(/^\//, '')
+  if (!path) return ''
+  try {
+    const app = getApplication()
+    const base = app?.PluginStorage?.getItem('AddinBaseUrl')
+    if (base) {
+      const u = Util.addonSpaUrlFromStorageBase(base, path)
+      if (u) return u
+    }
+  } catch (_) {}
+  return Util.GetUrlPath() + Util.GetRouterHash() + '/' + path
 }
 
 const FORM_AUDIT_RESULT_STORAGE_PREFIX = 'NdFormAuditLastResult'
@@ -962,7 +969,9 @@ export default {
     },
     openRuleDetail(rule) {
       try {
-        const url = `${getDialogBaseUrl()}/template-form-dialog?mode=detail&id=${encodeURIComponent(rule.id)}&_ts=${Date.now()}`
+        const url = buildAddonDialogUrl(
+          `template-form-dialog?mode=detail&id=${encodeURIComponent(rule.id)}&_ts=${Date.now()}`
+        )
         getApplication()?.ShowDialog(
           url,
           '规则详情',

@@ -160,5 +160,5 @@ const BASENAME_EXT = {
   'wenxin-PRX-yHSt': 'png', sparkdesk: 'png', 'zero-one': 'png', llama: 'png', doubao: 'png',
   coze: 'webp', internlm: 'png', cohere: 'png', 'netease-youdao': 'svg', pangu: 'svg',
   sensetime: 'png', hailuo: 'png', o3: 'png', 'gpt_o1': 'png', 'gpt-5': 'png',
-  'gpt-5.1-Cbwac6R-': 'png', '360-D7q-rf3l': 'png'
+  'gpt-5.1-Cbwac6R-': 'png',   '360-D7q-rf3l': 'png'
 }

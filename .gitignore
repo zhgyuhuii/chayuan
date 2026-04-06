@@ -34,3 +34,4 @@ release/*.exe
 release/*.7z
 release/.mac-pkg-root
 release/.mac-scripts
+/release/

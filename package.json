@@ -1,7 +1,7 @@
 {
 	"name": "chayuan",
 	"addonType": "wps",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -9,6 +9,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"verify:task-scope": "node scripts/verify-task-scope.mjs",
+		"generate:logo-avatar-dataurl": "node scripts/generate-logo-avatar-dataurl.mjs",
 		"lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
 		"format": "prettier --write src/",
 		"rename-logos": "node scripts/rename-model-logos.cjs",

@@ -8,6 +8,8 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ribbon from './components/ribbon.js'
+import { syncAddonBaseUrlToPluginStorage } from './utils/publicAssetUrl.js'
+import { schedulePreloadAiAssistantRouteChunk } from './utils/preloadAiAssistantChunk.js'
 
 const DIALOG_ROUTES = ['/settings', '/dialog', '/ad-popup', '/manual-col-width', '/dialog-delete-text',
   '/append-replace-text', '/dialog-first-col-style', '/dialog-uniform-image-format', '/table-caption',
@@ -33,13 +35,8 @@ export default {
     onMounted(() => {
       window.ribbon = ribbon
       updateDialogPageClass()
-      // 供 ribbon 打开对话框时使用：WPS 中 ribbon 与页面可能不同源，需保存当前页面地址
-      try {
-        if (window.Application && window.Application.PluginStorage) {
-          const base = window.location.origin + window.location.pathname.replace(/\/?index\.html$/i, '') || ''
-          window.Application.PluginStorage.setItem('AddinBaseUrl', base || window.location.href)
-        }
-      } catch (e) {}
+      syncAddonBaseUrlToPluginStorage()
+      schedulePreloadAiAssistantRouteChunk()
     })
 
     watch(() => route.path, updateDialogPageClass, { immediate: true })

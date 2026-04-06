@@ -35,6 +35,19 @@ import { MODEL_GROUPS, getDefaultModelsFlat } from '../utils/defaultModelGroups.
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { focusExistingTaskOrchestrationWindow } from '../utils/taskOrchestrationWindowManager.js'
+
+/**
+ * Ribbon getImage 返回值（见 WPS 自定义功能区示例）：直接返回相对路径如 images/1.svg，
+ * 由宿主按加载项根目录解析，无额外网络与 Canvas 开销。
+ * 已为 http(s)/data:/file: 的绝对地址时原样返回（自定义助手图标等）。
+ */
+function resolveRibbonIconUrl(raw) {
+	const s = String(raw ?? '').trim()
+	if (!s) return s
+	if (/^(https?:\/\/|data:|file:)/i.test(s)) return s
+	return s.replace(/^\/+/, '')
+}
+
 //这个函数在整个wps加载项中是第一个执行的
 function OnAddinLoad(ribbonUI) {
   if (typeof window.Application.ribbonUI != 'object') {
@@ -779,11 +792,11 @@ function GetModelItemImage(control, index) {
     // 与察元AI编审设置中一致，使用 getModelLogoPath 解析图标路径
     if (model && model.id) {
       const path = getModelLogoPath(model.id)
-      if (path) return path
+      if (path) return resolveRibbonIconUrl(path)
     }
-    return model.icon || model.image || 'images/ai-assistant.svg'
+    return resolveRibbonIconUrl(model.icon || model.image || 'images/ai-assistant.svg')
   }
-  return 'images/ai-assistant.svg'
+  return resolveRibbonIconUrl('images/ai-assistant.svg')
 }
 
 function GetModelItemID(control, index) {
@@ -841,9 +854,9 @@ function GetTableBatchItemLabel(control, index) {
 
 function GetTableBatchItemImage(control, index) {
   if (index >= 0 && index < TABLE_BATCH_ITEMS.length) {
-    return TABLE_BATCH_ITEMS[index].icon
+    return resolveRibbonIconUrl(TABLE_BATCH_ITEMS[index].icon)
   }
-  return 'images/table-width.svg'
+  return resolveRibbonIconUrl('images/table-width.svg')
 }
 
 function GetTableBatchItemID(control, index) {
@@ -892,9 +905,9 @@ function GetImageBatchItemLabel(control, index) {
 
 function GetImageBatchItemImage(control, index) {
   if (index >= 0 && index < IMAGE_BATCH_ITEMS.length) {
-    return IMAGE_BATCH_ITEMS[index].icon
+    return resolveRibbonIconUrl(IMAGE_BATCH_ITEMS[index].icon)
   }
-  return 'images/select-images.svg'
+  return resolveRibbonIconUrl('images/select-images.svg')
 }
 
 function GetImageBatchItemID(control, index) {
@@ -982,7 +995,7 @@ function showDeleteTextDialog(mode) {
     try {
       const base = window.Application.PluginStorage.getItem('AddinBaseUrl')
       if (base && typeof base === 'string') {
-        url = base.replace(/#.*$/, '') + '#/dialog-delete-text?mode=' + modeParam
+        url = Util.addonSpaUrlFromStorageBase(base, `dialog-delete-text?mode=${modeParam}`)
       }
     } catch (e) {}
     if (!url) {
@@ -1010,7 +1023,8 @@ function showTableStyleDialog(target) {
     try {
       const base = window.Application.PluginStorage.getItem('AddinBaseUrl')
       if (base && typeof base === 'string') {
-        url = base.replace(/#.*$/, '') + '#/dialog-first-col-style' + query
+        const q = String(query || '').replace(/^\?/, '')
+        url = Util.addonSpaUrlFromStorageBase(base, `dialog-first-col-style${q ? `?${q}` : ''}`)
       }
     } catch (e) {}
     if (!url) {
@@ -1042,7 +1056,7 @@ function showUniformImageFormatDialog() {
     try {
       const base = window.Application.PluginStorage.getItem('AddinBaseUrl')
       if (base && typeof base === 'string') {
-        url = base.replace(/#.*$/, '') + '#/dialog-uniform-image-format'
+        url = Util.addonSpaUrlFromStorageBase(base, 'dialog-uniform-image-format')
       }
     } catch (e) {}
     if (!url) {
@@ -3624,7 +3638,7 @@ function OnAction(control) {
   return true
 }
 
-function GetImage(control) {
+function getRibbonImageRelative(control) {
   const eleId = normalizeContextControlId(control.Id ?? control.id ?? '')
   // 模型选择：回显当前选中模型的图标（与察元AI编审设置中一致，使用 getModelLogoPath）
   if (eleId === 'menuModelSelect') {
@@ -3758,6 +3772,10 @@ function GetImage(control) {
     'btnAddToChayuanAssistantPicture': 'images/add-to-assistant-picture.svg'
   }
   return iconMap[eleId] || 'images/newFromTemp.svg'
+}
+
+function GetImage(control) {
+  return resolveRibbonIconUrl(getRibbonImageRelative(control))
 }
 
 function OnGetEnabled(control) {
@@ -4179,7 +4197,7 @@ function GetStyleLabel(control, index) {
 
 function GetStyleImage(control, index) {
   const item = styleItems[index]
-  return (item && item.image) || "images/check.svg"
+  return resolveRibbonIconUrl((item && item.image) || 'images/check.svg')
 }
 
 function OnStyleSelected(control, selectedId, index) {

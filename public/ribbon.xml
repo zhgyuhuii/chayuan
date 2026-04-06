@@ -30,7 +30,7 @@
                     </menu>
                     <dynamicMenu id="menuTranslate" label="翻译" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" getContent="ribbon.GetTranslationMenuContent" getImage="ribbon.GetImage" size="large" invalidateContentOnDrop="true"/>
                     <button id="btnTextToImage" label="文本转图像" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
-                    <button id="btnTextToAudio" label="文本转语音" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <!-- <button id="btnTextToAudio" label="文本转语音" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/> -->
                     <button id="btnTextToVideo" label="文本转视频" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot1" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot2" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>

@@ -102,6 +102,8 @@
                         v-if="isImageIcon(item.icon)"
                         :src="resolveIconUrl(item.icon)"
                         alt=""
+                        loading="lazy"
+                        decoding="async"
                       />
                       <span v-else>{{ item.icon || '🧠' }}</span>
                     </div>
@@ -213,91 +215,58 @@
               <div class="welcome-support-card">
                 <div class="welcome-support-qr-wrap">
                   <img
-                    :src="followDonationQrCode"
+                    :src="followDonationQrCode()"
                     alt="关注我们的微信公众号"
                     class="welcome-support-qr"
+                    loading="lazy"
+                    decoding="async"
                     @error="handleDonationQrCodeError('follow')"
                   />
                 </div>
                 <span class="welcome-support-label">关注我们的微信公众号</span>
               </div>
             </div>
-            <p v-else class="welcome-support-hint">当前未检测到关注二维码资源，请先补充 `public/images/pay/follow.png`。</p>
+            <p v-else class="welcome-support-hint">公众号二维码暂不可用，请访问 aidooo.com 了解关注我们。</p>
           </div>
           <div v-else>
             <div v-if="showWechatDonationQrCode || showAlipayDonationQrCode" class="sidebar-footer-support-cards">
               <div v-if="showWechatDonationQrCode" class="welcome-support-card">
                 <div class="welcome-support-qr-wrap">
                   <img
-                    :src="wechatDonationQrCode"
+                    :src="wechatDonationQrCode()"
                     alt="微信支持"
                     class="welcome-support-qr"
+                    loading="lazy"
+                    decoding="async"
                     @error="handleDonationQrCodeError('wechat')"
                   />
-                  <div class="welcome-support-brand welcome-support-brand--overlay">
-                    <span class="welcome-support-brand-icon welcome-support-brand-icon--wechat" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M8.6 6.1c-3.55 0-6.43 2.37-6.43 5.3c0 1.7.98 3.22 2.51 4.19l-.63 2.06l2.36-1.18c.7.16 1.43.24 2.19.24h.35c-.24-.58-.36-1.2-.36-1.86c0-2.91 2.79-5.29 6.25-5.29c.27 0 .53.02.79.05C15.19 7.57 12.17 6.1 8.6 6.1Zm-2.4 4.26a.95.95 0 1 1 0 1.9a.95.95 0 0 1 0-1.9Zm4.78 0a.95.95 0 1 1 0 1.9a.95.95 0 0 1 0-1.9Z"/>
-                        <path fill="currentColor" d="M15.23 10.89c-3.16 0-5.72 2.07-5.72 4.63c0 1.48.86 2.8 2.2 3.65l-.55 1.79l2.07-1.03c.62.14 1.3.22 2 .22c3.16 0 5.72-2.07 5.72-4.63s-2.56-4.63-5.72-4.63Zm-2.14 3.72a.8.8 0 1 1 0 1.6a.8.8 0 0 1 0-1.6Zm4.28 0a.8.8 0 1 1 0 1.6a.8.8 0 0 1 0-1.6Z"/>
-                      </svg>
-                    </span>
-                  </div>
+                   
                 </div>
                 <span class="welcome-support-label">微信支持</span>
               </div>
               <div v-if="showAlipayDonationQrCode" class="welcome-support-card">
                 <div class="welcome-support-qr-wrap">
                   <img
-                    :src="alipayDonationQrCode"
+                    :src="alipayDonationQrCode()"
                     alt="支付宝支持"
                     class="welcome-support-qr"
+                    loading="lazy"
+                    decoding="async"
                     @error="handleDonationQrCodeError('alipay')"
                   />
-                  <div class="welcome-support-brand welcome-support-brand--overlay">
-                    <span class="welcome-support-brand-icon welcome-support-brand-icon--alipay" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M19.45 15.38c-1.58-.52-3.4-1.1-5.27-1.52c.52-.85.96-1.76 1.28-2.69h-7.7v1.63h5.46a12.6 12.6 0 0 1-1.06 1.99c-2.62-.43-5.26-.44-7.03.35c-.95.42-1.57 1.12-1.68 2.06c-.15 1.23.67 2.29 2.18 2.29c2.13 0 4.4-1.46 6.13-3.39c1.86.39 3.68 1.04 5.37 1.91l2.32-2.63Zm-13.84 2.2c-.47 0-.71-.24-.67-.54c.09-.79 1.76-1.24 4.73-.95c-1.34 1.17-2.77 1.49-4.06 1.49Z"/>
-                        <path fill="currentColor" d="M8.36 5.01h3.22v1.36h-2.1v.96h1.95v1.32H9.48v1.11H8.36V5.01Zm4.01 0h1.18l1.75 2.89V5.01h1.56v4.75h-1.16l-1.76-2.88v2.88h-1.57V5.01Z"/>
-                      </svg>
-                    </span>
-                  </div>
+              
                 </div>
                 <span class="welcome-support-label">支付宝支持</span>
               </div>
             </div>
-            <p v-else class="welcome-support-hint">当前未检测到支持二维码资源，请先补充 `public/images/pay/wxpay.png` 和 `public/images/pay/alipay.png`。</p>
+            <p v-else class="welcome-support-hint">赞赏入口暂不可用，感谢支持；详情见 aidooo.com。</p>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="aboutChayuanModalVisible"
-      class="about-chayuan-modal-overlay"
-      @click.self="aboutChayuanModalVisible = false"
-    >
-      <div class="about-chayuan-modal" role="dialog" aria-labelledby="about-chayuan-title">
-        <div class="about-chayuan-modal-header">
-          <h3 id="about-chayuan-title">关于察元</h3>
-          <button type="button" class="about-chayuan-modal-close" @click="aboutChayuanModalVisible = false">×</button>
-        </div>
-        <div class="about-chayuan-modal-body">
-          <AboutChayuanPanel />
         </div>
       </div>
     </div>
 
     <!-- 右侧主区域 -->
     <main class="main-area">
-      <div class="main-top-bar">
-        <div class="main-top-bar-brand">
-          <img class="main-top-bar-logo" src="/images/logo.png" alt="" @error="onMainTopLogoError" />
-          <span class="main-top-bar-title">察元 AI 文档助手</span>
-        </div>
-        <button type="button" class="main-top-bar-about" @click="aboutChayuanModalVisible = true">
-          关于察元
-        </button>
-      </div>
       <!-- 消息区域 -->
       <div class="messages-container" ref="messagesRef">
         <div
@@ -307,7 +276,7 @@
         >
           <span class="welcome-inline-label">{{ hasConfiguredChatModels ? '察元 AI' : '模型配置' }}</span>
           <span class="welcome-inline-text">
-            {{ displayedWelcomePrompt }}
+            {{ $cdt(displayedWelcomePrompt) }}
             <span v-if="isWelcomePromptTyping" class="welcome-cursor">▊</span>
           </span>
         </div>
@@ -319,7 +288,7 @@
           <div class="assistant-evolution-banner-main">
             <div class="assistant-evolution-banner-title">发现你有助手可以进化</div>
             <div class="assistant-evolution-banner-desc">
-              {{ assistantEvolutionSuggestion.message }}
+              {{ $cdt(assistantEvolutionSuggestion.message) }}
             </div>
             <div
               v-if="Array.isArray(assistantEvolutionSuggestion.reasonDetails) && assistantEvolutionSuggestion.reasonDetails.length"
@@ -330,7 +299,7 @@
                 :key="`evolution-reason-${index}`"
                 class="assistant-evolution-reason-item"
               >
-                {{ detail }}
+                {{ $cdt(detail) }}
               </div>
             </div>
             <div
@@ -342,9 +311,9 @@
                 :key="`evolution-preview-${index}`"
                 class="assistant-evolution-preview-item"
               >
-                <div class="assistant-evolution-preview-title">{{ sample.label }}</div>
-                <div class="assistant-evolution-preview-text">旧版：{{ sample.baselineOutput }}</div>
-                <div class="assistant-evolution-preview-text">新版：{{ sample.candidateOutput }}</div>
+                <div class="assistant-evolution-preview-title">{{ $cdt(sample.label) }}</div>
+                <div class="assistant-evolution-preview-text">旧版：{{ $cdt(sample.baselineOutput) }}</div>
+                <div class="assistant-evolution-preview-text">新版：{{ $cdt(sample.candidateOutput) }}</div>
               </div>
             </div>
             <div
@@ -358,7 +327,7 @@
                 ></div>
               </div>
               <div class="assistant-evolution-progress-text">
-                {{ assistantEvolutionSuggestion.progressLabel || (assistantEvolutionSuggestion.status === 'completed' ? '已完成 100%' : '正在进化...') }}
+                {{ $cdt(assistantEvolutionSuggestion.progressLabel || (assistantEvolutionSuggestion.status === 'completed' ? '已完成 100%' : '正在进化...')) }}
               </div>
             </div>
             <div class="assistant-evolution-banner-list">
@@ -367,7 +336,7 @@
                 :key="item.id"
                 class="assistant-evolution-chip"
               >
-                {{ item.name }}
+                {{ $cdt(item.name) }}
               </span>
               <span
                 v-if="assistantEvolutionSuggestion.assistants.length > 1"
@@ -452,9 +421,11 @@
                 <div v-if="showFollowDonationQrCode" class="welcome-support-card">
                   <div class="welcome-support-qr-wrap">
                     <img
-                      :src="followDonationQrCode"
-                        alt="关注我们的微信公众号"
+                      :src="followDonationQrCode()"
+                      alt="关注我们的微信公众号"
                       class="welcome-support-qr"
+                      loading="lazy"
+                      decoding="async"
                       @error="handleDonationQrCodeError('follow')"
                     />
                   </div>
@@ -463,50 +434,34 @@
                 <div v-if="showWechatDonationQrCode" class="welcome-support-card">
                   <div class="welcome-support-qr-wrap">
                     <img
-                      :src="wechatDonationQrCode"
+                      :src="wechatDonationQrCode()"
                       alt="微信支持"
                       class="welcome-support-qr"
+                      loading="lazy"
+                      decoding="async"
                       @error="handleDonationQrCodeError('wechat')"
                     />
-                    <div class="welcome-support-brand welcome-support-brand--overlay">
-                      <span class="welcome-support-brand-icon welcome-support-brand-icon--wechat" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                          <path fill="currentColor" d="M8.6 6.1c-3.55 0-6.43 2.37-6.43 5.3c0 1.7.98 3.22 2.51 4.19l-.63 2.06l2.36-1.18c.7.16 1.43.24 2.19.24h.35c-.24-.58-.36-1.2-.36-1.86c0-2.91 2.79-5.29 6.25-5.29c.27 0 .53.02.79.05C15.19 7.57 12.17 6.1 8.6 6.1Zm-2.4 4.26a.95.95 0 1 1 0 1.9a.95.95 0 0 1 0-1.9Zm4.78 0a.95.95 0 1 1 0 1.9a.95.95 0 0 1 0-1.9Z"/>
-                          <path fill="currentColor" d="M15.23 10.89c-3.16 0-5.72 2.07-5.72 4.63c0 1.48.86 2.8 2.2 3.65l-.55 1.79l2.07-1.03c.62.14 1.3.22 2 .22c3.16 0 5.72-2.07 5.72-4.63s-2.56-4.63-5.72-4.63Zm-2.14 3.72a.8.8 0 1 1 0 1.6a.8.8 0 0 1 0-1.6Zm4.28 0a.8.8 0 1 1 0 1.6a.8.8 0 0 1 0-1.6Z"/>
-                        </svg>
-                      </span>
-                    </div>
+                    
                   </div>
                   <span class="welcome-support-label">微信支持</span>
                 </div>
                 <div v-if="showAlipayDonationQrCode" class="welcome-support-card">
                   <div class="welcome-support-qr-wrap">
                     <img
-                      :src="alipayDonationQrCode"
+                      :src="alipayDonationQrCode()"
                       alt="支付宝支持"
                       class="welcome-support-qr"
+                      loading="lazy"
+                      decoding="async"
                       @error="handleDonationQrCodeError('alipay')"
                     />
-                    <div class="welcome-support-brand welcome-support-brand--overlay">
-                      <span class="welcome-support-brand-icon welcome-support-brand-icon--alipay" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                          <path fill="currentColor" d="M19.45 15.38c-1.58-.52-3.4-1.1-5.27-1.52c.52-.85.96-1.76 1.28-2.69h-7.7v1.63h5.46a12.6 12.6 0 0 1-1.06 1.99c-2.62-.43-5.26-.44-7.03.35c-.95.42-1.57 1.12-1.68 2.06c-.15 1.23.67 2.29 2.18 2.29c2.13 0 4.4-1.46 6.13-3.39c1.86.39 3.68 1.04 5.37 1.91l2.32-2.63Zm-13.84 2.2c-.47 0-.71-.24-.67-.54c.09-.79 1.76-1.24 4.73-.95c-1.34 1.17-2.77 1.49-4.06 1.49Z"/>
-                          <path fill="currentColor" d="M8.36 5.01h3.22v1.36h-2.1v.96h1.95v1.32H9.48v1.11H8.36V5.01Zm4.01 0h1.18l1.75 2.89V5.01h1.56v4.75h-1.16l-1.76-2.88v2.88h-1.57V5.01Z"/>
-                        </svg>
-                      </span>
-                    </div>
+                   
                   </div>
                   <span class="welcome-support-label">支付宝支持</span>
                 </div>
               </div>
               <p v-else class="welcome-support-hint">
-                请将关注二维码放到
-                `public/images/pay/follow.png`
-                ，并将微信支持和支付宝支持图片分别放到
-                `public/images/pay/wxpay.png`
-                和
-                `public/images/pay/alipay.png`
-                后即可显示。
+                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
               </p>
               <p class="welcome-support-copyright">
                 版权所有 北京智能鸟科技中心
@@ -536,13 +491,22 @@
               >
                 <img
                   v-if="!isAssistantMessagePending(msg, i)"
-                  src="/images/logo.png"
+                  :src="aiDialogAssetsInline.logo"
                   alt=""
                   class="assistant-logo-static"
+                  width="36"
+                  height="36"
+                  decoding="async"
                 />
                 <span v-else class="assistant-logo-fold" aria-hidden="true">
-                  <span class="assistant-logo-fold-half assistant-logo-fold-half--left"></span>
-                  <span class="assistant-logo-fold-half assistant-logo-fold-half--right"></span>
+                  <span
+                    class="assistant-logo-fold-half assistant-logo-fold-half--left"
+                    :style="{ backgroundImage: `url(${aiDialogAssetsInline.logo})` }"
+                  ></span>
+                  <span
+                    class="assistant-logo-fold-half assistant-logo-fold-half--right"
+                    :style="{ backgroundImage: `url(${aiDialogAssetsInline.logo})` }"
+                  ></span>
                   <span class="assistant-logo-fold-axis"></span>
                 </span>
               </span>
@@ -634,7 +598,14 @@
                   </div>
                   <div v-if="!isAssistantErrorMessage(msg) && msg.missingSkillNotice" class="message-skill-empty-card">
                     <div class="message-skill-empty-brand">
-                      <img src="/images/logo.png" alt="aidooo" class="message-skill-empty-brand-logo" />
+                      <img
+                        :src="aiDialogAssetsInline.logo"
+                        alt="aidooo"
+                        class="message-skill-empty-brand-logo"
+                        width="40"
+                        height="40"
+                        decoding="async"
+                      />
                       <div class="message-skill-empty-brand-text">
                         <span class="message-skill-empty-brand-name">aidooo</span>
                         <span class="message-skill-empty-brand-subtitle">技能招募中</span>
@@ -642,7 +613,7 @@
                     </div>
                     <div class="message-skill-empty-title">暂无匹配的专项助手</div>
                     <div class="message-skill-empty-text">
-                      {{ msg.missingSkillNoticeDisplayText || msg.missingSkillNoticeText || defaultMissingSkillNoticeText }}
+                      {{ $cdt(msg.missingSkillNoticeDisplayText || msg.missingSkillNoticeText || defaultMissingSkillNoticeText) }}
                       <span v-if="msg.missingSkillNoticeTyping" class="cursor">▊</span>
                     </div>
                     <div class="message-skill-empty-links">
@@ -662,9 +633,11 @@
                     <div v-if="showFollowDonationQrCode" class="message-skill-empty-qr">
                       <div class="welcome-support-qr-wrap">
                         <img
-                          :src="followDonationQrCode"
+                          :src="followDonationQrCode()"
                           alt="智灵鸟科技公众号二维码"
                           class="welcome-support-qr"
+                          loading="lazy"
+                          decoding="async"
                           @error="handleDonationQrCodeError('follow')"
                         />
                       </div>
@@ -673,7 +646,7 @@
                   </div>
                   <div v-if="msg.pendingDocumentFormatAction" class="message-confirm-card" :class="`is-${msg.pendingDocumentFormatAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      将执行：{{ (msg.pendingDocumentFormatAction.changeSummary || []).join('、') }}
+                      将执行：{{ $cdt((msg.pendingDocumentFormatAction.changeSummary || []).join('、')) }}
                     </div>
                     <div v-if="getDocumentFormatActionTags(msg.pendingDocumentFormatAction).length" class="message-confirm-tags">
                       <span
@@ -681,11 +654,11 @@
                         :key="`${msg.id}-${tag.key}`"
                         class="message-confirm-tag"
                       >
-                        {{ tag.label }}
+                        {{ $cdt(tag.label) }}
                       </span>
                     </div>
                     <div v-if="msg.pendingDocumentFormatAction.canApply" class="message-confirm-prompt">
-                      {{ msg.pendingDocumentFormatAction.confirmPrompt }}
+                      {{ $cdt(msg.pendingDocumentFormatAction.confirmPrompt) }}
                     </div>
                     <div v-if="msg.pendingDocumentFormatAction.canApply && msg.pendingDocumentFormatAction.status !== 'applied'" class="message-confirm-secondary-actions">
                       <button
@@ -724,12 +697,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentFormatAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentFormatAction.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentFormatAction.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingDocumentRelocationAction" class="message-confirm-card" :class="`is-${msg.pendingDocumentRelocationAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      将执行：{{ (msg.pendingDocumentRelocationAction.changeSummary || []).join('、') }}
+                      将执行：{{ $cdt((msg.pendingDocumentRelocationAction.changeSummary || []).join('、')) }}
                     </div>
                     <div v-if="getDocumentRelocationActionTags(msg.pendingDocumentRelocationAction).length" class="message-confirm-tags">
                       <span
@@ -737,11 +710,11 @@
                         :key="`${msg.id}-${tag.key}`"
                         class="message-confirm-tag"
                       >
-                        {{ tag.label }}
+                        {{ $cdt(tag.label) }}
                       </span>
                     </div>
                     <div v-if="msg.pendingDocumentRelocationAction.canApply" class="message-confirm-prompt">
-                      {{ msg.pendingDocumentRelocationAction.confirmPrompt }}
+                      {{ $cdt(msg.pendingDocumentRelocationAction.confirmPrompt) }}
                     </div>
                     <div v-if="msg.pendingDocumentRelocationAction.canApply && msg.pendingDocumentRelocationAction.status !== 'applied'" class="message-confirm-actions">
                       <button
@@ -762,12 +735,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentRelocationAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentRelocationAction.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentRelocationAction.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingDocumentTextEditAction" class="message-confirm-card" :class="`is-${msg.pendingDocumentTextEditAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      将执行：{{ (msg.pendingDocumentTextEditAction.changeSummary || []).join('、') }}
+                      将执行：{{ $cdt((msg.pendingDocumentTextEditAction.changeSummary || []).join('、')) }}
                     </div>
                     <div v-if="getDocumentTextEditActionTags(msg.pendingDocumentTextEditAction).length" class="message-confirm-tags">
                       <span
@@ -775,11 +748,11 @@
                         :key="`${msg.id}-${tag.key}`"
                         class="message-confirm-tag"
                       >
-                        {{ tag.label }}
+                        {{ $cdt(tag.label) }}
                       </span>
                     </div>
                     <div v-if="msg.pendingDocumentTextEditAction.canApply" class="message-confirm-prompt">
-                      {{ msg.pendingDocumentTextEditAction.confirmPrompt }}
+                      {{ $cdt(msg.pendingDocumentTextEditAction.confirmPrompt) }}
                     </div>
                     <div v-if="msg.pendingDocumentTextEditAction.canApply && msg.pendingDocumentTextEditAction.status !== 'applied'" class="message-confirm-actions">
                       <button
@@ -800,12 +773,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentTextEditAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentTextEditAction.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentTextEditAction.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingDocumentDeleteAction" class="message-confirm-card" :class="`is-${msg.pendingDocumentDeleteAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      将执行：{{ (msg.pendingDocumentDeleteAction.changeSummary || []).join('、') }}
+                      将执行：{{ $cdt((msg.pendingDocumentDeleteAction.changeSummary || []).join('、')) }}
                     </div>
                     <div v-if="getDocumentDeleteActionTags(msg.pendingDocumentDeleteAction).length" class="message-confirm-tags">
                       <span
@@ -813,11 +786,11 @@
                         :key="`${msg.id}-${tag.key}`"
                         class="message-confirm-tag"
                       >
-                        {{ tag.label }}
+                        {{ $cdt(tag.label) }}
                       </span>
                     </div>
                     <div v-if="msg.pendingDocumentDeleteAction.canApply" class="message-confirm-prompt">
-                      {{ msg.pendingDocumentDeleteAction.confirmPrompt }}
+                      {{ $cdt(msg.pendingDocumentDeleteAction.confirmPrompt) }}
                     </div>
                     <div v-if="msg.pendingDocumentDeleteAction.canApply && msg.pendingDocumentDeleteAction.status !== 'applied'" class="message-confirm-actions">
                       <button
@@ -838,12 +811,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentDeleteAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentDeleteAction.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentDeleteAction.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingDocumentRevisionAction" class="message-confirm-card" :class="`is-${msg.pendingDocumentRevisionAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      将执行：{{ (msg.pendingDocumentRevisionAction.changeSummary || []).join('、') }}
+                      将执行：{{ $cdt((msg.pendingDocumentRevisionAction.changeSummary || []).join('、')) }}
                     </div>
                     <div v-if="getDocumentRevisionActionTags(msg.pendingDocumentRevisionAction).length" class="message-confirm-tags">
                       <span
@@ -851,12 +824,12 @@
                         :key="`${msg.id}-${tag.key}`"
                         class="message-confirm-tag"
                       >
-                        {{ tag.label }}
+                        {{ $cdt(tag.label) }}
                       </span>
                     </div>
                     <div v-if="msg.pendingDocumentRevisionAction.previewBefore || msg.pendingDocumentRevisionAction.previewAfter" class="message-confirm-status">
-                      <div v-if="msg.pendingDocumentRevisionAction.previewBefore">原文预览：{{ msg.pendingDocumentRevisionAction.previewBefore }}</div>
-                      <div v-if="msg.pendingDocumentRevisionAction.previewAfter">修订预览：{{ msg.pendingDocumentRevisionAction.previewAfter }}</div>
+                      <div v-if="msg.pendingDocumentRevisionAction.previewBefore">原文预览：{{ $cdt(msg.pendingDocumentRevisionAction.previewBefore) }}</div>
+                      <div v-if="msg.pendingDocumentRevisionAction.previewAfter">修订预览：{{ $cdt(msg.pendingDocumentRevisionAction.previewAfter) }}</div>
                     </div>
                     <label
                       v-if="msg.pendingDocumentRevisionAction.canApply && msg.pendingDocumentRevisionAction.backupSupported"
@@ -871,7 +844,7 @@
                       <span>写回前备份源文件</span>
                     </label>
                     <div v-if="msg.pendingDocumentRevisionAction.canApply" class="message-confirm-prompt">
-                      {{ msg.pendingDocumentRevisionAction.confirmPrompt }}
+                      {{ $cdt(msg.pendingDocumentRevisionAction.confirmPrompt) }}
                     </div>
                     <div v-if="msg.pendingDocumentRevisionAction.canApply && msg.pendingDocumentRevisionAction.status !== 'applied'" class="message-confirm-actions">
                       <button
@@ -892,7 +865,7 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentRevisionAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentRevisionAction.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentRevisionAction.statusMessage) }}
                     </div>
                     <div v-if="Array.isArray(msg.pendingDocumentRevisionAction.processingDetails) && msg.pendingDocumentRevisionAction.processingDetails.length" class="message-confirm-secondary-actions">
                       <button
@@ -904,12 +877,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentRevisionAction.showDetails && Array.isArray(msg.pendingDocumentRevisionAction.processingDetails) && msg.pendingDocumentRevisionAction.processingDetails.length" class="message-confirm-status">
-                      <div v-for="detail in msg.pendingDocumentRevisionAction.processingDetails" :key="detail.id">{{ detail.text }}</div>
+                      <div v-for="detail in msg.pendingDocumentRevisionAction.processingDetails" :key="detail.id">{{ $cdt(detail.text) }}</div>
                     </div>
                   </div>
                   <div v-if="msg.pendingRevisionModePrompt" class="message-confirm-card" :class="`is-${msg.pendingRevisionModePrompt.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingRevisionModePrompt')" @mouseleave="resumePendingRevisionModePromptAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingRevisionModePrompt')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingRevisionModePrompt', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingRevisionModePrompt.summaryText }}
+                      {{ $cdt(msg.pendingRevisionModePrompt.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingRevisionModePrompt)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingRevisionModePrompt) }}
@@ -939,12 +912,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingRevisionModePrompt.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingRevisionModePrompt.statusMessage }}
+                      {{ $cdt(msg.pendingRevisionModePrompt.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingDocumentOperationChoice" class="message-confirm-card" :class="`is-${msg.pendingDocumentOperationChoice.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingDocumentOperationChoice')" @mouseleave="resumePendingDocumentOperationChoiceAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingDocumentOperationChoice')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingDocumentOperationChoice', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingDocumentOperationChoice.summaryText || '已识别到文档操作，请确认要继续执行的类型。' }}
+                      {{ $cdt(msg.pendingDocumentOperationChoice.summaryText || '已识别到文档操作，请确认要继续执行的类型。') }}
                     </div>
                     <div v-if="Array.isArray(msg.pendingDocumentOperationChoice.options) && msg.pendingDocumentOperationChoice.options.length" class="message-confirm-tags">
                       <button
@@ -956,7 +929,7 @@
                         :disabled="msg.pendingDocumentOperationChoice.status === 'applying'"
                         @click.stop="togglePendingDocumentOperationChoiceOption(msg, option.key)"
                       >
-                        {{ option.label }}<span v-if="option.apiLabel"> · {{ option.apiLabel }}</span>
+                        {{ $cdt(option.label) }}<span v-if="option.apiLabel"> · {{ $cdt(option.apiLabel) }}</span>
                       </button>
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingDocumentOperationChoice)" class="message-confirm-prompt">
@@ -987,12 +960,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingDocumentOperationChoice.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingDocumentOperationChoice.statusMessage }}
+                      {{ $cdt(msg.pendingDocumentOperationChoice.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingWpsCapabilityForm" class="message-confirm-card" :class="`is-${msg.pendingWpsCapabilityForm.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingWpsCapabilityForm')" @mouseleave="resumePendingWpsCapabilityAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingWpsCapabilityForm')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingWpsCapabilityForm', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingWpsCapabilityForm.summaryText }}
+                      {{ $cdt(msg.pendingWpsCapabilityForm.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingWpsCapabilityForm)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingWpsCapabilityForm) }}
@@ -1009,7 +982,7 @@
                         :key="`${msg.id}-wps-capability-field-${field.key}`"
                         class="assistant-inline-field"
                       >
-                        <span class="assistant-inline-field-label">{{ field.label }}</span>
+                        <span class="assistant-inline-field-label">{{ $cdt(field.label) }}</span>
                         <select
                           v-if="field.type === 'select'"
                           :value="field.value"
@@ -1022,7 +995,7 @@
                             :key="`${msg.id}-wps-capability-option-${field.key}-${option.value}`"
                             :value="option.value"
                           >
-                            {{ option.label }}
+                            {{ $cdt(option.label) }}
                           </option>
                         </select>
                         <input
@@ -1055,12 +1028,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingWpsCapabilityForm.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingWpsCapabilityForm.statusMessage }}
+                      {{ $cdt(msg.pendingWpsCapabilityForm.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingAssistantIntentChoice" class="message-confirm-card" :class="`is-${msg.pendingAssistantIntentChoice.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingAssistantIntentChoice')" @mouseleave="resumePendingAssistantIntentChoiceAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingAssistantIntentChoice')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingAssistantIntentChoice', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingAssistantIntentChoice.summaryText }}
+                      {{ $cdt(msg.pendingAssistantIntentChoice.summaryText) }}
                     </div>
                     <div v-if="Array.isArray(msg.pendingAssistantIntentChoice.options) && msg.pendingAssistantIntentChoice.options.length" class="message-confirm-tags">
                       <button
@@ -1072,7 +1045,7 @@
                         :disabled="msg.pendingAssistantIntentChoice.status === 'applying'"
                         @click.stop="togglePendingAssistantIntentChoiceOption(msg, option.key)"
                       >
-                        {{ option.label }}<span v-if="option.apiLabel"> · {{ option.apiLabel }}</span>
+                        {{ $cdt(option.label) }}<span v-if="option.apiLabel"> · {{ $cdt(option.apiLabel) }}</span>
                       </button>
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingAssistantIntentChoice)" class="message-confirm-prompt">
@@ -1103,12 +1076,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingAssistantIntentChoice.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingAssistantIntentChoice.statusMessage }}
+                      {{ $cdt(msg.pendingAssistantIntentChoice.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingAssistantParameterCollection" class="message-confirm-card" :class="`is-${msg.pendingAssistantParameterCollection.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingAssistantParameterCollection')" @mouseleave="resumePendingAssistantParameterAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingAssistantParameterCollection')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingAssistantParameterCollection', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingAssistantParameterCollection.summaryText }}
+                      {{ $cdt(msg.pendingAssistantParameterCollection.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingAssistantParameterCollection)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingAssistantParameterCollection) }}
@@ -1136,7 +1109,7 @@
                         :key="`${msg.id}-assistant-param-${field.key}`"
                         class="assistant-inline-field"
                       >
-                        <span class="assistant-inline-field-label">{{ field.label }}</span>
+                        <span class="assistant-inline-field-label">{{ $cdt(field.label) }}</span>
                         <select
                           v-if="field.type === 'select'"
                           :value="field.value"
@@ -1149,7 +1122,7 @@
                             :key="`${msg.id}-assistant-param-option-${field.key}-${option.value}`"
                             :value="option.value"
                           >
-                            {{ option.label }}
+                            {{ $cdt(option.label) }}
                           </option>
                         </select>
                         <input
@@ -1195,12 +1168,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingAssistantParameterCollection.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingAssistantParameterCollection.statusMessage }}
+                      {{ $cdt(msg.pendingAssistantParameterCollection.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingLocalFaqAction" class="message-confirm-card" :class="`is-${msg.pendingLocalFaqAction.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingLocalFaqAction.summaryText }}
+                      {{ $cdt(msg.pendingLocalFaqAction.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingLocalFaqAction)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingLocalFaqAction) }}
@@ -1232,12 +1205,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingLocalFaqAction.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingLocalFaqAction.statusMessage }}
+                      {{ $cdt(msg.pendingLocalFaqAction.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingAssistantRepairChoice" class="message-confirm-card" :class="`is-${msg.pendingAssistantRepairChoice.status || 'pending'}`">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingAssistantRepairChoice.summaryText }}
+                      {{ $cdt(msg.pendingAssistantRepairChoice.summaryText) }}
                     </div>
                     <div v-if="Array.isArray(msg.pendingAssistantRepairChoice.assistantOptions) && msg.pendingAssistantRepairChoice.assistantOptions.length" class="message-confirm-tags">
                       <button
@@ -1249,7 +1222,7 @@
                         :disabled="msg.pendingAssistantRepairChoice.status === 'applying'"
                         @click.stop="selectPendingAssistantRepairChoice(msg, option.assistantId)"
                       >
-                        {{ option.label }}
+                        {{ $cdt(option.label) }}
                       </button>
                     </div>
                     <div v-if="getSelectedAssistantExecutionOption(msg.pendingAssistantRepairChoice)" class="assistant-choice-detail">
@@ -1285,12 +1258,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingAssistantRepairChoice.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingAssistantRepairChoice.statusMessage }}
+                      {{ $cdt(msg.pendingAssistantRepairChoice.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingAssistantExecutionChoice" class="message-confirm-card" :class="`is-${msg.pendingAssistantExecutionChoice.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingAssistantExecutionChoice')" @mouseleave="resumePendingAssistantExecutionChoiceAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingAssistantExecutionChoice')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingAssistantExecutionChoice', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingAssistantExecutionChoice.summaryText }}
+                      {{ $cdt(msg.pendingAssistantExecutionChoice.summaryText) }}
                     </div>
                     <div v-if="Array.isArray(msg.pendingAssistantExecutionChoice.assistantOptions) && msg.pendingAssistantExecutionChoice.assistantOptions.length" class="message-confirm-tags">
                       <button
@@ -1302,7 +1275,7 @@
                         :disabled="msg.pendingAssistantExecutionChoice.status === 'applying'"
                         @click.stop="selectPendingAssistantExecutionOption(msg, option.assistantId)"
                       >
-                        {{ option.label }}
+                        {{ $cdt(option.label) }}
                       </button>
                     </div>
                     <div v-if="getSelectedAssistantExecutionOption(msg.pendingAssistantExecutionChoice)" class="assistant-choice-detail">
@@ -1361,12 +1334,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingAssistantExecutionChoice.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingAssistantExecutionChoice.statusMessage }}
+                      {{ $cdt(msg.pendingAssistantExecutionChoice.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingAssistantCreationDraft" class="message-confirm-card" :class="`is-${msg.pendingAssistantCreationDraft.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingAssistantCreationDraft')" @mouseleave="resumePendingAssistantCreationDraftAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingAssistantCreationDraft')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingAssistantCreationDraft', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingAssistantCreationDraft.summaryText }}
+                      {{ $cdt(msg.pendingAssistantCreationDraft.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingAssistantCreationDraft)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingAssistantCreationDraft) }}
@@ -1430,12 +1403,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingAssistantCreationDraft.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingAssistantCreationDraft.statusMessage }}
+                      {{ $cdt(msg.pendingAssistantCreationDraft.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingReportGenerationForm" class="message-confirm-card" :class="`is-${msg.pendingReportGenerationForm.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingReportGenerationForm', 'report')" @mouseleave="resumePendingReportGenerationAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingReportGenerationForm', 'report')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingReportGenerationForm', $event, 'report')">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingReportGenerationForm.summaryText }}
+                      {{ $cdt(msg.pendingReportGenerationForm.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingReportGenerationForm)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingReportGenerationForm) }}
@@ -1452,7 +1425,7 @@
                         :key="`${msg.id}-report-field-${field.key}`"
                         class="assistant-inline-field"
                       >
-                        <span class="assistant-inline-field-label">{{ field.label }}</span>
+                        <span class="assistant-inline-field-label">{{ $cdt(field.label) }}</span>
                         <select
                           v-if="field.type === 'select'"
                           :value="field.value"
@@ -1465,7 +1438,7 @@
                             :key="`${msg.id}-report-option-${field.key}-${option.value}`"
                             :value="option.value"
                           >
-                            {{ option.label }}
+                            {{ $cdt(option.label) }}
                           </option>
                         </select>
                         <input
@@ -1498,12 +1471,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingReportGenerationForm.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingReportGenerationForm.statusMessage }}
+                      {{ $cdt(msg.pendingReportGenerationForm.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingMultimodalGenerationForm" class="message-confirm-card" :class="`is-${msg.pendingMultimodalGenerationForm.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingMultimodalGenerationForm')" @mouseleave="resumePendingMultimodalGenerationAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingMultimodalGenerationForm')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingMultimodalGenerationForm', $event)">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingMultimodalGenerationForm.summaryText }}
+                      {{ $cdt(msg.pendingMultimodalGenerationForm.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingMultimodalGenerationForm)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingMultimodalGenerationForm) }}
@@ -1520,7 +1493,7 @@
                         :key="`${msg.id}-multimodal-field-${field.key}`"
                         class="assistant-inline-field"
                       >
-                        <span class="assistant-inline-field-label">{{ field.label }}</span>
+                        <span class="assistant-inline-field-label">{{ $cdt(field.label) }}</span>
                         <select
                           v-if="field.type === 'select'"
                           :value="field.value"
@@ -1533,7 +1506,7 @@
                             :key="`${msg.id}-multimodal-option-${field.key}-${option.value}`"
                             :value="option.value"
                           >
-                            {{ option.label }}
+                            {{ $cdt(option.label) }}
                           </option>
                         </select>
                         <input
@@ -1566,12 +1539,12 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingMultimodalGenerationForm.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingMultimodalGenerationForm.statusMessage }}
+                      {{ $cdt(msg.pendingMultimodalGenerationForm.statusMessage) }}
                     </div>
                   </div>
                   <div v-if="msg.pendingReportDraftConfirmation" class="message-confirm-card" :class="`is-${msg.pendingReportDraftConfirmation.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingReportDraftConfirmation', 'report')" @mouseleave="resumePendingReportDraftConfirmationAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingReportDraftConfirmation', 'report')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingReportDraftConfirmation', $event, 'report')">
                     <div class="message-confirm-summary">
-                      {{ msg.pendingReportDraftConfirmation.summaryText }}
+                      {{ $cdt(msg.pendingReportDraftConfirmation.summaryText) }}
                     </div>
                     <div v-if="getPendingConfirmPrompt(msg.pendingReportDraftConfirmation)" class="message-confirm-prompt">
                       {{ getPendingConfirmPrompt(msg.pendingReportDraftConfirmation) }}
@@ -1583,9 +1556,9 @@
                       </div>
                     </div>
                     <div class="assistant-choice-detail report-draft-meta-card">
-                      <div class="assistant-choice-title">{{ msg.pendingReportDraftConfirmation.reportName || '未命名报告' }}</div>
+                      <div class="assistant-choice-title">{{ $cdt(msg.pendingReportDraftConfirmation.reportName || '未命名报告') }}</div>
                       <div class="assistant-choice-features">
-                        <div class="assistant-choice-feature">行业：{{ msg.pendingReportDraftConfirmation.industry || '待确认' }}</div>
+                        <div class="assistant-choice-feature">行业：{{ $cdt(msg.pendingReportDraftConfirmation.industry || '待确认') }}</div>
                         <div class="assistant-choice-feature">类型：{{ getReportTypeLabel(msg.pendingReportDraftConfirmation.reportType || 'general-analysis-report') }}</div>
                         <div class="assistant-choice-feature">格式：{{ (msg.pendingReportDraftConfirmation.outputFormat || 'md').toUpperCase() }}</div>
                         <div class="assistant-choice-feature">范围：{{ getGeneratedOutputScopeLabel(msg.pendingReportDraftConfirmation.scope) }}</div>
@@ -1659,7 +1632,7 @@
                       </button>
                     </div>
                     <div v-if="msg.pendingReportDraftConfirmation.statusMessage" class="message-confirm-status">
-                      {{ msg.pendingReportDraftConfirmation.statusMessage }}
+                      {{ $cdt(msg.pendingReportDraftConfirmation.statusMessage) }}
                     </div>
                   </div>
                   <LongTaskRunCard
@@ -1751,7 +1724,7 @@
               @focusin="updateTooltipLayout('selection', $event)"
             >
               <div class="composer-selection-hint">
-                <img src="/images/chat-selection.svg" alt="" class="composer-meta-icon-image" />
+                <img :src="aiDialogAssetsInline.chatSelection" alt="" class="composer-meta-icon-image" />
                 <span>{{ selectionHintLabel }}</span>
               </div>
               <div
@@ -1779,9 +1752,9 @@
                     @click="insertAttachmentReference(item, 'short')"
                     @contextmenu.prevent="insertAttachmentReference(item, 'full')"
                   >
-                    <img src="/images/chat-attach.svg" alt="" class="composer-meta-icon-image" />
+                    <img :src="aiDialogAssetsInline.chatAttach" alt="" class="composer-meta-icon-image" />
                     <span class="composer-attachment-ref-text">附件{{ item.ordinal || 0 }}</span>
-                    <span class="composer-attachment-ref-name">{{ item.name }}</span>
+                    <span class="composer-attachment-ref-name">{{ $cdt(item.name) }}</span>
                   </button>
                   <button
                     type="button"
@@ -1814,10 +1787,10 @@
           />
           <div class="model-select-wrap" ref="modelSelectRef">
             <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
-              <img :src="'/' + selectedModelIcon" class="model-select-icon" alt="" />
+              <img :src="publicAssetUrl(selectedModelIcon)" class="model-select-icon" alt="" decoding="async" />
               <span class="model-select-arrow">▾</span>
             </button>
-            <div v-show="modelDropdownOpen" class="model-dropdown">
+            <div v-if="modelDropdownOpen" class="model-dropdown">
               <div v-if="filteredModelGroups.length === 0" class="model-dropdown-empty">
                 <p class="model-dropdown-empty-text">请先在设置中配置模型：开启提供商、填写 API 地址与密钥、刷新模型清单</p>
                 <button type="button" class="model-dropdown-empty-btn" @mousedown.prevent="openModelSettings">
@@ -1832,7 +1805,13 @@
                     @mousedown.prevent="toggleModelGroupCollapsed(group.providerId)"
                   >
                     <span class="model-group-arrow">▾</span>
-                    <img :src="'/' + (group.icon || getModelLogoPath(group.providerId))" class="model-group-icon" alt="" />
+                    <img
+                      :src="publicAssetUrl(group.icon || getModelLogoPath(group.providerId))"
+                      class="model-group-icon"
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <span>{{ group.label }}</span>
                   </div>
                   <div v-show="!isModelGroupCollapsed(group.providerId)" class="model-group-models">
@@ -1843,7 +1822,13 @@
                       :class="{ active: selectedModelId === m.id }"
                       @mousedown.prevent="selectModel(m)"
                     >
-                      <img :src="'/' + getModelLogoPath(m.providerId)" class="model-option-icon" alt="" />
+                      <img
+                        :src="publicAssetUrl(getModelLogoPath(m.providerId))"
+                        class="model-option-icon"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
                       <span>{{ m.name || m.modelId }}</span>
                     </div>
                   </div>
@@ -1866,7 +1851,7 @@
             title="选择附件"
             @click="openAttachmentPicker"
           >
-            <img src="/images/chat-attach.svg" alt="" class="tool-icon-image" />
+            <img :src="aiDialogAssetsInline.chatAttach" alt="" class="tool-icon-image" />
           </button>
           <button
             v-if="selectionContextSnapshot"
@@ -1876,7 +1861,7 @@
             @click="selectionContextCollapsed = !selectionContextCollapsed"
           >
             <img
-              src="/images/chat-toggle.svg"
+              :src="aiDialogAssetsInline.chatToggle"
               alt=""
               class="tool-icon-image tool-icon-toggle"
               :class="{ expanded: !selectionContextCollapsed }"
@@ -1890,7 +1875,7 @@
             @click="sendMessage"
             title="发送"
           >
-            <img src="/images/chat-send.svg" alt="" class="tool-icon-image" />
+            <img :src="aiDialogAssetsInline.chatSend" alt="" class="tool-icon-image" />
           </button>
         </div>
         </div>
@@ -1929,7 +1914,14 @@
           <div v-if="assistantRecommendModalItems.length === 0" class="assistant-recommend-modal-empty">
             <div class="message-skill-empty-card">
               <div class="message-skill-empty-brand">
-                <img src="/images/logo.png" alt="aidooo" class="message-skill-empty-brand-logo" />
+                <img
+                  :src="aiDialogAssetsInline.logo"
+                  alt="aidooo"
+                  class="message-skill-empty-brand-logo"
+                  width="40"
+                  height="40"
+                  decoding="async"
+                />
                 <div class="message-skill-empty-brand-text">
                   <span class="message-skill-empty-brand-name">aidooo</span>
                   <span class="message-skill-empty-brand-subtitle">技能招募中</span>
@@ -1957,9 +1949,11 @@
               <div v-if="showFollowDonationQrCode" class="message-skill-empty-qr">
                 <div class="welcome-support-qr-wrap">
                   <img
-                    :src="followDonationQrCode"
+                    :src="followDonationQrCode()"
                     alt="智灵鸟科技公众号二维码"
                     class="welcome-support-qr"
+                    loading="lazy"
+                    decoding="async"
                     @error="handleDonationQrCodeError('follow')"
                   />
                 </div>
@@ -1979,6 +1973,8 @@
                     v-if="isImageIcon(item.icon)"
                     :src="resolveIconUrl(item.icon)"
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                   />
                   <span v-else>{{ item.icon || '🧠' }}</span>
                 </div>
@@ -2025,13 +2021,28 @@ import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import { getModelGroupsFromSettings } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
+/** 工具栏 SVG 用 Vite ?inline 打进 data: URL；头像 PNG 用预生成模块避免产物再拆出独立 png 请求 */
+import logoAvatarDataUrl from '../assets/ai-assistant/logoAvatarDataUrl.js'
+import chatAttachSvgInline from '../assets/ai-assistant/chat-attach.svg?inline'
+import chatSelectionSvgInline from '../assets/ai-assistant/chat-selection.svg?inline'
+import chatSendSvgInline from '../assets/ai-assistant/chat-send.svg?inline'
+import chatToggleSvgInline from '../assets/ai-assistant/chat-toggle.svg?inline'
+
+const AI_DIALOG_ASSETS_INLINE = {
+  logo: logoAvatarDataUrl,
+  chatAttach: chatAttachSvgInline,
+  chatSelection: chatSelectionSvgInline,
+  chatSend: chatSendSvgInline,
+  chatToggle: chatToggleSvgInline
+}
 import {
   MODEL_TYPE_CHAT,
   MODEL_TYPE_IMAGE_GENERATION,
   MODEL_TYPE_VIDEO_GENERATION,
   MODEL_TYPE_TTS
 } from '../utils/modelTypeUtils.js'
-import { applyDocumentAction, getActiveDocument, getDocumentText, resolveDocumentInput } from '../utils/documentActions.js'
+import { applyDocumentAction, getActiveDocument, getDocumentText, resolveDocumentInput, textLooksLikePlanStatsJson } from '../utils/documentActions.js'
+import { prepareDialogDisplayText } from '../utils/dialogTextDisplay.js'
 import { resolveDocumentTaskInputScope } from '../utils/documentTaskScope.js'
 import {
   clearDocumentFormatPreview,
@@ -2115,8 +2126,6 @@ import { appendEvaluationRecord, buildChatEvaluationRecord } from '../utils/eval
 import { buildChatContextMessages } from '../utils/chatContextBuilder.js'
 import { appendChatMemoryRecord } from '../utils/chatMemoryStore.js'
 import LongTaskRunCard from './LongTaskRunCard.vue'
-import AboutChayuanPanel from './AboutChayuanPanel.vue'
-
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -2154,8 +2163,8 @@ const DOCUMENT_DELETE_TRIGGER_PATTERN = /(删除|删掉|移除|去掉|清空|清
 const DOCUMENT_DELETE_TARGET_PATTERN = /(选中|选区|当前选择|所选|当前段落|本段|这段|这一段|全文|全篇|整个文档|当前文档|当前表格|这个表格|该表格|所在表格|全部表格|所有表格|当前图片|这张图片|该图片|所在图片|全部图片|所有图片|全部图像|所有图像|当前批注|这个批注|该批注|所在批注|全部批注|所有批注|表格|图片|图像|配图|插图|批注|注释|第\s*[一二三四五六七八九十两\d]+\s*段)/
 const DOCUMENT_TEXT_EDIT_TRIGGER_PATTERN = /(替换|改成|改为|换成).{0,60}|(?:删除|删掉|移除|去掉).{0,40}(关键词|关键字|字样|文本|内容|段落|[“"'《]|中|里|所在)/
 const DOCUMENT_RELOCATION_TRIGGER_PATTERN = /(移动到|移动至|移到|移至|挪到|挪至|复制到|复制至|拷贝到|拷贝至|复制.*到|拷贝.*到)/
-const DOCUMENT_REVISION_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|改写|润色|优化).{0,40}(错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题|文字|表述|描述|文章|文档|内容)|(?:错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题).{0,24}(修正|修改|改正|纠正|校正|修订|改写|润色|优化)|更正式|更通顺|统一术语|统一称谓|统一简称/
-const DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|润色|优化|删除|替换|移动|复制|批注|批示|评论|导出|提取|翻译|总结|分析|格式|加粗|标红|统一术语|歧义|错误|问题|文章|文档|全文|段落|表格|图片|批注|扩展|扩充|展开|丰富|续写|扩写|补充|延伸|细化|章节|详细)/
+const DOCUMENT_REVISION_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|改写|润色|优化|检查|查查|校对|审校|筛查).{0,40}(错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题|文字|表述|描述|文章|文档|内容|书写|文笔)|(?:错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题).{0,24}(修正|修改|改正|纠正|校正|修订|改写|润色|优化|检查|校对|审校)|更正式|更通顺|统一术语|统一称谓|统一简称|(?:书写|文笔|措辞|用词).{0,32}(检查|校对|审校|筛查)|(?:检查|校对|审校|筛查).{0,32}(书写|文笔|措辞|用词)/
+const DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|润色|优化|删除|替换|移动|复制|批注|批示|评论|导出|提取|翻译|总结|分析|格式|加粗|标红|统一术语|歧义|错误|问题|文章|文档|全文|段落|表格|图片|批注|扩展|扩充|展开|丰富|续写|扩写|补充|延伸|细化|章节|详细|脱密|脱敏|涉密|去标识|敏感词|占位符|密码复原|复原原文)/
 const MAX_ATTACHMENT_COUNT = 5
 const MAX_ATTACHMENT_FILE_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENT_TEXT_LENGTH = 12000
@@ -2808,6 +2817,15 @@ function detectDocumentRevisionIntent(text) {
       keywordTarget
     }
   }
+  if (/(书写|文笔|措辞|用词).{0,24}(检查|校对|审校|筛查)|(?:检查|校对|审校|筛查).{0,24}(书写|文笔|措辞|用词)/.test(normalized)) {
+    return {
+      scope,
+      revisionType: 'proofread',
+      assistantId: 'analysis.correct-spell',
+      constraints,
+      keywordTarget
+    }
+  }
   if (/(歧义|有歧义|不清晰|不清楚|不明确|表达不清|语义不清|指代不清|含混)/.test(normalized)) {
     return {
       scope,
@@ -3201,6 +3219,9 @@ function normalizeDocumentOperationRouterResult(value) {
     'document-comment',
     'document-aware',
     'selection-translate',
+    'document-declassify',
+    'document-declassify-restore',
+    'secret-keyword-extract',
     'unsupported',
     'chat'
   ]
@@ -3411,11 +3432,11 @@ function getSelectedModelId() {
 export default {
   name: 'AIAssistantDialog',
   components: {
-    LongTaskRunCard,
-    AboutChayuanPanel
+    LongTaskRunCard
   },
   data() {
     return {
+      aiDialogAssetsInline: AI_DIALOG_ASSETS_INLINE,
       activeSidebarTab: 'chats',
       sidebarWidth: 300,
       sidebarCollapsed: false,
@@ -3497,8 +3518,7 @@ export default {
       reportGenerationAutoTimers: {},
       assistantSelfIntroTimer: null,
       assistantHighlightedKey: '',
-      assistantHighlightTimer: null,
-      aboutChayuanModalVisible: false
+      assistantHighlightTimer: null
     }
   },
   computed: {
@@ -3553,15 +3573,6 @@ export default {
         return '输入消息，Enter 发送，Ctrl+Enter 或 Alt+Enter 换行'
       }
       return '请先配置模型后再开始对话'
-    },
-    wechatDonationQrCode() {
-      return publicAssetUrl(DONATION_WECHAT_QR_CODE)
-    },
-    followDonationQrCode() {
-      return publicAssetUrl(DONATION_FOLLOW_QR_CODE)
-    },
-    alipayDonationQrCode() {
-      return publicAssetUrl(DONATION_ALIPAY_QR_CODE)
     },
     hasDonationQrCode() {
       return this.showFollowDonationQrCode || this.showWechatDonationQrCode || this.showAlipayDonationQrCode
@@ -3792,13 +3803,15 @@ export default {
   },
   methods: {
     getModelLogoPath,
-    onMainTopLogoError(e) {
-      try {
-        const el = e?.target
-        if (el && el.style) el.style.display = 'none'
-      } catch (_) {
-        /* ignore */
-      }
+    publicAssetUrl,
+    followDonationQrCode() {
+      return publicAssetUrl(DONATION_FOLLOW_QR_CODE)
+    },
+    wechatDonationQrCode() {
+      return publicAssetUrl(DONATION_WECHAT_QR_CODE)
+    },
+    alipayDonationQrCode() {
+      return publicAssetUrl(DONATION_ALIPAY_QR_CODE)
     },
     handleStorageEvent(event) {
       if (event?.key !== 'NdDocumentBackupRestoreSignal' || !event?.newValue) return
@@ -4366,10 +4379,10 @@ export default {
       return Math.max(0, Math.min(99, Math.round(value)))
     },
     getAssistantLoadingLabel(msg) {
-      return String(msg?.loadingState?.label || '已发送，正在思考...')
+      return prepareDialogDisplayText(String(msg?.loadingState?.label || '已发送，正在思考...'))
     },
     getAssistantLoadingDetail(msg) {
-      return String(msg?.loadingState?.detail || '内容已加入会话，正在整理上下文与请求。')
+      return prepareDialogDisplayText(String(msg?.loadingState?.detail || '内容已加入会话，正在整理上下文与请求。'))
     },
     getMessagePrimaryRouteLabel(message) {
       const kind = String(message?.primaryRoute?.kind || '').trim()
@@ -4389,7 +4402,7 @@ export default {
         confidence ? `置信度：${confidence}` : '',
         reason ? `原因：${reason}` : ''
       ].filter(Boolean)
-      return parts.join(' | ')
+      return prepareDialogDisplayText(parts.join(' | '))
     },
     appendPrimaryRouteDetail(target, message) {
       const label = this.getMessagePrimaryRouteLabel(message)
@@ -4484,6 +4497,8 @@ export default {
     },
     appendDocumentRevisionDetail(target, text) {
       if (!target || !String(text || '').trim()) return
+      const cleaned = prepareDialogDisplayText(String(text || '').trim())
+      if (!cleaned) return
       const current = Array.isArray(target.details)
         ? target.details
         : Array.isArray(target.processingDetails)
@@ -4493,7 +4508,7 @@ export default {
         ...current,
         {
           id: `revision_detail_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          text: String(text || '').trim()
+          text: cleaned
         }
       ]
       if (Array.isArray(target.details)) {
@@ -4985,7 +5000,7 @@ export default {
         hasConfiguredModel: this.hasConfiguredChatModels
       })
       this.welcomePromptIndex = index
-      this.fullWelcomePrompt = String(text || '').trim()
+      this.fullWelcomePrompt = prepareDialogDisplayText(String(text || '').trim())
       this.displayedWelcomePrompt = ''
       this.isWelcomePromptTyping = true
       this.writeLastWelcomePromptIndex(index)
@@ -5844,7 +5859,8 @@ export default {
     },
     formatMessage(text) {
       if (!text) return ''
-      return String(text)
+      const raw = prepareDialogDisplayText(String(text))
+      return raw
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -6620,9 +6636,11 @@ export default {
     getRecommendationDisplayName(recommendation) {
       const name = String(recommendation?.shortLabel || recommendation?.label || '').trim()
       if (!name) return '该助手'
-      if (/助手$/.test(name)) return name
-      if (/设置$/.test(name)) return name.replace(/设置$/, '助手')
-      return `${name}助手`
+      let out
+      if (/助手$/.test(name)) out = name
+      else if (/设置$/.test(name)) out = name.replace(/设置$/, '助手')
+      else out = `${name}助手`
+      return prepareDialogDisplayText(out)
     },
     getRecommendationTooltip(recommendation) {
       const lines = [
@@ -6636,7 +6654,7 @@ export default {
       } else if (recommendation?.reasonText) {
         lines.push(`推荐原因：${String(recommendation.reasonText).trim()}`)
       }
-      return lines.filter(Boolean).join('\n')
+      return prepareDialogDisplayText(lines.filter(Boolean).join('\n'))
     },
     buildAssistantIntentCatalog() {
       return this.assistantItems
@@ -8015,69 +8033,69 @@ export default {
           : task.data?.generatedMediaKind === 'audio'
             ? '语音'
             : '文件'
+      let out = ''
       if (task.status === 'completed') {
-        return `已生成${mediaLabel}文件，可在当前会话中下载。`
-      }
-      if (task.status === 'cancelled') {
-        return task.error || `${mediaLabel}生成已停止`
-      }
-      if (task.status === 'failed') {
+        out = `已生成${mediaLabel}文件，可在当前会话中下载。`
+      } else if (task.status === 'cancelled') {
+        out = task.error || `${mediaLabel}生成已停止`
+      } else if (task.status === 'failed') {
         const hint = String(task.data?.errorDetail?.suggestion || '').trim()
-        return [this.formatAssistantTaskError(task.error || ''), hint].filter(Boolean).join(' ')
+        out = [this.formatAssistantTaskError(task.error || ''), hint].filter(Boolean).join(' ')
+      } else if (task.status === 'abnormal') {
+        out = task.error || `${mediaLabel}生成异常结束`
+      } else {
+        const stage = String(task.data?.progressStage || '')
+        const modelLabel = String(task.data?.modelDisplayName || task.data?.modelId || '').trim()
+        if (stage === 'calling_model') out = `正在调用${mediaLabel}模型${modelLabel ? `：${modelLabel}` : ''}...`
+        else if (stage === 'preparing') out = `正在准备${mediaLabel}生成任务...`
+        else out = `正在生成${mediaLabel}文件...`
       }
-      if (task.status === 'abnormal') {
-        return task.error || `${mediaLabel}生成异常结束`
-      }
-      const stage = String(task.data?.progressStage || '')
-      const modelLabel = String(task.data?.modelDisplayName || task.data?.modelId || '').trim()
-      if (stage === 'calling_model') return `正在调用${mediaLabel}模型${modelLabel ? `：${modelLabel}` : ''}...`
-      if (stage === 'preparing') return `正在准备${mediaLabel}生成任务...`
-      return `正在生成${mediaLabel}文件...`
+      return prepareDialogDisplayText(out)
     },
     getAssistantTaskStatusText(task) {
       if (!task) return ''
+      let out = ''
       if (task.status === 'completed') {
-        return this.buildAssistantTaskCompletionSummary(task) || task.data?.applyResult?.message || '助手任务已完成'
+        out = this.buildAssistantTaskCompletionSummary(task) || task.data?.applyResult?.message || '助手任务已完成'
+      } else if (task.status === 'cancelled') {
+        out = task.error || '助手任务已停止'
+      } else if (task.status === 'failed') {
+        out = this.formatAssistantTaskError(task.error || '')
+      } else if (task.status === 'abnormal') {
+        out = task.error || '助手任务异常结束'
+      } else {
+        const stage = String(task.data?.progressStage || '')
+        const current = Number(task.current || 0)
+        const total = Number(task.total || 0)
+        if (total > 0) {
+          out = `正在处理：第 ${current} / ${total} 段`
+        } else if (stage === 'calling_model') out = '正在调用模型生成结果...'
+        else if (stage === 'applying_result') out = '正在写回文档或整理输出...'
+        else out = '助手任务正在执行中...'
       }
-      if (task.status === 'cancelled') {
-        return task.error || '助手任务已停止'
-      }
-      if (task.status === 'failed') {
-        return this.formatAssistantTaskError(task.error || '')
-      }
-      if (task.status === 'abnormal') {
-        return task.error || '助手任务异常结束'
-      }
-      const stage = String(task.data?.progressStage || '')
-      const current = Number(task.current || 0)
-      const total = Number(task.total || 0)
-      if (total > 0) {
-        return `正在处理：第 ${current} / ${total} 段`
-      }
-      if (stage === 'calling_model') return '正在调用模型生成结果...'
-      if (stage === 'applying_result') return '正在写回文档或整理输出...'
-      return '助手任务正在执行中...'
+      return prepareDialogDisplayText(out)
     },
     getWpsCapabilityTaskStatusText(task) {
       if (!task) return ''
+      let out = ''
       if (task.status === 'completed') {
-        return task.data?.applyResult?.message || 'WPS 操作已完成'
+        out = task.data?.applyResult?.message || 'WPS 操作已完成'
+      } else if (task.status === 'cancelled') {
+        out = task.error || 'WPS 操作已停止'
+      } else if (task.status === 'failed') {
+        out = this.formatAssistantTaskError(task.error || '')
+      } else if (task.status === 'abnormal') {
+        out = task.error || 'WPS 操作异常结束'
+      } else {
+        const current = Number(task.current || 0)
+        const total = Number(task.total || 0)
+        if (total > 0) {
+          out = `正在执行步骤：${current} / ${total}`
+        } else {
+          out = '正在执行 WPS 直接操作...'
+        }
       }
-      if (task.status === 'cancelled') {
-        return task.error || 'WPS 操作已停止'
-      }
-      if (task.status === 'failed') {
-        return this.formatAssistantTaskError(task.error || '')
-      }
-      if (task.status === 'abnormal') {
-        return task.error || 'WPS 操作异常结束'
-      }
-      const current = Number(task.current || 0)
-      const total = Number(task.total || 0)
-      if (total > 0) {
-        return `正在执行步骤：${current} / ${total}`
-      }
-      return '正在执行 WPS 直接操作...'
+      return prepareDialogDisplayText(out)
     },
     syncGeneratedOutputTaskRuns() {
       this.chatHistory.forEach((chat) => {
@@ -8192,14 +8210,14 @@ export default {
             ...run,
             status: nextStatus,
             statusMessage: nextStatusMessage,
-            launchGuardReason: String(task.data?.launchGuardReason || '').trim(),
+            launchGuardReason: prepareDialogDisplayText(String(task.data?.launchGuardReason || '').trim()),
             applyAction: String(task.data?.applyResult?.action || task.data?.documentAction || '').trim(),
             progress: Number(task.progress || 0),
-            taskTitle: task.title || run?.taskTitle || '',
+            taskTitle: prepareDialogDisplayText(String(task.title || run?.taskTitle || '').trim()),
             current: Number(task.current || 0),
             total: Number(task.total || 0),
             estimatedRemainingMs: Number(task.data?.estimatedRemainingMs || 0),
-            previewText: String(task.data?.outputPreview || task.data?.inputPreview || '').trim(),
+            previewText: prepareDialogDisplayText(String(task.data?.outputPreview || task.data?.inputPreview || '').trim()),
             metaLines: this.getAssistantTaskCardMetaLines(task),
             showBackupOption: task.data?.pendingApply === true && task.data?.backupPolicy?.allowUserToggle === true,
             backupEnabled: task.data?.documentBackupRequested === true,
@@ -8222,10 +8240,13 @@ export default {
               this.getAssistantTaskResultDetailLines(task).forEach((line) => {
                 this.appendDocumentRevisionDetail(message.activeAssistantTaskRun, line)
               })
-              if (String(task.data?.fullOutput || '').trim()) {
+              const previewSnippet = this.sanitizeAssistantTextForUserDialog(
+                String(task.data?.outputPreview || task.data?.fullOutput || '').trim()
+              )
+              if (previewSnippet) {
                 this.appendDocumentRevisionDetail(
                   message.activeAssistantTaskRun,
-                  `结果预览：${String(task.data?.outputPreview || task.data?.fullOutput || '').trim()}`
+                  `结果预览：${previewSnippet}`
                 )
               }
               message.activeAssistantTaskRun._lastTerminalKey = progressKey
@@ -8242,14 +8263,7 @@ export default {
                 backupLabel: '写回前备份源文件'
               }
             } else {
-              const finalAction = String(task?.data?.applyResult?.action || task?.data?.documentAction || '').trim()
-              const finalOutputText = String(task?.data?.fullOutput || task?.data?.outputPreview || '').trim()
-              const guardReason = String(task?.data?.launchGuardReason || '').trim()
-              message.content = finalAction === 'none' && finalOutputText
-                ? (guardReason
-                    ? `已启用写回保护：${guardReason}。本次仅生成结果，不写回文档。\n\n${finalOutputText}`
-                    : finalOutputText)
-                : (this.buildAssistantTaskCompletionSummary(task) || task.data?.applyResult?.message || `助手“${task.title || '当前任务'}”已完成。`)
+              message.content = this.resolveAssistantTaskMessageBody(task)
             }
             message.isLoading = false
             this.stopAssistantLoadingProgress(message)
@@ -8523,18 +8537,19 @@ export default {
     },
     getDocumentCommentTaskStatusText(task) {
       if (!task) return ''
+      let out = ''
       if (task.status === 'completed') {
-        return task.data?.applyResult?.message || `已完成，共添加 ${Number(task.data?.commentCount || 0)} 处批注`
+        out = task.data?.applyResult?.message || `已完成，共添加 ${Number(task.data?.commentCount || 0)} 处批注`
+      } else if (task.status === 'cancelled') {
+        out = task.error || '批注任务已停止'
+      } else if (task.status === 'failed') {
+        out = task.error || '批注任务执行失败'
+      } else {
+        const current = Number(task.current || 0)
+        const total = Number(task.total || 0)
+        out = total > 0 ? `正在批注：第 ${current} / ${total} 段` : '正在执行智能批注...'
       }
-      if (task.status === 'cancelled') {
-        return task.error || '批注任务已停止'
-      }
-      if (task.status === 'failed') {
-        return task.error || '批注任务执行失败'
-      }
-      const current = Number(task.current || 0)
-      const total = Number(task.total || 0)
-      return total > 0 ? `正在批注：第 ${current} / ${total} 段` : '正在执行智能批注...'
+      return prepareDialogDisplayText(out)
     },
     syncDocumentCommentTaskRuns() {
       this.chatHistory.forEach((chat) => {
@@ -10353,11 +10368,12 @@ export default {
                 '可选 kind 只有：chat、document-operation、wps-capability、generated-output、assistant-task。',
                 '判断规则：',
                 '1. 普通问答、闲聊、解释、写诗、写文案、写祝福、头脑风暴、普通改写建议，一律归为 chat。',
-                '2. 只有明确要处理当前文档/选中内容/段落/批注/全文，或要写回文档时，才归为 document-operation。',
+                '2. 只有明确要处理当前文档/选中内容/段落/批注/全文，或要写回文档时，才归为 document-operation；文档脱密、脱敏、涉密关键词、占位符替换、密码复原等也属于 document-operation。',
                 '3. 保存、另存为、加密、插入表格、插入空白页、插入分页符等直接能力，归为 wps-capability。',
                 '4. 报告、总结文件、导出文件、图片/视频/语音生成、下载附件，归为 generated-output。',
                 '5. 只有明确提到某个助手、要求创建助手，或确实依赖可复用助手配置时，才归为 assistant-task。',
                 '6. 如果不确定，默认选择 chat。',
+                '7. 若用户明显要操作当前 WPS 文档（纠错别字、翻译选区、全文摘要、脱密、删改格式等）或调用保存/插入等原生能力，或生成报告/图片/音视频，绝不能仅因措辞像“帮我想想”就归为 chat；必须归入对应的 document-operation、wps-capability、generated-output 或 assistant-task。',
                 'JSON 格式：{"kind":"","confidence":"high|medium|low","reason":""}'
               ].join('\n')
             },
@@ -10380,6 +10396,27 @@ export default {
     async resolvePrimaryConversationIntent(text, model) {
       const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
       const modelIntent = await this.inferPrimaryConversationIntentWithModel(text, model)
+      const ruleKind = String(ruleIntent?.kind || 'chat').trim()
+      const modelKind = String(modelIntent?.kind || 'chat').trim()
+      const ruleConf = String(ruleIntent?.confidence || '').trim().toLowerCase()
+      // 高置信规则优先于模型的 chat：否则模型常输出 confidence=high 的 chat，堵死文档/WPS/助手等链路（与「先规则命中、再走子路由」的产品逻辑一致）。
+      if (modelKind === 'chat' && ruleKind !== 'chat' && ruleConf === 'high') {
+        return {
+          ...ruleIntent,
+          reason: [ruleIntent.reason, modelIntent?.reason ? `模型侧曾判为对话：${modelIntent.reason}` : ''].filter(Boolean).join(' ')
+        }
+      }
+      // 报告/多模态等规则为 medium 时，同样不允许被模型高置信 chat 覆盖。
+      if (
+        modelKind === 'chat' &&
+        ruleKind === 'generated-output' &&
+        (ruleConf === 'high' || ruleConf === 'medium')
+      ) {
+        return {
+          ...ruleIntent,
+          reason: [ruleIntent.reason, modelIntent?.reason ? `模型侧曾判为对话：${modelIntent.reason}` : ''].filter(Boolean).join(' ')
+        }
+      }
       if (modelIntent.kind === 'chat' && modelIntent.confidence !== 'high' && ruleIntent.kind !== 'chat') {
         return {
           ...ruleIntent,
@@ -10396,6 +10433,83 @@ export default {
     },
     shouldTryDocumentOperationRouting(text) {
       return DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN.test(String(text || '').trim())
+    },
+    shouldTryDocumentDeclassifyRestoreIntent(text) {
+      return /(密码复原|复原原文|恢复原文|撤销脱密|还原脱密|脱密.{0,8}复原|复原.{0,8}脱密)/.test(String(text || '').trim())
+    },
+    shouldTryDocumentDeclassifyIntent(text) {
+      const t = String(text || '').trim()
+      if (!t || this.shouldTryDocumentDeclassifyRestoreIntent(t)) return false
+      return /(脱密|文档脱密|占位符脱密|占位脱密|去标识化|脱敏处理|敏感词替换|涉密.{0,8}替换)/.test(t)
+    },
+    shouldTrySecretKeywordExtractOnlyIntent(text) {
+      const t = String(text || '').trim()
+      if (!t || this.shouldTryDocumentDeclassifyRestoreIntent(t) || this.shouldTryDocumentDeclassifyIntent(t)) {
+        return false
+      }
+      return /(仅|只).{0,16}(提取|抽取).{0,12}(涉密|敏感).{0,8}(关键词|词)/.test(t) ||
+        /(提取|抽取).{0,10}(涉密|敏感).{0,8}(关键词|词)/.test(t)
+    },
+    shouldOpenDocumentDeclassifyDialogForText(text = '') {
+      const t = String(text || '').trim()
+      if (!t) return false
+      if (/(仅|只).{0,12}(提取|抽取).{0,12}(涉密|敏感).{0,8}(关键词|词)/.test(t)) return false
+      return /(文档脱密|占位符|占位脱密|去标识化|脱敏(?!检查)|脱密处理|帮我脱密|脱密助手)/.test(t) ||
+        /^.{0,20}脱密/.test(t)
+    },
+    /**
+     * 明确「用/调用××助手」时：单候选直接启动任务；多候选展示执行选择卡片，避免落入普通流式对话导致「助手链路调用失效」。
+     */
+    async tryExplicitAssistantExecutionAfterRecommendation(assistantMsg, text, demand, assistantOptions = []) {
+      if (!assistantMsg || !Array.isArray(assistantOptions) || assistantOptions.length === 0) return false
+      if (!EXPLICIT_ASSISTANT_REQUEST_PATTERN.test(String(text || '').trim())) return false
+      if (this.isExplicitAssistantCreationRequest(text)) return false
+
+      const top = assistantOptions[0]
+      const topId = String(top?.assistantId || '').trim()
+      if (!topId) return false
+
+      if (assistantOptions.length > 1) {
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        assistantMsg.content = '已匹配到多个可用助手，请先选择要执行的一项。'
+        assistantMsg.pendingAssistantExecutionChoice = this.createPendingAssistantExecutionChoice(
+          demand,
+          assistantOptions,
+          {
+            summaryText: '已识别为明确的助手执行需求，请选择一个助手后继续。',
+            statusMessage: '请选择一个助手后点击「执行所选助手」。',
+            autoContinueLabel: '默认执行列表中的第一项'
+          }
+        )
+        this.scheduleAssistantExecutionChoiceAutoContinue(assistantMsg)
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+        return true
+      }
+
+      try {
+        if (topId === 'analysis.secret-keyword-extract' && this.shouldOpenDocumentDeclassifyDialogForText(text)) {
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
+          this.openDialogRoute('/document-declassify-dialog', {}, '文档脱密', 860, 720)
+          this.saveHistory()
+          this.$nextTick(() => this.scrollToBottom())
+          return true
+        }
+        await this.runAssistantTaskFromMessage(assistantMsg, topId, {
+          requirementText: String(text || '').trim()
+        })
+        return true
+      } catch (error) {
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        assistantMsg.content = '[错误] ' + (error?.message || '启动助手失败')
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+        return true
+      }
     },
     getDocumentOperationChoiceOptionMeta(actionKey) {
       const normalized = String(actionKey || '').trim().toLowerCase()
@@ -10414,6 +10528,9 @@ export default {
         'document-comment': { label: '添加批注', apiLabel: '批注', supported: true },
         'document-aware': { label: '整篇处理', apiLabel: '全文处理', supported: true },
         'selection-translate': { label: '翻译内容', apiLabel: '翻译', supported: true },
+        'document-declassify': { label: '文档脱密（对话框）', apiLabel: '文档脱密', supported: true },
+        'document-declassify-restore': { label: '密码复原', apiLabel: '脱密复原', supported: true },
+        'secret-keyword-extract': { label: '涉密关键词提取', apiLabel: '涉密关键词', supported: true },
         unsupported: { label: '当前能力暂不支持', apiLabel: '待扩展', supported: false }
       }
       return map[normalized] || { label: normalized || '待确认操作', apiLabel: '待确认', supported: false }
@@ -10458,7 +10575,8 @@ export default {
       const systemPrompt = [
         '你是一个 WPS 文档操作路由器，负责先判断用户想执行哪一种文档操作。',
         '只输出合法 JSON，不要输出解释、代码块或多余文本。',
-        'primaryAction 只能是以下之一：document-revision:proofread、document-revision:clarify、document-revision:correct-description、document-revision:formalize、document-revision:polish、document-revision:term-unify、document-delete、document-text-edit、document-relocation、document-format、document-comment、document-aware、selection-translate、unsupported、chat。',
+        'primaryAction 只能是以下之一：document-revision:proofread、document-revision:clarify、document-revision:correct-description、document-revision:formalize、document-revision:polish、document-revision:term-unify、document-delete、document-text-edit、document-relocation、document-format、document-comment、document-aware、selection-translate、document-declassify、document-declassify-restore、secret-keyword-extract、unsupported、chat。',
+        '若用户要对全文做占位符脱密、打开脱密流程、替换敏感实体为占位符，primaryAction 选 document-declassify；若已脱密需输入密码恢复原文，选 document-declassify-restore；若仅提取涉密关键词并以批注标注、不强调完整脱密对话框，选 secret-keyword-extract。',
         '当用户明显是在让你修正文档问题但无法准确区分是纠错、纠正描述还是消除歧义时，primaryAction 选最可能的一项，candidateActions 同时列出 2-4 个可能项，confidence=medium 或 low。',
         '像“帮我修正文章错误”“帮我修改一下问题”这类模糊请求，通常属于 document-revision，并优先给出 proofread、clarify、correct-description 等候选项。',
         '若用户要基于选区或全文做扩写、续写、展开、写详细、丰富内容、补充细节、扩展章节、生成更详细说明等，一律视为可用大模型完成的文档需求：请输出 primaryAction=document-aware 或 document-revision:polish（偏润色扩写时），supported=true，不要标为 unsupported。',
@@ -10494,6 +10612,9 @@ export default {
       return normalized === 'document-comment' ||
         normalized === 'document-aware' ||
         normalized === 'selection-translate' ||
+        normalized === 'document-declassify' ||
+        normalized === 'document-declassify-restore' ||
+        normalized === 'secret-keyword-extract' ||
         this.isDocumentRevisionChoiceAction(normalized)
     },
     clearAssistantFirstPendingStates(message) {
@@ -10638,6 +10759,41 @@ export default {
       }
       return `已完成“${title}”`
     },
+    sanitizeAssistantTextForUserDialog(text) {
+      const t = String(text || '').trim()
+      if (!t) return ''
+      if (textLooksLikePlanStatsJson(t)) return ''
+      if (/^\s*\{/.test(t) && /"schemaVersion"\s*:\s*"/.test(t) && /"operations"\s*:\s*\[/.test(t)) return ''
+      return prepareDialogDisplayText(t)
+    },
+    resolveAssistantTaskMessageBody(task) {
+      const finalAction = String(task?.data?.applyResult?.action || task?.data?.documentAction || '').trim()
+      const rawOut = String(task?.data?.fullOutput || task?.data?.outputPreview || '').trim()
+      const guardReason = String(task?.data?.launchGuardReason || '').trim()
+      const safeOut = this.sanitizeAssistantTextForUserDialog(rawOut)
+      const fallback = () =>
+        this.buildAssistantTaskCompletionSummary(task) ||
+        this.sanitizeAssistantTextForUserDialog(String(task?.data?.commentPreview || '').trim()) ||
+        String(task?.data?.applyResult?.message || '').trim() ||
+        `助手“${String(task?.title || '当前任务').trim()}”已完成。`
+      let body = ''
+      if (finalAction === 'none') {
+        if (safeOut) {
+          body = guardReason
+            ? `已启用写回保护：${guardReason}。本次仅生成结果，不写回文档。\n\n${safeOut}`
+            : safeOut
+        } else if (rawOut && !safeOut) {
+          body = guardReason
+            ? `已启用写回保护：${guardReason}。本次仅生成结果，不写回文档。\n\n${fallback()}`
+            : fallback()
+        } else {
+          body = fallback()
+        }
+      } else {
+        body = fallback()
+      }
+      return prepareDialogDisplayText(body)
+    },
     buildAssistantTaskCompletionSummary(task) {
       if (!task) return ''
       const applyAction = String(task?.data?.applyResult?.action || task?.data?.documentAction || '').trim()
@@ -10770,7 +10926,7 @@ export default {
       if (downgradeReason) {
         lines.push(`自动降级：${downgradeReason}`)
       }
-      return lines.filter(Boolean)
+      return lines.filter(Boolean).map((line) => prepareDialogDisplayText(line))
     },
     getAssistantTaskResultDetailLines(task) {
       if (!task) return []
@@ -10858,7 +11014,7 @@ export default {
       if (downgradeReason) {
         lines.push(`自动降级：${downgradeReason}`)
       }
-      return lines
+      return lines.map((line) => prepareDialogDisplayText(line))
     },
     resolveAssistantInputSourceByScope(scope = 'selection-preferred') {
       const normalized = String(scope || 'selection-preferred')
@@ -11588,15 +11744,15 @@ export default {
       const text = String(errorText || '').trim()
       if (!text) return '助手任务执行失败'
       if (/余额不足|insufficient balance|credit balance|quota exceeded|欠费/i.test(text)) {
-        return `模型欠费或额度不足：${text}`
+        return prepareDialogDisplayText(`模型欠费或额度不足：${text}`)
       }
       if (/网络请求失败|network request failed|failed to fetch|fetch failed|network/i.test(text)) {
-        return `网络异常：${text}`
+        return prepareDialogDisplayText(`网络异常：${text}`)
       }
       if (/api 密钥|api key|鉴权|unauthorized|authentication|auth|令牌/i.test(text)) {
-        return `鉴权异常：${text}`
+        return prepareDialogDisplayText(`鉴权异常：${text}`)
       }
-      return text
+      return prepareDialogDisplayText(text)
     },
     getDialogAutoContinueSeconds() {
       return 5
@@ -11707,7 +11863,7 @@ export default {
     },
     getPendingConfirmPrompt(pending) {
       const basePrompt = String(pending?.confirmPrompt || '').trim()
-      return basePrompt
+      return prepareDialogDisplayText(basePrompt)
     },
     shouldShowPendingAutoContinue(pending) {
       return !!pending && pending.status === 'pending' && Number(pending.autoContinueSecondsLeft || 0) > 0
@@ -11717,9 +11873,9 @@ export default {
       const actionLabel = String(pending?.autoContinueLabel || '').trim()
       const finalActionText = actionLabel || '默认确定并继续下一步'
       if (this.isPendingAutoContinuePaused(pending)) {
-        return `已暂停自动继续，移出后将在 ${seconds} 秒后${finalActionText}`
+        return prepareDialogDisplayText(`已暂停自动继续，移出后将在 ${seconds} 秒后${finalActionText}`)
       }
-      return `${seconds} 秒后将${finalActionText}`
+      return prepareDialogDisplayText(`${seconds} 秒后将${finalActionText}`)
     },
     getPendingAutoContinueProgressStyle(pending) {
       const total = Math.max(1, Number(this.getDialogAutoContinueSeconds() || 5))
@@ -12637,6 +12793,10 @@ export default {
         shortLabel: getCustomAssistantById(assistantId)?.name || '智能助手'
       }
       const taskTitle = assistantItem.shortLabel || assistantItem.label || '智能助手'
+      const savedCfg = this.getAssistantRecommendationConfigByKey(assistantId) || {}
+      const effectiveInputSource = String(options.inputSource || savedCfg.inputSource || '').trim()
+      const effectiveDocumentAction = String(options.documentAction || savedCfg.documentAction || '').trim()
+      const effectiveTargetLanguage = String(options.targetLanguage || savedCfg.targetLanguage || '').trim()
       const overrides = {
         taskTitle,
         taskData: {
@@ -12650,17 +12810,10 @@ export default {
             : null
         }
       }
-      if (options.inputSource) overrides.inputSource = options.inputSource
-      if (options.documentAction) overrides.documentAction = options.documentAction
-      if (options.targetLanguage) overrides.targetLanguage = options.targetLanguage
+      if (effectiveInputSource) overrides.inputSource = effectiveInputSource
+      if (effectiveDocumentAction) overrides.documentAction = effectiveDocumentAction
+      if (effectiveTargetLanguage) overrides.targetLanguage = effectiveTargetLanguage
       if (options.reportSettings) overrides.reportSettings = options.reportSettings
-      if (
-        ['document', 'selection', 'selection-only', 'selection-preferred'].includes(String(options.inputSource || '').trim()) &&
-        ['replace', 'comment', 'comment-replace', 'insert-after', 'prepend', 'append', 'insert'].includes(String(options.documentAction || '').trim()) &&
-        options.reportSettings?.enabled !== true
-      ) {
-        overrides.previewOnly = true
-      }
       const { taskId, promise } = startAssistantTask(assistantId, overrides)
       if (!taskId) {
         throw new Error('助手任务启动失败，未能创建任务')
@@ -13038,6 +13191,36 @@ export default {
           this.sendSelectionAwareTranslateMessage(text, model, translateIntent, prepared)
           return true
         }
+      }
+      if (normalized === 'document-declassify') {
+        const assistantMsg = prepared?.assistantMsg
+        if (!assistantMsg) return false
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
+        this.openDialogRoute('/document-declassify-dialog', {}, '文档脱密', 860, 720)
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+        return true
+      }
+      if (normalized === 'document-declassify-restore') {
+        const assistantMsg = prepared?.assistantMsg
+        if (!assistantMsg) return false
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        assistantMsg.content = '已为你打开「密码复原」对话框，验证密码后可恢复脱密前的原文。'
+        this.openDialogRoute('/document-declassify-restore-dialog', {}, '密码复原', 420, 320)
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+        return true
+      }
+      if (normalized === 'secret-keyword-extract') {
+        const assistantMsg = prepared?.assistantMsg
+        if (!assistantMsg) return false
+        await this.runAssistantTaskFromMessage(assistantMsg, 'analysis.secret-keyword-extract', {
+          requirementText: String(text || '').trim()
+        })
+        return true
       }
       return false
     },
@@ -13534,7 +13717,7 @@ export default {
       }
       return `已完成 ${processedCount} 个命中段落的修订。`
     },
-    startDocumentRevisionMessage(text, model, prepared = null) {
+    async startDocumentRevisionMessage(text, model, prepared = null) {
       const resolvedPrepared = prepared || this.prepareOutgoingMessages(text)
       if (!resolvedPrepared) return
       const { assistantMsg } = resolvedPrepared
@@ -13547,13 +13730,16 @@ export default {
       })
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
-      this.handleDocumentRevisionMessage(text, model, null, resolvedPrepared)
+      await this.handleDocumentRevisionMessage(text, model, null, resolvedPrepared)
     },
     async handleDocumentRevisionMessage(text, model, intent, prepared = null) {
       const resolvedPrepared = prepared || this.prepareOutgoingMessages(text)
       if (!resolvedPrepared) return
       const { assistantMsg } = resolvedPrepared
       const runContext = this.startActiveDocumentRevisionRun(assistantMsg)
+      // 与整篇文档处理一致：尽快占用发送锁，避免在 await 模型期间又发一条导致新的修订顶替 AbortController，表现为「已停止本次文档修订」。
+      this.isStreaming = true
+      this.streamingContent = ''
       try {
         this.appendPrimaryRouteDetail(assistantMsg.activeDocumentRevisionRun, assistantMsg)
         const resolvedIntent = intent || detectDocumentRevisionIntent(text)
@@ -13667,12 +13853,18 @@ export default {
       } catch (error) {
         this.stopAssistantLoadingProgress(assistantMsg)
         if (this.isDocumentRevisionCancelledError(error) || error?.name === 'AbortError') {
-          assistantMsg.content = '已停止本次文档修订，未写回正文或批注。'
+          const superseded = this.activeDocumentRevisionRunContext &&
+            this.activeDocumentRevisionRunContext.messageId &&
+            this.activeDocumentRevisionRunContext.messageId !== String(assistantMsg?.id || '')
+          const stopHint = superseded
+            ? '上一次文档修订因新的会话请求被打断（或并发启动了新的修订）。若你只想检查错别字，请等待当前预览完成后再发下一条，或先点击停止再发送。'
+            : '已停止本次文档修订，未写回正文或批注。'
+          assistantMsg.content = stopHint
           assistantMsg.isLoading = false
-          this.appendDocumentRevisionDetail(assistantMsg.activeDocumentRevisionRun, '本次处理已停止，未继续后续步骤。')
+          this.appendDocumentRevisionDetail(assistantMsg.activeDocumentRevisionRun, superseded ? '检测到修订上下文已被其他请求取代，本次未继续。' : '本次处理已停止，未继续后续步骤。')
           this.finishActiveDocumentRevisionRun(assistantMsg, {
             status: 'cancelled',
-            statusMessage: '已停止本次文档修订。'
+            statusMessage: superseded ? '本次文档修订已被新的请求中断。' : '已停止本次文档修订。'
           })
         } else {
           assistantMsg.content = '[错误] ' + (error?.message || '文档修订失败')
@@ -13683,6 +13875,9 @@ export default {
           )
           this.finishActiveDocumentRevisionRun(assistantMsg)
         }
+      } finally {
+        this.isStreaming = false
+        this.streamingContent = ''
       }
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
@@ -14393,6 +14588,10 @@ export default {
     async sendMessage() {
       const text = this.userInput.trim()
       if ((!text && this.attachments.length === 0) || this.isStreaming) return
+      if (this.activeDocumentRevisionRunContext?.messageId) {
+        window.alert('当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。')
+        return
+      }
 
       const isFirstConversationMessage = this.currentMessages.length === 0
       this.startSendLaunchEffect()
@@ -14530,6 +14729,25 @@ export default {
           }
         }
 
+        if (routeKind === 'document-operation' && this.shouldTryDocumentDeclassifyRestoreIntent(text)) {
+          this.loadAssistantItems()
+          if (await this.dispatchDocumentOperationChoice(text, model, 'document-declassify-restore', { prepared })) {
+            return
+          }
+        }
+        if (routeKind === 'document-operation' && this.shouldTryDocumentDeclassifyIntent(text)) {
+          this.loadAssistantItems()
+          if (await this.dispatchDocumentOperationChoice(text, model, 'document-declassify', { prepared })) {
+            return
+          }
+        }
+        if (routeKind === 'document-operation' && this.shouldTrySecretKeywordExtractOnlyIntent(text)) {
+          this.loadAssistantItems()
+          if (await this.dispatchDocumentOperationChoice(text, model, 'secret-keyword-extract', { prepared })) {
+            return
+          }
+        }
+
         if (routeKind === 'document-operation' && this.shouldTryDocumentRelocationIntent(text)) {
           this.loadAssistantItems()
           this.startDocumentRelocationMessage(text, model, prepared)
@@ -14556,7 +14774,7 @@ export default {
 
         if (routeKind === 'document-operation' && this.shouldTryDocumentRevisionIntent(text)) {
           this.loadAssistantItems()
-          this.startDocumentRevisionMessage(text, model, prepared)
+          await this.startDocumentRevisionMessage(text, model, prepared)
           return
         }
 
@@ -14642,6 +14860,9 @@ export default {
             )
             const assistantOptions = this.resolveAssistantOptionsForDemand(demand)
             if (assistantOptions.length > 0) {
+              if (await this.tryExplicitAssistantExecutionAfterRecommendation(assistantMsg, text, demand, assistantOptions)) {
+                return
+              }
               this.updateAssistantLoadingProgress(assistantMsg, {
                 label: '已命中助手候选，直接继续...',
                 detail: '为减少等待，本轮先直接用大模型对话输出；你仍可在助手面板手动执行助手。',
@@ -14876,7 +15097,7 @@ export default {
       const text = String(messageText || '').trim()
       if (!text) return
       this.insertModalMode = mode || 'insert'
-      this.insertModalContent = text
+      this.insertModalContent = prepareDialogDisplayText(text)
       this.showInsertModal = true
     },
     insertToDocument() {
@@ -14892,7 +15113,7 @@ export default {
       this.openResultActionModal('comment', this.lastAssistantMessage)
     },
     confirmInsert() {
-      const text = this.insertModalContent.trim()
+      const text = prepareDialogDisplayText(this.insertModalContent.trim())
       if (!text) {
         alert('内容不能为空')
         return
@@ -15578,121 +15799,6 @@ export default {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.main-top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-  padding: 8px 20px 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
-}
-
-.main-top-bar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.main-top-bar-logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.main-top-bar-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.main-top-bar-about {
-  flex-shrink: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(14, 165, 233, 0.35);
-  background: rgba(14, 165, 233, 0.08);
-  color: #0369a1;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.main-top-bar-about:hover {
-  background: rgba(14, 165, 233, 0.14);
-}
-
-.about-chayuan-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 12000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(4px);
-}
-
-.about-chayuan-modal {
-  width: min(720px, 100%);
-  max-height: min(88vh, 900px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.about-chayuan-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #0f172a;
-  color: #f8fafc;
-  flex-shrink: 0;
-}
-
-.about-chayuan-modal-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.about-chayuan-modal-close {
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
-}
-
-.about-chayuan-modal-close:hover {
-  color: #f8fafc;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.about-chayuan-modal-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  background: #0f172a;
 }
 
 .messages-container {
@@ -17166,7 +17272,6 @@ export default {
   top: 0;
   width: 50%;
   height: 100%;
-  background-image: url('/images/logo.png');
   background-repeat: no-repeat;
   background-size: 200% 100%;
   backface-visibility: hidden;

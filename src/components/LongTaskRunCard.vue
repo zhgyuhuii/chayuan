@@ -55,7 +55,7 @@
         </button>
       </div>
       <div v-if="run.showDetails && hasDetails" class="message-confirm-status">
-        <div v-for="detail in run.details" :key="detail.id">{{ detail.text }}</div>
+        <div v-for="detail in run.details" :key="detail.id">{{ dlgText(detail.text) }}</div>
       </div>
       <label v-if="showBackupOption" class="run-backup-toggle">
         <input
@@ -63,13 +63,13 @@
           :checked="run.backupEnabled === true"
           @change="$emit('toggle-backup', $event.target.checked)"
         />
-        <span>{{ run.backupLabel || '写回前备份源文件' }}</span>
+        <span>{{ dlgText(run.backupLabel || '写回前备份源文件') }}</span>
       </label>
     </div>
     <div v-else class="message-confirm-card" :class="`is-${run.status || 'pending'}`">
       <div class="run-card-head">
         <div class="message-confirm-summary">
-          {{ summaryText }}
+          {{ dlgText(summaryText) }}
         </div>
         <div v-if="showActionBar" class="run-action-bar">
           <button
@@ -126,7 +126,7 @@
         </div>
       </div>
       <div v-if="run.statusMessage" class="message-confirm-status">
-        {{ run.statusMessage }}
+        {{ dlgText(run.statusMessage) }}
       </div>
       <div v-if="showProgressMeta" class="message-confirm-status run-progress-meta">
         <span v-if="showCurrentTotal">当前 {{ run.current }}/{{ run.total }}</span>
@@ -141,22 +141,24 @@
           :checked="run.backupEnabled === true"
           @change="$emit('toggle-backup', $event.target.checked)"
         />
-        <span>{{ run.backupLabel || '写回前备份源文件' }}</span>
+        <span>{{ dlgText(run.backupLabel || '写回前备份源文件') }}</span>
       </label>
       <div v-if="run.previewText" class="message-confirm-status run-preview-text">
-        {{ run.previewText }}
+        {{ dlgText(run.previewText) }}
       </div>
       <div v-if="hasMetaLines" class="message-confirm-status run-meta-lines">
-        <div v-for="line in run.metaLines" :key="line">{{ line }}</div>
+        <div v-for="line in run.metaLines" :key="line">{{ dlgText(line) }}</div>
       </div>
       <div v-if="run.showDetails && hasDetails" class="message-confirm-status">
-        <div v-for="detail in run.details" :key="detail.id">{{ detail.text }}</div>
+        <div v-for="detail in run.details" :key="detail.id">{{ dlgText(detail.text) }}</div>
       </div>
     </div>
   </template>
 </template>
 
 <script>
+import { prepareDialogDisplayText } from '../utils/dialogTextDisplay.js'
+
 export default {
   name: 'LongTaskRunCard',
   props: {
@@ -232,6 +234,9 @@ export default {
     }
   },
   methods: {
+    dlgText(value) {
+      return prepareDialogDisplayText(value == null ? '' : String(value))
+    },
     handleDetailClick() {
       if (this.hasTaskDetail) {
         this.$emit('open-task-detail')

@@ -385,6 +385,7 @@
 <script>
 import { loadRulesFromDoc } from '../utils/templateRules.js'
 import { DATA_TYPES } from '../utils/templateRules.js'
+import Util from './js/util.js'
 
 export default {
   name: 'TaskPaneRight',
@@ -874,10 +875,17 @@ export default {
     openSelectedRuleEditor() {
       if (!this.selectedRule?.id) return
       try {
-        const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
-        const path = (base || window.location.origin + window.location.pathname.replace(/\/?index\.html$/i, '')).replace(/#.*$/, '')
-        const hash = window.location.protocol === 'file:' ? '' : '/#'
-        const url = `${path}${hash}/template-form-dialog?mode=edit&id=${encodeURIComponent(this.selectedRule.id)}`
+        const path = `template-form-dialog?mode=edit&id=${encodeURIComponent(this.selectedRule.id)}`
+        let url = ''
+        try {
+          const base = window.Application?.PluginStorage?.getItem('AddinBaseUrl')
+          if (base) {
+            url = Util.addonSpaUrlFromStorageBase(base, path)
+          }
+        } catch (_) {}
+        if (!url) {
+          url = Util.GetUrlPath() + Util.GetRouterHash() + '/' + path
+        }
         window.Application.ShowDialog(
           url,
           '修改表单项',
