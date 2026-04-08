@@ -34,6 +34,8 @@ INSTALL_ROOT="__INSTALL_ROOT__"
 PKG_DIR="$DEB_ROOT/opt/chayuan-wps-addon"
 mkdir -p "$PKG_DIR" "$DEB_ROOT/DEBIAN"
 cp -R "$STAGING/"* "$PKG_DIR/"
+cp "$ROOT/scripts/linux/publish-merge-fileurl.py" "$PKG_DIR/"
+chmod 0755 "$PKG_DIR/publish-merge-fileurl.py"
 
 cat >"$DEB_ROOT/DEBIAN/control" <<EOF
 Package: chayuan-wps-addon

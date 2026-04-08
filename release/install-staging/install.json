@@ -1,5 +1,6 @@
 {
   "name": "chayuan",
   "version": "1.0.1",
-  "addonFolder": "chayuan_1.0.1"
+  "addonFolder": "chayuan_1.0.1",
+  "addonType": "wps"
 }

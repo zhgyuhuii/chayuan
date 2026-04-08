@@ -76,9 +76,11 @@ function add7z(archivePath, inputPaths) {
 
 function publishXmlForPkg(pkg) {
 	const type = pkg.addonType || 'wps'
+	// enable_dev 仅供本机 wpsjs debug；正式版 / 麒麟 / UOS 等环境需 enable，否则不加载离线包。
 	return (
+		`<?xml version="1.0" encoding="UTF-8"?>\n` +
 		`<jsplugins>\n` +
-		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable_dev" install="null" customDomain=""/>\n` +
+		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable" install="null" customDomain=""/>\n` +
 		`</jsplugins>\n`
 	)
 }
@@ -104,7 +106,12 @@ function writeInstallStaging(distDir, releaseRoot, pkg) {
 		fsEx.copySync(path.join(distDir, file), path.join(nested, file))
 	}
 	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg), 'utf8')
-	const meta = { name, version, addonFolder: `${name}_${version}` }
+	const meta = {
+		name,
+		version,
+		addonFolder: `${name}_${version}`,
+		addonType: pkg.addonType || 'wps',
+	}
 	fs.writeFileSync(path.join(staging, 'install.json'), JSON.stringify(meta, null, 2) + '\n', 'utf8')
 	return staging
 }
@@ -139,6 +146,7 @@ function writeInstallReadme(pkg, releaseDir) {
 		'常见 jsaddons 位置（安装脚本已覆盖；若手动排查可参考）：',
 		'- Windows：%AppData%\\Kingsoft\\wps\\jsaddons',
 		'- Linux：~/.local/share/Kingsoft/wps/jsaddons',
+		'- 麒麟 / UOS 应用商店专业版：另可能在 /opt/apps/cn.wps.wps-office-pro/.../office6/jsaddons；安装 .deb 后请重启 WPS，必要时执行 quickstartoffice restart（见该路径下 bin）。',
 		'- macOS：~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons',
 		'',
 	]
