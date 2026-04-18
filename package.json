@@ -24,7 +24,12 @@
 		"release:platform": "node scripts/show-release-platform.mjs",
 		"release:upload": "node scripts/gh-release-upload.mjs",
 		"release:upload:here": "node scripts/gh-release-upload.mjs --current-only",
-		"release:upload:dry": "node scripts/gh-release-upload.mjs --dry-run"
+		"release:upload:dry": "node scripts/gh-release-upload.mjs --dry-run",
+		"generate:copyright-program-pdf": "node scripts/generate-copyright-program-pdf.mjs",
+		"generate:copyright-program-submit": "node scripts/generate-copyright-program-front-back30.mjs",
+		"generate:copyright-documentation-pdf": "node scripts/generate-copyright-documentation-pdf.mjs",
+		"generate:copyright-documentation-word-pdf": "node scripts/generate-copyright-documentation-docx-pdf.mjs",
+		"generate:copyright-documentation-60p": "node scripts/build-copyright-documentation-60p-source.mjs && node scripts/generate-copyright-documentation-docx-pdf.mjs"
 	},
 	"dependencies": {
 		"@iconify-json/fa6-solid": "^1.2.4",
@@ -52,8 +57,10 @@
 		"@rushstack/eslint-patch": "^1.8.0",
 		"@vitejs/plugin-vue": "^5.0.5",
 		"@vue/eslint-config-prettier": "^9.0.0",
+		"docx": "^9.6.1",
 		"eslint": "^8.57.0",
 		"eslint-plugin-vue": "^9.23.0",
+		"pdfkit": "^0.15.0",
 		"prettier": "^3.2.5",
 		"vite": "^5.3.1",
 		"wps-jsapi-declare": "latest",

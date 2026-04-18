@@ -8,7 +8,7 @@ import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { normalizeNodeArch, releaseArtifactFilename } from './lib/release-platform.mjs'
+import { currentReleaseTriple, releaseArtifactFilename } from './lib/release-platform.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 if (process.platform !== 'win32') {
@@ -21,7 +21,7 @@ execSync('npx wpsjs build --exe', { cwd: root, stdio: 'inherit' })
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const version = String(pkg.version || '0.0.0')
 const name = String(pkg.name || 'addon')
-const arch = normalizeNodeArch()
+const { arch } = currentReleaseTriple()
 const builtExe = path.join(root, 'wps-addon-build', `${name}.exe`)
 if (!fs.existsSync(builtExe)) {
 	console.error(`Expected wpsjs output missing: ${builtExe}`)

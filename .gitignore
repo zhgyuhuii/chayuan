@@ -11,6 +11,9 @@ wps-addon-build/
 .env.*
 *.local
 
+# 软著鉴别材料元数据（权利人、登记用软件全称等，勿提交）
+copyright-meta.json
+
 # OS / editor
 .DS_Store
 .idea/

@@ -1,7 +1,12 @@
 /**
  * Canonical OS/arch IDs for release filenames and manifests.
  * Web 资源各平台相同；文件名区分架构用于 Release 资产与用户选型。
+ *
+ * Windows：不能用 process.arch 代表「本机系统架构」。ARM64 Windows 上常安装 x64 版 Node，
+ * process.arch 为 x64，但系统实为 ARM64。此处用 CIM / wmic 读 Win32_ComputerSystem.SystemType
+ *（及 OS 架构）得到主机类型，与当前 Node 是否模拟运行无关。
  */
+import { execFileSync } from 'node:child_process'
 import os from 'node:os'
 
 /** @param {string} machine */
@@ -30,10 +35,77 @@ export function normalizeNodeArch(arch = process.arch) {
 	return a || 'unknown'
 }
 
+/**
+ * Map Win32_ComputerSystem.SystemType (localized or en) / similar strings → release arch id.
+ * @param {string} raw
+ */
+function mapWindowsSystemTypeToArch(raw) {
+	const t = String(raw || '').trim()
+	if (!t) return null
+	// 英/中常见：ARM64-based PC、基于 ARM64 的 PC；须先于含 “ARM” 的泛匹配
+	if (/ARM\s*64|ARM64/i.test(t)) return 'arm64'
+	if (/x64|AMD64|WOW64|基于\s*x64/i.test(t)) return 'x64'
+	if (/x86|i686|i386|基于\s*x86/i.test(t) && !/x86[_-]?64|AMD64/i.test(t)) return 'ia32'
+	return null
+}
+
+/**
+ * Windows 安装包命名用的「主机」架构（与 Node 可执行文件架构脱钩）。
+ */
+export function windowsHostArchForRelease() {
+	if (process.arch === 'arm64') {
+		return 'arm64'
+	}
+
+	try {
+		const psOut = execFileSync(
+			'powershell.exe',
+			[
+				'-NoProfile',
+				'-ExecutionPolicy',
+				'Bypass',
+				'-Command',
+				'(Get-CimInstance -ClassName Win32_ComputerSystem).SystemType',
+			],
+			{
+				encoding: 'utf8',
+				timeout: 15000,
+				windowsHide: true,
+				stdio: ['ignore', 'pipe', 'pipe'],
+			},
+		)
+		const mapped = mapWindowsSystemTypeToArch(psOut)
+		if (mapped) return mapped
+	} catch {
+		/* PowerShell 不可用或策略限制 */
+	}
+
+	try {
+		const wm = execFileSync('cmd.exe', ['/d', '/s', '/c', 'wmic os get osarchitecture /value'], {
+			encoding: 'utf8',
+			timeout: 15000,
+			windowsHide: true,
+			stdio: ['ignore', 'pipe', 'pipe'],
+		})
+		const m = wm.match(/OSArchitecture=([^\r\n]+)/i)
+		if (m) {
+			const v = m[1].trim()
+			if (/ARM\s*64|ARM64/i.test(v)) return 'arm64'
+			if (/64/.test(v) && /ARM/i.test(v)) return 'arm64'
+			if (/64/.test(v)) return 'x64'
+			if (/32/.test(v)) return 'ia32'
+		}
+	} catch {
+		/* wmic 在新版 Windows 可能未安装 */
+	}
+
+	return normalizeNodeArch()
+}
+
 export function currentReleaseTriple() {
 	const family = platformFamily()
 	const arch =
-		family === 'windows' ? normalizeNodeArch() : normalizeArchFromUname(os.machine())
+		family === 'windows' ? windowsHostArchForRelease() : normalizeArchFromUname(os.machine())
 	return { platform: family, arch, suffix: `${family}-${arch}` }
 }
 
