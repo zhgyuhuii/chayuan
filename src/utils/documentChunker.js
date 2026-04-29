@@ -95,16 +95,37 @@ function splitRangeIntoUnits(rawText, start, { splitStrategy, chunkLength }) {
   const info = normalizeTextWithIndexMap(rawText)
   if (!info.normalized) return []
   if (splitStrategy === 'paragraph') {
-    return [{
-      rawText: info.raw,
-      text: info.normalized,
-      start,
-      end: start + info.raw.length,
-      rawStart: 0,
-      rawEnd: info.raw.length,
-      normalizedStart: 0,
-      normalizedEnd: info.normalized.length
-    }]
+    if (info.normalized.length <= chunkLength) {
+      return [{
+        rawText: info.raw,
+        text: info.normalized,
+        start,
+        end: start + info.raw.length,
+        rawStart: 0,
+        rawEnd: info.raw.length,
+        normalizedStart: 0,
+        normalizedEnd: info.normalized.length
+      }]
+    }
+
+    const boundaries = []
+    splitLongRange(boundaries, info, 0, info.normalized.length, Math.max(500, chunkLength))
+    return boundaries
+      .map(({ start: normalizedStart, end: normalizedEnd }) => {
+        const mapped = mapNormalizedRangeToRawRange(info, normalizedStart, normalizedEnd)
+        if (!mapped || !mapped.text.trim()) return null
+        return {
+          rawText: mapped.rawText,
+          text: mapped.text,
+          start: start + mapped.rawStart,
+          end: start + mapped.rawEnd,
+          rawStart: mapped.rawStart,
+          rawEnd: mapped.rawEnd,
+          normalizedStart,
+          normalizedEnd
+        }
+      })
+      .filter(Boolean)
   }
 
   const maxUnitLength = splitStrategy === 'char'

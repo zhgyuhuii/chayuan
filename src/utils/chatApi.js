@@ -8,9 +8,58 @@
 import { getModelConfig, RIBBON_MODEL_TO_PROVIDER, parseModelCompositeId } from './modelSettings.js'
 
 const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api']
+const DEFAULT_CHAT_REQUEST_TIMEOUT_MS = 180000
 
 function isOllamaLike(providerId) {
   return OLLAMA_LIKE.some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
+}
+
+function createRequestAbortSignal(signal, timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS) {
+  const ms = Math.max(0, Number(timeoutMs) || DEFAULT_CHAT_REQUEST_TIMEOUT_MS)
+  if (typeof AbortController === 'undefined') {
+    return {
+      signal,
+      cleanup() {},
+      isTimeout() { return false }
+    }
+  }
+
+  const ctrl = new AbortController()
+  let timedOut = false
+  let timer = null
+
+  const abortFromParent = () => {
+    if (!ctrl.signal.aborted) ctrl.abort(signal?.reason || 'parent-abort')
+  }
+  if (signal) {
+    if (signal.aborted) {
+      abortFromParent()
+    } else {
+      signal.addEventListener('abort', abortFromParent, { once: true })
+    }
+  }
+  if (ms > 0) {
+    timer = setTimeout(() => {
+      timedOut = true
+      if (!ctrl.signal.aborted) ctrl.abort('request-timeout')
+    }, ms)
+  }
+
+  return {
+    signal: ctrl.signal,
+    cleanup() {
+      if (timer) clearTimeout(timer)
+      if (signal) signal.removeEventListener?.('abort', abortFromParent)
+    },
+    isTimeout() {
+      return timedOut
+    }
+  }
+}
+
+function formatRequestTimeoutMessage(timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS) {
+  const seconds = Math.max(1, Math.round((Number(timeoutMs) || DEFAULT_CHAT_REQUEST_TIMEOUT_MS) / 1000))
+  return `模型请求超时（${seconds} 秒未返回），请稍后重试或调小分段长度。`
 }
 
 function parseErrorPayload(rawText) {
@@ -159,7 +208,7 @@ export function getChatApiConfig(ribbonModelId) {
  * @param {function()} options.onDone - 完成时回调
  * @param {function(string)} options.onError - 错误时回调
  */
-export async function streamChatCompletion({ ribbonModelId, providerId, modelId, messages, onChunk, onDone, onError, signal, ...extraBody }) {
+export async function streamChatCompletion({ ribbonModelId, providerId, modelId, messages, onChunk, onDone, onError, signal, timeoutMs, requestTimeoutMs, ...extraBody }) {
   let cfg = null
   if (providerId && modelId) {
     cfg = getChatApiConfigByProvider(providerId, modelId)
@@ -192,12 +241,14 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
+  const timeout = requestTimeoutMs ?? timeoutMs ?? DEFAULT_CHAT_REQUEST_TIMEOUT_MS
+  const abort = createRequestAbortSignal(signal, timeout)
   try {
     const res = await fetch(cfg.apiUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal
+      signal: abort.signal
     })
     if (!res.ok) {
       const text = await res.text()
@@ -211,7 +262,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     }
     const decoder = new TextDecoder()
     let buffer = ''
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
@@ -225,7 +276,9 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
             const obj = JSON.parse(data)
             const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.delta?.reasoning_content
             if (delta) onChunk?.(delta)
-          } catch (_) {}
+          } catch (_) {
+            // Ignore malformed SSE fragments and continue reading the stream.
+          }
         }
       }
     }
@@ -237,18 +290,26 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
             const obj = JSON.parse(data)
             const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.delta?.reasoning_content
             if (delta) onChunk?.(delta)
-          } catch (_) {}
+          } catch (_) {
+            // Ignore malformed trailing SSE fragments.
+          }
         }
       }
     }
     onDone?.()
   } catch (e) {
+    if (abort.isTimeout()) {
+      onError?.(formatRequestTimeoutMessage(timeout))
+      return
+    }
     if (e?.name === 'AbortError') {
       onError?.('请求已终止')
       return
     }
     console.error('streamChatCompletion error:', e)
     onError?.(normalizeChatApiErrorMessage(0, e?.message || '', '网络请求失败'))
+  } finally {
+    abort.cleanup()
   }
 }
 
@@ -319,7 +380,7 @@ export function buildChatCompletionsRequestSnapshot({
  * @param {boolean} [options.stream=false] - 是否使用流式请求（流式会聚合为完整字符串返回）
  * @returns {Promise<string>} 完整回复内容
  */
-export async function chatCompletion({ ribbonModelId, providerId, modelId, messages, stream: useStream = false, signal, ...extraBody }) {
+export async function chatCompletion({ ribbonModelId, providerId, modelId, messages, stream: useStream = false, signal, timeoutMs, requestTimeoutMs, ...extraBody }) {
   if (useStream) {
     return new Promise((resolve, reject) => {
       let full = ''
@@ -329,6 +390,8 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
         ribbonModelId,
         messages,
         signal,
+        timeoutMs,
+        requestTimeoutMs,
         ...extraBody,
         onChunk: (chunk) => { full += chunk },
         onDone: () => resolve(full),
@@ -363,13 +426,26 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
-  const res = await fetch(cfg.apiUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal
-  })
-  const text = await res.text()
+  const timeout = requestTimeoutMs ?? timeoutMs ?? DEFAULT_CHAT_REQUEST_TIMEOUT_MS
+  const abort = createRequestAbortSignal(signal, timeout)
+  let res
+  let text
+  try {
+    res = await fetch(cfg.apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abort.signal
+    })
+    text = await res.text()
+  } catch (e) {
+    if (abort.isTimeout()) {
+      throw new Error(formatRequestTimeoutMessage(timeout))
+    }
+    throw e
+  } finally {
+    abort.cleanup()
+  }
   if (!res.ok) {
     throw new Error(normalizeChatApiErrorMessage(res.status, text, '请求失败'))
   }

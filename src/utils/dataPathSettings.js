@@ -6,6 +6,26 @@
 const STORAGE_KEY = 'NdDataPath'
 const CONFIG_FILE_NAME = 'chayuan_data_path.txt'
 
+function isDataPathDebugEnabled() {
+  try {
+    return window?.__CHAYUAN_DEBUG_DATA_PATH__ === true
+  } catch (_) {
+    return false
+  }
+}
+
+function debugDataPath(...args) {
+  if (isDataPathDebugEnabled()) console.debug(...args)
+}
+
+function normalizeStoredDataPathValue(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value).trim()
+  }
+  return ''
+}
+
 function getApplication() {
   return window.Application || window.opener?.Application || window.parent?.Application || null
 }
@@ -120,7 +140,9 @@ function resolveUserHomeDir() {
       const dt = String(app.Env.GetDesktopPath() || '')
       return getUserHomeFromPath(dt)
     }
-  } catch (e) {}
+  } catch (e) {
+    // Best-effort host path probing; fall back to default path below.
+  }
   return null
 }
 
@@ -196,6 +218,7 @@ export function getDefaultLogDir() {
 /**
  * 获取配置文件路径（固定位置）
  */
+// eslint-disable-next-line no-unused-vars
 function getConfigFilePath() {
   try {
     const app = getApplication()
@@ -268,7 +291,7 @@ export function getDataPath() {
     if (app?.PluginStorage) {
       try {
         const psVal = app.PluginStorage.getItem(STORAGE_KEY)
-        console.log('getDataPath: 从 PluginStorage 读取:', { 
+        debugDataPath('getDataPath: 从 PluginStorage 读取:', { 
           raw: psVal, 
           type: typeof psVal, 
           key: STORAGE_KEY,
@@ -276,12 +299,10 @@ export function getDataPath() {
           isNull: psVal === null
         })
         
-        if (psVal !== undefined && psVal !== null) {
-          const psStr = String(psVal).trim()
-          if (psStr) {
-            raw = psStr
-            console.log('getDataPath: 从 PluginStorage 读取到值:', psStr)
-          }
+        const psStr = normalizeStoredDataPathValue(psVal)
+        if (psStr) {
+          raw = psStr
+          debugDataPath('getDataPath: 从 PluginStorage 读取到值:', psStr)
         }
       } catch (psError) {
         console.error('getDataPath: PluginStorage 读取失败:', psError)
@@ -292,21 +313,22 @@ export function getDataPath() {
     if ((raw === undefined || raw === null || raw === '') && typeof localStorage !== 'undefined') {
       try {
         const lsVal = localStorage.getItem(STORAGE_KEY)
-        console.log('getDataPath: 从 localStorage 读取:', { 
+        debugDataPath('getDataPath: 从 localStorage 读取:', { 
           raw: lsVal, 
           type: typeof lsVal, 
           key: STORAGE_KEY 
         })
         
-        if (lsVal !== null && lsVal !== '') {
-          raw = String(lsVal).trim()
-          console.log('getDataPath: 从 localStorage 读取到值:', raw)
+        const lsStr = normalizeStoredDataPathValue(lsVal)
+        if (lsStr) {
+          raw = lsStr
+          debugDataPath('getDataPath: 从 localStorage 读取到值:', raw)
           
           // 如果 localStorage 有值但 PluginStorage 没有，尝试同步到 PluginStorage
           if (app?.PluginStorage && raw) {
             try {
               app.PluginStorage.setItem(STORAGE_KEY, raw)
-              console.log('getDataPath: 已同步 localStorage 的值到 PluginStorage')
+              debugDataPath('getDataPath: 已同步 localStorage 的值到 PluginStorage')
             } catch (syncError) {
               console.warn('getDataPath: 同步到 PluginStorage 失败:', syncError)
             }
@@ -319,21 +341,21 @@ export function getDataPath() {
     
     // 如果值是 undefined 或 null，表示从未设置过
     if (raw === undefined || raw === null || raw === '') {
-      console.log('getDataPath: 未找到已保存的值')
+      debugDataPath('getDataPath: 未找到已保存的值')
       return null
     }
     
     // 转换为字符串并去除首尾空格
     const s = String(raw).trim()
-    console.log('getDataPath: 处理后的值:', s)
+    debugDataPath('getDataPath: 处理后的值:', s)
     
     // 如果处理后是空字符串，也表示未设置（用户清空了设置）
     if (s === '') {
-      console.log('getDataPath: 值为空字符串，返回 null')
+      debugDataPath('getDataPath: 值为空字符串，返回 null')
       return null
     }
     
-    console.log('getDataPath: 返回路径:', s)
+    debugDataPath('getDataPath: 返回路径:', s)
     return s
   } catch (e) {
     console.error('getDataPath: 读取失败:', e)
@@ -511,7 +533,9 @@ export function ensureDir(fs, dirPath) {
         current = pathJoin(current, parts[i])
         try {
           fs.Mkdir(current)
-        } catch (e2) {}
+        } catch (e2) {
+          // Directory may already exist; continue creating the remaining path.
+        }
       }
       return true
     } catch (e3) {
