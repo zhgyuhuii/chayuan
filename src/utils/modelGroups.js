@@ -18,8 +18,8 @@ export const MODEL_GROUPS = [
   { label: '豆包', icon: 'images/models/doubao.svg', models: [
     { id: 'doubao', name: '豆包' }, { id: 'doubao-pro', name: '豆包 Pro' }
   ]},
-  { label: '阿里百炼', icon: 'images/models/qwen.svg', models: [
-    { id: 'qwen-max', name: '通义千问-Max' }, { id: 'qwen-plus', name: '通义千问-Plus' }, { id: 'qwen', name: '通义千问' }
+  { label: '阿里百炼', icon: 'images/models/logos/bailian.png', models: [
+    { id: 'qwen-max', name: '阿里百炼 Qwen-Max' }, { id: 'qwen-plus', name: '阿里百炼 Qwen-Plus' }, { id: 'qwen', name: '阿里百炼 Qwen' }
   ]},
   { label: '百度云千帆', icon: 'images/models/logos/qianfan.svg', models: [
     { id: 'ernie-4.0-8k', name: '文心 4.0' }, { id: 'ernie-3.5-8k', name: '文心 3.5' }

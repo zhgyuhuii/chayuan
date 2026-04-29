@@ -121,6 +121,9 @@
               <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="triggerAssistantImport">
                 导入助手
               </button>
+              <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="createAssistantGroup">
+                新建分组
+              </button>
               <input
                 ref="assistantImportInputRef"
                 type="file"
@@ -2293,7 +2296,7 @@ const CHAT_SELECTED_MODEL_STORAGE_KEY = 'ai_assistant_selected_model_id'
 const MODEL_INVENTORY = [
   { id: 'OPENAI', name: 'OpenAI', description: 'ChatGPT' },
   { id: 'OLLAMA', name: 'Ollama' },
-  { id: 'aliyun-bailian', name: '阿里百炼', description: '通义千问 / 百炼模型服务' },
+  { id: 'aliyun-bailian', name: '阿里百炼', description: '阿里百炼模型服务' },
   { id: 'DEEPSEEK', name: 'DeepSeek' },
   { id: 'baidu-qianfan', name: '百度云千帆', description: '文心大模型' },
   { id: 'XINFERENCE', name: 'Xinference' },
@@ -3429,11 +3432,58 @@ export default {
     },
     loadAssistantConfigData() {
       this.assistantSettingsMap = loadAssistantSettings()
-      this.customAssistants = getCustomAssistants()
+      this.customAssistants = this.mergeDuplicateCustomAssistants(getCustomAssistants())
       if (!this.activeAssistantSettingItem) {
         this.activeAssistantSettingItem = 'spell-check'
       }
       this.loadAssistantFormForItem(this.activeAssistantSettingItem)
+    },
+    normalizeAssistantSimilarityText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/[，。！？；：、,.!?;:\s"'“”‘’（）()【】\[\]{}<>《》\-_/\\|]+/g, '')
+    },
+    getAssistantSimilarityKey(assistant = {}) {
+      return this.normalizeAssistantSimilarityText([
+        assistant.name,
+        assistant.description,
+        assistant.systemPrompt,
+        assistant.userPromptTemplate
+      ].join('\n')).slice(0, 480)
+    },
+    isSpellGrammarLikeAssistant(assistant = {}) {
+      const text = this.normalizeAssistantSimilarityText([
+        assistant.name,
+        assistant.description,
+        assistant.systemPrompt,
+        assistant.userPromptTemplate
+      ].join('\n'))
+      return /拼写/.test(text) && /语法/.test(text) && /(检查|纠正|校对|修正)/.test(text)
+    },
+    mergeDuplicateCustomAssistants(list = []) {
+      const seenNames = new Set()
+      const seenPrompts = new Set()
+      const merged = []
+      let changed = false
+      ;(Array.isArray(list) ? list : []).forEach((assistant) => {
+        const nameKey = this.normalizeAssistantSimilarityText(assistant?.name)
+        const promptKey = this.getAssistantSimilarityKey(assistant)
+        const duplicateName = nameKey && seenNames.has(nameKey)
+        const duplicatePrompt = promptKey && seenPrompts.has(promptKey)
+        const duplicateBuiltinSpell = this.isSpellGrammarLikeAssistant(assistant)
+        if (duplicateName || duplicatePrompt || duplicateBuiltinSpell) {
+          changed = true
+          return
+        }
+        if (nameKey) seenNames.add(nameKey)
+        if (promptKey) seenPrompts.add(promptKey)
+        merged.push(assistant)
+      })
+      if (changed) {
+        saveCustomAssistants(merged)
+        this.notifyRibbonRefreshAssistantMenu()
+      }
+      return merged
     },
     normalizeActiveMainMenuIfHidden() {
       if (HIDDEN_SETTINGS_MAIN_MENU_KEYS.has(this.activeMainMenu)) {
@@ -3674,6 +3724,9 @@ export default {
     isAssistantSettingReorderable(item) {
       return item?.type === 'system-assistant' || item?.type === 'custom-assistant'
     },
+    getAssistantSettingItemByKey(key) {
+      return this.assistantSettingsItems.find(item => item.key === key) || null
+    },
     getReorderableAssistantItemsByGroup(groupKey) {
       const items = this.assistantSettingsItems.filter(item => (
         item.group === groupKey && this.isAssistantSettingReorderable(item)
@@ -3744,7 +3797,11 @@ export default {
     },
     onAssistantDragOver(e, groupKey, item) {
       if (!this.isAssistantSettingReorderable(item)) return
-      if (!this.assistantDragState.fromKey || this.assistantDragState.groupKey !== groupKey) return
+      if (!this.assistantDragState.fromKey) return
+      if (this.assistantDragState.groupKey !== groupKey) {
+        const fromItem = this.getAssistantSettingItemByKey(this.assistantDragState.fromKey)
+        if (fromItem?.type !== 'custom-assistant') return
+      }
       if (this.assistantDragState.fromKey === item.key) return
       e.dataTransfer.dropEffect = 'move'
       const rect = e.currentTarget.getBoundingClientRect()
@@ -3763,7 +3820,7 @@ export default {
         this.onAssistantDragEnd()
         return
       }
-      const { fromKey, dropPosition } = this.assistantDragState
+      const { fromKey, groupKey: fromGroupKey, dropPosition } = this.assistantDragState
       this.assistantDragState = {
         groupKey: '',
         fromKey: '',
@@ -3771,6 +3828,14 @@ export default {
         dropPosition: 'before'
       }
       if (!fromKey || fromKey === item.key) return
+      const fromItem = this.getAssistantSettingItemByKey(fromKey)
+      if (fromGroupKey !== groupKey) {
+        if (fromItem?.type !== 'custom-assistant') return
+        this.commitAssistantForm()
+        this.customAssistants = this.customAssistants.map(custom => (
+          custom.id === fromKey ? { ...custom, group: groupKey } : custom
+        ))
+      }
       const items = this.getReorderableAssistantItemsByGroup(groupKey)
       const fromIndex = items.findIndex(entry => entry.key === fromKey)
       const targetIndex = items.findIndex(entry => entry.key === item.key)
@@ -4150,6 +4215,21 @@ export default {
       this.notifyRibbonRefreshAssistantMenu()
       this.showMessage('智能助手已创建，并已同步到顶部“更多”菜单')
     },
+    createAssistantGroup() {
+      const groupName = String(window.prompt('请输入新分组名称', '') || '').trim()
+      if (!groupName) return
+      this.commitAssistantForm()
+      this.activeAssistantSettingItem = 'create-custom-assistant'
+      const draft = createCustomAssistantDraft()
+      draft.group = groupName
+      draft.displayOrder = this.getNextAssistantDisplayOrder(groupName)
+      this.assistantForm = draft
+      this.assistantPreviewTargetLanguage = draft.targetLanguage || '中文'
+      this.assistantPreviewInputSource = draft.inputSource || 'selection-preferred'
+      this.assistantPreviewDocumentAction = draft.documentAction || 'insert'
+      this.isFormSaved = false
+      this.showMessage(`已创建分组“${groupName}”，填写并创建助手后生效`)
+    },
     buildUniqueAssistantCopyName(baseName) {
       const sourceName = String(baseName || '智能助手').trim() || '智能助手'
       const existingNames = new Set(
@@ -4516,7 +4596,7 @@ export default {
         { id: 'modelscope', name: 'ModelScope 魔搭', icon: 'images/models/modelscope.svg', provider: true },
         { id: 'tianyi-xirang', name: '天翼云息壤', icon: 'images/models/tianyi.svg', provider: true },
         { id: 'tencent-hunyuan', name: '腾讯混元', icon: 'images/models/hunyuan.svg', provider: true },
-        { id: 'tencent-cloud-ti', name: '腾讯云 TI', icon: 'images/models/tencent-cloud.svg', provider: true },
+        { id: 'tencent-cloud-ti', name: '腾讯云 TI', icon: 'images/models/logos/tencentcloud.png', provider: true },
         { id: 'baidu-qianfan', name: '百度云千帆', icon: 'images/models/logos/qianfan.svg', provider: true },
         { id: 'gpustack', name: 'GPUStack', icon: 'images/models/gpustack.svg', provider: true },
         { id: 'voyage-ai', name: 'Voyage AI', icon: 'images/models/voyage.svg', provider: true },
@@ -4529,7 +4609,7 @@ export default {
         { id: 'xiaomi-mimo', name: 'Xiaomi MiMo', icon: 'images/models/xiaomi.svg', provider: true },
         { id: 'new-api', name: 'New API', icon: 'images/models/new-api.svg', provider: true },
         { id: 'lm-studio', name: 'LM Studio', icon: 'images/models/lm-studio.svg', provider: true },
-        { id: 'anthropic', name: 'Anthropic', icon: 'images/models/claude.svg', provider: true },
+        { id: 'anthropic', name: 'Anthropic', icon: 'images/models/logos/anthropic.png', provider: true },
         { id: 'openai', name: 'OpenAI', icon: 'images/models/openai.svg', provider: true },
         { id: 'azure-openai', name: 'Azure OpenAI', icon: 'images/models/azure.svg', provider: true },
         { id: 'gemini', name: 'Gemini', icon: 'images/models/gemini.svg', provider: true },
@@ -4539,7 +4619,7 @@ export default {
         { id: 'lingyi-wanwu', name: '零一万物', icon: 'images/models/yi.svg', provider: true },
         { id: 'moonshot', name: '月之暗面', icon: 'images/models/kimi.svg', provider: true },
         { id: 'baichuan', name: '百川', icon: 'images/models/baichuan.svg', provider: true },
-        { id: 'aliyun-bailian', name: '阿里百炼', icon: 'images/models/qwen.svg', provider: true },
+        { id: 'aliyun-bailian', name: '阿里百炼', icon: 'images/models/logos/bailian.png', provider: true },
         { id: 'step-ai', name: '阶跃星辰', icon: 'images/models/step.svg', provider: true },
         { id: 'volcengine', name: '火山引擎', icon: 'images/models/volcengine.svg', provider: true },
         { id: 'wuwen-xinqiong', name: '无问芯穹', icon: 'images/models/wuwen.svg', provider: true },
@@ -4557,12 +4637,12 @@ export default {
         { id: 'burncloud', name: 'BurnCloud', icon: 'images/models/burncloud.svg', provider: true },
         { id: 'tokenflux', name: 'TokenFlux', icon: 'images/models/tokenflux.svg', provider: true },
         { id: '302-ai', name: '302.AI', icon: 'images/models/logos/302ai-OYnezl-B.webp', provider: true },
-        { id: 'cephalon', name: 'Cephalon', icon: 'images/models/cephalon.svg', provider: true },
+        { id: 'cephalon', name: 'Cephalon', icon: 'images/models/logos/cephalon.svg', provider: true },
         { id: 'lanyun', name: '蓝耘科技', icon: 'images/models/lanyun.svg', provider: true },
         { id: 'ph8', name: 'PH8 大模型开放平台', icon: 'images/models/ph8.svg', provider: true },
-        { id: 'sophnet', name: 'SophNet', icon: 'images/models/sophnet.svg', provider: true },
-        { id: 'ppio', name: 'PPIO 派欧云', icon: 'images/models/ppio.svg', provider: true },
-        { id: 'qiniu', name: '七牛云 AI 推理', icon: 'images/models/qiniu.svg', provider: true },
+        { id: 'sophnet', name: 'SophNet', icon: 'images/models/logos/sophnet.png', provider: true },
+        { id: 'ppio', name: 'PPIO 派欧云', icon: 'images/models/logos/ppio.png', provider: true },
+        { id: 'qiniu', name: '七牛云 AI 推理', icon: 'images/models/logos/qiniu.png', provider: true },
         { id: 'openrouter', name: 'OpenRouter', icon: 'images/models/openrouter.svg', provider: true },
         { id: 'ollama', name: 'Ollama', icon: 'images/models/ollama.svg', provider: true }
       ]
@@ -5113,9 +5193,9 @@ export default {
           { id: 'hunyuan-pro', name: '混元-Pro' }
         ],
         'aliyun-bailian': [
-          { id: 'qwen-turbo', name: '通义千问-Turbo' },
-          { id: 'qwen-plus', name: '通义千问-Plus' },
-          { id: 'qwen-max', name: '通义千问-Max' }
+          { id: 'qwen-turbo', name: '阿里百炼 Qwen-Turbo' },
+          { id: 'qwen-plus', name: '阿里百炼 Qwen-Plus' },
+          { id: 'qwen-max', name: '阿里百炼 Qwen-Max' }
         ],
         zhipu: [
           { id: 'glm-4', name: 'GLM-4' },

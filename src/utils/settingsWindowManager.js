@@ -4,6 +4,8 @@ const LOCK_KEY = 'nd_settings_window_lock'
 const REQUEST_KEY = 'nd_settings_window_request'
 const STALE_MS = 15000
 const HEARTBEAT_MS = 5000
+const DEFAULT_SETTINGS_WINDOW_WIDTH = 1040
+const DEFAULT_SETTINGS_WINDOW_HEIGHT = 760
 
 function readStorageJson(key) {
   try {
@@ -91,8 +93,8 @@ export function openSettingsWindow(query = {}, options = {}) {
   const normalizedQuery = normalizeQuery(query)
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
-  const width = Number(options?.width) || 960
-  const height = Number(options?.height) || 720
+  const width = Number(options?.width) || DEFAULT_SETTINGS_WINDOW_WIDTH
+  const height = Number(options?.height) || DEFAULT_SETTINGS_WINDOW_HEIGHT
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(

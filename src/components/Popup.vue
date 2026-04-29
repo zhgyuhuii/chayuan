@@ -1303,7 +1303,7 @@ import { stopWorkflowRun } from '../utils/workflowRunner.js'
 import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
 import { dispatchAssistantRecommendationApplyRequest } from '../utils/assistantRecommendationApplyBridge.js'
-import { focusExistingSettingsWindow } from '../utils/settingsWindowManager.js'
+import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { createTaskListWindowSession } from '../utils/taskListWindowManager.js'
 import { INPUT_SOURCE_OPTIONS, DOCUMENT_ACTION_OPTIONS } from '../utils/assistantRegistry.js'
 import { getReportTypeLabel, normalizeReportSettings } from '../utils/reportSettings.js'
@@ -3200,24 +3200,7 @@ export default {
     openAssistantSettings(taskKey = '') {
       const normalizedTaskKey = String(taskKey || 'create-custom-assistant')
       try {
-        if (focusExistingSettingsWindow({ menu: 'assistant-settings', item: normalizedTaskKey })) {
-          return true
-        }
-        const href = String(window.location.href || '')
-        const base = href.split('#')[0] || href
-        const url = `${base}#/settings?menu=assistant-settings&item=${encodeURIComponent(normalizedTaskKey)}`
-        if (window.Application?.ShowDialog) {
-          window.Application.ShowDialog(
-            url,
-            '助手设置',
-            1200 * (window.devicePixelRatio || 1),
-            820 * (window.devicePixelRatio || 1),
-            false
-          )
-          return true
-        }
-        window.open(url, '_blank')
-        return true
+        return openSettingsWindow({ menu: 'assistant-settings', item: normalizedTaskKey }, { title: '助手设置' })
       } catch (_) {
         return false
       }

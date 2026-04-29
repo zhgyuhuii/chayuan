@@ -461,7 +461,7 @@
                 </div>
               </div>
               <p v-else class="welcome-support-hint">
-                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
+                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
               </p>
               <p class="welcome-support-copyright">
                 版权所有 北京智灵鸟科技中心
@@ -623,7 +623,7 @@
                       <span v-if="msg.missingSkillNoticeTyping" class="cursor">▊</span>
                     </div>
                     <div class="message-skill-empty-links">
-                      <a href="https://aidooo.com" target="_blank" rel="noreferrer">aidooo.com</a>
+                      <a href="https://aidooo.com" target="_blank" rel="noreferrer" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>
                       <span>微信公众号：智灵鸟科技</span>
                     </div>
                     <div class="message-skill-empty-actions">
@@ -632,6 +632,7 @@
                         target="_blank"
                         rel="noreferrer"
                         class="message-skill-empty-btn"
+                        @click.prevent="openExternalWebsite('https://aidooo.com')"
                       >
                         前往官网提技能需求
                       </a>
@@ -1939,7 +1940,7 @@
                 <span v-if="assistantRecommendModalEmptyTyping" class="cursor">▊</span>
               </div>
               <div class="message-skill-empty-links">
-                <a href="https://aidooo.com" target="_blank" rel="noreferrer">aidooo.com</a>
+                <a href="https://aidooo.com" target="_blank" rel="noreferrer" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>
                 <span>微信公众号：智灵鸟科技</span>
               </div>
               <div class="message-skill-empty-actions">
@@ -1948,6 +1949,7 @@
                   target="_blank"
                   rel="noreferrer"
                   class="message-skill-empty-btn"
+                  @click.prevent="openExternalWebsite('https://aidooo.com')"
                 >
                   前往官网提技能需求
                 </a>
@@ -2024,7 +2026,7 @@
 <script>
 import JSZip from 'jszip'
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
-import { getModelGroupsFromSettings } from '../utils/modelSettings.js'
+import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { reportError } from '../utils/reportError.js'
@@ -2108,7 +2110,7 @@ import { initSync as initTaskListSync, subscribe as subscribeTaskList, getTaskBy
 import { exportDocumentImagesAsAssets } from '../utils/documentImageExportService.js'
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
-import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
+import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
@@ -3715,6 +3717,7 @@ export default {
         window.Application?.PluginStorage?.setItem(STORAGE_KEY_SELECTED_ID, val)
         window.localStorage?.setItem(STORAGE_KEY_SELECTED_ID, val)
         window.Application?.PluginStorage?.setItem('defaultModelId', val)
+        setDefaultModelId(val)
         const storedDefaults = window.Application?.PluginStorage?.getItem('defaultModelsByCategory') ||
           window.localStorage?.getItem('defaultModelsByCategory')
         const defaults = storedDefaults ? JSON.parse(storedDefaults) : {}
@@ -6529,16 +6532,7 @@ export default {
     },
     openModelSettings() {
       this.modelDropdownOpen = false
-      if (focusExistingSettingsWindow({ menu: 'model-settings' })) {
-        return
-      }
-      this.openDialogRoute(
-        '/settings',
-        { menu: 'model-settings' },
-        '模型设置',
-        800,
-        1000
-      )
+      openSettingsWindow({ menu: 'model-settings' }, { title: '模型设置' })
     },
     deleteCustomAssistant(item) {
       if (!this.isCustomAssistant(item)) return

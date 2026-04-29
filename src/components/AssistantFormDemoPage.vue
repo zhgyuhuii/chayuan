@@ -125,7 +125,7 @@
           <label class="afd-label" data-required>系统提示词</label>
           <div class="afd-field">
             <textarea v-model="form.systemPrompt" class="afd-input afd-textarea afd-textarea-prompt" rows="6" placeholder="定义助手的核心行为约束 — 任务、限制、输出格式"></textarea>
-            <Tooltip text="决定助手"是什么、做什么、不做什么"。建议含:任务、严格约束、输出格式、边界" />
+            <Tooltip text="决定助手“是什么、做什么、不做什么”。建议含:任务、严格约束、输出格式、边界" />
           </div>
         </div>
 
@@ -226,9 +226,9 @@
           <label class="afd-label">显示位置</label>
           <div class="afd-field afd-checkboxes">
             <label class="afd-check"><input type="checkbox" v-model="form.locations.ribbonMain" /> 顶部主菜单</label>
-            <label class="afd-check"><input type="checkbox" v-model="form.locations.ribbonMore" /> 顶部"更多"菜单</label>
+            <label class="afd-check"><input type="checkbox" v-model="form.locations.ribbonMore" /> 顶部“更多”菜单</label>
             <label class="afd-check"><input type="checkbox" v-model="form.locations.context" /> 右键菜单</label>
-            <Tooltip text="主菜单与"更多"菜单互斥;右键菜单可与任一组合" />
+            <Tooltip text="主菜单与“更多”菜单互斥;右键菜单可与任一组合" />
           </div>
         </div>
 

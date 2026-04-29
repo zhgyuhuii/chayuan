@@ -51,11 +51,11 @@ export const MODEL_GROUPS = [
   },
   {
     label: '阿里百炼',
-    icon: 'images/models/qwen.svg',
+    icon: 'images/models/logos/bailian.png',
     models: [
-      { id: 'qwen-max', name: '通义千问-Max', icon: 'images/models/qwen.svg' },
-      { id: 'qwen-plus', name: '通义千问-Plus', icon: 'images/models/qwen.svg' },
-      { id: 'qwen', name: '通义千问', icon: 'images/models/qwen.svg' }
+      { id: 'qwen-max', name: '阿里百炼 Qwen-Max', icon: 'images/models/logos/bailian.png' },
+      { id: 'qwen-plus', name: '阿里百炼 Qwen-Plus', icon: 'images/models/logos/bailian.png' },
+      { id: 'qwen', name: '阿里百炼 Qwen', icon: 'images/models/logos/bailian.png' }
     ]
   },
   {

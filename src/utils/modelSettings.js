@@ -93,7 +93,7 @@ export const RIBBON_MODEL_TO_PROVIDER = {
   'deepseek-v3': 'DEEPSEEK', 'deepseek-r1': 'DEEPSEEK', 'deepseek-coder': 'DEEPSEEK',
   // 豆包
   'doubao': 'volcengine', 'doubao-pro': 'volcengine',
-  // 通义千问
+  // 阿里百炼
   'qwen-max': 'aliyun-bailian', 'qwen-plus': 'aliyun-bailian', 'qwen': 'aliyun-bailian',
   // 百度云千帆（文心大模型）
   'wenxin-4': 'baidu-qianfan', 'wenxin': 'baidu-qianfan',

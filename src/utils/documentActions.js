@@ -1503,6 +1503,24 @@ function replaceOrInsert(text) {
   return 'insert'
 }
 
+function insertAtRange(text, options = {}) {
+  const doc = getActiveDocument()
+  const range = getActionRange('insert', options)
+  if (!doc || !range) {
+    throw new Error('无法获取可插入位置')
+  }
+  const hasSelection = hasMeaningfulSelectionText(range?.Text, 1)
+  const insertAt = hasSelection ? Number(range.End || 0) : Number(range.Start || range.End || 0)
+  const insertRange = doc.Range(insertAt, insertAt)
+  const payload = hasSelection ? `\r${stripParagraphEndMark(text)}` : text
+  insertRange.InsertAfter(toDocumentText(payload))
+  return {
+    range,
+    insertedAt: insertAt,
+    anchoredToSelection: hasSelection
+  }
+}
+
 function replaceRangeStrictly(doc, range, text) {
   if (!doc || !range) {
     return {
@@ -1623,7 +1641,7 @@ export function applyDocumentAction(action, text, options = {}) {
 
   switch (finalAction) {
     case 'replace':
-    case 'insert': {
+    {
       if (finalAction === 'replace') {
         const safeResult = applySafeDocumentReplacement(doc, range, resultText, options)
         if (safeResult?.ok) {
@@ -1679,6 +1697,20 @@ export function applyDocumentAction(action, text, options = {}) {
           start: Number(range?.Start || 0),
           end: Number(range?.End || 0),
           originalText: String(range?.Text || ''),
+          outputText: resultText
+        })]
+      }
+    }
+    case 'insert': {
+      const insertResult = insertAtRange(resultText, options)
+      return {
+        ok: true,
+        action: 'insert',
+        message: insertResult.anchoredToSelection ? '已插入到选区后面' : '已插入到光标处',
+        writeTargets: [buildWriteTarget('insert', {
+          start: insertResult.insertedAt,
+          end: insertResult.insertedAt,
+          originalText: String(insertResult.range?.Text || ''),
           outputText: resultText
         })]
       }
