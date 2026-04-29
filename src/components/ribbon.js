@@ -702,37 +702,7 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
 
 function openAssistantSettings(itemKey = 'create-custom-assistant') {
   try {
-    if (focusExistingSettingsWindow({ menu: 'assistant-settings', item: itemKey })) {
-      return
-    }
-    let settingsUrl = ''
-    try {
-      const base = window.Application.PluginStorage.getItem('AddinBaseUrl')
-      if (base && typeof base === 'string') {
-        const clean = base.replace(/#.*$/, '').replace(/\/+$/, '')
-        if (clean.startsWith('file:')) {
-          settingsUrl = `${clean}/index.html#/settings?menu=assistant-settings&item=${encodeURIComponent(itemKey)}`
-        } else {
-          settingsUrl = `${clean}/#/settings?menu=assistant-settings&item=${encodeURIComponent(itemKey)}`
-        }
-      }
-    } catch (e) {}
-    if (!settingsUrl) {
-      const base = Util.GetUrlPath()
-      if (window.location.protocol === 'file:') {
-        const sep = base.endsWith('/') ? '' : '/'
-        settingsUrl = `${base}${sep}index.html#/settings?menu=assistant-settings&item=${encodeURIComponent(itemKey)}`
-      } else {
-        settingsUrl = `${base}${Util.GetRouterHash()}/settings?menu=assistant-settings&item=${encodeURIComponent(itemKey)}`
-      }
-    }
-    window.Application.ShowDialog(
-      settingsUrl,
-      '助手设置',
-      800 * (window.devicePixelRatio || 1),
-      1000 * (window.devicePixelRatio || 1),
-      false
-    )
+    openSettingsWindow({ menu: 'assistant-settings', item: itemKey }, { title: '助手设置' })
   } catch (e) {
     reportError('无法打开助手设置', e, { context: { itemKey } })
   }

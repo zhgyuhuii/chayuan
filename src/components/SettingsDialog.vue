@@ -757,6 +757,18 @@
                 <p class="config-hint">根据助手用途选择类型，执行模型下拉将只显示对应类型的模型。</p>
               </div>
 
+              <div v-if="currentAssistantSettingItem.type !== 'system-assistant'" class="config-item">
+                <label class="config-label">所属分组</label>
+                <input
+                  v-model="assistantForm.group"
+                  type="text"
+                  class="config-input"
+                  placeholder="例如：自定义智能助手 / 翻译助手 / 审校助手"
+                  @input="onAssistantFormChange"
+                />
+                <p class="config-hint">填写新分组名称即可创建分组；保存后助手会显示在对应分组中，并可在组内拖拽排序。</p>
+              </div>
+
               <div class="config-item">
                 <label class="config-label">输入范围</label>
                 <select v-model="assistantForm.inputSource" class="config-input" @change="onAssistantFormChange">
@@ -2275,11 +2287,13 @@ const DEFAULT_REPORT_PRESET_COLLAPSED_GROUPS = getReportAssistantPresetGroups().
 const HIDDEN_SETTINGS_MAIN_MENU_KEYS = new Set(['backup-history', 'capability-audit', 'evaluation-history'])
 
 // 模型设置子菜单下的固定清单项：仅显示名称+图标；功能性描述放在右侧提示
-// 默认开启（察元AI助理下拉可选）：OPENAI/ChatGPT、OLLAMA、DEEPSEEK、baidu-qianfan/百度云千帆、aliyun-bailian/千问
+const CHAT_SELECTED_MODEL_STORAGE_KEY = 'ai_assistant_selected_model_id'
+
+// 默认开启（察元AI助理下拉可选）：OPENAI/ChatGPT、OLLAMA、DEEPSEEK、baidu-qianfan/百度云千帆、aliyun-bailian/阿里百炼
 const MODEL_INVENTORY = [
   { id: 'OPENAI', name: 'OpenAI', description: 'ChatGPT' },
   { id: 'OLLAMA', name: 'Ollama' },
-  { id: 'aliyun-bailian', name: '通义千问', description: '阿里云百炼' },
+  { id: 'aliyun-bailian', name: '阿里百炼', description: '通义千问 / 百炼模型服务' },
   { id: 'DEEPSEEK', name: 'DeepSeek' },
   { id: 'baidu-qianfan', name: '百度云千帆', description: '文心大模型' },
   { id: 'XINFERENCE', name: 'Xinference' },
@@ -3932,6 +3946,10 @@ export default {
       this.onAssistantFormChange()
     },
     onAssistantRecommendationApplyStorage(event) {
+      if (event?.key === CHAT_SELECTED_MODEL_STORAGE_KEY) {
+        this.loadDefaultModel()
+        return
+      }
       if (event?.key !== getAssistantRecommendationApplyStorageKey()) return
       this.consumeAssistantRecommendationApplyRequest()
     },
@@ -4521,7 +4539,7 @@ export default {
         { id: 'lingyi-wanwu', name: '零一万物', icon: 'images/models/yi.svg', provider: true },
         { id: 'moonshot', name: '月之暗面', icon: 'images/models/kimi.svg', provider: true },
         { id: 'baichuan', name: '百川', icon: 'images/models/baichuan.svg', provider: true },
-        { id: 'aliyun-bailian', name: '阿里云百炼', icon: 'images/models/qwen.svg', provider: true },
+        { id: 'aliyun-bailian', name: '阿里百炼', icon: 'images/models/qwen.svg', provider: true },
         { id: 'step-ai', name: '阶跃星辰', icon: 'images/models/step.svg', provider: true },
         { id: 'volcengine', name: '火山引擎', icon: 'images/models/volcengine.svg', provider: true },
         { id: 'wuwen-xinqiong', name: '无问芯穹', icon: 'images/models/wuwen.svg', provider: true },
@@ -4782,7 +4800,7 @@ export default {
         'vertex-ai': 'https://us-central1-aiplatform.googleapis.com/v1',
         'tencent-hunyuan': 'https://hunyuan.tencentcloudapi.com',
         'baidu-qianfan': 'https://qianfan.baidubce.com/v2',
-        'aliyun-bailian': 'https://dashscope.aliyuncs.com/api/v1',
+        'aliyun-bailian': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         zhipu: 'https://open.bigmodel.cn/api/paas/v4',
         deepseek: 'https://api.deepseek.com/v1',
         minimax: 'https://api.minimax.chat/v1',
@@ -5395,10 +5413,20 @@ export default {
       this.dataPath = savedPath !== null ? savedPath : ''
       this.defaultPath = getDefaultDataPath()
     },
+    getSelectedChatModelFromAssistantWindow() {
+      try {
+        return window.Application?.PluginStorage?.getItem(CHAT_SELECTED_MODEL_STORAGE_KEY) ||
+          window.localStorage?.getItem(CHAT_SELECTED_MODEL_STORAGE_KEY) ||
+          ''
+      } catch (_) {
+        return ''
+      }
+    },
     // 加载默认模型（校验存储的 id 是否仍在当前可选列表中）
     loadDefaultModel() {
       const settings = this.loadDefaultModelsFromStorage()
-      const chatFromLegacy = settings.chat || settings.spell || settings.summary || settings.analysis || settings.translate || null
+      const selectedChatModel = this.getSelectedChatModelFromAssistantWindow()
+      const chatFromLegacy = selectedChatModel || settings.chat || settings.spell || settings.summary || settings.analysis || settings.translate || null
       const raw = {
         chat: chatFromLegacy,
         image: settings.image || null,

@@ -464,8 +464,14 @@
                 欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
               </p>
               <p class="welcome-support-copyright">
-                版权所有 北京智能鸟科技中心
-                <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link">aidooo.com</a>
+                版权所有 北京智灵鸟科技中心
+                <a
+                  href="https://aidooo.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="welcome-support-link"
+                  @click.prevent="openExternalWebsite('https://aidooo.com')"
+                >aidooo.com</a>
               </p>
               <span class="welcome-support-floor" aria-hidden="true"></span>
             </div>
@@ -3707,6 +3713,14 @@ export default {
       if (!val) return
       try {
         window.Application?.PluginStorage?.setItem(STORAGE_KEY_SELECTED_ID, val)
+        window.localStorage?.setItem(STORAGE_KEY_SELECTED_ID, val)
+        window.Application?.PluginStorage?.setItem('defaultModelId', val)
+        const storedDefaults = window.Application?.PluginStorage?.getItem('defaultModelsByCategory') ||
+          window.localStorage?.getItem('defaultModelsByCategory')
+        const defaults = storedDefaults ? JSON.parse(storedDefaults) : {}
+        const nextDefaults = { ...defaults, chat: val }
+        window.Application?.PluginStorage?.setItem('defaultModelsByCategory', JSON.stringify(nextDefaults))
+        window.localStorage?.setItem('defaultModelsByCategory', JSON.stringify(nextDefaults))
       } catch (e) {
         console.debug('保存当前模型失败:', e)
       }
@@ -6484,16 +6498,7 @@ export default {
       window.open(url, '_blank', 'noopener')
     },
     openAssistantSettings(itemKey = 'create-custom-assistant') {
-      if (focusExistingSettingsWindow({ menu: 'assistant-settings', item: itemKey })) {
-        return
-      }
-      this.openDialogRoute(
-        '/settings',
-        { menu: 'assistant-settings', item: itemKey },
-        '助手设置',
-        800,
-        1000
-      )
+      openSettingsWindow({ menu: 'assistant-settings', item: itemKey }, { title: '助手设置' })
     },
     openSettingsDialog() {
       openSettingsWindow()

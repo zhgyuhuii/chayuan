@@ -50,7 +50,7 @@ export const MODEL_GROUPS = [
     ]
   },
   {
-    label: '通义千问',
+    label: '阿里百炼',
     icon: 'images/models/qwen.svg',
     models: [
       { id: 'qwen-max', name: '通义千问-Max', icon: 'images/models/qwen.svg' },

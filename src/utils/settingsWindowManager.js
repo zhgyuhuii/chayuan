@@ -91,8 +91,8 @@ export function openSettingsWindow(query = {}, options = {}) {
   const normalizedQuery = normalizeQuery(query)
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
-  const width = Number(options?.width) || 800
-  const height = Number(options?.height) || 1000
+  const width = Number(options?.width) || 960
+  const height = Number(options?.height) || 720
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(

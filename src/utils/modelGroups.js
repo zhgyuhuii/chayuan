@@ -18,7 +18,7 @@ export const MODEL_GROUPS = [
   { label: '豆包', icon: 'images/models/doubao.svg', models: [
     { id: 'doubao', name: '豆包' }, { id: 'doubao-pro', name: '豆包 Pro' }
   ]},
-  { label: '通义千问', icon: 'images/models/qwen.svg', models: [
+  { label: '阿里百炼', icon: 'images/models/qwen.svg', models: [
     { id: 'qwen-max', name: '通义千问-Max' }, { id: 'qwen-plus', name: '通义千问-Plus' }, { id: 'qwen', name: '通义千问' }
   ]},
   { label: '百度云千帆', icon: 'images/models/logos/qianfan.svg', models: [

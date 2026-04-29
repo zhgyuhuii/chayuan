@@ -217,6 +217,7 @@ export function getCustomAssistants() {
       outputFormat: item.outputFormat || 'markdown',
       documentAction: item.documentAction || 'insert',
       inputSource: item.inputSource || 'selection-preferred',
+      group: String(item.group || item.category || 'custom').trim() || 'custom',
       visibleInRibbon: item.visibleInRibbon !== false,
       displayOrder: normalizeDisplayOrder(item.displayOrder, null),
       displayLocations: normalizeDisplayLocations(
@@ -264,6 +265,7 @@ export function saveCustomAssistants(list) {
     outputFormat: item.outputFormat || 'markdown',
     documentAction: item.documentAction || 'insert',
     inputSource: item.inputSource || 'selection-preferred',
+    group: String(item.group || item.category || 'custom').trim() || 'custom',
     displayOrder: normalizeDisplayOrder(item.displayOrder, null),
     displayLocations: normalizeDisplayLocations(
       item.displayLocations,
@@ -332,6 +334,7 @@ export function createCustomAssistantDraft() {
     outputFormat: 'markdown',
     documentAction: 'insert',
     inputSource: 'selection-preferred',
+    group: 'custom',
     visibleInRibbon: true,
     displayOrder: null,
     displayLocations: ['ribbon-more'],

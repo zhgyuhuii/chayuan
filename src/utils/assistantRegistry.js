@@ -1262,7 +1262,7 @@ const BUILTIN_ASSISTANTS = [
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
   ...P5_PLUS_BUILTIN_ASSISTANTS
-]
+].filter(item => item.id !== 'analysis.correct-spell')
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -1341,7 +1341,7 @@ export function getAssistantSettingItems(customAssistants = [], assistantSetting
     label: item.name || '智能文档助手',
     shortLabel: item.name || '智能文档助手',
     icon: getAssistantResolvedIcon(item.id, item.icon),
-    group: 'custom',
+    group: String(item.group || item.category || 'custom').trim() || 'custom',
     type: 'custom-assistant',
     modelType: item.modelType || 'chat',
     description: item.description || '',
@@ -1381,5 +1381,5 @@ export function getBuiltinRibbonAssistantIds() {
 
 export function getAssistantGroupLabel(groupKey) {
   const found = ASSISTANT_GROUPS.find(item => item.key === groupKey)
-  return found ? found.label : groupKey
+  return found ? found.label : (String(groupKey || '').trim() || '未分组')
 }

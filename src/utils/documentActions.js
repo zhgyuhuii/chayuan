@@ -616,6 +616,23 @@ function insertTextAtDocumentStart(doc, text) {
   range.InsertAfter(toDocumentText(`${stripParagraphEndMark(text)}\r`))
 }
 
+function insertTextNearRange(doc, range, text, position = 'after') {
+  if (!doc || !range) {
+    throw new Error('无法获取可插入位置')
+  }
+  const content = doc.Content
+  const contentStart = Number(content?.Start || 0)
+  const contentEnd = Number(content?.End || 0)
+  const rawPosition = position === 'before' ? Number(range.Start || 0) : Number(range.End || 0)
+  const insertAt = Math.max(contentStart, Math.min(rawPosition, contentEnd))
+  const insertRange = doc.Range(insertAt, insertAt)
+  const normalized = stripParagraphEndMark(text)
+  const docText = position === 'before'
+    ? `${normalized}\r`
+    : `\r${normalized}`
+  insertRange.InsertAfter(toDocumentText(docText))
+}
+
 // P1 优化:外层 export 包 withScreenLock,关 ScreenUpdating + Repagination,
 // 大文档批量写回从 8s 量级降到 1s 量级。内部递归调用走 _impl,避免嵌套锁。
 export function applyParagraphResultsAction(action, paragraphResults = [], options = {}) {
@@ -1667,6 +1684,20 @@ export function applyDocumentAction(action, text, options = {}) {
       }
     }
     case 'prepend': {
+      if (hasMeaningfulSelectionText(range?.Text, 1)) {
+        insertTextNearRange(doc, range, resultText, 'before')
+        return {
+          ok: true,
+          action: 'prepend',
+          message: '已插入到选中段落前面',
+          writeTargets: [buildWriteTarget('prepend', {
+            start: Number(range?.Start || 0),
+            end: Number(range?.Start || 0),
+            originalText: String(range?.Text || ''),
+            outputText: resultText
+          })]
+        }
+      }
       insertTextAtDocumentStart(doc, resultText)
       return {
         ok: true,
@@ -1675,6 +1706,20 @@ export function applyDocumentAction(action, text, options = {}) {
         writeTargets: [buildWriteTarget('prepend', {
           start: Number(doc?.Content?.Start || 0),
           end: Number(doc?.Content?.Start || 0),
+          outputText: resultText
+        })]
+      }
+    }
+    case 'insert-after': {
+      insertTextNearRange(doc, range, resultText, 'after')
+      return {
+        ok: true,
+        action: 'insert-after',
+        message: '已插入到选中段落后面',
+        writeTargets: [buildWriteTarget('insert-after', {
+          start: Number(range?.End || 0),
+          end: Number(range?.End || 0),
+          originalText: String(range?.Text || ''),
           outputText: resultText
         })]
       }

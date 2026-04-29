@@ -11,7 +11,7 @@ const STORAGE_KEY = 'modelConfigs'
 const CUSTOM_PROVIDERS_KEY = 'customModelProviders'
 const MODEL_ORDER_KEY = 'modelOrder'
 
-// 默认在察元AI助理中开启的模型（ChatGPT、Ollama、千问、DeepSeek、百度云千帆）
+// 默认在察元AI助理中开启的模型（ChatGPT、Ollama、阿里百炼、DeepSeek、百度云千帆）
 const DEFAULT_ENABLED_PROVIDERS = ['OPENAI', 'OLLAMA', 'DEEPSEEK', 'baidu-qianfan', 'aliyun-bailian']
 
 /**
@@ -219,7 +219,7 @@ export function setDefaultModelId(modelId) {
 const MODEL_INVENTORY = [
   { id: 'OPENAI', name: 'OpenAI' },
   { id: 'OLLAMA', name: 'Ollama' },
-  { id: 'aliyun-bailian', name: '通义千问' },
+  { id: 'aliyun-bailian', name: '阿里百炼' },
   { id: 'DEEPSEEK', name: 'DeepSeek' },
   { id: 'baidu-qianfan', name: '百度云千帆' },
   { id: 'XINFERENCE', name: 'Xinference' },
@@ -233,7 +233,7 @@ const MODEL_INVENTORY = [
 
 const EXTRA_PROVIDERS = [
   { id: 'anthropic', name: 'Anthropic' }, { id: 'openai', name: 'OpenAI' }, { id: 'deepseek', name: '深度求索' },
-  { id: 'ollama', name: 'Ollama' }, { id: 'moonshot', name: '月之暗面' }, { id: 'aliyun-bailian', name: '阿里云百炼' },
+  { id: 'ollama', name: 'Ollama' }, { id: 'moonshot', name: '月之暗面' }, { id: 'aliyun-bailian', name: '阿里百炼' },
   { id: 'zhipu', name: '智谱开放平台' }, { id: 'volcengine', name: '火山引擎' }, { id: 'lingyi-wanwu', name: '零一万物' },
   { id: 'minimax', name: 'MiniMax' }, { id: 'step-ai', name: '阶跃星辰' }, { id: 'baichuan', name: '百川' },
   { id: 'groq', name: 'Groq' }, { id: 'together', name: 'Together' }, { id: 'fireworks', name: 'Fireworks' },
