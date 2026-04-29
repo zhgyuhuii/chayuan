@@ -397,14 +397,28 @@ function getModelByCompositeId(modelType, compositeId) {
   }
 }
 
-function resolveModel(config, definition) {
+function resolveModel(config, definition, options = {}) {
   const modelType = config.modelType || definition?.modelType || 'chat'
   const flat = getFlatModelsFromSettings(modelType)
-  const configuredId = config.modelId || getConfiguredAssistantModelId(definition?.id)
-  if (configuredId) {
-    const configured = getModelByCompositeId(modelType, configuredId)
+  const explicitModelId = String(config.modelId || '').trim()
+  if (explicitModelId) {
+    const configured = getModelByCompositeId(modelType, explicitModelId)
     if (configured) {
-      return { model: configured, source: config.modelId ? 'explicit' : 'category-default' }
+      return { model: configured, source: 'explicit' }
+    }
+  }
+  const conversationModelId = String(options.conversationModelId || options.fallbackModelId || '').trim()
+  if (conversationModelId) {
+    const conversationModel = getModelByCompositeId(modelType, conversationModelId)
+    if (conversationModel) {
+      return { model: conversationModel, source: 'conversation-selected' }
+    }
+  }
+  const categoryDefaultId = getConfiguredAssistantModelId(definition?.id)
+  if (categoryDefaultId) {
+    const configured = getModelByCompositeId(modelType, categoryDefaultId)
+    if (configured) {
+      return { model: configured, source: 'category-default' }
     }
   }
   if (flat[0]) {
@@ -779,8 +793,8 @@ function normalizeCustomAssistant(definition) {
   if (!definition) return null
   return {
     id: definition.id,
-    label: definition.name || '未命名助手',
-    shortLabel: definition.name || '未命名助手',
+    label: definition.name || '智能文档助手',
+    shortLabel: definition.name || '智能文档助手',
     icon: definition.icon || '🧠',
     group: 'custom',
     modelType: definition.modelType || 'chat',
@@ -1591,7 +1605,9 @@ async function executeAssistantTask(assistantId, overrides = {}) {
   } = launchInfo
 
   const runCaps = mergeDefinitionRuntimeCapabilities(definition)
-  const resolvedModel = resolveModel(config, definition)
+  const resolvedModel = resolveModel(config, definition, {
+    conversationModelId: overrides.conversationModelId
+  })
   if (!resolvedModel?.model) {
     throw new Error('未找到可用模型，请先在设置中配置并启用对应模型')
   }

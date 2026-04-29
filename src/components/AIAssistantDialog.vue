@@ -1715,7 +1715,7 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div class="input-area">
-        <div class="composer-shell">
+        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen }">
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -5064,6 +5064,10 @@ export default {
       if (options.refreshWelcomePrompt && this.currentMessages.length === 0) {
         this.refreshWelcomePrompt()
       }
+    },
+    getConversationModelTaskOverrides() {
+      const modelId = String(this.selectedModel?.id || this.selectedModelId || '').trim()
+      return modelId ? { conversationModelId: modelId } : {}
     },
     getTooltipInlineStyle(key) {
       const layout = this.tooltipLayouts?.[key]
@@ -8839,6 +8843,7 @@ export default {
       }
       const overrides = {
         taskTitle: String(retryPayload?.taskTitle || previousTask?.title || '助手任务').trim(),
+        ...this.getConversationModelTaskOverrides(),
         inputText: String(retryPayload?.inputText || previousTask?.data?.fullInput || '').trim(),
         inputSource: String(retryPayload?.inputSource || '').trim(),
         documentAction: String(retryPayload?.documentAction || '').trim(),
@@ -12903,6 +12908,7 @@ export default {
       const effectiveTargetLanguage = String(options.targetLanguage || savedCfg.targetLanguage || '').trim()
       const overrides = {
         taskTitle,
+        ...this.getConversationModelTaskOverrides(),
         taskData: {
           fromChatAssistantFlow: true,
           originMessageId: message?.id || '',
@@ -14659,7 +14665,10 @@ export default {
         if (!this.confirmAssistantRun(launchInfo)) return
         this.assistantRunLoadingKey = item.key
         const taskTitle = item.shortLabel || item.label || '任务进度'
-        const { taskId, promise } = startAssistantTask(item.key, { taskTitle })
+        const { taskId, promise } = startAssistantTask(item.key, {
+          taskTitle,
+          ...this.getConversationModelTaskOverrides()
+        })
         if (!taskId) {
           throw new Error('任务启动失败，未能创建任务')
         }
@@ -18403,6 +18412,8 @@ export default {
   border-top: 1px solid rgba(226, 232, 240, 0.72);
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.72), rgba(255, 255, 255, 0.9));
   flex-shrink: 0;
+  position: relative;
+  z-index: 20;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
@@ -18415,6 +18426,10 @@ export default {
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 14px 38px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.78);
   padding: 8px 10px 7px;
+}
+
+.composer-shell--model-open {
+  overflow: visible;
 }
 
 .composer-shell::before {
@@ -18746,6 +18761,7 @@ export default {
 .model-select-wrap {
   position: relative;
   flex-shrink: 0;
+  z-index: 40;
 }
 
 .model-select-btn {
@@ -18788,7 +18804,7 @@ export default {
   border: 1px solid var(--ai-border);
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  z-index: 100;
+  z-index: 2000;
 }
 
 .model-dropdown-empty {

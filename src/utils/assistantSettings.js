@@ -50,6 +50,43 @@ function normalizeDisplayOrder(value, fallback = null) {
   return Number.isFinite(num) ? num : fallback
 }
 
+function inferAssistantNameFromPrompt(item = {}) {
+  const directName = String(item.name || item.title || item.label || '').trim()
+  if (directName && directName !== '未命名助手') return directName
+  const text = [
+    item.description,
+    item.persona,
+    item.systemPrompt,
+    item.userPromptTemplate
+  ].map(value => String(value || '')).join('\n')
+  const rules = [
+    [/语气|tone|正式 \/ 友好|客户致歉/i, '语气调整'],
+    [/术语.*通俗|行业黑话|大白话解释/i, '术语通俗化'],
+    [/列表.*段落|项目符号列表.*连贯文字/i, '列表转段落'],
+    [/段落.*列表|项目符号列表|关键要点/i, '段落转列表'],
+    [/会议纪要|决议|待办事项|责任人|截止日/i, '会议纪要'],
+    [/引文|引用|出处|来源|quote|reference/i, '引文核查'],
+    [/Markdown 表格|ASCII|CSV|制表符|伪表格/i, '表格转 Markdown'],
+    [/时间线|时间锚点|事件.*正序/i, '时间线提取'],
+    [/法务|合同|条款|违约金|管辖|知识产权/i, '法务条款审核'],
+    [/学术|论文|摘要|背景、方法、结果、结论/i, '学术摘要'],
+    [/讲义|出题|单项选择|参考答案|考点/i, '讲义出题'],
+    [/公文|GB\/T 9704|发文字号|主送机关/i, '公文规范化'],
+    [/医学|ICD-10|药品通用名|中医病证/i, '医学术语标准化'],
+    [/财务|金额|币种|数字.*一致|大写金额/i, '财务数字一致性'],
+    [/中英|术语对照|英文译法|双语/i, '中英术语对照'],
+    [/代码块|curl|SQL|shell|技术文档/i, '代码块抽取'],
+    [/表格描述统计|缺失率|平均|中位数|唯一值/i, '表格描述统计'],
+    [/日记|笔记|事实 \/ 决策 \/ 待办 \/ 反思|个人写作/i, '日记笔记整理'],
+    [/正式|规范|书面文档|公文与正式书面/i, '正式化改写'],
+    [/润色|专业、流畅、自然/i, '润色优化'],
+    [/翻译|目标语言|本地化/i, '翻译'],
+    [/摘要|提炼结论|关键信息/i, '生成摘要']
+  ]
+  const matched = rules.find(([pattern]) => pattern.test(text))
+  return matched ? matched[1] : '智能文档助手'
+}
+
 export function loadDefaultModelsByCategory() {
   try {
     const app = window.Application || window.opener?.Application || window.parent?.Application
@@ -167,7 +204,7 @@ export function getCustomAssistants() {
     .filter(item => item && typeof item === 'object')
     .map(item => ({
       id: item.id || `custom_${Date.now()}`,
-      name: item.name || '未命名助手',
+      name: inferAssistantNameFromPrompt(item),
       description: item.description || '',
       icon: normalizeAssistantIcon(item.icon),
       ribbonIcon: normalizeRibbonIconValue(item.ribbonIcon),
@@ -214,7 +251,7 @@ export function saveCustomAssistants(list) {
   const now = new Date().toISOString()
   const normalized = (list || []).map((item, index) => ({
     id: item.id || `custom_${Date.now()}_${index}`,
-    name: item.name || '未命名助手',
+    name: inferAssistantNameFromPrompt(item),
     description: item.description || '',
     icon: normalizeAssistantIcon(item.icon),
     ribbonIcon: normalizeRibbonIconValue(item.ribbonIcon),
@@ -374,8 +411,8 @@ export function getAssistantDisplayEntry(assistantId) {
   if (!custom) return null
   return buildDisplayEntry({
     id: custom.id,
-    label: custom.name || '未命名助手',
-    shortLabel: custom.name || '未命名助手',
+    label: inferAssistantNameFromPrompt(custom),
+    shortLabel: inferAssistantNameFromPrompt(custom),
     icon: normalizeAssistantIcon(custom.icon),
     defaultDisplayLocations: ['ribbon-more']
   }, custom, 'custom')

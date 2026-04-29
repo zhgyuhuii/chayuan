@@ -1,17 +1,9 @@
 /**
- * runtimeAssistantsInstaller — 启动期把 P3+P5+P5+ 的 18 个新助手注入到用户列表
+ * runtimeAssistantsInstaller — 迁移旧版自动安装的内置助手
  *
- * 解决问题:
- *   - 18 个新助手数据已写入 builtinAssistantsExtra.js / P5.js / P5Plus.js
- *   - 但 assistantRegistry.getBuiltinAssistants() 是 const 数组,运行时无法扩展
- *   - merge helper 只在非主线 externalAssistants.listAllKnownAssistants() 调用,实际 UI 看不到
- *
- * 解决方案:
- *   启动期(App.vue onMounted)调一次 installRuntimeAssistants():
- *     1. 读 customAssistants 仓库
- *     2. 遍历 18 个新助手,id 不在仓库且不在 _uninstallMarker 列表 → 注入
- *     3. 注入时标记 _source: 'auto-installed' + _autoInstalledAt
- *     4. 用户编辑 / 删除后 → 写 _uninstallMarker(防止"复活")
+ * 旧版本曾把 18 个内置助手写入 customAssistants。由于这些模板使用
+ * label/shortLabel 而不是自定义助手的 name 字段,会显示为“未命名助手”。
+ * 现在这些助手已直接注册为 builtin,启动期只负责清理旧的 auto-installed 副本。
  *
  * 业务方接 onMounted 一行调用即可。
  */
@@ -32,7 +24,8 @@ async function getSettingsModule() {
 
 const UNINSTALL_KEY = 'autoInstalledAssistantsUninstalled'
 const INSTALL_KEY = 'autoInstalledAssistantsLastVersion'
-const CURRENT_VERSION = 1   // 改这个数字 → 强制重新检查注入
+const CUSTOM_ASSISTANTS_KEY = 'customAssistants'
+const CURRENT_VERSION = 2
 
 /* ────────── 卸载标记(防"复活") ────────── */
 
@@ -63,8 +56,8 @@ const ALL_NEW_ASSISTANTS = [
 ]
 
 /**
- * 启动期注入。返回 { installed, skipped, total }。
- * 重复调用幂等(基于 id 检查)。
+ * 启动期迁移。返回 { migrated, kept, total }。
+ * 重复调用幂等。
  */
 export async function installRuntimeAssistants(options = {}) {
   const force = options.force === true
@@ -73,55 +66,44 @@ export async function installRuntimeAssistants(options = {}) {
 
   // 已是当前版本且非 force → 直接 return(避免每次启动重新 saveCustomAssistants)
   if (!force && lastVersion >= CURRENT_VERSION) {
-    return { installed: 0, skipped: 0, alreadyAtVersion: true, version: lastVersion }
+    return { migrated: 0, kept: 0, alreadyAtVersion: true, version: lastVersion }
   }
 
   let m
   try { m = await getSettingsModule() }
   catch (e) { return { installed: 0, skipped: 0, error: 'assistantSettings 不可用: ' + String(e?.message || e) } }
 
+  const rawCustom = Array.isArray(settings[CUSTOM_ASSISTANTS_KEY]) ? settings[CUSTOM_ASSISTANTS_KEY] : null
   let custom = []
-  try { custom = m.getCustomAssistants() || [] } catch (_) {}
-  const existingIds = new Set(custom.map(a => String(a?.id || '').trim()))
-  const uninstalled = new Set(getUninstalledIds())
-
-  const toInstall = []
-  let skipped = 0
-
-  for (const tpl of ALL_NEW_ASSISTANTS) {
-    const id = tpl.id
-    if (existingIds.has(id)) { skipped += 1; continue }
-    if (uninstalled.has(id) && !force) { skipped += 1; continue }
-    toInstall.push({
-      ...JSON.parse(JSON.stringify(tpl)),
-      enabled: true,
-      isPromoted: false,
-      _source: 'auto-installed',
-      _autoInstalledAt: new Date().toISOString(),
-      _autoInstallVersion: CURRENT_VERSION
-    })
+  if (rawCustom) {
+    custom = rawCustom
+  } else {
+    try { custom = m.getCustomAssistants() || [] } catch (_) {}
+  }
+  const builtinIds = new Set(ALL_NEW_ASSISTANTS.map(item => String(item?.id || '').trim()).filter(Boolean))
+  const remaining = []
+  const migrated = []
+  for (const assistant of custom) {
+    const id = String(assistant?.id || '').trim()
+    const isOldAutoInstalled = assistant?._source === 'auto-installed' && builtinIds.has(id)
+    if (isOldAutoInstalled) {
+      migrated.push(id)
+    } else {
+      remaining.push(assistant)
+    }
   }
 
-  if (toInstall.length === 0) {
+  if (migrated.length === 0) {
     saveGlobalSettings({ [INSTALL_KEY]: CURRENT_VERSION })
-    return { installed: 0, skipped, alreadyAtVersion: false, version: CURRENT_VERSION }
+    return { migrated: 0, kept: remaining.length, alreadyAtVersion: false, version: CURRENT_VERSION }
   }
 
   try {
-    m.saveCustomAssistants([...custom, ...toInstall])
+    m.saveCustomAssistants(remaining)
     saveGlobalSettings({ [INSTALL_KEY]: CURRENT_VERSION })
-
-    // 注入后给每个新助手 register anchor(漂移检测的基线),静默失败不影响主流程
-    try {
-      const { autoRegisterAnchor } = await import('./anchorAutoRegister.js')
-      for (const a of toInstall) {
-        try { autoRegisterAnchor(a) } catch (_) {}
-      }
-    } catch (_) { /* anchor 模块缺失也不致命 */ }
-
-    return { installed: toInstall.length, skipped, version: CURRENT_VERSION }
+    return { migrated: migrated.length, kept: remaining.length, version: CURRENT_VERSION }
   } catch (e) {
-    return { installed: 0, skipped, error: String(e?.message || e) }
+    return { migrated: 0, kept: custom.length, error: String(e?.message || e) }
   }
 }
 
@@ -129,11 +111,8 @@ export async function installRuntimeAssistants(options = {}) {
  * 列出哪些是 auto-installed(给设置页 / 调试用)。
  */
 export async function listAutoInstalled() {
-  let custom = []
-  try {
-    const m = await getSettingsModule()
-    custom = m.getCustomAssistants() || []
-  } catch (_) {}
+  const settings = loadGlobalSettings()
+  const custom = Array.isArray(settings[CUSTOM_ASSISTANTS_KEY]) ? settings[CUSTOM_ASSISTANTS_KEY] : []
   return custom.filter(a => a?._source === 'auto-installed')
 }
 
@@ -143,8 +122,8 @@ export async function listAutoInstalled() {
 export async function uninstallAllAutoInstalled() {
   let m
   try { m = await getSettingsModule() } catch (_) { return { uninstalled: 0 } }
-  let custom = []
-  try { custom = m.getCustomAssistants() || [] } catch (_) {}
+  const settings = loadGlobalSettings()
+  const custom = Array.isArray(settings[CUSTOM_ASSISTANTS_KEY]) ? settings[CUSTOM_ASSISTANTS_KEY] : []
   const remaining = []
   const uninstalledIds = []
   for (const a of custom) {

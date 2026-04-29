@@ -67,7 +67,7 @@ ${COMMON_RULES}
 - prefix/suffix:原文前后各 12 字,不得改写
 
 文本:
-{text}`
+{{input}}`
   },
 
   /* 2. 学术摘要规范化 */
@@ -98,7 +98,7 @@ ${COMMON_RULES}
     userPromptTemplate: `生成下列论文的中文摘要(不超过 250 字)。直接输出连贯一段,不分点。
 
 正文:
-{text}`
+{{input}}`
   },
 
   /* 3. 教学讲义出题 */
@@ -144,7 +144,7 @@ ${COMMON_RULES}
 **考点**:…
 
 讲义:
-{text}`
+{{input}}`
   },
 
   /* 4. 政府公文规范化 */
@@ -181,7 +181,7 @@ ${COMMON_RULES}
 - sentence:相关原文片段(missing 类可为空)
 
 公文:
-{text}`
+{{input}}`
   },
 
   /* 5. 医学术语标准化 */
@@ -213,7 +213,7 @@ ${COMMON_RULES}
 {"items":[{"term":"","standard":"","kind":"通俗叫法|商品名|过时分类|拼写","reason":"","sentence":""}]}
 
 文本:
-{text}`
+{{input}}`
   },
 
   /* 6. 财务数字一致性 */
@@ -249,7 +249,7 @@ ${COMMON_RULES}
 - detail:用一句话解释不一致(如"子项 1200+800+1500=3500 ≠ 总计 3600")
 
 文档:
-{text}`
+{{input}}`
   },
 
   /* 7. 多语言术语对照(中英) */
@@ -288,7 +288,7 @@ ${COMMON_RULES}
 3. 不重复,不收日常词
 
 文档:
-{text}`
+{{input}}`
   },
 
   /* 8. IT 技术文档代码块抽取 */
@@ -330,7 +330,7 @@ ${COMMON_RULES}
 3. 不擅自补全或修复代码
 
 文档:
-{text}`
+{{input}}`
   }
 ])
 

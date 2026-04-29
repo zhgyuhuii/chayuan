@@ -59,7 +59,7 @@ export const EXTRA_BUILTIN_ASSISTANTS = Object.freeze([
     systemPrompt: `你是一位中文写作风格专家。任务是把用户文本调整为指定的语气,但不得增减事实信息、不得改变段落数量、不得新增主张。
 
 ${COMMON_RULES}`,
-    userPromptTemplate: `请把下面文本调整为「{tone}」语气。
+    userPromptTemplate: `请把下面文本调整为更适合当前文档场景的得体语气。
 
 要求:
 1. 保持原文事实、人名、数字、链接完全不变
@@ -69,7 +69,7 @@ ${COMMON_RULES}`,
 5. 输出长度与原文相近(±15%)
 
 原文:
-{text}`
+{{input}}`
   },
 
   /* 2. 术语通俗化 */
@@ -105,7 +105,7 @@ ${COMMON_RULES}
 - sentence:term 在原文中第一次出现时的所在句
 
 原文:
-{text}`
+{{input}}`
   },
 
   /* 3. 列表 → 段落 */
@@ -136,7 +136,7 @@ ${COMMON_RULES}`,
 4. 不输出列表符号、编号、标题
 
 列表:
-{text}`
+{{input}}`
   },
 
   /* 4. 段落 → 列表 */
@@ -169,7 +169,7 @@ ${COMMON_RULES}`,
 6. 不输出标题、不输出"要点:"等前缀
 
 段落:
-{text}`
+{{input}}`
   },
 
   /* 5. 会议纪要 */
@@ -216,7 +216,7 @@ ${COMMON_RULES}
 - (原文中模糊或互相冲突的点)
 
 会议记录:
-{text}`
+{{input}}`
   },
 
   /* 6. 引文核查 */
@@ -253,7 +253,7 @@ ${COMMON_RULES}`,
 - prefix/suffix:前后各 12 个原文字符,不得改写
 
 原文:
-{text}`
+{{input}}`
   },
 
   /* 7. ASCII 表格 → Markdown 表格 */
@@ -284,7 +284,7 @@ ${COMMON_RULES}
     userPromptTemplate: `把下面文本中的表格转成 Markdown 表格。如果有多个表格,顺序输出,中间空一行。
 
 输入:
-{text}`
+{{input}}`
   },
 
   /* 8. 时间线提取 */
@@ -325,7 +325,7 @@ ${COMMON_RULES}
 5. 没明确时间锚点的内容,不要凑数
 
 原文:
-{text}`
+{{input}}`
   }
 ])
 

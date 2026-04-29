@@ -1,5 +1,8 @@
 import { DEFAULT_ASSISTANT_ICON, normalizeAssistantIcon } from './assistantIcons.js'
 import { createDefaultReportSettings } from './reportSettings.js'
+import { EXTRA_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsExtra.js'
+import { P5_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5.js'
+import { P5_PLUS_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5Plus.js'
 
 const INPUT_SOURCE_SELECTION_PREFERRED = 'selection-preferred'
 const INPUT_SOURCE_SELECTION_ONLY = 'selection-only'
@@ -162,7 +165,7 @@ function getResolvedDefaultDisplayLocations(definition) {
   return ['ribbon-more']
 }
 
-const BUILTIN_ASSISTANTS = [
+const CORE_BUILTIN_ASSISTANTS = [
   {
     id: 'spell-check',
     label: '拼写与语法检查设置',
@@ -1254,6 +1257,13 @@ const BUILTIN_ASSISTANTS = [
   }
 ]
 
+const BUILTIN_ASSISTANTS = [
+  ...CORE_BUILTIN_ASSISTANTS,
+  ...EXTRA_BUILTIN_ASSISTANTS,
+  ...P5_BUILTIN_ASSISTANTS,
+  ...P5_PLUS_BUILTIN_ASSISTANTS
+]
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value))
 }
@@ -1328,8 +1338,8 @@ export function getAssistantSettingItems(customAssistants = [], assistantSetting
   }))
   const customItems = (customAssistants || []).map(item => ({
     key: item.id,
-    label: item.name || '未命名助手',
-    shortLabel: item.name || '未命名助手',
+    label: item.name || '智能文档助手',
+    shortLabel: item.name || '智能文档助手',
     icon: getAssistantResolvedIcon(item.id, item.icon),
     group: 'custom',
     type: 'custom-assistant',
