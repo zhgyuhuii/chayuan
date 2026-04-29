@@ -1,0 +1,238 @@
+/**
+ * 察元设计 tokens — 砚青 + 朱砂 + 流光
+ *
+ * 引用方式(在新组件 / 改造组件中):
+ *   <style scoped>
+ *   .my-button { color: var(--chy-brand-600); border-radius: var(--r-3); }
+ *   </style>
+ *
+ * 暗色模式自动跟随系统,显式覆盖 [data-theme="dark"] 也可。
+ *
+ * 所有命名规则:
+ *   --chy-{role}-{shade}   颜色
+ *   --r-{size}             圆角
+ *   --s-{size}             间距
+ *   --font-{role}          字体
+ *   --chy-elev-{level}     阴影
+ *   --chy-motion-{role}    动效曲线 / 时长
+ */
+
+:root {
+  /* 主色:砚青(中国传统砚台青) */
+  --chy-brand-50:  #EEF4FF;
+  --chy-brand-100: #DCE7FF;
+  --chy-brand-200: #B9CCFF;
+  --chy-brand-300: #92AEFC;
+  --chy-brand-400: #6E8DF8;
+  --chy-brand-500: #4A6CF7;
+  --chy-brand-600: #3A56D4;
+  --chy-brand-700: #2A3FA8;
+  --chy-brand-800: #202F7C;
+  --chy-brand-glow: #6B8AFF;
+
+  /* 朱砂红(批注、危险、错误) */
+  --chy-rouge-100: #FCE6E2;
+  --chy-rouge-300: #F4A99F;
+  --chy-rouge-500: #E1473C;
+  --chy-rouge-700: #B23026;
+
+  /* 青釉绿(成功、正向) */
+  --chy-celadon-100: #E1F4EB;
+  --chy-celadon-500: #3FAE82;
+  --chy-celadon-700: #2C8761;
+
+  /* 姜黄(警告、降级提示) */
+  --chy-amber-100: #FAEDDA;
+  --chy-amber-500: #E89B2B;
+  --chy-amber-700: #B07512;
+
+  /* 远黛紫(AI、思考态、流光主色) */
+  --chy-violet-100: #ECE2FB;
+  --chy-violet-500: #8B5CF6;
+  --chy-violet-700: #6537DB;
+
+  /* 暖灰阶(文档场景看久不刺眼) */
+  --chy-ink-50:  #F7F8FA;
+  --chy-ink-100: #EEF0F4;
+  --chy-ink-200: #DCDFE6;
+  --chy-ink-300: #C8CCD3;
+  --chy-ink-400: #9CA1AB;
+  --chy-ink-500: #5E6470;
+  --chy-ink-600: #41454F;
+  --chy-ink-700: #2B2F38;
+  --chy-ink-800: #1A1D24;
+  --chy-ink-900: #0F1115;
+
+  /* 纸面背景 */
+  --chy-paper-50:  #FAFAFA;
+  --chy-paper-100: #F4F5F7;
+  --chy-paper-200: #ECEEF1;
+
+  /* 玻璃材质 */
+  --chy-glass-bg:     rgba(250, 250, 252, 0.72);
+  --chy-glass-stroke: rgba(255, 255, 255, 0.55);
+  --chy-glass-blur:   18px;
+
+  /* 阴影三层(紧贴 / 浮起 / 漂浮) */
+  --chy-elev-1: 0 1px 2px rgba(15, 17, 21, 0.04), 0 0 0 1px rgba(15, 17, 21, 0.06);
+  --chy-elev-2: 0 4px 14px rgba(15, 17, 21, 0.08), 0 0 0 1px rgba(15, 17, 21, 0.04);
+  --chy-elev-3: 0 24px 48px rgba(15, 17, 21, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.08);
+
+  /* 流光渐变(Apple Intelligence 同款思路) */
+  --chy-gradient-ai:
+    conic-gradient(from var(--ai-angle, 0deg),
+      #4A6CF7, #8B5CF6, #E1473C, #E89B2B, #3FAE82, #4A6CF7);
+  --chy-gradient-shimmer:
+    linear-gradient(90deg,
+      var(--chy-brand-500) 0%,
+      var(--chy-brand-glow) 50%,
+      var(--chy-brand-500) 100%);
+
+  /* 字体 */
+  --font-display: "Noto Serif SC", "Source Han Serif SC", "PingFang SC", serif;
+  --font-ui:      "HarmonyOS Sans SC", "PingFang SC", system-ui, -apple-system,
+                  "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+
+  /* 圆角(8 点制) */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-5: 20px;
+  --r-pill: 999px;
+
+  /* 间距 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+
+  /* 字号 */
+  --fz-12: 12px;
+  --fz-13: 13px;
+  --fz-14: 14px;
+  --fz-15: 15px;
+  --fz-16: 16px;
+  --fz-18: 18px;
+  --fz-20: 20px;
+  --fz-24: 24px;
+  --fz-32: 32px;
+  --fz-48: 48px;
+
+  /* 行高 */
+  --lh-tight:   1.25;
+  --lh-normal:  1.5;
+  --lh-relaxed: 1.75;
+
+  /* 动效:三档 ── 克制 / 标准 / 华丽 */
+  --chy-motion-fast:   180ms;
+  --chy-motion-normal: 280ms;
+  --chy-motion-slow:   480ms;
+  --chy-ease-out-spring: cubic-bezier(.32, .72, 0, 1);
+  --chy-ease-in-out:     cubic-bezier(.4, 0, .2, 1);
+  --chy-ease-out:        cubic-bezier(0, 0, .2, 1);
+
+  /* z-index 层 */
+  --z-rail:    100;
+  --z-dialog:  1000;
+  --z-overlay: 2000;
+  --z-toast:   3000;
+  --z-palette: 4000;
+
+  /* 语义化别名(便于业务直接拿) */
+  --color-text-primary:    var(--chy-ink-900);
+  --color-text-secondary:  var(--chy-ink-500);
+  --color-text-disabled:   var(--chy-ink-300);
+  --color-bg-page:         var(--chy-paper-50);
+  --color-bg-card:         #FFFFFF;
+  --color-bg-subtle:       var(--chy-paper-100);
+  --color-border:          var(--chy-ink-200);
+  --color-border-strong:   var(--chy-ink-300);
+  --color-success:         var(--chy-celadon-500);
+  --color-warning:         var(--chy-amber-500);
+  --color-danger:          var(--chy-rouge-500);
+  --color-ai:              var(--chy-violet-500);
+}
+
+/* CSS 自定义属性的角度变量(用于 conic-gradient 流光) */
+@property --ai-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* 暗色模式 — 跟随系统 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chy-paper-50:  #0E1015;
+    --chy-paper-100: #161A21;
+    --chy-paper-200: #1C2129;
+
+    --chy-ink-50:  #15171D;
+    --chy-ink-100: #1B1E25;
+    --chy-ink-200: #262A33;
+    --chy-ink-300: #3A3F4A;
+    --chy-ink-400: #717784;
+    --chy-ink-500: #989FAB;
+    --chy-ink-600: #BCC1CB;
+    --chy-ink-700: #DADDE3;
+    --chy-ink-800: #ECEEF1;
+    --chy-ink-900: #F2F4F8;
+
+    --chy-glass-bg:     rgba(20, 22, 28, 0.62);
+    --chy-glass-stroke: rgba(255, 255, 255, 0.08);
+
+    --chy-elev-1: 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --chy-elev-2: 0 4px 14px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --chy-elev-3: 0 24px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+    --color-bg-page:    var(--chy-paper-50);
+    --color-bg-card:    var(--chy-paper-100);
+    --color-bg-subtle:  var(--chy-paper-200);
+  }
+}
+
+/* 显式 data-theme 覆盖(优先级高于系统) */
+[data-theme="light"] {
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* 动效偏好(减少运动) */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --chy-motion-fast:   0ms;
+    --chy-motion-normal: 0ms;
+    --chy-motion-slow:   0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* 动效档位:用户在设置中选 "克制 / 标准 / 华丽" 时挂到 <html> */
+[data-motion="quiet"] {
+  --chy-motion-fast:   120ms;
+  --chy-motion-normal: 180ms;
+  --chy-motion-slow:   240ms;
+}
+[data-motion="standard"] {
+  --chy-motion-fast:   180ms;
+  --chy-motion-normal: 280ms;
+  --chy-motion-slow:   480ms;
+}
+[data-motion="vivid"] {
+  --chy-motion-fast:   220ms;
+  --chy-motion-normal: 360ms;
+  --chy-motion-slow:   640ms;
+}

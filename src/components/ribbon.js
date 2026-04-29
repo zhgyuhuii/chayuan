@@ -1,6 +1,7 @@
 import Util from './js/util.js'
 import SystemDemo from './js/systemdemo.js'
 import * as XLSX from 'xlsx'
+import { getOpenAIModelIndex } from './ribbon/modelHelpers.js'
 import { loadRulesFromDoc, saveRulesToDoc } from '../utils/templateRules.js'
 import { setNewFileMarker, isNewFile } from '../utils/documentTemplates.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
@@ -35,6 +36,8 @@ import { MODEL_GROUPS, getDefaultModelsFlat } from '../utils/defaultModelGroups.
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { focusExistingTaskOrchestrationWindow } from '../utils/taskOrchestrationWindowManager.js'
+import { showSafeErrorDetail } from '../utils/safeErrorDialog.js'
+import { reportError } from '../utils/reportError.js'
 
 /**
  * Ribbon getImage 返回值（见 WPS 自定义功能区示例）：直接返回相对路径如 images/1.svg，
@@ -117,19 +120,10 @@ function showAIAssistantDialog(query = {}) {
 }
 
 
-// 模型列表数据
+// 模型列表数据(state 仍留在 ribbon.js 中)
+// 纯函数 OPENAI_MODEL_IDS / getOpenAIModelIndex 已抽到顶部 import 的 ribbon/modelHelpers.js
 let modelList = []
 let selectedModelIndex = 0
-
-// OpenAI 系列模型 id，用于默认选中
-const OPENAI_MODEL_IDS = ['gpt-4o', 'gpt-4', 'gpt-4-turbo', 'o3', 'gpt_o1', 'gpt-5', 'gpt-3.5', 'openai']
-
-// 获取列表中第一个 OpenAI 模型的索引，无则返回 0
-function getOpenAIModelIndex(list) {
-  if (!list || list.length === 0) return 0
-  const idx = list.findIndex(m => m && OPENAI_MODEL_IDS.includes(String(m.id).toLowerCase()))
-  return idx >= 0 ? idx : 0
-}
 
 // 从接口加载模型列表
 async function loadModelList() {
@@ -588,8 +582,9 @@ function executeConfiguredAssistant(assistantId, fallbackTitle) {
   const entry = getAssistantDisplayEntry(assistantId)
   const taskTitle = entry?.title || fallbackTitle
   executeAssistantFromRibbon(assistantId, { taskTitle }).catch((e) => {
-    console.error(`${taskTitle || '助手'}执行失败:`, e)
-    alert(`${taskTitle || '助手'}执行失败: ` + (e?.message || e))
+    reportError(`${taskTitle || '助手'}执行失败`, e, {
+      context: { assistantId, fallbackTitle, source: 'ribbon-direct' }
+    })
   })
 }
 
@@ -739,8 +734,7 @@ function openAssistantSettings(itemKey = 'create-custom-assistant') {
       false
     )
   } catch (e) {
-    console.error('打开助手设置失败:', e)
-    alert('无法打开助手设置: ' + (e.message || e))
+    reportError('无法打开助手设置', e, { context: { itemKey } })
   }
 }
 
@@ -1502,8 +1496,7 @@ function exportAllTablesToExcel() {
     }
     
   } catch (e) {
-    console.error('导出表格失败:', e)
-    alert('导出表格失败: ' + e.message)
+    reportError('导出表格失败', e)
   }
 }
 
@@ -1556,8 +1549,7 @@ function autoFitAllTablesByContent() {
       alert(`已完成：${tables.Count} 个表格已按内容自动调整列宽`)
     }
   } catch (e) {
-    console.error('自动调整表格列宽失败:', e)
-    alert('自动调整表格列宽失败: ' + e.message)
+    reportError('自动调整表格列宽失败', e)
   }
 }
 
@@ -1610,8 +1602,7 @@ function autoFitAllTablesByWindow() {
       alert(`已完成：${tables.Count} 个表格已按窗口自动调整列宽`)
     }
   } catch (e) {
-    console.error('自动调整表格列宽失败:', e)
-    alert('自动调整表格列宽失败: ' + e.message)
+    reportError('自动调整表格列宽失败', e)
   }
 }
 
@@ -1752,8 +1743,7 @@ function addFirstColNumber() {
       alert('已完成：' + tables.Count + ' 个表格均已首列添加序号（1、2、3…）')
     }
   } catch (e) {
-    console.error('首列添加序号失败:', e)
-    alert('首列添加序号失败: ' + (e.message || e))
+    reportError('首列添加序号失败', e)
   }
 }
 
@@ -1865,8 +1855,7 @@ function refreshOtherTablesStyleFromFirst() {
       alert(`已完成：${tables.Count - 1} 个表格已与首表格样式完全一致（含首行、首列、最后一行、中间行等）`)
     }
   } catch (e) {
-    console.error('刷新表格样式失败:', e)
-    alert('刷新表格样式失败: ' + e.message)
+    reportError('刷新表格样式失败', e)
   }
 }
 
@@ -1953,8 +1942,7 @@ function deleteRowsContainingText() {
 
     alert('已删除 ' + deletedCount + ' 行')
   } catch (e) {
-    console.error('删除文字所在行失败:', e)
-    alert('删除文字所在行失败: ' + (e.message || e))
+    reportError('删除文字所在行失败', e)
   }
 }
 
@@ -2041,8 +2029,7 @@ function deleteColumnsContainingText() {
 
     alert('已删除 ' + deletedCount + ' 列')
   } catch (e) {
-    console.error('删除文字所在列失败:', e)
-    alert('删除文字所在列失败: ' + (e.message || e))
+    reportError('删除文字所在列失败', e)
   }
 }
 
@@ -2123,8 +2110,7 @@ function deleteAllTables() {
     }
     alert('已删除 ' + totalCount + ' 个表格')
   } catch (e) {
-    console.error('删除全部表格失败:', e)
-    alert('删除全部表格失败: ' + (e.message || e))
+    reportError('删除全部表格失败', e)
   }
 }
 
@@ -2267,8 +2253,7 @@ function deleteAllTableCaptions() {
       alert('文档中没有找到表格题注')
     }
   } catch (e) {
-    console.error('删除表格题注失败:', e)
-    alert('删除表格题注失败: ' + (e.message || e))
+    reportError('删除表格题注失败', e)
   }
 }
 
@@ -2351,8 +2336,7 @@ function deleteAllImages() {
       alert('文档中没有图片')
     }
   } catch (e) {
-    console.error('删除全部图像失败:', e)
-    alert('删除全部图像失败: ' + (e.message || e))
+    reportError('删除全部图像失败', e)
   }
 }
 
@@ -2526,8 +2510,7 @@ function deleteAllImageCaptions() {
       alert('文档中没有找到图像题注')
     }
   } catch (e) {
-    console.error('删除图像题注失败:', e)
-    alert('删除图像题注失败: ' + (e.message || e))
+    reportError('删除图像题注失败', e)
   }
 }
 
@@ -2581,8 +2564,7 @@ function deleteAllBlankRows() {
       alert('文档中没有找到空白行')
     }
   } catch (e) {
-    console.error('删除空白行失败:', e)
-    alert('删除空白行失败: ' + (e.message || e))
+    reportError('删除空白行失败', e)
   }
 }
 
@@ -2635,8 +2617,7 @@ function exportAllImagesToFolder() {
         const fso = new ActiveXObject('Scripting.FileSystemObject')
         savePath = fso.GetParentFolderName(filePath)
       } catch (e2) {
-        console.error('获取文件夹路径失败:', e2)
-        alert('无法获取文件夹路径: ' + e2.message)
+        reportError('获取文件夹路径失败', e2)
         return
       }
     }
@@ -2921,6 +2902,31 @@ function invalidateFormFillButton() {
   } catch (e) {}
 }
 
+/**
+ * P0:用户在设置里调整助手显示位置后,主动刷新 4 个 PrimarySlot 与右键 4 个 Slot,
+ * 让未配置位立刻 visible=false(Ribbon 不再展示 4 个重复的"智能助手"按钮)。
+ *
+ * 调用点(后续接入):
+ *   - 设置对话框保存助手 displayLocations 后
+ *   - 自定义助手新增/删除/重排后
+ */
+function invalidateAssistantSlotControls() {
+  try {
+    const ribbonUI = window.Application?.ribbonUI
+    if (!ribbonUI) return
+    for (let i = 1; i <= RIBBON_DYNAMIC_SLOT_COUNT; i++) {
+      ribbonUI.InvalidateControl(`btnAssistantPrimarySlot${i}`)
+    }
+    for (let i = 1; i <= CONTEXT_MENU_DYNAMIC_SLOT_COUNT; i++) {
+      ribbonUI.InvalidateControl(`btnContextAssistantSlot${i}`)
+      ribbonUI.InvalidateControl(`btnContextAssistantSlot${i}TableCell`)
+    }
+    ribbonUI.InvalidateControl('menuMoreAssistants')
+    ribbonUI.InvalidateControl('menuContextAssistantMore')
+    ribbonUI.InvalidateControl('menuContextAssistantMoreTableCell')
+  } catch (e) {}
+}
+
 function OnDocumentOpenForFormMode(doc) {
   invalidateFormFillButton()
   invalidateDeclassifyRibbonControls()
@@ -3082,8 +3088,7 @@ function toggleFormInputMode() {
       }
     }
   } catch (e) {
-    console.error('固定表单输入切换失败:', e)
-    alert('操作失败：' + (e.message || e))
+    reportError('固定表单输入切换失败', e)
   }
 }
 
@@ -3185,9 +3190,8 @@ function OnAction(control) {
       break
     
     // AI助手分组
-    case 'btnAITraceCheck':
-      // AI痕迹检查功能
-      break
+    // P0 清理:btnAITraceCheck(大写 I)是 XML 中不存在的死分支;XML 中正确的是 btnAiTraceCheck。
+    // 历史空 case 已移除,真实痕迹检查走下方 btnAiTraceCheck → executeAssistantFromRibbon('analysis.ai-trace-check')
     case 'btnAIAssistant': {
       showAIAssistantDialog()
       break
@@ -3232,8 +3236,7 @@ function OnAction(control) {
           false
         )
       } catch (e) {
-        console.error('打开任务编排窗口失败:', e)
-        alert('无法打开任务编排窗口: ' + (e.message || e))
+        reportError('无法打开任务编排窗口', e, { context: { source: 'btnTaskOrchestration' } })
       }
       break
     case 'btnTaskList':
@@ -3252,11 +3255,10 @@ function OnAction(control) {
           false
         )
       } catch (e) {
-        console.error('打开任务清单失败:', e)
-        alert('无法打开任务清单: ' + (e.message || e))
+        reportError('无法打开任务清单', e, { context: { source: 'btnTaskList' } })
       }
       break
-    
+
     // 表格批量分组
     case 'btnSelectAllTables':
       // 导出全部表格功能
@@ -3331,7 +3333,17 @@ function OnAction(control) {
       showUniformImageFormatDialog()
       break
     case 'btnClearImageFormat':
-      // 清除图像格式功能
+      // P0 标注:此功能未实现,先给用户明确提示而不是静默无反应。
+      // 真正实现请新建 documentImageActions.clearAllImageFormat(),并在此处调用。
+      try {
+        showSafeErrorDetail({
+          title: '功能暂未上线',
+          detail: '「清除图像格式」目前为占位入口,将在后续版本提供。\n\n替代方案:可使用「统一图像格式」对话框设置统一规则。',
+          merge: false
+        })
+      } catch (_) {
+        alert('「清除图像格式」目前为占位入口,将在后续版本提供。')
+      }
       break
     case 'btnDeleteImageCaption':
       deleteAllImageCaptions()
@@ -3358,14 +3370,11 @@ function OnAction(control) {
         console.error('选中全部正文失败:', e)
       }
       break
-    case 'btnDocumentCheck':
-      // 文档检查功能
-      break
+    // P0 清理:btnDocumentCheck 是 XML 中不存在的历史残留 case,已移除空函数。
     // 脱密分组
     case 'btnDocumentDeclassifyCheck':
       executeAssistantFromRibbon('analysis.security-check', { taskTitle: '保密检查' }).catch((e) => {
-        console.error('保密检查失败:', e)
-        alert('保密检查失败: ' + (e?.message || e))
+        reportError('保密检查失败', e)
       })
       break
     case 'btnDocumentDeclassify':
@@ -3437,8 +3446,7 @@ function OnAction(control) {
       try {
         openSettingsWindow()
       } catch (e) {
-        console.error('打开设置窗口失败:', e)
-        alert('无法打开设置窗口: ' + (e.message || e))
+        reportError('打开设置窗口失败', e)
       }
       break
 
@@ -3512,62 +3520,52 @@ function OnAction(control) {
       break
     case 'btnGenerateSummary':
       executeAssistantFromRibbon('summary', { taskTitle: '生成摘要' }).catch((e) => {
-        console.error('生成摘要失败:', e)
-        alert('生成摘要失败: ' + (e?.message || e))
+        reportError('生成摘要失败', e)
       })
       break
     case 'btnRewrite':
       executeAssistantFromRibbon('analysis.rewrite', { taskTitle: '换种方式重写' }).catch((e) => {
-        console.error('换种方式重写失败:', e)
-        alert('换种方式重写失败: ' + (e?.message || e))
+        reportError('换种方式重写失败', e)
       })
       break
     case 'btnExpand':
       executeAssistantFromRibbon('analysis.expand', { taskTitle: '扩写' }).catch((e) => {
-        console.error('扩写失败:', e)
-        alert('扩写失败: ' + (e?.message || e))
+        reportError('扩写失败', e)
       })
       break
     case 'btnAbbreviate':
       executeAssistantFromRibbon('analysis.abbreviate', { taskTitle: '缩写' }).catch((e) => {
-        console.error('缩写失败:', e)
-        alert('缩写失败: ' + (e?.message || e))
+        reportError('缩写失败', e)
       })
       break
     case 'btnParagraphNumberingCheck':
       executeAssistantFromRibbon('analysis.paragraph-numbering-check', { taskTitle: '检查段落序号格式' }).catch((e) => {
-        console.error('检查段落序号格式失败:', e)
-        alert('检查段落序号格式失败: ' + (e?.message || e))
+        reportError('检查段落序号格式失败', e)
       })
       break
     case 'btnAiTraceCheck':
       executeAssistantFromRibbon('analysis.ai-trace-check', { taskTitle: 'AI 痕迹检查' }).catch((e) => {
-        console.error('AI 痕迹检查失败:', e)
-        alert('AI 痕迹检查失败: ' + (e?.message || e))
+        reportError('AI 痕迹检查失败', e)
       })
       break
     case 'btnCommentExplain':
       executeAssistantFromRibbon('analysis.comment-explain', { taskTitle: '批注解释' }).catch((e) => {
-        console.error('批注解释失败:', e)
-        alert('批注解释失败: ' + (e?.message || e))
+        reportError('批注解释失败', e)
       })
       break
     case 'btnHyperlinkExplain':
       executeAssistantFromRibbon('analysis.hyperlink-explain', { taskTitle: '超链接解释' }).catch((e) => {
-        console.error('超链接解释失败:', e)
-        alert('超链接解释失败: ' + (e?.message || e))
+        reportError('超链接解释失败', e)
       })
       break
     case 'btnCorrectSpellGrammar':
       executeAssistantFromRibbon('analysis.correct-spell', { taskTitle: '纠正拼写和语法' }).catch((e) => {
-        console.error('纠正拼写和语法失败:', e)
-        alert('纠正拼写和语法失败: ' + (e?.message || e))
+        reportError('纠正拼写和语法失败', e)
       })
       break
     case 'btnExtractKeywords':
       executeAssistantFromRibbon('analysis.extract-keywords', { taskTitle: '提炼关键词' }).catch((e) => {
-        console.error('提炼关键词失败:', e)
-        alert('提炼关键词失败: ' + (e?.message || e))
+        reportError('提炼关键词失败', e)
       })
       break
     case 'btnTextToImage':
@@ -3628,12 +3626,11 @@ function OnAction(control) {
           taskTitle: `翻译${lang ? ` - ${lang.label}` : ''}`,
           targetLanguage: lang ? lang.label : (langCode || '目标语言')
         }).catch((e) => {
-          console.error('翻译失败:', e)
-          alert('翻译失败: ' + (e?.message || e))
+          reportError('翻译失败', e)
         })
       }
       break
-      break
+      // P0 清理:已删除多余的 break(死代码)
   }
   return true
 }
@@ -4140,8 +4137,7 @@ function OnSelectAllByTypeAction(control) {
         break
     }
   } catch (e) {
-    console.error('执行选中全部操作失败:', e)
-    alert('操作失败: ' + e.message)
+    reportError('执行选中全部操作失败', e)
   }
   return true
 }
@@ -4270,3 +4266,6 @@ if (typeof window !== 'undefined') {
   window.ribbon = ribbon
 }
 export default ribbon
+
+// P0:供 settings 等模块在助手配置变更后主动刷新 Ribbon slot 可见性
+export { invalidateAssistantSlotControls }

@@ -1,0 +1,303 @@
+/**
+ * settings-form-vertical.css — 设置/对话框表单的全局纵向布局 + ⓘ Tooltip
+ *
+ * 解决:
+ *   - WPS dialog 默认窄(~600px),P3 阶段的 110+1fr 横排 grid 反而加剧布局错乱
+ *   - 长 hint 文本(60-100 字)挤在 input 下面,严重打断节奏
+ *   - 多 dialog 视觉不一致(模型设置 / 默认配置 / 助手 / 数据 各自风格)
+ *
+ * 策略:
+ *   1. **强制纵向** — label 在上,input 在下;任何宽度都不横排
+ *   2. **长 hint 自动收为 ⓘ** — `.config-hint` 内容超 30 字 → CSS 截断显示前缀 + ⓘ
+ *      (真正完整文本写入 [data-tooltip] 属性,鼠标悬停弹气泡)
+ *   3. **作用范围**:`.config-item` / `.form-group` / `.setting-item` / `.config-content` 等通用类
+ *   4. **窄屏适配**:< 480px 时 fontsize 降一档,padding 缩
+ *
+ * 加载顺序:在 assistant-form-enhanced.css 之后,确保新规则生效。
+ */
+
+/* ─────────── 1. 取消之前的横排 grid ─────────── */
+
+@media (min-width: 720px) {
+  .config-content .config-item {
+    display: flex !important;          /* 推翻 P3 的 grid */
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  .config-content .config-item .config-label {
+    text-align: left !important;
+    padding-top: 0 !important;
+  }
+}
+
+/* ─────────── 2. 通用 form-group / setting-item 也强制纵向 ─────────── */
+
+.form-group,
+.setting-item,
+.field-row,
+.dialog-form-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.form-group > label,
+.setting-item > label,
+.field-row > label,
+.dialog-form-row > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #333);
+  line-height: 1.4;
+}
+
+/* ─────────── 3. 标题不超长(超出 40 字符截断,余文走 [title]) ─────────── */
+
+.config-label,
+.form-group > label,
+.setting-item > label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────── 4. ⓘ 提示图标 ─────────── */
+
+/* 任何带 [data-hint] 的 label 自动追加可悬停 ⓘ */
+.config-label[data-hint]::after,
+.form-group > label[data-hint]::after,
+.setting-item > label[data-hint]::after {
+  content: 'ⓘ';
+  display: inline-block;
+  margin-left: 6px;
+  width: 14px; height: 14px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--chy-violet-500, #7c6cdc);
+  background: rgba(124, 108, 220, 0.10);
+  border-radius: 50%;
+  text-align: center;
+  line-height: 14px;
+  cursor: help;
+  vertical-align: 0.04em;
+  font-family: var(--font-base);
+  position: relative;
+}
+
+/* 鼠标悬停 → 显示 tooltip 气泡(用 data-hint 内容) */
+.config-label[data-hint]:hover::before,
+.form-group > label[data-hint]:hover::before,
+.setting-item > label[data-hint]:hover::before {
+  content: attr(data-hint);
+  position: absolute;
+  z-index: 1000;
+  top: -8px;
+  left: 100%;
+  transform: translate(8px, -100%);
+  max-width: 320px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.88);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.55;
+  border-radius: 6px;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  font-weight: 400;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] .config-label[data-hint]:hover::before,
+[data-theme="dark"] .form-group > label[data-hint]:hover::before,
+[data-theme="dark"] .setting-item > label[data-hint]:hover::before {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1a1d22;
+}
+
+/* ─────────── 5. 长 hint 文本(`.config-hint`)默认折叠 ─────────── */
+
+/* 把内联长 hint 视觉降权 — 仅作 fallback,主推 ⓘ */
+.config-content .config-hint,
+.form-group .config-hint,
+.setting-item .config-hint {
+  margin: 4px 0 0 !important;
+  padding: 5px 9px !important;
+  background: rgba(124, 108, 220, 0.04);
+  border-left: 2px solid var(--chy-violet-300, #c4b9f0);
+  border-radius: 0 4px 4px 0;
+  font-size: 11px !important;
+  line-height: 1.55 !important;
+  color: var(--color-text-secondary, #666) !important;
+  /* 限制最大高度,长 hint 自动出滚动条 */
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+/* ─────────── 6. input / textarea / select 全宽 ─────────── */
+
+.config-content .config-item .config-input,
+.config-content .config-item .config-textarea,
+.config-content .config-item select,
+.config-content .config-item input[type="text"],
+.config-content .config-item input[type="number"],
+.config-content .config-item input[type="search"],
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="search"],
+.form-group textarea,
+.form-group select,
+.setting-item input,
+.setting-item textarea,
+.setting-item select {
+  width: 100% !important;
+  box-sizing: border-box;
+}
+
+/* ─────────── 7. 窄屏适配 < 480px ─────────── */
+
+@media (max-width: 480px) {
+  .config-content {
+    gap: 12px !important;
+    padding: 0 !important;
+  }
+  .config-content .config-item {
+    margin-bottom: 8px;
+  }
+  .config-label,
+  .form-group > label,
+  .setting-item > label {
+    font-size: 12px;
+  }
+  .config-input,
+  .config-textarea,
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+  }
+  .config-hint {
+    font-size: 10px !important;
+    padding: 4px 8px !important;
+    max-height: 60px;
+  }
+}
+
+/* ─────────── 8. dialog 容器自身 padding 减少 ─────────── */
+
+.dialog-page,
+.dialog-page .config-panel,
+.dialog-page .config-content {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+@media (max-width: 480px) {
+  .dialog-page,
+  .dialog-page .config-panel,
+  .dialog-page .config-content {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
+/* ─────────── 9. 设置 panel 顶部 sticky ─────────── */
+
+.config-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--color-bg-elevated, #fff);
+  padding: 10px 12px 8px !important;
+  margin: 0 -4px 6px !important;
+  border-bottom: 1px solid var(--chy-ink-200, #e6e8ec) !important;
+}
+
+/* ─────────── 10. select 下拉箭头规范化 ─────────── */
+
+.config-input,
+select.config-input,
+.form-group select,
+.setting-item select {
+  font-family: inherit;
+  font-size: 13px;
+}
+select.config-input,
+.form-group select,
+.setting-item select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23999' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+/* ─────────── 11. 精致紧凑层:设置页/表单/表格/卡片统一收敛 ─────────── */
+
+.settings-dialog .config-content {
+  gap: 10px !important;
+}
+
+.settings-dialog .config-item,
+.settings-dialog .form-group,
+.settings-dialog .setting-item {
+  margin-bottom: 0 !important;
+}
+
+.settings-dialog .config-hint {
+  padding: 4px 8px !important;
+  max-height: 52px;
+  font-size: 10.5px !important;
+  border-left-width: 1px;
+  background: rgba(99, 102, 241, 0.035);
+}
+
+.settings-dialog .btn,
+.settings-dialog .btn-compact,
+.settings-dialog .btn-secondary,
+.settings-dialog .btn-primary {
+  min-height: 28px;
+  padding: 5px 10px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.settings-dialog .assistant-inline-actions,
+.settings-dialog .config-header-actions,
+.settings-dialog .backup-history-actions,
+.settings-dialog .report-assistant-preset-actions {
+  gap: 6px !important;
+}
+
+.settings-dialog table,
+.settings-dialog .backup-history-list,
+.settings-dialog .assistant-preset-panel,
+.settings-dialog .config-preview,
+.settings-dialog .assistant-location-grid {
+  border-radius: 10px !important;
+}
+
+.settings-dialog td,
+.settings-dialog th,
+.settings-dialog .backup-history-item,
+.settings-dialog .assistant-preset-card,
+.settings-dialog .config-preview {
+  padding: 8px 10px !important;
+}
+
+.settings-dialog .assistant-recommend-card .config-hint:last-child {
+  margin-top: 6px !important;
+  max-height: 44px;
+}
+
+.settings-dialog .assistant-recommend-card .config-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

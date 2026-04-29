@@ -2021,6 +2021,7 @@ import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import { getModelGroupsFromSettings } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
+import { reportError } from '../utils/reportError.js'
 /** 工具栏 SVG 用 Vite ?inline 打进 data: URL；头像 PNG 用预生成模块避免产物再拆出独立 png 请求 */
 import logoAvatarDataUrl from '../assets/ai-assistant/logoAvatarDataUrl.js'
 import chatAttachSvgInline from '../assets/ai-assistant/chat-attach.svg?inline'
@@ -2103,7 +2104,6 @@ import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectSe
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
-import { getChunkSettings, splitTextIntoChunks } from '../utils/chunkSettings.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
 import { isRecognizableMultimodalAttachment, recognizeMultimodalAttachment } from '../utils/multimodalRecognitionRunner.js'
@@ -2123,8 +2123,18 @@ import { createArtifactRecord } from '../utils/artifactTypes.js'
 import { bindArtifactsToOwner } from '../utils/artifactStore.js'
 import { getCapabilityBusItem } from '../utils/capabilityBus.js'
 import { appendEvaluationRecord, buildChatEvaluationRecord } from '../utils/evaluationStore.js'
-import { buildChatContextMessages } from '../utils/chatContextBuilder.js'
 import { appendChatMemoryRecord } from '../utils/chatMemoryStore.js'
+import { createThrottledPersister } from '../utils/throttledPersist.js'
+import { record as recordPerf } from '../utils/perfTracker.js'
+import {
+  getCachedModelRouteIntent,
+  resolveLocalIntentShortcut,
+  setCachedModelRouteIntent
+} from '../services/sendPipeline/intentRouter.js'
+import { buildChatFlowRequestContext } from '../services/sendPipeline/chatFlow.js'
+import { readCurrentDocumentPayload } from '../services/documentIntelligence/documentReader.js'
+import { planTextChunks } from '../services/documentIntelligence/chunkPlanner.js'
+import { resolveExactToolRequest } from '../services/documentIntelligence/exactTools.js'
 import LongTaskRunCard from './LongTaskRunCard.vue'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
@@ -2217,6 +2227,8 @@ const VIDEO_REQUEST_PATTERN = /((生成|输出|制作|创建).{0,10}(视频|短�
 const AUDIO_REQUEST_PATTERN = /((生成|输出|制作|创建|转换|朗读|播报).{0,10}(语音|音频|配音))|((语音|音频|配音|朗读|播报).{0,10}(生成|输出|制作|创建|转换))/
 const EXPLICIT_ASSISTANT_REQUEST_PATTERN = /(助手|智能助手|自定义助手|调用助手|创建助手|生成助手|用.+助手|使用.+助手|按.+助手)/
 const DIRECT_CHAT_REQUEST_PATTERN = /(写一首|写首|作一首|作首|写一段|写篇|写个|帮我写|给我写|诗歌|诗|散文|故事|小说|文案|祝福语|祝福词|朋友圈文案|解释一下|解释下|什么是|为什么|聊聊|说说|头脑风暴|想几个|给我几个|帮我想|回答我)/
+const PROMPT_ONLY_CREATION_PATTERN = /(帮我|请|给我|麻烦)?\s*(写|撰写|起草|创作|生成|输出|制作|列出|设计).{0,40}(教程|指南|说明|手册|文档|文章|方案|计划|提纲|大纲|模板|报告|材料|内容)|(?:教程|指南|说明|手册).{0,16}(写出来|生成|输出|怎么写|如何写)/
+const EXISTING_DOCUMENT_MATERIAL_PATTERN = /(基于|根据|依据|参考|结合|围绕|针对|对|把|将|总结|摘要|概括|提炼|分析|解读|翻译|润色|改写|校对|检查|审查|提取|统计|查找|批注|脱密|修订|修改|删除|替换).{0,16}(当前文档|这份文档|这个文档|全文|全篇|整篇|文档全文|选中|选区|这段|本段)/
 
 const MISSING_SKILL_CHAT_NOTICE_VARIANTS = [
   '欢迎关注我们的微信公众号，便于随时提需求，帮助我持续进化成你想要的样子。',
@@ -2492,10 +2504,18 @@ function detectSelectionTranslateIntent(text, fallbackLanguage = '英文') {
   }
 }
 
+function isPromptOnlyCreationRequest(text) {
+  const normalized = String(text || '').trim()
+  if (!normalized) return false
+  return PROMPT_ONLY_CREATION_PATTERN.test(normalized) &&
+    !EXISTING_DOCUMENT_MATERIAL_PATTERN.test(normalized)
+}
+
 function detectDocumentScopeIntent(text) {
   const normalized = String(text || '').trim()
   if (!normalized) return null
   if (ACTIVE_DOCUMENT_REFERENCE_PATTERN.test(normalized)) return null
+  if (isPromptOnlyCreationRequest(normalized)) return null
   if (FULL_DOCUMENT_REFERENCE_PATTERN.test(normalized)) {
     return {
       targetLanguage: resolveTranslationTargetLanguage(normalized, '英文')
@@ -3488,6 +3508,8 @@ export default {
       historyStorageScopeKey: '',
       historyStorageDocumentLinkId: '',
       historyStorageSource: '',
+      historySavePersister: null,
+      pendingHistorySavePayload: null,
       taskListUnsubscribe: null,
       assistantEvolutionSuggestion: null,
       assistantEvolutionCheckTimer: null,
@@ -3800,6 +3822,7 @@ export default {
     this.cancelActiveGeneratedOutputRun()
     this.aiAssistantWindowSession?.releaseOwnership?.()
     this.aiAssistantWindowSession = null
+    this.flushHistorySave()
   },
   methods: {
     getModelLogoPath,
@@ -5767,7 +5790,7 @@ export default {
         return true
       }
       if (nextScopeKey === this.historyStorageScopeKey) return false
-      this.saveHistory({ skipScopeResolve: true })
+      this.saveHistory({ skipScopeResolve: true, immediate: true })
       this.applyHistoryStorageScope(nextScope)
       this.loadHistory({ skipScopeResolve: true })
       return true
@@ -5819,18 +5842,62 @@ export default {
         console.warn('加载对话历史失败:', e)
       }
     },
+    buildHistorySavePayload(options = {}) {
+      const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
+      return {
+        storageKeys,
+        historyJson: JSON.stringify(this.chatHistory),
+        currentChatId: this.currentChatId || ''
+      }
+    },
+    writeHistorySavePayload(payload) {
+      if (!payload?.storageKeys) return
+      const storage = window.Application?.PluginStorage
+      storage?.setItem(payload.storageKeys.history, payload.historyJson || '[]')
+      if (payload.currentChatId) {
+        storage?.setItem(payload.storageKeys.current, payload.currentChatId)
+      } else {
+        storage?.removeItem(payload.storageKeys.current)
+      }
+    },
+    ensureHistorySavePersister() {
+      if (this.historySavePersister) return this.historySavePersister
+      this.historySavePersister = createThrottledPersister({
+        key: 'ai-assistant-chat-history',
+        wait: 320,
+        idle: true,
+        leading: false,
+        getValue: () => this.pendingHistorySavePayload,
+        serialize: (payload) => payload
+          ? `${payload.storageKeys?.history || ''}\n${payload.currentChatId || ''}\n${payload.historyJson || '[]'}`
+          : '',
+        write: () => {
+          this.writeHistorySavePayload(this.pendingHistorySavePayload)
+        },
+        onError: (e) => {
+          console.debug('保存对话历史失败:', e)
+        }
+      })
+      return this.historySavePersister
+    },
+    flushHistorySave() {
+      try {
+        this.historySavePersister?.flush?.()
+      } catch (e) {
+        console.debug('刷新对话历史保存失败:', e)
+      }
+    },
     saveHistory(options = {}) {
       try {
         if (!options.skipScopeResolve && !this.historyStorageScopeKey) {
           this.ensureHistoryStorageScope()
         }
-        const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
-        window.Application?.PluginStorage?.setItem(storageKeys.history, JSON.stringify(this.chatHistory))
-        if (this.currentChatId) {
-          window.Application?.PluginStorage?.setItem(storageKeys.current, this.currentChatId)
-        } else {
-          window.Application?.PluginStorage?.removeItem(storageKeys.current)
+        this.pendingHistorySavePayload = this.buildHistorySavePayload(options)
+        if (options.immediate === true || options.flush === true) {
+          this.writeHistorySavePayload(this.pendingHistorySavePayload)
+          return
         }
+        this.ensureHistorySavePersister()()
       } catch (e) {
         console.debug('保存对话历史失败:', e)
       }
@@ -6785,6 +6852,12 @@ export default {
       this.startMissingSkillNoticeTyping(assistantMsg, this.getRandomMissingSkillNoticeText('chat'))
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
+    },
+    scheduleAssistantRecommendationsForMessage(contextText, model, assistantMsg, delay = 900) {
+      window.setTimeout(() => {
+        if (!assistantMsg || this.isAssistantErrorMessage(assistantMsg)) return
+        this.resolveAssistantRecommendationsForMessage(contextText, model, assistantMsg)
+      }, Math.max(0, Number(delay) || 0))
     },
     isAssistantErrorMessage(message) {
       return String(message?.content || '').trim().startsWith('[错误]')
@@ -9623,6 +9696,17 @@ export default {
         hasDocument: inputInfo?.hasDocument === true
       })
     },
+    resolveExactStatsMaterialText(text = '') {
+      const normalized = String(text || '').trim()
+      if (!normalized) return ''
+      if (ACTIVE_DOCUMENT_REFERENCE_PATTERN.test(normalized) || /(选中|选区|这段|本段|当前段落)/.test(normalized)) {
+        return String(this.resolveBestSelectionContext()?.text || '').trim()
+      }
+      if (FULL_DOCUMENT_REFERENCE_PATTERN.test(normalized) || /(当前文档|全文|全篇|整篇|文档全文)/.test(normalized)) {
+        return String(getDocumentText() || '').trim()
+      }
+      return ''
+    },
     buildTaskInputScopeSupplement(taskInputScope) {
       if (!taskInputScope || typeof taskInputScope !== 'object') return ''
       const resolved = String(taskInputScope.resolvedScope || '').trim()
@@ -10276,13 +10360,9 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
     },
     getCurrentDocumentPayload() {
-      const documentText = String(getDocumentText() || '').replace(/\r\n/g, '\n').trim()
-      const snapshot = this.getLiveSelectionContext() || this.resolveBestSelectionContext()
-      return {
-        documentText,
-        snapshot,
-        documentCharCount: documentText.length
-      }
+      return readCurrentDocumentPayload({
+        getSnapshot: () => this.getLiveSelectionContext() || this.resolveBestSelectionContext()
+      })
     },
     inferPrimaryConversationIntentByRule(text = '') {
       const normalized = String(text || '').trim()
@@ -10291,6 +10371,13 @@ export default {
           kind: 'chat',
           confidence: 'low',
           reason: '未提供有效请求内容，默认按普通对话处理。'
+        }
+      }
+      if (isPromptOnlyCreationRequest(normalized)) {
+        return {
+          kind: 'chat',
+          confidence: 'high',
+          reason: '用户是在从零创作内容，不需要读取当前文档正文。'
         }
       }
       if (EXPLICIT_ASSISTANT_REQUEST_PATTERN.test(normalized)) {
@@ -10395,7 +10482,24 @@ export default {
     },
     async resolvePrimaryConversationIntent(text, model) {
       const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
+      const localShortcut = resolveLocalIntentShortcut(text, {
+        ruleIntent,
+        hasSelection: !!this.resolveBestSelectionContext()?.text,
+        attachments: this.attachments
+      })
+      if (localShortcut.shortcut) {
+        return localShortcut
+      }
+      const routeCacheOptions = {
+        providerId: model?.providerId,
+        modelId: model?.modelId,
+        hasSelection: !!this.resolveBestSelectionContext()?.text,
+        attachments: this.attachments
+      }
+      const cachedIntent = getCachedModelRouteIntent(text, routeCacheOptions)
+      if (cachedIntent) return cachedIntent
       const modelIntent = await this.inferPrimaryConversationIntentWithModel(text, model)
+      setCachedModelRouteIntent(text, modelIntent, routeCacheOptions)
       const ruleKind = String(ruleIntent?.kind || 'chat').trim()
       const modelKind = String(modelIntent?.kind || 'chat').trim()
       const ruleConf = String(ruleIntent?.confidence || '').trim().toLowerCase()
@@ -14014,14 +14118,7 @@ export default {
       }
     },
     getDocumentChunks(documentText, strategy = 'synthesize') {
-      const chunkSettings = getChunkSettings()
-      const overrides = strategy === 'transform'
-        ? { ...chunkSettings, overlapLength: 0 }
-        : chunkSettings
-      return {
-        chunkSettings: overrides,
-        chunks: splitTextIntoChunks(documentText, overrides)
-      }
+      return planTextChunks(documentText, { strategy })
     },
     confirmDocumentChunkSubmission(documentText, chunkCount) {
       const charCount = Number(documentText?.length || 0)
@@ -14331,7 +14428,7 @@ export default {
 
       if (chunks.length <= 1 && documentCharCount <= DIRECT_DOCUMENT_CHAR_LIMIT && strategy !== 'transform') {
         const recommendationContext = this.getRecommendationContextText(documentApiUserContent)
-        this.resolveAssistantRecommendationsForMessage(recommendationContext, model, assistantMsg)
+        this.scheduleAssistantRecommendationsForMessage(recommendationContext, model, assistantMsg, 1200)
         assistantMsg.activeDocumentAwareRun.statusMessage = '正在直接处理整篇文档...'
         this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, '文档长度未超出阈值，直接提交整篇文档。')
         streamChatCompletion({
@@ -14466,10 +14563,11 @@ export default {
           this.$nextTick(() => this.scrollToBottom())
         }
 
-        this.resolveAssistantRecommendationsForMessage(
+        this.scheduleAssistantRecommendationsForMessage(
           this.getRecommendationContextText(`${userContent}\n\n${notes.join('\n\n')}`),
           model,
-          assistantMsg
+          assistantMsg,
+          1200
         )
         this.streamingContent = ''
         assistantMsg.activeDocumentAwareRun.statusMessage = '分段阅读完成，正在汇总最终结果...'
@@ -14586,6 +14684,7 @@ export default {
       }
     },
     async sendMessage() {
+      const sendStartedAt = Date.now()
       const text = this.userInput.trim()
       if ((!text && this.attachments.length === 0) || this.isStreaming) return
       if (this.activeDocumentRevisionRunContext?.messageId) {
@@ -14609,6 +14708,30 @@ export default {
         : resolveAssistantLocalFaq(text)
       if (localFaq) {
         this.startAssistantLocalFaqMessage(prepared, localFaq)
+        return
+      }
+
+      const exactTool = resolveExactToolRequest(text, {
+        materialText: this.resolveExactStatsMaterialText(text)
+      })
+      const exactStats = exactTool?.result
+      if (exactTool?.answer && exactStats) {
+        this.startAssistantLocalFaqMessage(prepared, {
+          type: exactStats.kind,
+          title: `${exactStats.targetLabel || '条目'}统计`,
+          detail: '本次请求已由本地精确统计工具处理，不消耗模型调用。',
+          reason: '已识别为计数/统计类请求，使用确定性程序完成。',
+          text: exactTool.answer,
+          existingAssistantHints: [],
+          suggestedAction: null
+        })
+        recordPerf({
+          kind: 'send.local-exact-stats',
+          durationMs: Date.now() - sendStartedAt,
+          ok: true,
+          bytes: Number(exactStats?.materialCharCount || 0),
+          note: exactStats.method
+        })
         return
       }
 
@@ -14644,7 +14767,16 @@ export default {
       await this.waitForUiCommit()
 
       try {
+        const routeStartedAt = Date.now()
         const primaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        recordPerf({
+          kind: 'send.route.primary',
+          providerId: model?.providerId,
+          modelId: model?.modelId,
+          durationMs: Date.now() - routeStartedAt,
+          ok: true,
+          note: String(primaryIntent?.kind || 'chat')
+        })
         const routeKind = String(primaryIntent?.kind || 'chat')
         assistantMsg.primaryRoute = {
           kind: routeKind,
@@ -14791,9 +14923,13 @@ export default {
           ? detectDocumentScopeIntent(text)
           : null
         if (documentScopeIntent) {
-          this.loadAssistantItems()
-          await this.sendDocumentAwareMessage(text, model, prepared)
-          return
+          const documentAwareScope = this.resolveUserTaskInputScope(text, { routeKind })
+          const canUseDocumentMaterial = documentAwareScope.resolvedScope !== 'prompt'
+          if (canUseDocumentMaterial) {
+            this.loadAssistantItems()
+            await this.sendDocumentAwareMessage(text, model, prepared)
+            return
+          }
         }
 
         const translateIntent = routeKind === 'document-operation'
@@ -14894,9 +15030,18 @@ export default {
         const taskInputScope = this.resolveUserTaskInputScope(text, { routeKind })
         const suggestedDocumentAction = this.resolveDocumentActionPreferenceFromText(text) || ''
         const wantsPlainIntro = this.shouldForcePlainTextIntroResponse(text)
-        const wantsPlainParagraph = (routeKind === 'document-operation' || !!suggestedDocumentAction) && !wantsPlainIntro
+        const promptOnlyCreation = isPromptOnlyCreationRequest(text)
+        const wantsPlainParagraph = (routeKind === 'document-operation' || !!suggestedDocumentAction) && !wantsPlainIntro && !promptOnlyCreation
         const shouldNormalizePlain = wantsPlainIntro || wantsPlainParagraph
-        const { documentText, snapshot, documentCharCount } = this.getCurrentDocumentPayload()
+        let documentText = ''
+        let snapshot = selectionSnapshot || null
+        let documentCharCount = 0
+        if (taskInputScope.resolvedScope === 'document') {
+          const documentPayload = this.getCurrentDocumentPayload()
+          documentText = documentPayload.documentText
+          snapshot = documentPayload.snapshot
+          documentCharCount = documentPayload.documentCharCount
+        }
         this.applyResolvedUserScopeMeta(chatObj, userMessageId, taskInputScope, {
           selectionSnapshot,
           documentCharCount
@@ -14968,25 +15113,30 @@ export default {
         }
 
         const recommendationContext = this.getRecommendationContextText(apiUserContent)
-        this.resolveAssistantRecommendationsForMessage(recommendationContext, model, assistantMsg)
+        this.scheduleAssistantRecommendationsForMessage(recommendationContext, model, assistantMsg, 1200)
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: '模型已接收请求...',
           detail: '正在等待首段回复返回。',
           percent: 68
         })
-        const rawMessagesForApi = chatObj.messages
-          .slice(0, -1)
-          .filter(m => m.content)
-          .map(m => ({
-            role: m.role,
-            content: m.id === userMessageId ? apiUserContent : m.content
-          }))
-        const { messages: messagesForApi, meta: contextBuildMeta } = buildChatContextMessages(rawMessagesForApi, {
+        const contextBuildStartedAt = Date.now()
+        const { rawMessagesForApi, messagesForApi, contextBuildMeta } = buildChatFlowRequestContext(chatObj, {
+          userMessageId,
+          apiUserContent,
+          chatId: chatObj?.id || this.currentChatId,
+          scopeKey: this.historyStorageScopeKey || this.currentChatId || chatObj?.id || '',
           maxContextChars: 12000,
           recentMessageLimit: 10,
-          summaryCharLimit: 2200,
-          chatId: chatObj?.id || this.currentChatId,
-          scopeKey: this.historyStorageScopeKey || this.currentChatId || chatObj?.id || ''
+          summaryCharLimit: 2200
+        })
+        recordPerf({
+          kind: 'send.context.build',
+          providerId: model?.providerId,
+          modelId: model?.modelId,
+          durationMs: Date.now() - contextBuildStartedAt,
+          ok: true,
+          bytes: Number(contextBuildMeta?.totalCharsAfter || 0),
+          note: String(contextBuildMeta?.budgetLevel || '')
         })
         assistantMsg.messageMeta = {
           ...(assistantMsg.messageMeta && typeof assistantMsg.messageMeta === 'object' ? assistantMsg.messageMeta : {}),
@@ -15003,12 +15153,24 @@ export default {
         })
 
         let rawStreamText = ''
+        let firstChunkRecorded = false
         streamChatCompletion({
           ribbonModelId: model.id,
           providerId: model.providerId,
           modelId: model.modelId,
           messages: messagesForApi,
           onChunk: (chunk) => {
+            if (!firstChunkRecorded) {
+              firstChunkRecorded = true
+              recordPerf({
+                kind: 'send.first-chunk',
+                providerId: model?.providerId,
+                modelId: model?.modelId,
+                durationMs: Date.now() - sendStartedAt,
+                ok: true,
+                bytes: String(chunk || '').length
+              })
+            }
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             rawStreamText += chunk
@@ -15061,6 +15223,15 @@ export default {
             }
             this.streamingContent = ''
             this.requestAssistantEvolutionSuggestionCheck()
+            recordPerf({
+              kind: 'send.total',
+              providerId: model?.providerId,
+              modelId: model?.modelId,
+              durationMs: Date.now() - sendStartedAt,
+              ok: true,
+              bytes: String(assistantMsg.content || '').length,
+              note: routeKind
+            })
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottom())
           },
@@ -15071,6 +15242,14 @@ export default {
             this.streamingContent = ''
             this.clearAssistantRecommendations(assistantMsg)
             assistantMsg.content = '[错误] ' + this.formatAssistantTaskError(err || '请求失败')
+            recordPerf({
+              kind: 'send.total',
+              providerId: model?.providerId,
+              modelId: model?.modelId,
+              durationMs: Date.now() - sendStartedAt,
+              ok: false,
+              note: String(err?.message || err || '请求失败').slice(0, 80)
+            })
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottom())
           }
@@ -15083,6 +15262,14 @@ export default {
         this.isStreaming = false
         this.clearAssistantRecommendations(assistantMsg)
         assistantMsg.content = '[错误] ' + this.formatAssistantTaskError(err?.message || '处理失败')
+        recordPerf({
+          kind: 'send.total',
+          providerId: model?.providerId,
+          modelId: model?.modelId,
+          durationMs: Date.now() - sendStartedAt,
+          ok: false,
+          note: String(err?.message || '处理失败').slice(0, 80)
+        })
         this.saveHistory()
         this.$nextTick(() => this.scrollToBottom())
       }
@@ -15137,32 +15324,28 @@ export default {
       try {
         applyDocumentAction('insert', text, { title: '察元 AI 助手' })
       } catch (e) {
-        console.error('插入到文档失败:', e)
-        alert('插入失败: ' + (e.message || e))
+        reportError('插入到文档失败', e)
       }
     },
     doReplaceDocumentContent(text) {
       try {
         applyDocumentAction('replace', text, { title: '察元 AI 助手' })
       } catch (e) {
-        console.error('替换文档内容失败:', e)
-        alert('替换失败: ' + (e.message || e))
+        reportError('替换文档内容失败', e)
       }
     },
     doAppendToDocument(text) {
       try {
         applyDocumentAction('append', text, { title: '察元 AI 助手' })
       } catch (e) {
-        console.error('追加到文末失败:', e)
-        alert('追加失败: ' + (e.message || e))
+        reportError('追加到文末失败', e)
       }
     },
     doInsertAsComment(text) {
       try {
         applyDocumentAction('comment', text, { title: '察元 AI 助手' })
       } catch (e) {
-        console.error('插入批注失败:', e)
-        alert('插入批注失败: ' + (e.message || e))
+        reportError('插入批注失败', e)
       }
     }
   }
@@ -15171,13 +15354,13 @@ export default {
 
 <style scoped>
 .ai-assistant-dialog {
-  --ai-bg: #f7f8fa;
-  --ai-sidebar-bg: #f0f2f5;
-  --ai-border: #e5e7eb;
+  --ai-bg: #f6f8ff;
+  --ai-sidebar-bg: rgba(245, 247, 252, 0.86);
+  --ai-border: rgba(219, 226, 239, 0.86);
   --ai-text: #1f2937;
   --ai-text-muted: #6b7280;
-  --ai-user-bg: #e0f2fe;
-  --ai-assistant-bg: #fff;
+  --ai-user-bg: linear-gradient(135deg, rgba(219, 234, 254, 0.96), rgba(224, 242, 254, 0.88));
+  --ai-assistant-bg: rgba(255, 255, 255, 0.88);
   --ai-shadow: 0 1px 3px rgba(0,0,0,0.08);
   --ai-radius: 8px;
   --ai-radius-sm: 6px;
@@ -15188,7 +15371,10 @@ export default {
   min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
   font-size: 14px;
-  background: var(--ai-bg);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(139, 92, 246, 0.12), transparent 30%),
+    radial-gradient(circle at 86% 18%, rgba(74, 108, 247, 0.11), transparent 28%),
+    linear-gradient(180deg, #fbfcff 0%, var(--ai-bg) 46%, #f8fafc 100%);
   color: var(--ai-text);
 }
 
@@ -15795,17 +15981,39 @@ export default {
 }
 
 .main-area {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
+}
+
+.main-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.68) 42%, transparent 58%),
+    radial-gradient(circle at 78% 8%, rgba(232, 155, 43, 0.08), transparent 26%);
+  opacity: 0.58;
+  mix-blend-mode: screen;
+}
+
+.main-area > * {
+  position: relative;
+  z-index: 1;
 }
 
 .messages-container {
   position: relative;
   flex: 1;
   overflow-y: auto;
-  padding: 16px 24px;
+  padding: 18px 24px 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(248, 250, 252, 0.22)),
+    radial-gradient(circle at 50% 0%, rgba(110, 141, 248, 0.08), transparent 38%);
 }
 
 .welcome-inline-banner {
@@ -17147,9 +17355,9 @@ export default {
 
 .message-row {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  max-width: 800px;
+  gap: 10px;
+  margin-bottom: 12px;
+  max-width: min(840px, 92%);
   transform-origin: right bottom;
   will-change: transform, opacity, filter;
 }
@@ -17652,11 +17860,14 @@ export default {
 }
 
 .message-text {
-  padding: 10px 14px;
-  border-radius: var(--ai-radius);
-  line-height: 1.5;
+  position: relative;
+  padding: 9px 13px;
+  border-radius: 14px;
+  line-height: 1.58;
   white-space: pre-wrap;
   word-break: break-word;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .message-text.message-text-waiting {
@@ -18096,13 +18307,27 @@ export default {
 .message-row.user .message-text {
   background: var(--ai-user-bg);
   color: #0c4a6e;
-  box-shadow: 0 12px 24px rgba(14, 165, 233, 0.14);
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.66);
 }
 
 .message-row.assistant .message-text {
   background: var(--ai-assistant-bg);
-  border: 1px solid var(--ai-border);
-  box-shadow: var(--ai-shadow);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.message-row.assistant .message-text::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(74, 108, 247, 0.18), rgba(139, 92, 246, 0.12), rgba(63, 174, 130, 0.08));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 .message-row.assistant .message-text.message-text-error {
@@ -18174,23 +18399,46 @@ export default {
 }
 
 .input-area {
-  padding: 16px 24px 20px;
-  border-top: 1px solid var(--ai-border);
-  background: var(--ai-assistant-bg);
+  padding: 12px 24px 18px;
+  border-top: 1px solid rgba(226, 232, 240, 0.72);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.72), rgba(255, 255, 255, 0.9));
   flex-shrink: 0;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .composer-shell {
-  border: 1px solid var(--ai-border);
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
-  padding: 10px 12px 8px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(203, 213, 225, 0.78);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  padding: 8px 10px 7px;
+}
+
+.composer-shell::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(115deg, rgba(74, 108, 247, 0.4), rgba(139, 92, 246, 0.18), rgba(63, 174, 130, 0.22));
+  opacity: 0;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
 }
 
 .composer-shell:focus-within {
-  border-color: rgba(14, 165, 233, 0.48);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.08);
+  border-color: rgba(110, 141, 248, 0.52);
+  box-shadow: 0 18px 46px rgba(74, 108, 247, 0.12), 0 0 0 4px rgba(110, 141, 248, 0.08);
+}
+
+.composer-shell:focus-within::before {
+  opacity: 1;
 }
 
 .composer-meta-row {
@@ -18488,7 +18736,7 @@ export default {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .chat-attachment-input {
@@ -18691,9 +18939,9 @@ export default {
 .text-input {
   flex: 1;
   min-width: 0;
-  min-height: 44px;
+  min-height: 40px;
   max-height: 180px;
-  padding: 10px 0 8px;
+  padding: 8px 0 7px;
   border: none;
   border-radius: 0;
   font-size: 14px;
@@ -18711,12 +18959,13 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   position: relative;
-  background: transparent;
+  background: rgba(248, 250, 252, 0.72);
+  border-radius: 10px;
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
@@ -18725,6 +18974,7 @@ export default {
 .tool-icon-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: saturate(1.08);
+  background: rgba(239, 246, 255, 0.95);
 }
 
 .tool-icon-btn:disabled {

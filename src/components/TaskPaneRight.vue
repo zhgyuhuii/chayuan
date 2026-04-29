@@ -386,6 +386,7 @@
 import { loadRulesFromDoc } from '../utils/templateRules.js'
 import { DATA_TYPES } from '../utils/templateRules.js'
 import Util from './js/util.js'
+import { reportError } from '../utils/reportError.js'
 
 export default {
   name: 'TaskPaneRight',
@@ -1616,8 +1617,7 @@ export default {
         this.fieldError = ''
         alert('保存成功')
       } catch (e) {
-        console.error('保存失败:', e)
-        alert('保存失败：' + (e.message || e))
+        reportError('保存失败', e)
       }
     },
     // 定位到书签（不激活文档窗口，避免失去焦点）

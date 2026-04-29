@@ -1,0 +1,210 @@
+/**
+ * assistant-form-enhanced.css — SettingsDialog 助手编辑面板的视觉增强
+ *
+ * 通过 CSS cascade 在不动 SettingsDialog.vue 主模板的前提下,
+ * 优化以下问题:
+ *   1. 字段密度过低 → gap 14px + 紧凑 padding
+ *   2. Hint 视觉过重 → 浅灰背景 + 左 border + 小字
+ *   3. 操作栏沉底找不到 → sticky 底栏
+ *   4. 必填字段无标识 → label 自动加 *
+ *   5. 宽屏单栏浪费空间 → ≥720px 切到两栏 grid
+ *   6. 报告子项视觉无层级 → 左 border + 缩进
+ *
+ * 由 main.js 在 dark-mode-fixes.css 之后导入。
+ *
+ * 仅在 settings dialog 的 .config-content 范围内生效,不影响其他对话框。
+ */
+
+/* ─────────── 1. 容器密度 ─────────── */
+
+.config-content {
+  /* 原 gap: 20px → 14px,缩短滚动距离 ~30% */
+  gap: 14px !important;
+  padding: 0 4px;
+}
+
+.config-item {
+  gap: 6px !important;
+}
+
+/* ─────────── 2. Hint 视觉降权 ─────────── */
+
+.config-hint {
+  margin: 4px 0 0 !important;
+  padding: 6px 10px !important;
+  background: var(--chy-ink-50, #f6f7f9);
+  border-left: 2px solid var(--chy-ink-300, #c5c8cf);
+  border-radius: 0 4px 4px 0;
+  font-size: 11px !important;
+  line-height: 1.55 !important;
+  color: var(--color-text-muted, #999) !important;
+}
+
+/* 多个紧邻的 hint:间距更紧凑 */
+.config-hint + .config-hint {
+  margin-top: 2px !important;
+}
+
+/* hint 内的 link 不被淹没 */
+.config-hint .config-hint-link {
+  color: var(--chy-violet-600, #6f5fd0);
+}
+
+/* ─────────── 3. textarea 视觉区分 ─────────── */
+
+.config-textarea {
+  font-family: var(--font-mono) !important;
+  background: var(--chy-ink-50, #fafbfc) !important;
+  line-height: 1.55 !important;
+}
+.config-textarea:focus {
+  background: var(--color-bg-elevated, #fff) !important;
+}
+
+/* 系统提示词 / 用户提示词模板的 textarea 加更明显的视觉,提醒"这是关键内容" */
+.config-item:has(textarea[placeholder*="系统提示词"]) .config-textarea,
+.config-item:has(textarea[placeholder*="用户提示词"]) .config-textarea,
+.config-item:has(textarea[placeholder*="提示词"]) .config-textarea {
+  border-left: 3px solid var(--chy-violet-400, #a397e8) !important;
+  padding-left: 11px !important;
+}
+
+/* ─────────── 4. 必填字段标识 ─────────── */
+
+/* 用 :has + 兄弟选择器找出"required"字段 */
+.config-item:has(input[placeholder="请输入助手名称"]) .config-label::after,
+.config-item:has(input[placeholder="请输入显示名称"]) .config-label::after,
+.config-item:has(textarea[placeholder*="系统提示词"]) .config-label::after,
+.config-item:has(textarea[placeholder*="用户提示词模板"]) .config-label::after,
+.config-item:has(textarea[placeholder*="可使用 {{input}}"]) .config-label::after {
+  content: ' *';
+  color: var(--chy-rouge-500, #e26a58);
+  font-weight: 700;
+}
+
+/* ─────────── 5. 操作栏 sticky ─────────── */
+
+.config-content > .assistant-inline-actions:last-child {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 0 -4px;
+  padding: 12px 4px 8px;
+  background: linear-gradient(
+    to top,
+    var(--color-bg-elevated, #fff) 70%,
+    transparent
+  );
+  border-top: 1px solid var(--chy-ink-100, #f0f1f4);
+}
+
+/* ─────────── 6. 报告子项视觉层级 ─────────── */
+
+/* 「输出报告」之后的连续 3 个 .config-item 是它的子项,加左边框表从属 */
+.config-item:has(label.config-label):is(
+  :has(label[data-key="customType"]),
+  :has(label[data-key="template"]),
+  :has(label[data-key="prompt"])
+) {
+  border-left: 2px solid var(--chy-violet-200, #d4cbf2);
+  padding-left: 12px;
+  margin-left: 4px;
+}
+
+/* 通过 placeholder 启发式识别 */
+.config-item:has(input[placeholder*="自定义报告"]),
+.config-item:has(textarea[placeholder*="希望模型遵循"]),
+.config-item:has(textarea[placeholder*="报告口径"]) {
+  border-left: 2px solid var(--chy-violet-200, #d4cbf2);
+  padding-left: 12px;
+  margin-left: 4px;
+  background: rgba(124, 108, 220, 0.025);
+  border-radius: 0 4px 4px 0;
+}
+
+/* ─────────── 7. 快捷模板 panel 限高 + 滚动 ─────────── */
+
+.assistant-preset-panel {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--chy-ink-200, #e6e8ec);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--chy-ink-50, #fafbfc);
+}
+
+.assistant-preset-panel-head {
+  position: sticky;
+  top: 0;
+  background: var(--chy-ink-50, #fafbfc);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--chy-ink-100, #f0f1f4);
+  margin-bottom: 8px;
+  z-index: 1;
+}
+
+/* ─────────── 8. 宽屏两栏布局(≥720px) ─────────── */
+
+@media (min-width: 720px) {
+  .config-content .config-item {
+    display: grid !important;
+    grid-template-columns: 110px 1fr;
+    column-gap: 16px;
+    align-items: start;
+  }
+  .config-content .config-item .config-label {
+    padding-top: 9px;
+    text-align: right;
+    color: var(--color-text-secondary, #666);
+  }
+  .config-content .config-item > input,
+  .config-content .config-item > select,
+  .config-content .config-item > textarea,
+  .config-content .config-item > .config-hint,
+  .config-content .config-item > .assistant-icon-picker,
+  .config-content .config-item > .default-model-select-wrap,
+  .config-content .config-item > .assistant-inline-actions,
+  .config-content .config-item > .assistant-location-grid,
+  .config-content .config-item > .config-preview {
+    grid-column: 2;
+  }
+
+  /* 推荐 panel / preset panel 这些复杂子结构跨两栏 */
+  .config-content > .assistant-recommend-card,
+  .config-content > .assistant-preset-panel,
+  .config-content > .assistant-prefill-notice,
+  .config-content > .assistant-inline-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ─────────── 9. 配置 header 加密度 ─────────── */
+
+.config-header {
+  padding-bottom: 10px !important;
+  margin-bottom: 4px !important;
+  border-bottom: 1px solid var(--chy-ink-100, #f0f1f4);
+}
+
+.config-header-desc {
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+  line-height: 1.55;
+  margin: 4px 0 0;
+}
+
+/* ─────────── 10. 暗色模式适配 ─────────── */
+
+[data-theme="dark"] .config-textarea {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+[data-theme="dark"] .config-textarea:focus {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+[data-theme="dark"] .config-hint {
+  background: rgba(255, 255, 255, 0.04);
+  border-left-color: rgba(255, 255, 255, 0.18);
+}
+[data-theme="dark"] .assistant-preset-panel {
+  background: rgba(255, 255, 255, 0.03);
+}

@@ -1,0 +1,235 @@
+/**
+ * motion.css — 察元统一动效库
+ *
+ * 关键动效:
+ *   1. AI 流光边框   .chy-ai-aura       (Apple Intelligence 风,思考态用)
+ *   2. 进度条 shimmer  .chy-shimmer-bar (Stripe 风奔跑斑马线)
+ *   3. 完成扫光       .chy-finish-sweep (Linear 风一道光带)
+ *   4. 紫色思考光标   .chy-thinking-cursor
+ *   5. 消息气泡入场   .chy-bubble-in
+ *   6. 翻页数字       .chy-flip-digit   (版本号晋升)
+ *   7. 助手卡片晋升   .chy-promote-glow
+ *
+ * 使用约束:
+ *   - 所有动效遵守 @media (prefers-reduced-motion) 与 [data-motion]
+ *   - 单元素只承载一个动效角色,避免动效叠加
+ *   - GPU 友好:transform / opacity / filter 优先,避免 box-shadow 持续动画
+ *
+ * 引入:
+ *   import '@/assets/motion.css'
+ */
+
+/* ───────────────── 1. AI 流光边框 ───────────────── */
+/*
+  用法:
+    <div class="my-dialog" data-ai-state="thinking|streaming">…</div>
+
+  原理:用 conic-gradient + mask 双层叠加做"边框跑光",GPU 仅做 transform 旋转,主线程零成本。
+*/
+.chy-ai-aura {
+  position: relative;
+}
+.chy-ai-aura[data-ai-state="thinking"]::before,
+.chy-ai-aura[data-ai-state="streaming"]::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: var(--chy-gradient-ai);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: chy-ai-rotate 4s linear infinite;
+  filter: blur(0.4px);
+  pointer-events: none;
+  z-index: 0;
+}
+.chy-ai-aura[data-ai-state="thinking"]::before { opacity: 0.55; }
+.chy-ai-aura[data-ai-state="streaming"]::before { opacity: 1; }
+
+@keyframes chy-ai-rotate {
+  to { --ai-angle: 360deg; }
+}
+
+/* ───────────────── 2. 进度条 shimmer ───────────────── */
+/*
+  用法:
+    <div class="chy-shimmer-bar" :style="{ width: percent + '%' }"></div>
+*/
+.chy-shimmer-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--chy-gradient-shimmer);
+  background-size: 200% 100%;
+  animation: chy-shimmer-move 1.6s linear infinite;
+}
+@keyframes chy-shimmer-move {
+  to { background-position: -200% 0; }
+}
+
+/* ───────────────── 3. 完成扫光 ───────────────── */
+/*
+  用法:任务结束时给容器加一次 .chy-finish-sweep,800ms 后自动收回。
+
+    el.classList.add('chy-finish-sweep')
+    setTimeout(() => el.classList.remove('chy-finish-sweep'), 800)
+*/
+.chy-finish-sweep {
+  position: relative;
+  overflow: hidden;
+}
+.chy-finish-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,
+    transparent 0%,
+    rgba(63, 174, 130, 0.10) 35%,
+    rgba(63, 174, 130, 0.18) 50%,
+    rgba(63, 174, 130, 0.10) 65%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: chy-sweep-pass 800ms var(--chy-ease-out, cubic-bezier(.32,.72,0,1)) 1;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes chy-sweep-pass {
+  to { transform: translateX(100%); }
+}
+
+/* ───────────────── 4. 紫色思考光标 ───────────────── */
+.chy-thinking-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--chy-violet-500);
+  animation: chy-cursor-breathe 800ms ease-in-out infinite;
+  border-radius: 1px;
+}
+@keyframes chy-cursor-breathe {
+  0%, 100% { opacity: 0.4; transform: scaleY(0.85); }
+  50%      { opacity: 1;   transform: scaleY(1);    }
+}
+
+/* ───────────────── 5. 消息气泡入场 ───────────────── */
+.chy-bubble-in {
+  animation: chy-bubble-enter var(--chy-motion-normal, 280ms) var(--chy-ease-out-spring) backwards;
+}
+.chy-bubble-in[data-from="user"] {
+  transform-origin: bottom right;
+}
+.chy-bubble-in[data-from="assistant"] {
+  transform-origin: bottom left;
+}
+@keyframes chy-bubble-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)  scale(1);    }
+}
+
+/* ───────────────── 6. 翻页数字(版本号) ───────────────── */
+.chy-flip-digit {
+  display: inline-block;
+  perspective: 200px;
+  font-variant-numeric: tabular-nums;
+}
+.chy-flip-digit-inner {
+  display: inline-block;
+  animation: chy-flip-roll 600ms var(--chy-ease-out-spring);
+}
+@keyframes chy-flip-roll {
+  0%   { transform: rotateX(-90deg); opacity: 0; }
+  60%  { transform: rotateX(15deg);  opacity: 1; }
+  100% { transform: rotateX(0);                 }
+}
+
+/* ───────────────── 7. 助手卡片晋升 ───────────────── */
+.chy-promote-glow {
+  position: relative;
+  isolation: isolate;
+}
+.chy-promote-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(110deg,
+    transparent 0%,
+    rgba(74, 108, 247, 0.22) 50%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: chy-promote-pass 1.2s var(--chy-ease-out, cubic-bezier(.32,.72,0,1)) 1;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes chy-promote-pass {
+  to { transform: translateX(100%); }
+}
+
+/* ───────────────── 8. 通用辅助 ───────────────── */
+.chy-fade-in {
+  animation: chy-fade-in var(--chy-motion-normal, 280ms) var(--chy-ease-out) backwards;
+}
+@keyframes chy-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.chy-slide-up {
+  animation: chy-slide-up var(--chy-motion-normal, 280ms) var(--chy-ease-out-spring) backwards;
+}
+@keyframes chy-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.chy-pop {
+  animation: chy-pop 240ms var(--chy-ease-out-spring);
+}
+@keyframes chy-pop {
+  0%   { transform: scale(1);   }
+  50%  { transform: scale(1.12); }
+  100% { transform: scale(1);   }
+}
+
+/* 动效偏好降级 */
+@media (prefers-reduced-motion: reduce) {
+  .chy-ai-aura[data-ai-state]::before,
+  .chy-shimmer-bar,
+  .chy-finish-sweep::after,
+  .chy-thinking-cursor,
+  .chy-bubble-in,
+  .chy-flip-digit-inner,
+  .chy-promote-glow::before,
+  .chy-fade-in,
+  .chy-slide-up,
+  .chy-pop {
+    animation: none !important;
+  }
+}
+
+/* "克制" 档:进一步减弱视觉冲击 */
+[data-motion="quiet"] .chy-ai-aura[data-ai-state="thinking"]::before {
+  opacity: 0.25;
+  filter: blur(1px);
+}
+[data-motion="quiet"] .chy-finish-sweep::after,
+[data-motion="quiet"] .chy-promote-glow::before {
+  display: none;
+}
+
+/* "华丽" 档:加强 */
+[data-motion="vivid"] .chy-ai-aura[data-ai-state="thinking"]::before {
+  filter: blur(0.8px) saturate(1.1);
+}
+[data-motion="vivid"] .chy-shimmer-bar {
+  height: 4px;
+  box-shadow: 0 0 8px var(--chy-brand-glow);
+}

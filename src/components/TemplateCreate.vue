@@ -147,6 +147,7 @@
 <script>
 import { loadRulesFromDoc, saveRulesToDoc, onRulesStorageSync } from '../utils/templateRules.js'
 import Util from './js/util.js'
+import { reportError } from '../utils/reportError.js'
 
 function normalizeRuleList() {
   return loadRulesFromDoc().map(rule => ({
@@ -336,8 +337,7 @@ export default {
           false
         )
       } catch (error) {
-        console.error('打开添加表单失败:', error)
-        alert('打开表单失败：' + (error.message || error))
+        reportError('打开添加表单失败', error)
       }
     },
     openSmartExtract() {
@@ -360,8 +360,7 @@ export default {
           false
         )
       } catch (error) {
-        console.error('打开智能提取失败:', error)
-        alert('打开智能提取失败：' + (error.message || error))
+        reportError('打开智能提取失败', error)
       }
     },
     openEditForm() {
@@ -376,8 +375,7 @@ export default {
           false
         )
       } catch (error) {
-        console.error('打开修改表单失败:', error)
-        alert('打开表单失败：' + (error.message || error))
+        reportError('打开修改表单失败', error)
       }
     },
     deleteSelected() {
@@ -417,8 +415,7 @@ export default {
         target?.Delete?.()
         this.refreshAll()
       } catch (error) {
-        console.error('删除书签失败:', error)
-        alert('删除书签失败：' + (error.message || error))
+        reportError('删除书签失败', error)
       }
     },
     sanitizeBookmarkName(value) {
@@ -490,8 +487,7 @@ export default {
         this.selectedId = rule.id
         this.refreshAll()
       } catch (error) {
-        console.error('插入标签失败:', error)
-        alert('插入标签失败：' + (error.message || error))
+        reportError('插入标签失败', error)
       }
     },
     goToBookmark(bookmark) {
@@ -501,8 +497,7 @@ export default {
         const target = doc.Bookmarks.Item(bookmark.bookmarkName)
         target?.Select?.()
       } catch (error) {
-        console.error('定位书签失败:', error)
-        alert('定位书签失败：' + (error.message || error))
+        reportError('定位书签失败', error)
       }
     }
   }

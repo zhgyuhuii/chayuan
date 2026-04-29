@@ -1,4 +1,6 @@
 import { buildChatCompletionsRequestSnapshot, chatCompletion } from './chatApi.js'
+import { runConcurrently } from './concurrentRunner.js'
+import { startTimer as startPerfTimer } from './perfTracker.js'
 import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSettings.js'
 import { addTask, updateTask, getTaskById } from './taskListStore.js'
 import {
@@ -59,6 +61,8 @@ import {
 } from './documentProcessingPipeline.js'
 import { appendEvaluationRecord, buildDocumentTaskEvaluationRecord } from './evaluationStore.js'
 import { showSafeErrorDetail } from './safeErrorDialog.js'
+// P1 接入:把 task 完成事件转写成 SignalStore 的 'task' 信号,供 RACE 评估器消费。
+import { appendSignal } from './assistant/evolution/signalStore.js'
 
 const BUILTIN_RIBBON_ASSISTANT_SET = new Set(getBuiltinRibbonAssistantIds())
 const activeAssistantRuns = new Map()
@@ -94,6 +98,41 @@ function persistDocumentEvaluation(options = {}) {
     appendEvaluationRecord(buildDocumentTaskEvaluationRecord(options))
   } catch (_) {
     // Ignore evaluation persistence failures so task execution is not interrupted.
+  }
+  // P1 接入:把 task 完成同步到 SignalStore,作为 RACE 评估的真实数据源。
+  // 失败容忍 — SignalStore 内部 try/catch,不会反向阻塞任务。
+  try {
+    const status = String(options?.status || '').trim()
+    const isFailure = status === 'failed' || status === 'cancelled' || options?.success === false
+    const downgraded = !!options?.downgradeReason
+    const writeTargets = Array.isArray(options?.writeTargets) ? options.writeTargets : []
+    const anchorHit = writeTargets.length > 0 && !writeTargets.some(t => t?.downgraded)
+
+    appendSignal({
+      type: 'task',
+      assistantId: options?.assistantId,
+      version: options?.assistantVersion,
+      taskId: options?.taskId,
+      input: options?.inputText,
+      output: options?.outputText,
+      duration: Number(options?.elapsedMs) || 0,
+      tokens: Number(options?.tokens) || 0,
+      success: !isFailure,
+      failureCode: status === 'failed'
+        ? (options?.failureCode || 'task_failed')
+        : (status === 'cancelled' ? 'task_cancelled' : ''),
+      documentAction: options?.documentAction,
+      userNote: options?.downgradeReason || '',
+      metadata: {
+        downgraded,
+        anchor_hit: anchorHit,
+        writeTargetCount: writeTargets.length,
+        launchSource: options?.launchSource,
+        pendingApply: options?.pendingApply === true
+      }
+    })
+  } catch (_) {
+    // 信号采集失败不阻塞任务
   }
 }
 
@@ -945,13 +984,21 @@ async function runPlainDocumentAssistantExecution(ctx) {
     })
   })
 
-  const raw = await chatCompletion({
-    providerId: model.providerId,
-    modelId: model.modelId,
-    temperature,
-    signal: runState.abortController?.signal,
-    messages
-  })
+  const _stopPerf = startPerfTimer({ kind: 'task.single', providerId: model.providerId, modelId: model.modelId })
+  let raw
+  try {
+    raw = await chatCompletion({
+      providerId: model.providerId,
+      modelId: model.modelId,
+      temperature,
+      signal: runState.abortController?.signal,
+      messages
+    })
+    _stopPerf({ ok: true, bytes: String(raw || '').length })
+  } catch (e) {
+    _stopPerf({ ok: false, note: String(e?.message || e).slice(0, 80) })
+    throw e
+  }
   throwIfCancelled(runState)
   const output = String(raw || '').trim()
   if (!output) {
@@ -1118,77 +1165,108 @@ async function runChunkedPlainDocumentExecution(ctx) {
   await yieldToUI(0)
   throwIfCancelled(runState)
   const temperature = config.temperature ?? 0.3
-  const chunkOutputs = []
-  let lastChunkUserPrompt = ''
-  let lastLlmChatRequest = null
-
-  for (let i = 0; i < structuredChunks.length; i += 1) {
-    throwIfCancelled(runState)
-    await yieldToUI(0)
-    const chunk = structuredChunks[i]
+  // 预先把每段的 prompt 与 request 算好,parallel/serial 路径共享。
+  const chunkUserPrompts = structuredChunks.map((chunk) => {
     const chunkText = String(chunk.normalizedText || chunk.text || '').trim()
-    const chunkVariables = {
-      ...variables,
-      input: chunkText
-    }
+    const chunkVariables = { ...variables, input: chunkText }
     const chunkBasePrompt = interpolateTemplate(
       config.userPromptTemplate || definition.userPromptTemplate || '{{input}}',
       chunkVariables
     )
-    lastChunkUserPrompt = buildPlainChunkUserPrompt(
+    return buildPlainChunkUserPrompt(
       chunkBasePrompt,
       chunk,
       requirementText,
       reportSettings,
       chunkVariables
     )
+  })
+  const chunkRequests = chunkUserPrompts.map((userPrompt) => buildChatCompletionsRequestSnapshot({
+    providerId: model.providerId,
+    modelId: model.modelId,
+    ribbonModelId: model.id,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature,
+    stream: false
+  }))
+  const chunkDone = new Array(structuredChunks.length).fill(false)
+  const chunkOutputs = new Array(structuredChunks.length).fill('')
+  // 默认串行(并发=1,行为零变更);用户可通过 config.parallelChunks=N 启用并发。
+  const concurrency = Math.max(1, Math.min(Number(config.parallelChunks) || 1, 8))
+
+  const chunkResults = await runConcurrently(structuredChunks, async (chunk, i) => {
+    throwIfCancelled(runState)
+    await yieldToUI(0)
+    const userPrompt = chunkUserPrompts[i]
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: lastChunkUserPrompt }
+      { role: 'user', content: userPrompt }
     ]
-    lastLlmChatRequest = buildChatCompletionsRequestSnapshot({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      ribbonModelId: model.id,
-      messages,
-      temperature,
-      stream: false
-    })
-    const raw = await chatCompletion({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      temperature,
-      signal: runState.abortController?.signal,
-      messages
-    })
-    chunkOutputs.push(String(raw || '').trim())
-    const progress = Math.min(78, 24 + Math.round(((i + 1) / Math.max(1, structuredChunks.length)) * 50))
-    updateTask(taskId, {
-      current: i + 1,
-      total: structuredChunks.length,
-      progress,
-      data: buildTaskData({
-        progressStage: 'calling_model',
-        renderedSystemPrompt: systemPrompt,
-        renderedUserPrompt: lastChunkUserPrompt,
-        progressEvents: [
-          `任务已启动，正在分段调用模型（${shortLabel}）。`,
-          `第 ${i + 1}/${structuredChunks.length} 段已完成。`,
-          launchGuardReason ? `${launchGuardReason}，本次仅生成结果，不写回文档。` : ''
-        ].filter(Boolean),
-        items: structuredChunks.map((c, idx) => buildProgressItem(
-          `第 ${idx + 1} 段`,
-          c.normalizedText || c.text,
-          idx <= i ? 'done' : 'pending',
-          {
-            chunkIndex: idx + 1,
-            output: idx <= i ? String(chunkOutputs[idx] || '').trim() : '',
-            request: idx === i ? lastLlmChatRequest : undefined
-          }
-        ))
+    const stopPerf = startPerfTimer({ kind: 'task.chunk', providerId: model.providerId, modelId: model.modelId })
+    let raw
+    try {
+      raw = await chatCompletion({
+        providerId: model.providerId,
+        modelId: model.modelId,
+        temperature,
+        signal: runState.abortController?.signal,
+        messages
       })
-    })
+      stopPerf({ ok: true, bytes: String(raw || '').length })
+    } catch (e) {
+      stopPerf({ ok: false, note: String(e?.message || e).slice(0, 80) })
+      throw e
+    }
+    chunkOutputs[i] = String(raw || '').trim()
+    return chunkOutputs[i]
+  }, {
+    concurrency,
+    stopOnError: true,
+    signal: runState.abortController?.signal,
+    onProgress: (completed, total, i) => {
+      if (i == null) return
+      chunkDone[i] = true
+      const progress = Math.min(78, 24 + Math.round((completed / Math.max(1, total)) * 50))
+      try {
+        updateTask(taskId, {
+          current: completed,
+          total,
+          progress,
+          data: buildTaskData({
+            progressStage: 'calling_model',
+            renderedSystemPrompt: systemPrompt,
+            renderedUserPrompt: chunkUserPrompts[i],
+            progressEvents: [
+              `任务已启动，${concurrency > 1 ? `并发 ${concurrency} 路` : '分段'}调用模型（${shortLabel}）。`,
+              `第 ${completed}/${total} 段已完成。`,
+              launchGuardReason ? `${launchGuardReason}，本次仅生成结果，不写回文档。` : ''
+            ].filter(Boolean),
+            items: structuredChunks.map((c, idx) => buildProgressItem(
+              `第 ${idx + 1} 段`,
+              c.normalizedText || c.text,
+              chunkDone[idx] ? 'done' : 'pending',
+              {
+                chunkIndex: idx + 1,
+                output: chunkDone[idx] ? String(chunkOutputs[idx] || '').trim() : '',
+                request: idx === i ? chunkRequests[i] : undefined
+              }
+            ))
+          })
+        })
+      } catch (_) { /* 进度更新失败不致命 */ }
+    }
+  })
+
+  // 与原串行循环保持等价:任何 chunk 失败 → 立即抛出第一个错误
+  for (const r of chunkResults) {
+    if (r && typeof r === 'object' && r.error) throw r.error
   }
+  throwIfCancelled(runState)
+  const lastChunkUserPrompt = chunkUserPrompts[chunkUserPrompts.length - 1] || ''
+  const lastLlmChatRequest = chunkRequests[chunkRequests.length - 1] || null
 
   const output = chunkOutputs.filter(Boolean).join('\n\n').trim()
   if (!output) {
@@ -1367,13 +1445,24 @@ async function runStructuredBatchChat({
       temperature: 0.1,
       stream: false
     })
-    lastRaw = await chatCompletion({
+    const stopPerfRetry = startPerfTimer({
+      kind: `task.structured.attempt${attempt}`,
       providerId: model.providerId,
-      modelId: model.modelId,
-      temperature: 0.1,
-      signal,
-      messages
+      modelId: model.modelId
     })
+    try {
+      lastRaw = await chatCompletion({
+        providerId: model.providerId,
+        modelId: model.modelId,
+        temperature: 0.1,
+        signal,
+        messages
+      })
+      stopPerfRetry({ ok: true, bytes: String(lastRaw || '').length })
+    } catch (e) {
+      stopPerfRetry({ ok: false, note: String(e?.message || e).slice(0, 80) })
+      throw e
+    }
     lastParsed = parseStructuredBatchResponse(lastRaw, assistantId, chunk)
     if (lastParsed.valid) {
       lastQuality = assessStructuredBatchQuality(lastParsed, assistantId)

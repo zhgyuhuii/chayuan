@@ -843,11 +843,11 @@
                     <label class="config-label">智能推荐提示词</label>
                     <p class="config-hint assistant-recommend-hint">{{ assistantPromptRecommendationModelHint }}</p>
                   </div>
-                  <button
-                    type="button"
-                    class="btn btn-secondary assistant-recommend-btn"
-                    @click="openAssistantPromptRecommendDialog"
-                  >{{ assistantPromptRecommendationActionLabel }}</button>
+                  <a
+                    href="#"
+                    class="assistant-recommend-link"
+                    @click.prevent="openAssistantPromptRecommendDialog"
+                  >{{ assistantPromptRecommendationActionLabel }}</a>
                 </div>
                 <textarea
                   v-model="assistantForm.recommendationRequirement"
@@ -2200,6 +2200,7 @@ import {
 } from '../utils/assistantSettings.js'
 import { consumeAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.js'
 import { startAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
+import { normalizeAssistantConfig, validateAssistantConfig } from '../services/assistantStudio/assistantConfigSchema.js'
 import {
   readAssistantRecommendationApplyRequest,
   clearAssistantRecommendationApplyRequest,
@@ -3792,6 +3793,25 @@ export default {
         ))
       }
     },
+    normalizeCustomAssistantNames(list = []) {
+      const used = new Set()
+      return (Array.isArray(list) ? list : []).map((assistant) => {
+        const next = normalizeAssistantConfig(cloneValue(assistant), { fallbackName: '智能助手' })
+        let name = String(next.name || '').trim()
+        if (!name || name === '未命名助手') {
+          name = this.buildAssistantAutoName(next)
+        }
+        let uniqueName = name
+        let index = 2
+        while (used.has(uniqueName)) {
+          uniqueName = `${name} ${index}`
+          index += 1
+        }
+        used.add(uniqueName)
+        next.name = uniqueName
+        return next
+      })
+    },
     selectAssistantSettingItem(item) {
       this.commitAssistantForm()
       this.activeAssistantSettingItem = item.key
@@ -4064,14 +4084,35 @@ export default {
       this.onAssistantFormChange()
       this.showMessage(`已应用“${this.assistantForm.name || '报告助手'}”快捷模板，可继续微调后创建`)
     },
+    buildAssistantAutoName(form = {}) {
+      const directName = String(form.name || '').trim()
+      if (directName && directName !== '未命名助手') return directName
+      const source = String([
+        form.recommendationRequirement,
+        form.description,
+        form.persona,
+        form.systemPrompt
+      ].filter(Boolean).join(' ')).replace(/\s+/g, ' ').trim()
+      const matched = source.match(/(?:用于|用来|帮助|帮我|负责|能够|可以)?\s*([\u4e00-\u9fa5A-Za-z0-9]{2,16})(?:审查|检查|生成|提取|总结|翻译|润色|改写|分析|统计|写作|助手|工具|能力)/)
+      const base = matched?.[1]
+        ? `${matched[1]}助手`
+        : source
+          ? `${source.slice(0, 12)}助手`
+          : '智能助手'
+      return this.buildUniqueAssistantCopyName(base.replace(/[，。；;,.!?！？\n\r\t]/g, '').trim() || '智能助手')
+    },
     createCustomAssistant() {
-      const name = String(this.assistantForm?.name || '').trim()
-      if (!name) {
-        this.showMessage('请先输入助手名称', 'error')
+      const name = this.buildAssistantAutoName(this.assistantForm)
+      const validation = validateAssistantConfig({
+        ...this.assistantForm,
+        name
+      })
+      if (!validation.ok) {
+        this.showMessage(validation.issues[0]?.message || '助手配置不完整', 'error')
         return
       }
       const newAssistant = {
-        ...cloneValue(this.assistantForm),
+        ...cloneValue(validation.normalized),
         id: buildCustomAssistantId(name),
         name,
         icon: normalizeAssistantIcon(this.assistantForm?.icon),
@@ -5400,7 +5441,7 @@ export default {
       }
     },
     // 保存默认模型配置
-    saveDefaultModelsToStorage() {
+    async saveDefaultModelsToStorage() {
       const key = 'defaultModelsByCategory'
       const val = JSON.stringify(this.defaultModelsByCategory)
       try {
@@ -5412,6 +5453,11 @@ export default {
         }
         if (this.defaultModelsByCategory.chat) {
           setDefaultModelId(this.defaultModelsByCategory.chat)
+          // 进化系统跟随默认模型重新接线;失败不阻塞设置保存
+          try {
+            const mod = await import('../utils/assistant/evolution/bootHelpers.js')
+            mod.rebootForModelChange?.()
+          } catch (_) { /* 进化是辅助,失败静默 */ }
         }
         return true
       } catch (e) {
@@ -6075,7 +6121,7 @@ export default {
       if (event?.target) event.target.style.display = 'none'
     },
     // 保存
-    onSave() {
+    async onSave() {
       let hasError = false
       this.commitAssistantForm()
       // 1. 保存数据路径
@@ -6090,7 +6136,7 @@ export default {
         setDataPath('')
       }
       // 2. 保存默认模型（按分类）
-      if (!this.saveDefaultModelsToStorage()) {
+      if (!(await this.saveDefaultModelsToStorage())) {
         this.showMessage('默认模型保存失败', 'error')
         hasError = true
       }
@@ -6107,6 +6153,11 @@ export default {
         }
       })
       // 4. 保存助手设置与自定义助手
+      this.customAssistants = this.normalizeCustomAssistantNames(this.customAssistants)
+      if (this.currentAssistantSettingItem?.type === 'custom-assistant') {
+        const refreshed = this.customAssistants.find(entry => entry.id === this.currentAssistantSettingItem.key)
+        if (refreshed) this.assistantForm = cloneValue(refreshed)
+      }
       if (!saveAssistantSettings(this.assistantSettingsMap)) {
         this.showMessage('助手设置保存失败', 'error')
         hasError = true
@@ -6174,18 +6225,24 @@ export default {
   width: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
   font-size: 13px;
-  background: #fff;
+  background:
+    radial-gradient(circle at 86% 0%, rgba(74, 108, 247, 0.08), transparent 28%),
+    linear-gradient(180deg, #fbfcff 0%, #f8fafc 100%);
   overflow: hidden;
+  color: #1f2937;
 }
 
 
 .dialog-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.86);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .dialog-header h3 {
@@ -6241,7 +6298,8 @@ export default {
 }
 
 .settings-column {
-  border-right: 1px solid #f0f0f0;
+  border-right: 1px solid rgba(226, 232, 240, 0.86);
+  background: rgba(255, 255, 255, 0.56);
 }
 
 .column-1 {
@@ -7253,7 +7311,7 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 16px;
+  padding: 12px 14px;
   transition: opacity 0.3s ease;
 }
 
@@ -7300,9 +7358,12 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .config-header-text {
@@ -7390,33 +7451,44 @@ input:checked + .slider:before {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+  padding: 2px 4px 12px;
 }
 
 .config-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid rgba(226, 232, 240, 0.74);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.025);
 }
 
 .config-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #333;
+  font-size: 12px;
+  font-weight: 650;
+  color: #334155;
+  letter-spacing: 0.01em;
 }
 
 .config-input {
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  padding: 7px 10px;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 9px;
   font-size: 13px;
-  transition: all 0.3s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2937;
+  box-sizing: border-box;
 }
 
 .config-input:focus {
   outline: none;
-  border-color: #1890ff;
+  border-color: rgba(74, 108, 247, 0.58);
+  box-shadow: 0 0 0 3px rgba(74, 108, 247, 0.08);
 }
 
 .config-input:disabled {
@@ -7426,9 +7498,9 @@ input:checked + .slider:before {
 }
 
 .config-textarea {
-  min-height: 96px;
+  min-height: 82px;
   resize: vertical;
-  line-height: 1.6;
+  line-height: 1.55;
   font-family: inherit;
 }
 
@@ -8226,32 +8298,61 @@ input:checked + .slider:before {
 }
 
 .assistant-recommend-card {
-  padding: 14px 16px;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f3f8ff 100%);
+  padding: 12px;
+  border: 1px solid rgba(191, 219, 254, 0.9);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 96% 4%, rgba(139, 92, 246, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, rgba(241, 247, 255, 0.86) 100%);
+  box-shadow: 0 10px 26px rgba(37, 99, 235, 0.06);
 }
 
 .assistant-recommend-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 7px;
 }
 
-.assistant-recommend-btn {
+.assistant-recommend-link {
   flex-shrink: 0;
-  min-width: 96px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 3px;
+  border-radius: 999px;
+  color: #3a56d4;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.assistant-recommend-link::after {
+  content: '↗';
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.72;
+}
+
+.assistant-recommend-link:hover {
+  color: #6537db;
+  background: rgba(99, 102, 241, 0.08);
+  transform: translateY(-1px);
 }
 
 .assistant-recommend-hint {
-  margin-top: 4px;
+  margin-top: 3px;
+  max-height: 42px;
 }
 
 .assistant-recommend-inline-textarea {
-  min-height: 96px;
-  margin-bottom: 10px;
+  min-height: 72px;
+  margin-bottom: 7px;
   background: rgba(255, 255, 255, 0.92);
 }
 

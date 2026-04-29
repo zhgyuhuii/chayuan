@@ -1307,6 +1307,7 @@ import { focusExistingSettingsWindow } from '../utils/settingsWindowManager.js'
 import { createTaskListWindowSession } from '../utils/taskListWindowManager.js'
 import { INPUT_SOURCE_OPTIONS, DOCUMENT_ACTION_OPTIONS } from '../utils/assistantRegistry.js'
 import { getReportTypeLabel, normalizeReportSettings } from '../utils/reportSettings.js'
+import { reportError } from '../utils/reportError.js'
 
 const BATCH_APPLY_UI_STATE_KEY = 'NdSpellCheckBatchApplyUiState'
 const TASK_LIST_UI_STATE_KEY = 'NdTaskListUiState'
@@ -3478,7 +3479,7 @@ export default {
         }
         alert(successMessage)
       } catch (e) {
-        alert('复制失败：' + (e.message || e))
+        reportError('复制失败', e)
       }
     },
     getRequestJson(taskId, itemIdx, item) {
@@ -3988,7 +3989,7 @@ export default {
         await retrySpellCheckChunk(taskId, itemIndex, requestOverride)
         this.detailTask = getTaskById(taskId) || this.detailTask
       } catch (e) {
-        alert('重试失败：' + (e.message || e))
+        reportError('重试失败', e)
       } finally {
         this.retryingIndex = -1
       }
@@ -4174,7 +4175,7 @@ export default {
         this.detailTask = getTaskById(taskId) || this.detailTask
       } catch (e) {
         this.detailTask = getTaskById(taskId) || this.detailTask
-        alert('写入批注失败：' + (e.message || e))
+        reportError('写入批注失败', e)
       } finally {
         this.applyingIssueKey = ''
       }
@@ -4202,7 +4203,7 @@ export default {
         }
       } catch (e) {
         this.detailTask = getTaskById(taskId) || this.detailTask
-        alert('批量写入失败：' + (e.message || e))
+        reportError('批量写入失败', e)
       } finally {
         this.applyingSkippedTaskId = ''
       }

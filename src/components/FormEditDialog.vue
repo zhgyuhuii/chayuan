@@ -201,6 +201,7 @@ import {
   saveRulesToDoc,
   normalizeConstraints
 } from '../utils/templateRules.js'
+import { reportError } from '../utils/reportError.js'
 
 const REVIEW_PLACEHOLDERS = {
   regex: '如：^[\\u4e00-\\u9fa5]{2,4}$',
@@ -519,8 +520,7 @@ export default {
         alert('保存成功')
         this.loadBookmarks()
       } catch (e) {
-        console.error('保存失败:', e)
-        alert('保存失败：' + (e.message || e))
+        reportError('保存失败', e)
       }
     },
     onCancel() {

@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { installGuards } from './guards.js'
 //import HomeView from '../views/HomeView.vue'
 
 const router = createRouter({
@@ -173,8 +174,60 @@ const router = createRouter({
       path: '/about-chayuan',
       name: '关于察元',
       component: () => import('../components/AboutChayuanPage.vue')
+    },
+    {
+      path: '/evolution',
+      name: '助手进化中心',
+      component: () => import('../components/EvolutionPage.vue')
+    },
+    {
+      path: '/perf',
+      name: 'LLM 延迟监控',
+      component: () => import('../components/PerfPage.vue')
+    },
+    {
+      path: '/marketplace',
+      name: '助手市场',
+      component: () => import('../components/MarketplacePage.vue')
+    },
+    {
+      path: '/dialog-demo',
+      name: '对话框 Demo',
+      component: () => import('../components/DialogDemoPage.vue')
+    },
+    {
+      path: '/welcome',
+      name: '欢迎',
+      component: () => import('../components/WelcomePage.vue')
+    },
+    {
+      path: '/dashboard',
+      name: '进化大盘',
+      component: () => import('../components/EvolutionDashboard.vue')
+    },
+    {
+      path: '/assistant-form-demo',
+      name: '新建助手 · 目标布局',
+      component: () => import('../components/AssistantFormDemoPage.vue')
+    },
+    {
+      path: '/task-center',
+      name: '任务中心',
+      component: () => import('../components/TaskCenterPage.vue')
+    },
+    {
+      path: '/tour',
+      name: '功能总览',
+      component: () => import('../components/FeatureTourPage.vue')
+    },
+    {
+      path: '/control',
+      name: '控制台',
+      component: () => import('../components/ControlPanelPage.vue')
     }
   ]
 })
+
+try { installGuards(router) } catch (_) { /* 守卫安装失败不阻塞主流程 */ }
 
 export default router

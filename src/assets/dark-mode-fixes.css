@@ -1,0 +1,81 @@
+/**
+ * dark-mode-fixes.css — 暗色模式补丁
+ *
+ * 针对老组件中硬编码 white / #fff / #000 的局部 override。
+ * 不动老组件本身,通过 cascade 在 [data-theme="dark"] 下覆盖。
+ *
+ * 由 main.js 在 motion.css 之后导入。
+ */
+
+[data-theme="dark"] {
+  /* 通用 dialog / popup 容器,旧组件常用 background: #fff */
+  .dialog-container,
+  .popup-container,
+  .modal-container,
+  .form-edit-dialog,
+  .task-pane-right {
+    background: var(--color-bg-elevated) !important;
+    color: var(--color-text-primary);
+  }
+
+  /* 旧 button 通常 white 背景 + 黑边 */
+  button:not([class*="chy-"]):not(.evo-btn):not(.mp-btn):not(.ed-btn):not(.dd-btn):not(.wp-btn):not(.pa-btn):not(.ps-btn):not(.ft-btn):not(.ev-btn):not(.toast-action):not(.toast-close):not(.wb-link-btn):not(.wb-close) {
+    background: var(--chy-ink-100);
+    color: var(--color-text-primary);
+    border-color: var(--chy-ink-300);
+  }
+  button:not([class*="chy-"]):not(.evo-btn):not(.mp-btn):not(.ed-btn):not(.dd-btn):not(.wp-btn):not(.pa-btn):not(.ps-btn):not(.ft-btn):not(.ev-btn):not(.toast-action):not(.toast-close):not(.wb-link-btn):not(.wb-close):hover {
+    background: var(--chy-ink-200);
+  }
+
+  /* 输入框 */
+  input[type="text"]:not([class*="chy-"]):not(.mp-search):not(.dd-composer textarea),
+  input[type="search"]:not([class*="chy-"]),
+  textarea:not([class*="chy-"]):not(.dd-composer textarea) {
+    background: var(--chy-ink-50);
+    color: var(--color-text-primary);
+    border-color: var(--chy-ink-300);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /* select */
+  select:not([class*="chy-"]):not(.mp-select) {
+    background: var(--chy-ink-50);
+    color: var(--color-text-primary);
+    border-color: var(--chy-ink-300);
+  }
+
+  /* 表格 */
+  table:not([class*="chy-"]):not(.ev-race):not(.ed-league):not(.pa-table):not(.ps-table) {
+    color: var(--color-text-primary);
+  }
+  table:not([class*="chy-"]) th {
+    background: var(--chy-ink-100);
+    color: var(--color-text-secondary);
+    border-color: var(--chy-ink-300);
+  }
+  table:not([class*="chy-"]) td {
+    border-color: var(--chy-ink-200);
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { background: var(--chy-ink-50); }
+  ::-webkit-scrollbar-thumb { background: var(--chy-ink-300); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--chy-ink-400); }
+
+  /* 选中文本 */
+  ::selection {
+    background: rgba(124, 108, 220, 0.4);
+    color: var(--color-text-primary);
+  }
+}
+
+/* 即使没显式选 dark,系统 prefers-color-scheme: dark 时也应用 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* 透传给 [data-theme="dark"] 的 cascade(变量已经在 tokens.css 切换) */
+  }
+}
