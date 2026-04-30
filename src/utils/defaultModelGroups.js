@@ -17,11 +17,11 @@ export const MODEL_GROUPS = [
   },
   {
     label: 'Claude',
-    icon: 'images/models/claude.svg',
+    icon: 'images/models/logos/claude.png',
     models: [
-      { id: 'claude-3.5', name: 'Claude 3.5', icon: 'images/models/claude.svg' },
-      { id: 'claude-3', name: 'Claude 3', icon: 'images/models/claude.svg' },
-      { id: 'claude', name: 'Claude', icon: 'images/models/claude.svg' }
+      { id: 'claude-3.5', name: 'Claude 3.5', icon: 'images/models/logos/claude.png' },
+      { id: 'claude-3', name: 'Claude 3', icon: 'images/models/logos/claude.png' },
+      { id: 'claude', name: 'Claude', icon: 'images/models/logos/claude.png' }
     ]
   },
   {

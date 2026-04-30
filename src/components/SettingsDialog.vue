@@ -4609,7 +4609,7 @@ export default {
         { id: 'xiaomi-mimo', name: 'Xiaomi MiMo', icon: 'images/models/xiaomi.svg', provider: true },
         { id: 'new-api', name: 'New API', icon: 'images/models/new-api.svg', provider: true },
         { id: 'lm-studio', name: 'LM Studio', icon: 'images/models/lm-studio.svg', provider: true },
-        { id: 'anthropic', name: 'Anthropic', icon: 'images/models/logos/anthropic.png', provider: true },
+        { id: 'anthropic', name: 'Anthropic', icon: 'images/models/logos/claude.png', provider: true },
         { id: 'openai', name: 'OpenAI', icon: 'images/models/openai.svg', provider: true },
         { id: 'azure-openai', name: 'Azure OpenAI', icon: 'images/models/azure.svg', provider: true },
         { id: 'gemini', name: 'Gemini', icon: 'images/models/gemini.svg', provider: true },
@@ -6288,10 +6288,11 @@ export default {
       if (hasError) return
       this.isFormSaved = true
       this.showMessage('设置已保存')
-      setTimeout(() => {
-        if (window.focus) window.focus()
-        this.onClose()
-      }, 800)
+      this.$nextTick(() => {
+        try {
+          if (window.focus) window.focus()
+        } catch (_) {}
+      })
     },
     // 窗口获得焦点
     onWindowFocus() {

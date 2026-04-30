@@ -181,7 +181,7 @@ import { stopDocumentCommentTask, undoDocumentCommentTask } from '../utils/docum
 import { stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
 import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { getSpellCheckTaskBridge } from '../utils/spellCheckTaskBridge.js'
-import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { createTaskProgressWindowSession } from '../utils/taskProgressWindowManager.js'
 
 function getActiveDocumentForRevisionMode() {
@@ -906,8 +906,8 @@ export default {
           window.Application.ShowDialog(
             url,
             '任务清单',
-            980 * (window.devicePixelRatio || 1),
-            760 * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_WIDTH * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_HEIGHT * (window.devicePixelRatio || 1),
             false
           )
           return

@@ -4,8 +4,8 @@ const LOCK_KEY = 'nd_settings_window_lock'
 const REQUEST_KEY = 'nd_settings_window_request'
 const STALE_MS = 15000
 const HEARTBEAT_MS = 5000
-const DEFAULT_SETTINGS_WINDOW_WIDTH = 1040
-const DEFAULT_SETTINGS_WINDOW_HEIGHT = 760
+export const DEFAULT_SETTINGS_WINDOW_WIDTH = 1120
+export const DEFAULT_SETTINGS_WINDOW_HEIGHT = 820
 
 function readStorageJson(key) {
   try {

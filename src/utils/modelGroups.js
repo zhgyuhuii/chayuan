@@ -6,7 +6,7 @@ export const MODEL_GROUPS = [
     { id: 'gpt-4o', name: 'GPT-4o' }, { id: 'gpt-4', name: 'GPT-4' }, { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
     { id: 'o3', name: 'o3' }, { id: 'gpt_o1', name: 'GPT-o1' }, { id: 'gpt-5', name: 'GPT-5' }, { id: 'gpt-3.5', name: 'GPT-3.5' }
   ]},
-  { label: 'Claude', icon: 'images/models/claude.svg', models: [
+  { label: 'Claude', icon: 'images/models/logos/claude.png', models: [
     { id: 'claude-3.5', name: 'Claude 3.5' }, { id: 'claude-3', name: 'Claude 3' }, { id: 'claude', name: 'Claude' }
   ]},
   { label: 'Gemini', icon: 'images/models/gemini.svg', models: [

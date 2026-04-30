@@ -1304,7 +1304,7 @@ import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
 import { dispatchAssistantRecommendationApplyRequest } from '../utils/assistantRecommendationApplyBridge.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
-import { createTaskListWindowSession } from '../utils/taskListWindowManager.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, createTaskListWindowSession } from '../utils/taskListWindowManager.js'
 import { INPUT_SOURCE_OPTIONS, DOCUMENT_ACTION_OPTIONS } from '../utils/assistantRegistry.js'
 import { getReportTypeLabel, normalizeReportSettings } from '../utils/reportSettings.js'
 import { reportError } from '../utils/reportError.js'
@@ -3186,8 +3186,8 @@ export default {
           window.Application.ShowDialog(
             url,
             '任务清单',
-            980 * (window.devicePixelRatio || 1),
-            760 * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_WIDTH * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_HEIGHT * (window.devicePixelRatio || 1),
             false
           )
           return
@@ -4198,7 +4198,9 @@ export default {
 <style scoped>
 .popup {
   font-size: 14px;
-  min-height: 95%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  overflow-y: auto;
   padding: 16px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
 }

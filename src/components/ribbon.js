@@ -34,7 +34,7 @@ import {
 import { reopenExistingAIAssistantWindow } from '../utils/aiAssistantWindowManager.js'
 import { MODEL_GROUPS, getDefaultModelsFlat } from '../utils/defaultModelGroups.js'
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
-import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { focusExistingTaskOrchestrationWindow } from '../utils/taskOrchestrationWindowManager.js'
 import { showSafeErrorDetail } from '../utils/safeErrorDialog.js'
 import { reportError } from '../utils/reportError.js'
@@ -3220,8 +3220,8 @@ function OnAction(control) {
         window.Application.ShowDialog(
           popupUrl,
           '任务清单',
-          980 * (window.devicePixelRatio || 1),
-          720 * (window.devicePixelRatio || 1),
+          DEFAULT_TASK_LIST_WINDOW_WIDTH * (window.devicePixelRatio || 1),
+          DEFAULT_TASK_LIST_WINDOW_HEIGHT * (window.devicePixelRatio || 1),
           false
         )
       } catch (e) {

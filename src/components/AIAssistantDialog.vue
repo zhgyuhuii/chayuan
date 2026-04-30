@@ -286,9 +286,48 @@
           :class="{ 'is-applying': assistantEvolutionSuggestion.status === 'applying' }"
         >
           <div class="assistant-evolution-banner-main">
-            <div class="assistant-evolution-banner-title">发现你有助手可以进化</div>
+            <div class="assistant-evolution-banner-head">
+              <div class="assistant-evolution-badge">进化建议</div>
+              <div class="assistant-evolution-banner-title">发现一组能力高度接近的助手</div>
+            </div>
             <div class="assistant-evolution-banner-desc">
               {{ $cdt(assistantEvolutionSuggestion.message) }}
+            </div>
+            <div
+              v-if="assistantEvolutionSuggestion.status !== 'completed'"
+              class="assistant-evolution-banner-actions"
+            >
+              <button
+                type="button"
+                class="assistant-evolution-action secondary"
+                :disabled="assistantEvolutionSuggestion.status === 'applying'"
+                @click.stop="dismissAssistantEvolutionSuggestion()"
+              >
+                暂不处理
+              </button>
+              <button
+                type="button"
+                class="assistant-evolution-action primary"
+                :disabled="assistantEvolutionSuggestion.status === 'applying'"
+                @click.stop="confirmAssistantEvolutionSuggestion()"
+              >
+                {{
+                  assistantEvolutionSuggestion.status === 'applying'
+                    ? '进化中...'
+                    : assistantEvolutionSuggestion.status === 'review'
+                      ? '确认发布进化版'
+                      : '立即进化'
+                }}
+              </button>
+            </div>
+            <div v-else class="assistant-evolution-banner-actions">
+              <button
+                type="button"
+                class="assistant-evolution-action primary"
+                @click.stop="dismissAssistantEvolutionSuggestion()"
+              >
+                我知道了
+              </button>
             </div>
             <div
               v-if="Array.isArray(assistantEvolutionSuggestion.reasonDetails) && assistantEvolutionSuggestion.reasonDetails.length"
@@ -345,42 +384,6 @@
                 可以进化为一个
               </span>
             </div>
-          </div>
-          <div
-            v-if="assistantEvolutionSuggestion.status !== 'completed'"
-            class="assistant-evolution-banner-actions"
-          >
-            <button
-              type="button"
-              class="message-confirm-btn"
-              :disabled="assistantEvolutionSuggestion.status === 'applying'"
-              @click.stop="dismissAssistantEvolutionSuggestion()"
-            >
-              暂不处理
-            </button>
-            <button
-              type="button"
-              class="message-confirm-btn primary"
-              :disabled="assistantEvolutionSuggestion.status === 'applying'"
-              @click.stop="confirmAssistantEvolutionSuggestion()"
-            >
-              {{
-                assistantEvolutionSuggestion.status === 'applying'
-                  ? '进化中...'
-                  : assistantEvolutionSuggestion.status === 'review'
-                    ? '确认发布进化版'
-                    : '立即进化'
-              }}
-            </button>
-          </div>
-          <div v-else class="assistant-evolution-banner-actions">
-            <button
-              type="button"
-              class="message-confirm-btn primary"
-              @click.stop="dismissAssistantEvolutionSuggestion()"
-            >
-              我知道了
-            </button>
           </div>
         </div>
         <div
@@ -2111,7 +2114,7 @@ import { exportDocumentImagesAsAssets } from '../utils/documentImageExportServic
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
-import { focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
 import { isRecognizableMultimodalAttachment, recognizeMultimodalAttachment } from '../utils/multimodalRecognitionRunner.js'
@@ -3120,6 +3123,26 @@ function createRecommendationBigrams(value) {
     if (chunk && !result.includes(chunk)) result.push(chunk)
   }
   return result
+}
+
+const ASSISTANT_EVOLUTION_CAPABILITY_TERMS = [
+  '语气', '口吻', '风格', '正式', '礼貌', '通俗', '术语', '列表', '段落', '改写',
+  '润色', '摘要', '翻译', '扩写', '缩写', '保密', '脱密', '批注', '标题', '目录',
+  '表格', '格式', '校对', '病句', '错别字', '合同', '审查', '报告', '解释', '提取',
+  '关键词', '续写', '总结', '检查', '优化', '美化', '问答', '分类'
+]
+
+function createAssistantEvolutionCapabilityTerms(value) {
+  const normalized = String(value || '').toLowerCase()
+  const terms = []
+  ASSISTANT_EVOLUTION_CAPABILITY_TERMS.forEach((term) => {
+    if (normalized.includes(term) && !terms.includes(term)) terms.push(term)
+  })
+  const englishWords = normalized.match(/[a-z][a-z0-9-]{2,}/g) || []
+  englishWords.forEach((word) => {
+    if (!terms.includes(word)) terms.push(word)
+  })
+  return terms
 }
 
 function uniqueAssistantAliases(list = []) {
@@ -4405,7 +4428,7 @@ export default {
         if (focusExistingTaskListWindow({ taskId: normalizedTaskId, detail: '1' })) {
           return
         }
-        this.openDialogRoute('/popup', { taskId: normalizedTaskId, detail: '1' }, '任务清单', 980, 760)
+        this.openDialogRoute('/popup', { taskId: normalizedTaskId, detail: '1' }, '任务清单', DEFAULT_TASK_LIST_WINDOW_WIDTH, DEFAULT_TASK_LIST_WINDOW_HEIGHT)
       } catch (error) {
         console.warn('打开任务详情失败:', error)
       }
@@ -5253,40 +5276,11 @@ export default {
         assistant.persona,
         assistant.systemPrompt,
         assistant.userPromptTemplate,
-        assistant.targetLanguage,
-        assistant.reportSettings?.type,
-        assistant.reportSettings?.customType,
         assistant.reportSettings?.prompt
       ].map(item => String(item || '').trim()).filter(Boolean).join(' ')
     },
     computeAssistantEvolutionSimilarity(left, right) {
-      if (!left || !right) return 0
-      const leftTokens = createRecommendationBigrams(this.getAssistantEvolutionComparableText(left))
-      const rightTokens = createRecommendationBigrams(this.getAssistantEvolutionComparableText(right))
-      const leftNameTokens = createRecommendationBigrams(String(left.name || '').trim())
-      const rightNameTokens = createRecommendationBigrams(String(right.name || '').trim())
-      const tokenOverlap = leftTokens.length > 0 && rightTokens.length > 0
-        ? leftTokens.filter(item => rightTokens.includes(item)).length / Math.max(1, Math.min(leftTokens.length, rightTokens.length))
-        : 0
-      const nameOverlap = leftNameTokens.length > 0 && rightNameTokens.length > 0
-        ? leftNameTokens.filter(item => rightNameTokens.includes(item)).length / Math.max(1, Math.min(leftNameTokens.length, rightNameTokens.length))
-        : 0
-      const leftFingerprint = buildAssistantCapabilityFingerprint(left)
-      const rightFingerprint = buildAssistantCapabilityFingerprint(right)
-      let fingerprintScore = 0
-      const directKeys = ['modelType', 'outputFormat', 'documentAction', 'inputSource', 'targetLanguage']
-      directKeys.forEach((key) => {
-        if (String(leftFingerprint?.[key] || '') && String(leftFingerprint?.[key] || '') === String(rightFingerprint?.[key] || '')) {
-          fingerprintScore += 0.08
-        }
-      })
-      if (JSON.stringify(leftFingerprint?.reportSettings || {}) === JSON.stringify(rightFingerprint?.reportSettings || {})) {
-        fingerprintScore += 0.12
-      }
-      if (JSON.stringify(leftFingerprint?.mediaOptions || {}) === JSON.stringify(rightFingerprint?.mediaOptions || {})) {
-        fingerprintScore += 0.08
-      }
-      return Math.min(1, tokenOverlap * 0.45 + nameOverlap * 0.12 + fingerprintScore)
+      return Number(this.getAssistantEvolutionSimilarityBreakdown(left, right).total || 0)
     },
     getAssistantEvolutionSimilarityBreakdown(left, right) {
       if (!left || !right) {
@@ -5294,23 +5288,35 @@ export default {
           total: 0,
           tokenOverlap: 0,
           nameOverlap: 0,
+          capabilityOverlap: 0,
           fingerprintScore: 0,
+          fingerprintContribution: 0,
           matchedFingerprintFields: []
         }
       }
-      const leftTokens = createRecommendationBigrams(this.getAssistantEvolutionComparableText(left))
-      const rightTokens = createRecommendationBigrams(this.getAssistantEvolutionComparableText(right))
-      const leftNameTokens = createRecommendationBigrams(String(left.name || '').trim())
-      const rightNameTokens = createRecommendationBigrams(String(right.name || '').trim())
+      const leftComparableText = this.getAssistantEvolutionComparableText(left)
+      const rightComparableText = this.getAssistantEvolutionComparableText(right)
+      const leftTokens = createRecommendationBigrams(leftComparableText)
+      const rightTokens = createRecommendationBigrams(rightComparableText)
+      const leftNameText = String(left.name || '').trim()
+      const rightNameText = String(right.name || '').trim()
+      const leftNameTokens = createRecommendationBigrams(leftNameText)
+      const rightNameTokens = createRecommendationBigrams(rightNameText)
+      const leftCapabilityTerms = createAssistantEvolutionCapabilityTerms(`${leftNameText} ${leftComparableText}`)
+      const rightCapabilityTerms = createAssistantEvolutionCapabilityTerms(`${rightNameText} ${rightComparableText}`)
       const tokenOverlap = leftTokens.length > 0 && rightTokens.length > 0
         ? leftTokens.filter(item => rightTokens.includes(item)).length / Math.max(1, Math.min(leftTokens.length, rightTokens.length))
         : 0
       const nameOverlap = leftNameTokens.length > 0 && rightNameTokens.length > 0
         ? leftNameTokens.filter(item => rightNameTokens.includes(item)).length / Math.max(1, Math.min(leftNameTokens.length, rightNameTokens.length))
         : 0
+      const capabilityOverlap = leftCapabilityTerms.length > 0 && rightCapabilityTerms.length > 0
+        ? leftCapabilityTerms.filter(item => rightCapabilityTerms.includes(item)).length / Math.max(1, Math.min(leftCapabilityTerms.length, rightCapabilityTerms.length))
+        : 0
       const leftFingerprint = buildAssistantCapabilityFingerprint(left)
       const rightFingerprint = buildAssistantCapabilityFingerprint(right)
-      let fingerprintScore = 0
+      let matchedFingerprintWeight = 0
+      let fingerprintWeightTotal = 0
       const matchedFingerprintFields = []
       const directKeys = ['modelType', 'outputFormat', 'documentAction', 'inputSource', 'targetLanguage']
       const keyLabels = {
@@ -5321,25 +5327,33 @@ export default {
         targetLanguage: '目标语言'
       }
       directKeys.forEach((key) => {
+        fingerprintWeightTotal += 1
         if (String(leftFingerprint?.[key] || '') && String(leftFingerprint?.[key] || '') === String(rightFingerprint?.[key] || '')) {
-          fingerprintScore += 0.08
+          matchedFingerprintWeight += 1
           matchedFingerprintFields.push(keyLabels[key] || key)
         }
       })
+      fingerprintWeightTotal += 1
       if (JSON.stringify(leftFingerprint?.reportSettings || {}) === JSON.stringify(rightFingerprint?.reportSettings || {})) {
-        fingerprintScore += 0.12
+        matchedFingerprintWeight += 1
         matchedFingerprintFields.push('报告配置')
       }
+      fingerprintWeightTotal += 1
       if (JSON.stringify(leftFingerprint?.mediaOptions || {}) === JSON.stringify(rightFingerprint?.mediaOptions || {})) {
-        fingerprintScore += 0.08
+        matchedFingerprintWeight += 1
         matchedFingerprintFields.push('媒体配置')
       }
-      const total = Math.min(1, tokenOverlap * 0.45 + nameOverlap * 0.12 + fingerprintScore)
+      const fingerprintScore = fingerprintWeightTotal > 0 ? matchedFingerprintWeight / fingerprintWeightTotal : 0
+      const fingerprintContribution = fingerprintScore * 0.08
+      const total = Math.min(1, tokenOverlap * 0.38 + nameOverlap * 0.28 + capabilityOverlap * 0.26 + fingerprintContribution)
+      const hasStrongIntentSignal = nameOverlap >= 0.34 || capabilityOverlap >= 0.5 || tokenOverlap >= 0.72
       return {
-        total,
+        total: hasStrongIntentSignal ? total : Math.min(total, 0.59),
         tokenOverlap,
         nameOverlap,
+        capabilityOverlap,
         fingerprintScore,
+        fingerprintContribution,
         matchedFingerprintFields
       }
     },
@@ -5366,11 +5380,12 @@ export default {
           const score = Number(pair.detail?.total || 0)
           const tokenPct = Math.round(Number(pair.detail?.tokenOverlap || 0) * 100)
           const namePct = Math.round(Number(pair.detail?.nameOverlap || 0) * 100)
+          const capabilityPct = Math.round(Number(pair.detail?.capabilityOverlap || 0) * 100)
           const fingerprintPct = Math.round(Number(pair.detail?.fingerprintScore || 0) * 100)
           const fields = Array.isArray(pair.detail?.matchedFingerprintFields) && pair.detail.matchedFingerprintFields.length
-            ? `；一致项：${pair.detail.matchedFingerprintFields.join('、')}`
+            ? `；基础设置相同：${pair.detail.matchedFingerprintFields.join('、')}`
             : ''
-          return `${pair.leftName} 与 ${pair.rightName}：相似度 ${Math.round(score * 100)}%（文本重合 ${tokenPct}%、名称重合 ${namePct}%、配置指纹贡献 ${fingerprintPct}%）${fields}`
+          return `${pair.leftName} 与 ${pair.rightName}：推荐强度 ${Math.round(score * 100)}%（能力意图 ${capabilityPct}%、名称 ${namePct}%、提示词 ${tokenPct}%、基础配置 ${fingerprintPct}%）${fields}。基础配置只作辅助，不会单独触发进化。`
         })
     },
     getAssistantEvolutionSignature(list = []) {
@@ -5396,7 +5411,7 @@ export default {
       for (let i = 0; i < customAssistants.length; i++) {
         for (let j = i + 1; j < customAssistants.length; j++) {
           const score = this.computeAssistantEvolutionSimilarity(customAssistants[i], customAssistants[j])
-          if (score >= 0.7) {
+          if (score >= 0.72) {
             edges.get(customAssistants[i].id)?.add(customAssistants[j].id)
             edges.get(customAssistants[j].id)?.add(customAssistants[i].id)
           }
@@ -5448,7 +5463,7 @@ export default {
         status: 'pending',
         progress: 0,
         progressLabel: '',
-        message: '这些助手的功能和经验比较接近，进化为一个助手后，下次可以更稳定地为你服务。',
+        message: '系统只在核心能力、名称或任务提示词高度接近时建议进化；模型、写回动作、语言等基础配置只作为辅助判断。确认后会生成一个更稳定的进化版，原助手仍会保留。',
         reasonDetails: this.buildAssistantEvolutionReasonDetails(bestGroup),
         assistants: bestGroup.map(item => ({
           id: item.id,
@@ -16059,14 +16074,16 @@ export default {
 
 .assistant-evolution-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  align-items: stretch;
   margin-bottom: 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(34, 197, 94, 0.16);
-  border-radius: 12px;
-  background: linear-gradient(90deg, rgba(34, 197, 94, 0.08), rgba(14, 165, 233, 0.08));
+  padding: 1px;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.18), transparent 36%),
+    radial-gradient(circle at 100% 18%, rgba(14, 165, 233, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(14, 165, 233, 0.16));
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
 }
 
 .assistant-evolution-banner.is-applying {
@@ -16077,12 +16094,39 @@ export default {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.assistant-evolution-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-evolution-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.16), rgba(14, 165, 233, 0.14));
+  border: 1px solid rgba(34, 197, 94, 0.18);
 }
 
 .assistant-evolution-banner-title {
-  color: #166534;
-  font-size: 13px;
+  color: #0f172a;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -16093,13 +16137,17 @@ export default {
 }
 
 .assistant-evolution-reason-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
 }
 
 .assistant-evolution-reason-item {
-  color: #475569;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.88));
+  color: #334155;
   font-size: 12px;
   line-height: 1.55;
 }
@@ -16168,8 +16216,41 @@ export default {
 .assistant-evolution-banner-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.assistant-evolution-action {
+  height: 34px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+
+.assistant-evolution-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.assistant-evolution-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.assistant-evolution-action.secondary {
+  color: #475569;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+.assistant-evolution-action.primary {
+  color: #fff;
+  background: linear-gradient(135deg, #16a34a, #0284c7);
+  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.2);
 }
 
 .assistant-evolution-progress {

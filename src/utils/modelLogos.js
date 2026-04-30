@@ -44,7 +44,7 @@ const MODEL_ID_TO_LOGO_BASENAME = {
   'lm-studio': 'lmstudio',
   CherryIN: 'api-compatible',
   OPENAI_RESPONSE: 'openai',
-  anthropic: 'anthropic',
+  anthropic: 'claude',
   'azure-openai': 'openai',
   gemini: 'gemini',
   'vertex-ai': 'google',
@@ -80,7 +80,7 @@ const MODEL_ID_TO_LOGO_BASENAME = {
   openrouter: 'openrouter',
   // 察元AI助理 ribbon 模型选择：具体模型 id -> logos basename
   'gpt-4o': 'openai', 'gpt-4': 'openai', 'gpt-4-turbo': 'openai', 'gpt-3.5': 'openai',
-  'claude-3.5': 'anthropic', 'claude-3': 'anthropic', claude: 'anthropic',
+  'claude-3.5': 'claude', 'claude-3': 'claude', claude: 'claude',
   'gemini-pro': 'gemini', gemini: 'gemini',
   'deepseek-v3': 'deepseek', 'deepseek-r1': 'deepseek', 'deepseek-coder': 'deepseek',
   doubao: 'doubao', 'doubao-pro': 'doubao',

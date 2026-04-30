@@ -2,6 +2,8 @@ const LOCK_KEY = 'nd_task_list_window_lock'
 const REQUEST_KEY = 'nd_task_list_window_request'
 const STALE_MS = 15000
 const HEARTBEAT_MS = 5000
+export const DEFAULT_TASK_LIST_WINDOW_WIDTH = 1120
+export const DEFAULT_TASK_LIST_WINDOW_HEIGHT = 820
 
 function readStorageJson(key) {
   try {

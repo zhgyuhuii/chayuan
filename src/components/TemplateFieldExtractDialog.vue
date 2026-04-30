@@ -270,6 +270,7 @@ import {
   saveExtractedFieldsToRulesAndBookmarks
 } from '../utils/formFieldExtractService.js'
 import { getTaskById } from '../utils/taskListStore.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH } from '../utils/taskListWindowManager.js'
 
 function createEmptyField() {
   return buildFieldDraftForDialog({
@@ -400,8 +401,8 @@ export default {
           window.Application.ShowDialog(
             url,
             '任务清单',
-            980 * (window.devicePixelRatio || 1),
-            760 * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_WIDTH * (window.devicePixelRatio || 1),
+            DEFAULT_TASK_LIST_WINDOW_HEIGHT * (window.devicePixelRatio || 1),
             false
           )
           return

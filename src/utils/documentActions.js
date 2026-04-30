@@ -633,6 +633,39 @@ function insertTextNearRange(doc, range, text, position = 'after') {
   insertRange.InsertAfter(toDocumentText(docText))
 }
 
+function insertTextAfterSelectedParagraphs(doc, range, text) {
+  if (!doc || !range || !hasMeaningfulSelectionText(range?.Text, 1)) {
+    return null
+  }
+  const paragraphRanges = getParagraphDescriptors(doc, range)
+    .filter(item => Number(item.writableEnd || 0) > Number(item.start || 0))
+  if (paragraphRanges.length <= 1) {
+    return null
+  }
+  const outputParts = alignReplacementParagraphs(splitReplacementParagraphs(text), paragraphRanges.length)
+  const writeTargets = []
+  for (let i = paragraphRanges.length - 1; i >= 0; i -= 1) {
+    const targetRange = paragraphRanges[i]
+    const outputText = stripParagraphEndMark(outputParts[i] || '')
+    if (!outputText) continue
+    const insertAt = Number(targetRange.writableEnd || 0)
+    const insertRange = doc.Range(insertAt, insertAt)
+    insertRange.InsertAfter(toDocumentText(`\r${outputText}`))
+    writeTargets.push(buildWriteTarget('insert-after', {
+      start: insertAt,
+      end: insertAt,
+      paragraphIndex: i + 1,
+      originalText: String(doc.Range(Number(targetRange.start || 0), Number(targetRange.writableEnd || 0))?.Text || ''),
+      outputText
+    }))
+  }
+  writeTargets.reverse()
+  return {
+    insertedCount: writeTargets.length,
+    writeTargets
+  }
+}
+
 // P1 优化:外层 export 包 withScreenLock,关 ScreenUpdating + Repagination,
 // 大文档批量写回从 8s 量级降到 1s 量级。内部递归调用走 _impl,避免嵌套锁。
 export function applyParagraphResultsAction(action, paragraphResults = [], options = {}) {
@@ -1743,6 +1776,18 @@ export function applyDocumentAction(action, text, options = {}) {
       }
     }
     case 'insert-after': {
+      const paragraphInsertResult = insertTextAfterSelectedParagraphs(doc, range, resultText)
+      if (paragraphInsertResult) {
+        return {
+          ok: true,
+          action: 'insert-after',
+          message: paragraphInsertResult.insertedCount > 0
+            ? `已在 ${paragraphInsertResult.insertedCount} 个选中段落后插入对应结果`
+            : '未找到可插入的段落结果',
+          insertedParagraphCount: paragraphInsertResult.insertedCount,
+          writeTargets: paragraphInsertResult.writeTargets
+        }
+      }
       insertTextNearRange(doc, range, resultText, 'after')
       return {
         ok: true,

@@ -1547,6 +1547,7 @@ import {
 import { getCapabilityBusCatalog } from '../utils/capabilityBus.js'
 import { isAssistantImageIcon, normalizeAssistantIcon } from '../utils/assistantIcons.js'
 import { createTaskOrchestrationWindowSession } from '../utils/taskOrchestrationWindowManager.js'
+import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH } from '../utils/taskListWindowManager.js'
 
 const workflowMime = 'application/x-chayuan-workflow-assistant'
 const workflowBundleType = 'chayuan-workflow-bundle'
@@ -4296,8 +4297,8 @@ function openTaskList(taskId = '') {
       window.Application.ShowDialog(
         url,
         '任务清单',
-        980 * (window.devicePixelRatio || 1),
-        760 * (window.devicePixelRatio || 1),
+        DEFAULT_TASK_LIST_WINDOW_WIDTH * (window.devicePixelRatio || 1),
+        DEFAULT_TASK_LIST_WINDOW_HEIGHT * (window.devicePixelRatio || 1),
         false
       )
       return
