@@ -68,7 +68,7 @@ Highlights:
 - Offline / intranet deployment remains a first-class path through Ollama, LM Studio, Xinference, OneAPI, New API, and other OpenAI-compatible endpoints.
 - Stability work covers task execution, retries, parameter propagation, model type matching, progress windows, and document write-back.
 
-The full **60-dimension competitor comparison** is maintained in the main Chinese README: [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具). It covers custom assistants, report templates, multi-model support, offline deployment, workflow orchestration, declassification, WPS write-back, and more.
+The **named-product summary matrix** and the full **60-dimension** comparison are in the main Chinese README: [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具). They cover WPS AI, Microsoft 365 Copilot, Google Workspace Gemini, Feishu, Tencent Docs, Notion AI, general LLM web apps, plus Chayuan-specific topics such as custom assistants, report templates, multi-model gateways, offline deployment, workflow orchestration, declassification, and WPS write-back.
 
 ---
 
