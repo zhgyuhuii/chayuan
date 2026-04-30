@@ -36,6 +36,19 @@ Add-in für **WPS Writer** (**Vue 3 + Vite**): KI-Chat, Zusammenfassung, Textana
 
 ---
 
+## 4.1 Version 2.0.0: große Refaktorierung und Stabilität
+
+**Aktuelle Version: `2.0.0`.** Dieses Release fasst die Ergebnisse der Markdown-Planungsdateien zusammen: v2-Evolution, P0-P6, Workflow W1-W7, neues Task-System, Laufzeit-Lücken, Assistant-Formularlayout und Projektstatus.
+
+- Assistenten mit Parametern fragen vor der Ausführung Werte ab, z. B. Zielsprache bei Übersetzung oder Seitenverhältnis/Dauer/Stimme für Bild, Video und Audio.
+- Die Modellauswahl ist typisiert: Chat-Dialog nur Chat-Modelle; Einstellungen filtern nach Modelltyp; Modelllisten werden gruppiert.
+- Offline-/Intranet-Betrieb über Ollama, LM Studio, Xinference, OneAPI, New API und OpenAI-kompatible Gateways bleibt zentral.
+- Verbesserungen an Stabilität, Aufgabenfortschritt, Retry, Parameterweitergabe und Dokument-Write-back.
+
+Die vollständige Konkurrenzanalyse mit **60 Vergleichspunkten** steht im Hauptdokument: [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具).
+
+---
+
 ## 5. Screenshots
 
 | Assistent & Chat | Aufgaben & Prüfung | Einstellungen & Modelle |

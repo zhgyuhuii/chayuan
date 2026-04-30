@@ -56,6 +56,22 @@ Chayuan is a **WPS Writer** add-in built with **Vue 3** and **Vite**. It connect
 
 ---
 
+## 4.1 Version 2.0.0: major refactor and stability release
+
+**Current version: `2.0.0`.** This release consolidates the architecture and documentation work described across all Markdown planning/status files in this repository: v2 evolution planning, P0-P6 execution reports, workflow orchestration W1-W7, task-system redesign, runtime gap closure, assistant form layout, and the project status index.
+
+Highlights:
+
+- Assistant dialog refinements: the knowledge-base selector is now an icon button, and assistants with runtime parameters ask for those parameters before execution.
+- Translation assistants ask for the target language; image/video/audio assistants ask for aspect ratio, duration, voice style, and other relevant values.
+- Model selection is type-safe: the chat dialog shows chat models only; default settings and assistant settings filter by model type; model settings group models by chat, embedding, image, voice, video, and related categories.
+- Offline / intranet deployment remains a first-class path through Ollama, LM Studio, Xinference, OneAPI, New API, and other OpenAI-compatible endpoints.
+- Stability work covers task execution, retries, parameter propagation, model type matching, progress windows, and document write-back.
+
+The full **60-dimension competitor comparison** is maintained in the main Chinese README: [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具). It covers custom assistants, report templates, multi-model support, offline deployment, workflow orchestration, declassification, WPS write-back, and more.
+
+---
+
 ## 5. Screenshots
 
 | AI assistant & chat | Tasks & review | Settings & models |

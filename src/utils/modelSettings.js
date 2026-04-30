@@ -5,7 +5,7 @@
 
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
 import { getModelLogoPath } from './modelLogos.js'
-import { inferModelType, matchesModelType } from './modelTypeUtils.js'
+import { inferModelRecordType, inferModelType, matchesModelType } from './modelTypeUtils.js'
 
 const STORAGE_KEY = 'modelConfigs'
 const CUSTOM_PROVIDERS_KEY = 'customModelProviders'
@@ -312,7 +312,7 @@ export function getModelGroupsFromSettings(modelType) {
     const models = modelSeries.map(m => {
       const modelId = typeof m === 'string' ? m : (m.id || m.name || '')
       const name = typeof m === 'string' ? m : (m.name || m.id || '')
-      const type = (typeof m === 'object' && m.type) ? m.type : inferModelType(modelId)
+      const type = typeof m === 'object' ? inferModelRecordType(m) : inferModelType(modelId)
       const compositeId = `${configKey}|${modelId}`
       return { id: compositeId, providerId: configKey, modelId, name, type }
     }).filter(m => m.modelId && (!modelType || matchesModelType(m.type, modelType)))

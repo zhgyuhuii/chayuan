@@ -494,15 +494,25 @@
                   文档和模型获取更多详情
                 </p>
                 <div class="model-series-container">
-                  <div v-if="currentModelConfig.modelSeries && currentModelConfig.modelSeries.length > 0" class="model-series-list">
+                  <div v-if="currentModelSeriesGroups.length > 0" class="model-series-list">
                     <div
-                      v-for="(series, index) in currentModelConfig.modelSeries"
-                      :key="index"
-                      class="model-series-item"
+                      v-for="group in currentModelSeriesGroups"
+                      :key="group.key"
+                      class="model-series-group"
                     >
-                      <span class="series-name">{{ series.name || series }}</span>
-                      <span v-if="series.id" class="series-id">{{ series.id }}</span>
-                      <span class="series-type">{{ getModelTypeLabel(series.type || inferModelType(series.id || series)) }}</span>
+                      <div class="model-series-group-title">
+                        <span>{{ group.label }}</span>
+                        <span class="model-series-group-count">{{ group.models.length }}</span>
+                      </div>
+                      <div
+                        v-for="(series, index) in group.models"
+                        :key="`${group.key}-${series.id || series.name || series}-${index}`"
+                        class="model-series-item"
+                      >
+                        <span class="series-name">{{ series.name || series }}</span>
+                        <span v-if="series.id" class="series-id">{{ series.id }}</span>
+                        <span class="series-type">{{ getModelTypeLabel(getSeriesModelType(series)) }}</span>
+                      </div>
                     </div>
                   </div>
                   <div v-else class="no-models">
@@ -2254,7 +2264,7 @@ import {
 } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
-import { inferModelType, getModelTypeLabel } from '../utils/modelTypeUtils.js'
+import { inferModelRecordType, inferModelType, getModelTypeLabel, matchesModelType, normalizeModelType } from '../utils/modelTypeUtils.js'
 import { getChunkSettings, saveChunkSettings } from '../utils/chunkSettings.js'
 import {
   DEFAULT_ASSISTANT_ICON_LIBRARY_ID,
@@ -2676,6 +2686,38 @@ export default {
       if (!modelType) return []
       return getModelGroupsFromSettings(modelType)
     },
+    currentModelSeriesGroups() {
+      const order = [
+        'chat',
+        'embedding',
+        'image-generation',
+        'vision',
+        'video-generation',
+        'video-understanding',
+        'tts',
+        'asr',
+        'audio-understanding'
+      ]
+      const orderIndex = new Map(order.map((key, index) => [key, index]))
+      const groups = new Map()
+      const series = Array.isArray(this.currentModelConfig.modelSeries) ? this.currentModelConfig.modelSeries : []
+      series.forEach(item => {
+        const type = normalizeModelType(this.getSeriesModelType(item))
+        if (!groups.has(type)) {
+          groups.set(type, {
+            key: type,
+            label: getModelTypeLabel(type),
+            models: []
+          })
+        }
+        groups.get(type).models.push(item)
+      })
+      return Array.from(groups.values()).sort((a, b) => {
+        const ai = orderIndex.has(a.key) ? orderIndex.get(a.key) : 99
+        const bi = orderIndex.has(b.key) ? orderIndex.get(b.key) : 99
+        return ai - bi || a.label.localeCompare(b.label)
+      })
+    },
     // 当前选中的默认模型（用于下拉展示）
     selectedDefaultModel() {
       const modelId = this.defaultModelsByCategory[this.activeDefaultSettingItem]
@@ -3043,7 +3085,7 @@ export default {
         if (found) return found
         const parsed = parseModelCompositeId(modelId)
         if (!parsed) return null
-        if (inferModelType(parsed.modelId) !== modelType) return null
+        if (!matchesModelType(inferModelType(parsed.modelId), modelType)) return null
         return {
           id: modelId,
           providerId: parsed.providerId,
@@ -3402,7 +3444,12 @@ export default {
   },
   methods: {
     getModelTypeLabel,
+    inferModelRecordType,
     inferModelType,
+    getSeriesModelType(series) {
+      if (series && typeof series === 'object') return inferModelRecordType(series)
+      return inferModelType(String(series || ''))
+    },
     getModelLogoPath,
     getAssistantGroupLabel,
     getProviderApiKeyUrl,
@@ -5329,7 +5376,8 @@ export default {
         return list.map(m => {
           const id = m.name || m.id || m
           const name = (m.name || m.id || m) + (m.details?.parameter_size ? ` (${m.details.parameter_size})` : '')
-          return { id, name, type: inferModelType(id) }
+          const source = m && typeof m === 'object' ? m : {}
+          return { id, name, type: inferModelRecordType({ ...source, id, name }) }
         })
       }
       const list = data.data || data.models || (Array.isArray(data) ? data : [])
@@ -5337,7 +5385,8 @@ export default {
       return list.map(m => {
         const id = m.id || m.name || String(m)
         const name = m.id || m.name || String(m)
-        return { id, name, type: inferModelType(id) }
+        const source = m && typeof m === 'object' ? m : {}
+        return { id, name, type: inferModelRecordType({ ...source, id, name }) }
       })
     },
     // 获取示例模型系列（实际应该从API获取）
@@ -8263,6 +8312,32 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.model-series-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-series-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-series-group-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 11px;
+  text-align: center;
 }
 
 .model-series-item {

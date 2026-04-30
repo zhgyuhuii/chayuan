@@ -1146,7 +1146,7 @@
                         />
                       </label>
                     </div>
-                    <div v-if="Array.isArray(msg.pendingAssistantCreationDraft.previewResults) && msg.pendingAssistantCreationDraft.previewResults.length" class="assistant-comparison-preview-list">
+                    <div v-if="Array.isArray(msg.pendingAssistantCreationDraft?.previewResults) && msg.pendingAssistantCreationDraft.previewResults.length" class="assistant-comparison-preview-list">
                       <div
                         v-for="(sample, index) in msg.pendingAssistantCreationDraft.previewResults"
                         :key="`${msg.id}-assistant-preview-${index}`"
@@ -1799,12 +1799,12 @@
             type="button"
             class="knowledge-base-btn"
             title="选择知识库"
+            aria-label="选择知识库"
             @click="openKnowledgeBaseDialog"
           >
-            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-              <path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5A2.5 2.5 0 0 1 17.5 21H6.5A2.5 2.5 0 0 1 4 18.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V5zm2 3H16v2H8.5zm0 4H16v2H8.5z"/>
+            <svg class="knowledge-base-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v15.5A2.5 2.5 0 0 1 17.5 20H7.5A2.5 2.5 0 0 1 5 17.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V4zm2 3H16v1.8H9.5zm0 3.8H16v1.8H9.5zm-4 9.2A2.5 2.5 0 0 1 3 16.5V7h2v9.5a.5.5 0 0 0 .5.5z"/>
             </svg>
-            <span>选择知识库</span>
           </button>
           <div class="model-select-wrap" ref="modelSelectRef">
             <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
@@ -11298,11 +11298,79 @@ export default {
       }
       return null
     },
+    getAssistantModelTypeForDemand(assistantId = '', config = {}, demand = {}) {
+      return String(demand?.modelType || config?.modelType || this.getAssistantItemByKey(assistantId)?.modelType || 'chat').trim() || 'chat'
+    },
+    getAssistantTemplateVariables(config = {}) {
+      const source = [
+        config?.userPromptTemplate,
+        config?.systemPrompt,
+        config?.description,
+        config?.persona
+      ].map(value => String(value || '')).join('\n')
+      return new Set((source.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g) || []).map(item =>
+        item.replace(/\{\{\s*|\s*\}\}/g, '').trim()
+      ).filter(Boolean))
+    },
+    shouldCollectAssistantField(assistantId = '', config = {}, demand = {}, fieldKey = '') {
+      const modelType = this.getAssistantModelTypeForDemand(assistantId, config, demand)
+      const variables = this.getAssistantTemplateVariables(config)
+      if (fieldKey === 'targetLanguage') {
+        return demand?.kind === 'translate' || assistantId === 'translate' || variables.has('targetLanguage')
+      }
+      if (fieldKey === 'aspectRatio') {
+        return modelType === 'image' || modelType === 'video' || variables.has('aspectRatio')
+      }
+      if (fieldKey === 'duration') {
+        return modelType === 'video' || modelType === 'voice' || modelType === 'audio' || variables.has('duration')
+      }
+      if (fieldKey === 'voiceStyle') {
+        return modelType === 'voice' || modelType === 'audio' || variables.has('voiceStyle')
+      }
+      return variables.has(fieldKey)
+    },
+    shouldCollectAssistantRunParameters(item) {
+      if (!item?.key || item.type === 'create-custom-assistant') return false
+      const config = this.getAssistantRecommendationConfig(item) || {}
+      const demand = this.createDirectAssistantRunDemand(item, config)
+      return ['targetLanguage', 'aspectRatio', 'duration', 'voiceStyle'].some(fieldKey =>
+        this.shouldCollectAssistantField(item.key, config, demand, fieldKey)
+      )
+    },
+    createDirectAssistantRunDemand(item, config = {}) {
+      const modelType = String(config?.modelType || item?.modelType || 'chat').trim() || 'chat'
+      const assistantId = String(item?.key || '').trim()
+      const kind = assistantId === 'translate'
+        ? 'translate'
+        : modelType === 'image'
+          ? 'image'
+          : modelType === 'video'
+            ? 'video'
+            : (modelType === 'voice' || modelType === 'audio')
+              ? 'audio'
+              : 'assistant'
+      const mediaOptions = config?.mediaOptions && typeof config.mediaOptions === 'object' ? config.mediaOptions : {}
+      return {
+        kind,
+        label: item?.shortLabel || item?.label || '智能助手',
+        requirementText: '',
+        inputSource: config?.inputSource || 'selection-preferred',
+        documentAction: config?.documentAction || 'insert',
+        targetLanguage: config?.targetLanguage || (assistantId === 'translate' ? '英文' : ''),
+        aspectRatio: mediaOptions.aspectRatio || '',
+        duration: mediaOptions.duration || '',
+        voiceStyle: mediaOptions.voiceStyle || '',
+        modelType,
+        scope: config?.inputSource || 'selection-preferred',
+        parametersConfirmed: false
+      }
+    },
     createPendingAssistantExecutionParameterCollection(demand, selectedOption, options = {}) {
       const assistantId = String(selectedOption?.assistantId || '').trim()
       const config = this.getAssistantRecommendationConfigByKey(assistantId) || {}
+      const mediaOptions = config?.mediaOptions && typeof config.mediaOptions === 'object' ? config.mediaOptions : {}
       const fields = []
-      if (demand?.kind === 'translate') {
+      if (this.shouldCollectAssistantField(assistantId, config, demand, 'targetLanguage')) {
         fields.push({
           key: 'targetLanguage',
           label: '目标语言',
@@ -11310,6 +11378,36 @@ export default {
           required: true,
           value: String(demand?.targetLanguage || config?.targetLanguage || '').trim() || '英文',
           options: this.getAssistantTargetLanguageOptions()
+        })
+      }
+      if (this.shouldCollectAssistantField(assistantId, config, demand, 'aspectRatio')) {
+        fields.push({
+          key: 'aspectRatio',
+          label: '画幅比例',
+          type: 'select',
+          required: true,
+          value: String(demand?.aspectRatio || mediaOptions.aspectRatio || '16:9').trim(),
+          options: this.getMultimodalAspectRatioFieldOptions()
+        })
+      }
+      if (this.shouldCollectAssistantField(assistantId, config, demand, 'duration')) {
+        fields.push({
+          key: 'duration',
+          label: this.getAssistantModelTypeForDemand(assistantId, config, demand) === 'video' ? '视频时长' : '时长参考',
+          type: 'select',
+          required: true,
+          value: String(demand?.duration || mediaOptions.duration || (this.getAssistantModelTypeForDemand(assistantId, config, demand) === 'video' ? '8s' : '30s')).trim(),
+          options: this.getMultimodalDurationFieldOptions()
+        })
+      }
+      if (this.shouldCollectAssistantField(assistantId, config, demand, 'voiceStyle')) {
+        fields.push({
+          key: 'voiceStyle',
+          label: '语音风格',
+          type: 'select',
+          required: true,
+          value: String(demand?.voiceStyle || mediaOptions.voiceStyle || '专业自然').trim(),
+          options: this.getMultimodalVoiceStyleFieldOptions()
         })
       }
       fields.push({
@@ -11332,11 +11430,19 @@ export default {
         ),
         options: this.getAssistantDocumentActionFieldOptions(demand, assistantId)
       })
+      fields.forEach((field) => {
+        if (field.type !== 'select' || !String(field.value || '').trim()) return
+        const value = String(field.value).trim()
+        const options = Array.isArray(field.options) ? field.options : []
+        if (!options.some(option => String(option?.value || '') === value)) {
+          field.options = [{ value, label: value }, ...options]
+        }
+      })
       return {
         status: 'pending',
-        summaryText: options.summaryText || `已识别到助手“${selectedOption?.label || '智能助手'}”，请先确认处理完成后的动作。`,
+        summaryText: options.summaryText || `已识别到助手“${selectedOption?.label || '智能助手'}”，请先确认本次执行参数。`,
         confirmPrompt: options.confirmPrompt || '系统已结合该助手能力和你当前的需求，自动筛选并预选了更合理的文档动作。你也可以在当前候选范围内调整后再执行。',
-        statusMessage: options.statusMessage || '请先确认范围与处理动作。',
+        statusMessage: options.statusMessage || '请先确认参数、范围与处理动作。',
         demand,
         fields,
         executionAssistantId: assistantId,
@@ -12890,12 +12996,18 @@ export default {
       if (String(pending.executionAssistantId || '').trim()) {
         const executionAssistantId = String(pending.executionAssistantId || '').trim()
         this.clearAssistantFirstPendingStates(message)
+        const mediaOptions = {
+          aspectRatio: String(nextDemand.aspectRatio || '').trim(),
+          duration: String(nextDemand.duration || '').trim(),
+          voiceStyle: String(nextDemand.voiceStyle || '').trim()
+        }
         await this.runAssistantTaskFromMessage(message, executionAssistantId, {
           requirementText: nextDemand.requirementText,
           inputSource: nextDemand.inputSource,
           documentAction: nextDemand.documentAction,
           targetLanguage: nextDemand.targetLanguage,
-          reportSettings: nextDemand.reportSettings
+          reportSettings: nextDemand.reportSettings,
+          mediaOptions
         })
         return
       }
@@ -12981,6 +13093,12 @@ export default {
       if (effectiveDocumentAction) overrides.documentAction = effectiveDocumentAction
       if (effectiveTargetLanguage) overrides.targetLanguage = effectiveTargetLanguage
       if (options.reportSettings) overrides.reportSettings = options.reportSettings
+      if (options.mediaOptions && typeof options.mediaOptions === 'object') {
+        overrides.mediaOptions = {
+          ...(savedCfg.mediaOptions && typeof savedCfg.mediaOptions === 'object' ? savedCfg.mediaOptions : {}),
+          ...options.mediaOptions
+        }
+      }
       const { taskId, promise } = startAssistantTask(assistantId, overrides)
       if (!taskId) {
         throw new Error('助手任务启动失败，未能创建任务')
@@ -14715,11 +14833,58 @@ export default {
         this.$nextTick(() => this.scrollToBottom())
       }
     },
+    showAssistantRunParameterCollection(item) {
+      const config = this.getAssistantRecommendationConfig(item) || {}
+      const demand = this.createDirectAssistantRunDemand(item, config)
+      const option = {
+        assistantId: item.key,
+        label: item.shortLabel || item.label || '智能助手',
+        title: item.label || item.shortLabel || '智能助手',
+        description: String(item.description || config?.description || config?.persona || '可基于当前需求直接执行。').trim(),
+        source: item.type,
+        reasonText: '手动选择执行',
+        featureLines: []
+      }
+      const chatObj = this.getOrCreateWritableChat()
+      if (!chatObj) return false
+      if (this.currentMessages.length === 0) {
+        this.startWelcomeSupportExitAnimation()
+      }
+      const assistantMessageId = 'a' + Date.now()
+      const label = item.shortLabel || item.label || '智能助手'
+      chatObj.messages.push({
+        id: assistantMessageId,
+        role: 'assistant',
+        content: `执行“${label}”前，请先确认本次参数。`,
+        recommendations: [],
+        missingSkillNotice: false,
+        generatedFiles: [],
+        pendingAssistantParameterCollection: this.createPendingAssistantExecutionParameterCollection(
+          demand,
+          option,
+          {
+            summaryText: `即将执行助手“${label}”，请先确认本次执行参数。`,
+            confirmPrompt: '确认后将按这些参数启动助手任务。',
+            statusMessage: '请确认参数、文档范围与处理完成后的动作。'
+          }
+        )
+      })
+      if (!chatObj.title || chatObj.title === '新对话') {
+        chatObj.title = `执行${label}`.slice(0, 20)
+      }
+      this.saveHistory()
+      this.$nextTick(() => this.scrollToBottom())
+      return true
+    },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!this.confirmAssistantRun(launchInfo)) return
+        if (this.shouldCollectAssistantRunParameters(item)) {
+          this.showAssistantRunParameterCollection(item)
+          return
+        }
         this.assistantRunLoadingKey = item.key
         const taskTitle = item.shortLabel || item.label || '任务进度'
         const { taskId, promise } = startAssistantTask(item.key, {
@@ -18885,23 +19050,25 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
   height: 38px;
-  padding: 0 11px;
-  border: 1px solid rgba(14, 165, 233, 0.24);
+  width: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--ai-border);
   border-radius: var(--ai-radius-sm);
-  background: rgba(14, 165, 233, 0.08);
-  color: #0369a1;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
+  background: #fff;
+  color: var(--ai-text);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .knowledge-base-btn:hover {
-  border-color: rgba(14, 165, 233, 0.42);
-  background: rgba(14, 165, 233, 0.14);
+  border-color: #0ea5e9;
+}
+
+.knowledge-base-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .model-select-wrap {

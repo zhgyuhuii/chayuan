@@ -21,21 +21,25 @@ const EMBEDDING_PATTERNS = [
   /embedding/i,
   /^embed-/i,
   /-embed$/i,
-  /bge-|e5-|multilingual-e5/i
+  /bge-|e5-|multilingual-e5/i,
+  /jina-embeddings|voyage-|gte-|m3e-/i
 ]
 
 const IMAGE_GENERATION_PATTERNS = [
+  /^gpt-image/i,
   /dall-e/i,
   /stable-diffusion/i,
   /sdxl|flux|midjourney/i,
-  /-image/i,
-  /imagen|kandinsky/i
+  /(^|[-_])(image|img)([-_]|$)/i,
+  /image-generation|text-to-image|txt2img|t2i/i,
+  /imagen|kandinsky|qwen-image|wanx.*t2i|ideogram|recraft/i
 ]
 
 const VIDEO_GENERATION_PATTERNS = [
-  /video/i,
-  /runway|sora|veo/i,
-  /-gen-2/i
+  /video-generation|text-to-video|txt2video|t2v/i,
+  /(^|[-_])video([-_]|$)/i,
+  /runway|sora|veo|kling|hailuo|pika|luma|vidu/i,
+  /wanx.*t2v|-gen-2/i
 ]
 
 const TTS_PATTERNS = [
@@ -62,7 +66,6 @@ const AUDIO_UNDERSTANDING_PATTERNS = [
 
 const VISION_PATTERNS = [
   /vision/i,
-  /gpt-4o/i,
   /gemini.*vision/i,
   /qwen-vl|internvl|minicpm-v/i
 ]
@@ -129,10 +132,29 @@ export function inferModelType(modelId) {
   return MODEL_TYPE_CHAT
 }
 
+export function inferModelRecordType(model) {
+  if (!model || typeof model !== 'object') return inferModelType(String(model || ''))
+  const id = model.id || model.name || model.model || ''
+  const rawType = String(model.type || model.modelType || model.category || '').trim().toLowerCase()
+  if (rawType && rawType !== 'model') {
+    if (/embed/.test(rawType)) return MODEL_TYPE_EMBEDDING
+    if (/video.*understand|video.*analysis|video.*qa/.test(rawType)) return MODEL_TYPE_VIDEO_UNDERSTANDING
+    if (/audio.*understand|audio.*analysis|audio.*qa/.test(rawType)) return MODEL_TYPE_AUDIO_UNDERSTANDING
+    if (/vision|vl/.test(rawType)) return MODEL_TYPE_VISION
+    if (/image|img|text-to-image|t2i/.test(rawType)) return MODEL_TYPE_IMAGE_GENERATION
+    if (/video|text-to-video|t2v/.test(rawType)) return MODEL_TYPE_VIDEO_GENERATION
+    if (/asr|transcri|speech-to-text/.test(rawType)) return MODEL_TYPE_ASR
+    if (/tts|voice|speech/.test(rawType)) return MODEL_TYPE_TTS
+    if (/chat|text|llm|completion/.test(rawType)) return MODEL_TYPE_CHAT
+    return normalizeModelType(rawType)
+  }
+  return inferModelType(id)
+}
+
 /** 模型类型对应的显示标签 */
 const MODEL_TYPE_LABELS = {
-  [MODEL_TYPE_CHAT]: '对话',
-  [MODEL_TYPE_EMBEDDING]: '嵌入模型',
+  [MODEL_TYPE_CHAT]: '对话模型',
+  [MODEL_TYPE_EMBEDDING]: '嵌入式模型',
   [MODEL_TYPE_IMAGE]: '图像生成',
   [MODEL_TYPE_VIDEO]: '视频生成',
   [MODEL_TYPE_VOICE]: '语音生成',

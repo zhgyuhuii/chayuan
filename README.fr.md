@@ -36,6 +36,19 @@ Complément **WPS Writer** (**Vue 3 + Vite**) : dialogue IA, résumé, analyse, 
 
 ---
 
+## 4.1 Version 2.0.0 : refonte majeure et stabilité
+
+**Version actuelle : `2.0.0`.** Cette version consolide les documents Markdown de planification et d’exécution : plan v2, P0-P6, workflow W1-W7, refonte du système de tâches, corrections de stabilité et mise en page des assistants.
+
+- Les assistants nécessitant des paramètres affichent un formulaire avant exécution : langue cible pour la traduction, ratio/durée/style vocal pour image, vidéo et audio.
+- La sélection de modèles est filtrée par type : le dialogue de chat ne montre que les modèles conversationnels ; les paramètres regroupent les modèles par catégorie.
+- Le déploiement hors-ligne / intranet reste prioritaire via Ollama, LM Studio, Xinference, OneAPI, New API et passerelles compatibles OpenAI.
+- La stabilité des tâches, des reprises, de la propagation des paramètres et de l’écriture dans le document est renforcée.
+
+La comparaison concurrentielle complète avec **60 dimensions** est dans le README principal : [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具).
+
+---
+
 ## 5. Captures d’écran
 
 | Assistant et chat | Tâches et relecture | Paramètres et modèles |

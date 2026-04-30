@@ -36,6 +36,19 @@ Complemento para **WPS Writer** (**Vue 3 + Vite**): chat de IA, resumen, anális
 
 ---
 
+## 4.1 Versión 2.0.0: gran refactorización y estabilidad
+
+**Versión actual: `2.0.0`.** Esta versión resume y actualiza el trabajo descrito en los Markdown de planificación y ejecución: plan v2, P0-P6, workflow W1-W7, rediseño del sistema de tareas, cierre de brechas de ejecución y diseño de formularios de asistentes.
+
+- Los asistentes con parámetros muestran un formulario antes de ejecutarse: idioma de destino para traducción; relación de aspecto, duración y estilo de voz para imagen, vídeo y audio.
+- La selección de modelos es segura por tipo: el chat solo muestra modelos conversacionales; los ajustes agrupan y filtran por tipo de modelo.
+- El despliegue offline/intranet sigue siendo prioritario con Ollama, LM Studio, Xinference, OneAPI, New API y endpoints compatibles con OpenAI.
+- Se refuerzan la estabilidad de tareas, reintentos, propagación de parámetros y escritura en documentos.
+
+La comparación competitiva completa con **60 dimensiones** está en el README principal: [README.md § 4.2](README.md#42-60-项竞品能力对比察元-200-vs-常见办公-ai--文档-ai-工具).
+
+---
+
 ## 5. Capturas de pantalla
 
 | Asistente y chat | Tareas y revisión | Ajustes y modelos |

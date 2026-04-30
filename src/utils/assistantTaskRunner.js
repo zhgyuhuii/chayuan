@@ -11,7 +11,7 @@ import {
   resolveDocumentInput,
   textLooksLikePlanStatsJson
 } from './documentActions.js'
-import { inferModelType } from './modelTypeUtils.js'
+import { inferModelType, matchesModelType } from './modelTypeUtils.js'
 import { getDocumentChunksWithPositions, getSelectionChunksWithPositions } from './documentChunker.js'
 import { getChunkSettings } from './chunkSettings.js'
 import {
@@ -387,7 +387,7 @@ function getModelByCompositeId(modelType, compositeId) {
   const parsed = parseModelCompositeId(compositeId)
   if (!parsed) return null
   const inferredType = inferModelType(parsed.modelId)
-  if (modelType && inferredType !== modelType) return null
+  if (modelType && !matchesModelType(inferredType, modelType)) return null
   return {
     id: compositeId,
     providerId: parsed.providerId,
