@@ -121,7 +121,7 @@
               <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="triggerAssistantImport">
                 导入助手
               </button>
-              <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="createAssistantGroup">
+              <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="openAssistantGroupDialog">
                 新建分组
               </button>
               <input
@@ -144,6 +144,8 @@
               <div
                 class="default-settings-list assistant-settings-list"
                 :class="{ 'assistant-settings-list-dragging': assistantDragState.groupKey === group.key }"
+                @dragover.prevent="onAssistantGroupDragOver($event, group.key)"
+                @drop.prevent="onAssistantGroupDrop($event, group.key)"
               >
                 <div
                   v-for="item in group.items"
@@ -164,9 +166,9 @@
                     @click="selectAssistantSettingItem(item)"
                     @contextmenu.prevent="item.type !== 'create-custom-assistant' && showAssistantContextMenu($event, item)"
                     @dragstart="onAssistantDragStart($event, group.key, item)"
-                    @dragover.prevent="onAssistantDragOver($event, group.key, item)"
-                    @dragleave="onAssistantDragLeave($event, group.key, item)"
-                    @drop.prevent="onAssistantDrop($event, group.key, item)"
+                    @dragover.prevent.stop="onAssistantDragOver($event, group.key, item)"
+                    @dragleave.stop="onAssistantDragLeave($event, group.key, item)"
+                    @drop.prevent.stop="onAssistantDrop($event, group.key, item)"
                     @dragend="onAssistantDragEnd"
                   >
                     <span class="item-icon">
@@ -184,6 +186,12 @@
                     v-if="assistantDragState.groupKey === group.key && assistantDragState.dropKey === item.key && assistantDragState.dropPosition === 'after'"
                     class="assistant-insert-line"
                   />
+                </div>
+                <div
+                  v-if="group.items.length === 0"
+                  class="assistant-settings-empty-group"
+                >
+                  将自定义助手拖到这里，或点击新建分组后在右侧创建助手
                 </div>
               </div>
             </div>
@@ -941,24 +949,49 @@
                     />
                     <span class="slider"></span>
                   </label>
-                  <select
+                  <div
                     v-if="normalizedAssistantReportSettings.enabled"
-                    v-model="assistantForm.reportSettings.type"
-                    class="config-input"
-                    @change="onAssistantReportTypeChange"
+                    class="default-model-select-wrap report-type-select-wrap"
                   >
-                    <optgroup
-                      v-for="group in reportTypeGroups"
-                      :key="group.key"
-                      :label="group.label"
+                    <button
+                      type="button"
+                      class="default-model-select-btn"
+                      :title="selectedAssistantReportTypeLabel"
+                      @click="reportTypeDropdownOpen = !reportTypeDropdownOpen"
+                      @blur="onReportTypeDropdownBlur"
                     >
-                      <option
-                        v-for="option in group.options"
-                        :key="option.value"
-                        :value="option.value"
-                      >{{ option.label }}</option>
-                    </optgroup>
-                  </select>
+                      <span class="default-model-select-text">{{ selectedAssistantReportTypeLabel }}</span>
+                      <span class="default-model-select-arrow">▾</span>
+                    </button>
+                    <div v-show="reportTypeDropdownOpen" class="default-model-dropdown report-type-dropdown">
+                      <div
+                        v-for="group in reportTypeGroups"
+                        :key="group.key"
+                        class="default-model-group"
+                      >
+                        <div
+                          class="default-model-group-label report-type-group-label"
+                          :class="{ collapsed: isReportTypeGroupCollapsed(group.key) }"
+                          @mousedown.prevent="toggleReportTypeGroup(group.key)"
+                        >
+                          <span class="default-model-group-arrow">▾</span>
+                          <span>{{ group.label }}</span>
+                          <span class="report-type-group-count">{{ group.options.length }}</span>
+                        </div>
+                        <div v-show="!isReportTypeGroupCollapsed(group.key)">
+                          <div
+                            v-for="option in group.options"
+                            :key="option.value"
+                            class="default-model-option report-type-option"
+                            :class="{ active: normalizedAssistantReportSettings.type === option.value }"
+                            @mousedown.prevent="selectAssistantReportType(option.value)"
+                          >
+                            <span>{{ option.label }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <p class="config-hint">开启后会优先按全文生成结构化报告，默认更适合放在任务清单详情中查看，也可继续配合下方文档动作写回文档。</p>
               </div>
@@ -1973,6 +2006,33 @@
       </div>
     </div>
 
+    <div v-if="showAssistantGroupDialog" class="modal-overlay" @click.self="closeAssistantGroupDialog">
+      <div class="modal-content assistant-group-modal">
+        <div class="modal-header">
+          <h4>新建助手分组</h4>
+          <button class="btn-close" @click="closeAssistantGroupDialog">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="config-item">
+            <label class="config-label">分组名称</label>
+            <input
+              ref="assistantGroupNameInputRef"
+              v-model="assistantGroupDraftName"
+              type="text"
+              class="config-input"
+              placeholder="例如：翻译助手 / 审校助手 / 合同助手"
+              @keyup.enter="confirmAssistantGroupDialog"
+            />
+            <p class="config-hint">分组会立即显示在列表中，后续可把自定义助手拖入该分组。</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeAssistantGroupDialog">取消</button>
+          <button class="btn btn-primary" @click="confirmAssistantGroupDialog">确定</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showAssistantPromptRecommendDialog" class="modal-overlay" @click.self="closeAssistantPromptRecommendDialog">
       <div class="modal-content assistant-recommend-modal">
         <div class="modal-header">
@@ -2210,6 +2270,9 @@ import {
   saveAssistantSettings,
   getCustomAssistants,
   saveCustomAssistants,
+  getCustomAssistantGroups,
+  saveCustomAssistantGroups,
+  normalizeAssistantGroupName,
   createCustomAssistantDraft,
   buildCustomAssistantId
 } from '../utils/assistantSettings.js'
@@ -2430,8 +2493,11 @@ export default {
       activeAssistantSettingItem: 'spell-check',
       assistantSettingsMap: {},
       customAssistants: [],
+      assistantCustomGroups: [],
       assistantForm: createCustomAssistantDraft(),
       assistantPrefillNotice: null,
+      showAssistantGroupDialog: false,
+      assistantGroupDraftName: '',
       assistantModelDropdownOpen: false,
       assistantPreviewInput: '',
       assistantPreviewTargetLanguage: '英文',
@@ -2458,6 +2524,8 @@ export default {
       outputFormatOptions: OUTPUT_FORMAT_OPTIONS,
       inputSourceOptions: INPUT_SOURCE_OPTIONS,
       reportTypeGroups: getReportTypeGroups(),
+      reportTypeDropdownOpen: false,
+      reportTypeCollapsedGroups: {},
       reportAssistantPresetGroups: getReportAssistantPresetGroups(),
       reportAssistantPresetCollapsedGroups: cloneValue(DEFAULT_REPORT_PRESET_COLLAPSED_GROUPS),
       reportAssistantPresetSearchText: '',
@@ -2635,6 +2703,10 @@ export default {
       this.assistantSettingsItems.forEach(item => {
         if (!groups[item.group]) groups[item.group] = []
         groups[item.group].push(item)
+      })
+      this.assistantCustomGroups.forEach(groupName => {
+        const key = normalizeAssistantGroupName(groupName)
+        if (!groups[key]) groups[key] = []
       })
       return Object.keys(groups).map(key => ({
         key,
@@ -3170,6 +3242,10 @@ export default {
     normalizedAssistantReportSettings() {
       return normalizeReportSettings(this.assistantForm?.reportSettings, createDefaultReportSettings())
     },
+    selectedAssistantReportTypeLabel() {
+      const reportSettings = this.normalizedAssistantReportSettings
+      return getReportTypeLabel(reportSettings.type, reportSettings.customType)
+    },
     assistantPreviewReportTypeLabel() {
       const reportSettings = this.normalizedAssistantReportSettings
       return getReportTypeLabel(reportSettings.type, reportSettings.customType)
@@ -3433,6 +3509,7 @@ export default {
     loadAssistantConfigData() {
       this.assistantSettingsMap = loadAssistantSettings()
       this.customAssistants = this.mergeDuplicateCustomAssistants(getCustomAssistants())
+      this.assistantCustomGroups = getCustomAssistantGroups(this.customAssistants)
       if (!this.activeAssistantSettingItem) {
         this.activeAssistantSettingItem = 'spell-check'
       }
@@ -3736,6 +3813,25 @@ export default {
     getNextAssistantDisplayOrder(groupKey) {
       return this.getReorderableAssistantItemsByGroup(groupKey).length
     },
+    ensureAssistantGroup(groupKey) {
+      const normalized = normalizeAssistantGroupName(groupKey)
+      const exists = this.assistantCustomGroups.some(item => item.toLowerCase() === normalized.toLowerCase())
+      if (!exists) {
+        this.assistantCustomGroups = [...this.assistantCustomGroups, normalized]
+      }
+      return normalized
+    },
+    persistAssistantConfigState(errorMessage = '助手设置保存失败，请稍后点击保存重试') {
+      const settingsOk = saveAssistantSettings(this.assistantSettingsMap)
+      const assistantsOk = saveCustomAssistants(this.customAssistants)
+      const groupsOk = saveCustomAssistantGroups(this.assistantCustomGroups)
+      if (!settingsOk || !assistantsOk || !groupsOk) {
+        this.showMessage(errorMessage, 'error')
+        return false
+      }
+      this.notifyRibbonRefreshAssistantMenu()
+      return true
+    },
     canMoveAssistantSettingItem(item, direction) {
       if (!this.isAssistantSettingReorderable(item)) return false
       const items = this.getReorderableAssistantItemsByGroup(item.group)
@@ -3746,20 +3842,19 @@ export default {
       return false
     },
     applyAssistantDisplayOrder(groupItems) {
+      const nextSettingsMap = { ...this.assistantSettingsMap }
+      let nextCustomAssistants = this.customAssistants
       groupItems.forEach((entry, index) => {
         if (entry.type === 'system-assistant') {
-          this.assistantSettingsMap = {
-            ...this.assistantSettingsMap,
-            [entry.key]: {
-              ...(this.assistantSettingsMap?.[entry.key] || {}),
-              displayOrder: index
-            }
+          nextSettingsMap[entry.key] = {
+            ...(nextSettingsMap?.[entry.key] || {}),
+            displayOrder: index
           }
           if (this.activeAssistantSettingItem === entry.key && this.assistantForm) {
             this.assistantForm.displayOrder = index
           }
         } else if (entry.type === 'custom-assistant') {
-          this.customAssistants = this.customAssistants.map(custom => (
+          nextCustomAssistants = nextCustomAssistants.map(custom => (
             custom.id === entry.key
               ? { ...custom, displayOrder: index }
               : custom
@@ -3769,6 +3864,8 @@ export default {
           }
         }
       })
+      this.assistantSettingsMap = nextSettingsMap
+      this.customAssistants = nextCustomAssistants
     },
     moveAssistantSettingItem(item, direction) {
       if (!this.canMoveAssistantSettingItem(item, direction)) return
@@ -3782,7 +3879,7 @@ export default {
       reordered.splice(targetIndex, 0, moved)
       this.applyAssistantDisplayOrder(reordered)
       this.isFormSaved = false
-      this.notifyRibbonRefreshAssistantMenu()
+      this.persistAssistantConfigState('助手排序保存失败，请稍后点击保存重试')
     },
     onAssistantDragStart(e, groupKey, item) {
       if (!this.isAssistantSettingReorderable(item)) return
@@ -3829,14 +3926,18 @@ export default {
       }
       if (!fromKey || fromKey === item.key) return
       const fromItem = this.getAssistantSettingItemByKey(fromKey)
+      this.commitAssistantForm()
+      const targetGroupKey = this.ensureAssistantGroup(groupKey)
       if (fromGroupKey !== groupKey) {
         if (fromItem?.type !== 'custom-assistant') return
-        this.commitAssistantForm()
         this.customAssistants = this.customAssistants.map(custom => (
-          custom.id === fromKey ? { ...custom, group: groupKey } : custom
+          custom.id === fromKey ? { ...custom, group: targetGroupKey } : custom
         ))
+        if (this.activeAssistantSettingItem === fromKey && this.assistantForm) {
+          this.assistantForm.group = targetGroupKey
+        }
       }
-      const items = this.getReorderableAssistantItemsByGroup(groupKey)
+      const items = this.getReorderableAssistantItemsByGroup(targetGroupKey)
       const fromIndex = items.findIndex(entry => entry.key === fromKey)
       const targetIndex = items.findIndex(entry => entry.key === item.key)
       if (fromIndex < 0 || targetIndex < 0) return
@@ -3845,10 +3946,42 @@ export default {
       const baseIndex = dropPosition === 'after' ? targetIndex + 1 : targetIndex
       const insertIndex = fromIndex < baseIndex ? baseIndex - 1 : baseIndex
       reordered.splice(insertIndex, 0, moved)
-      this.commitAssistantForm()
       this.applyAssistantDisplayOrder(reordered)
       this.isFormSaved = false
-      this.notifyRibbonRefreshAssistantMenu()
+      this.persistAssistantConfigState('助手排序保存失败，请稍后点击保存重试')
+    },
+    onAssistantGroupDragOver(e, groupKey) {
+      if (!this.assistantDragState.fromKey) return
+      const fromItem = this.getAssistantSettingItemByKey(this.assistantDragState.fromKey)
+      if (this.assistantDragState.groupKey !== groupKey && fromItem?.type !== 'custom-assistant') return
+      e.dataTransfer.dropEffect = 'move'
+    },
+    onAssistantGroupDrop(e, groupKey) {
+      const { fromKey, groupKey: fromGroupKey } = this.assistantDragState
+      this.onAssistantDragEnd()
+      if (!fromKey) return
+      const fromItem = this.getAssistantSettingItemByKey(fromKey)
+      if (!fromItem || !this.isAssistantSettingReorderable(fromItem)) return
+      if (fromGroupKey !== groupKey && fromItem.type !== 'custom-assistant') return
+      this.commitAssistantForm()
+      const targetGroupKey = this.ensureAssistantGroup(groupKey)
+      if (fromItem.type === 'custom-assistant' && fromGroupKey !== targetGroupKey) {
+        this.customAssistants = this.customAssistants.map(custom => (
+          custom.id === fromKey ? { ...custom, group: targetGroupKey } : custom
+        ))
+        if (this.activeAssistantSettingItem === fromKey && this.assistantForm) {
+          this.assistantForm.group = targetGroupKey
+        }
+      }
+      const items = this.getReorderableAssistantItemsByGroup(targetGroupKey)
+      const fromIndex = items.findIndex(entry => entry.key === fromKey)
+      if (fromIndex < 0) return
+      const reordered = items.slice()
+      const [moved] = reordered.splice(fromIndex, 1)
+      reordered.push(moved)
+      this.applyAssistantDisplayOrder(reordered)
+      this.isFormSaved = false
+      this.persistAssistantConfigState('助手排序保存失败，请稍后点击保存重试')
     },
     onAssistantDragEnd() {
       this.assistantDragState = {
@@ -3928,6 +4061,29 @@ export default {
         createDefaultReportSettings()
       )
       this.onAssistantFormChange()
+    },
+    selectAssistantReportType(type) {
+      this.assistantForm.reportSettings = normalizeReportSettings(
+        {
+          ...(this.assistantForm?.reportSettings || {}),
+          type
+        },
+        createDefaultReportSettings()
+      )
+      this.reportTypeDropdownOpen = false
+      this.onAssistantFormChange()
+    },
+    isReportTypeGroupCollapsed(groupKey) {
+      return !!this.reportTypeCollapsedGroups[groupKey]
+    },
+    toggleReportTypeGroup(groupKey) {
+      this.reportTypeCollapsedGroups = {
+        ...this.reportTypeCollapsedGroups,
+        [groupKey]: !this.reportTypeCollapsedGroups[groupKey]
+      }
+    },
+    onReportTypeDropdownBlur() {
+      setTimeout(() => { this.reportTypeDropdownOpen = false }, 150)
     },
     loadAssistantPromptRecommendationDraft() {
       try {
@@ -4194,31 +4350,51 @@ export default {
         this.showMessage(validation.issues[0]?.message || '助手配置不完整', 'error')
         return
       }
+      const targetGroup = this.ensureAssistantGroup(validation.normalized.group || this.assistantForm?.group || 'custom')
       const newAssistant = {
         ...cloneValue(validation.normalized),
         id: buildCustomAssistantId(name),
         name,
         icon: normalizeAssistantIcon(this.assistantForm?.icon),
+        group: targetGroup,
         sortOrder: this.customAssistants.length,
         displayOrder: Number.isFinite(Number(this.assistantForm?.displayOrder))
           ? Number(this.assistantForm.displayOrder)
-          : this.getNextAssistantDisplayOrder('custom')
+          : this.getNextAssistantDisplayOrder(targetGroup)
       }
       this.customAssistants = [...this.customAssistants, newAssistant]
       this.activeAssistantSettingItem = newAssistant.id
       this.assistantForm = cloneValue(newAssistant)
       this.isFormSaved = false
-      if (!saveCustomAssistants(this.customAssistants)) {
-        this.showMessage('智能助手已创建，但同步到顶部菜单失败，请稍后点击保存重试', 'error')
-        return
-      }
-      this.notifyRibbonRefreshAssistantMenu()
+      if (!this.persistAssistantConfigState('智能助手已创建，但同步到顶部菜单失败，请稍后点击保存重试')) return
       this.showMessage('智能助手已创建，并已同步到顶部“更多”菜单')
     },
-    createAssistantGroup() {
-      const groupName = String(window.prompt('请输入新分组名称', '') || '').trim()
-      if (!groupName) return
+    openAssistantGroupDialog() {
+      this.assistantGroupDraftName = ''
+      this.showAssistantGroupDialog = true
+      this.$nextTick(() => {
+        try {
+          this.$refs.assistantGroupNameInputRef?.focus?.()
+        } catch (_) {}
+      })
+    },
+    closeAssistantGroupDialog() {
+      this.showAssistantGroupDialog = false
+      this.assistantGroupDraftName = ''
+    },
+    confirmAssistantGroupDialog() {
+      const rawGroupName = String(this.assistantGroupDraftName || '').trim()
+      if (!rawGroupName) {
+        this.showMessage('请输入分组名称', 'error')
+        return
+      }
+      const groupName = normalizeAssistantGroupName(rawGroupName)
       this.commitAssistantForm()
+      this.ensureAssistantGroup(groupName)
+      if (!saveCustomAssistantGroups(this.assistantCustomGroups)) {
+        this.showMessage('分组保存失败，请稍后点击保存重试', 'error')
+        return
+      }
       this.activeAssistantSettingItem = 'create-custom-assistant'
       const draft = createCustomAssistantDraft()
       draft.group = groupName
@@ -4228,6 +4404,7 @@ export default {
       this.assistantPreviewInputSource = draft.inputSource || 'selection-preferred'
       this.assistantPreviewDocumentAction = draft.documentAction || 'insert'
       this.isFormSaved = false
+      this.closeAssistantGroupDialog()
       this.showMessage(`已创建分组“${groupName}”，填写并创建助手后生效`)
     },
     buildUniqueAssistantCopyName(baseName) {
@@ -4255,26 +4432,24 @@ export default {
     duplicateAssistantWithSource(item, source) {
       if (!item || item.type === 'create-custom-assistant' || !source) return
       const name = this.buildUniqueAssistantCopyName(source.name || item.shortLabel || item.label || '智能助手')
+      const targetGroup = this.ensureAssistantGroup(source.group || item.group || 'custom')
       const newAssistant = {
         ...source,
         id: buildCustomAssistantId(name),
         name,
         title: source.title ? this.buildUniqueAssistantCopyName(source.title) : '',
         icon: normalizeAssistantIcon(source.icon),
+        group: targetGroup,
         sortOrder: this.customAssistants.length,
         displayOrder: Number.isFinite(Number(source.displayOrder))
           ? Number(source.displayOrder)
-          : this.getNextAssistantDisplayOrder('custom')
+          : this.getNextAssistantDisplayOrder(targetGroup)
       }
       this.customAssistants = [...this.customAssistants, newAssistant]
       this.activeAssistantSettingItem = newAssistant.id
       this.assistantForm = cloneValue(newAssistant)
       this.isFormSaved = false
-      if (!saveCustomAssistants(this.customAssistants)) {
-        this.showMessage('复制助手成功，但同步到顶部菜单失败，请稍后点击保存重试', 'error')
-        return
-      }
-      this.notifyRibbonRefreshAssistantMenu()
+      if (!this.persistAssistantConfigState('复制助手成功，但同步到顶部菜单失败，请稍后点击保存重试')) return
       this.showMessage(`已复制助手，默认名称为“${name}”`)
     },
     duplicateCurrentAssistant() {
@@ -4360,6 +4535,7 @@ export default {
       const baseDraft = createCustomAssistantDraft()
       const rawName = String(rawAssistant.name || rawAssistant.title || '').trim() || '智能助手'
       const name = this.buildUniqueAssistantCopyName(rawName)
+      const targetGroup = this.ensureAssistantGroup(rawAssistant.group || rawAssistant.category || baseDraft.group)
       const importedAssistant = {
         ...baseDraft,
         ...cloneValue(rawAssistant),
@@ -4367,21 +4543,18 @@ export default {
         name,
         title: '',
         icon: normalizeAssistantIcon(rawAssistant.icon || baseDraft.icon),
+        group: targetGroup,
         sortOrder: this.customAssistants.length,
         displayOrder: Number.isFinite(Number(rawAssistant.displayOrder))
           ? Number(rawAssistant.displayOrder)
-          : this.getNextAssistantDisplayOrder('custom'),
+          : this.getNextAssistantDisplayOrder(targetGroup),
         reportSettings: normalizeReportSettings(rawAssistant.reportSettings, baseDraft.reportSettings)
       }
       this.customAssistants = [...this.customAssistants, importedAssistant]
       this.activeAssistantSettingItem = importedAssistant.id
       this.assistantForm = cloneValue(importedAssistant)
       this.isFormSaved = false
-      if (!saveCustomAssistants(this.customAssistants)) {
-        this.showMessage('助手已导入，但同步到顶部菜单失败，请稍后点击保存重试', 'error')
-        return
-      }
-      this.notifyRibbonRefreshAssistantMenu()
+      if (!this.persistAssistantConfigState('助手已导入，但同步到顶部菜单失败，请稍后点击保存重试')) return
       this.showMessage(`已导入助手“${name}”`)
     },
     async copyTextToClipboard(text, successMessage) {
@@ -6276,6 +6449,10 @@ export default {
       } else {
         this.notifyRibbonRefreshAssistantMenu()
       }
+      if (!saveCustomAssistantGroups(this.assistantCustomGroups)) {
+        this.showMessage('助手分组保存失败', 'error')
+        hasError = true
+      }
       // 5. 保存当前模型配置（API 密钥、API 地址、enabled、modelSeries）
       if (this.selectedModel) {
         const ok = saveModelConfig(this.selectedModel.id, this.currentModelConfig)
@@ -7003,6 +7180,22 @@ export default {
   padding-top: 0;
 }
 
+.assistant-settings-empty-group {
+  margin: 4px 16px 8px;
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.assistant-group-modal {
+  max-width: 420px;
+}
+
 .assistant-icon-picker {
   display: flex;
   align-items: center;
@@ -7375,6 +7568,30 @@ export default {
 .default-model-option-clear:hover {
   background: #f5f5f5;
   color: #666;
+}
+
+.report-type-select-wrap {
+  min-width: min(360px, 100%);
+}
+
+.report-type-dropdown {
+  max-height: 360px;
+}
+
+.report-type-group-label {
+  justify-content: flex-start;
+}
+
+.report-type-group-count {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.report-type-option {
+  padding-left: 34px;
+  line-height: 1.35;
 }
 
 /* 第二列：子菜单 */

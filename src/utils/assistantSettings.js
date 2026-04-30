@@ -11,6 +11,7 @@ import {
 
 const ASSISTANT_SETTINGS_KEY = 'assistantSettings'
 const CUSTOM_ASSISTANTS_KEY = 'customAssistants'
+const CUSTOM_ASSISTANT_GROUPS_KEY = 'customAssistantGroups'
 const VALID_DISPLAY_LOCATIONS = new Set(
   ASSISTANT_DISPLAY_LOCATION_OPTIONS.map(item => item.value)
 )
@@ -48,6 +49,24 @@ function normalizeDisplayOrder(value, fallback = null) {
   if (value === '' || value === undefined || value === null) return fallback
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+export function normalizeAssistantGroupName(value) {
+  return String(value || '').trim() || 'custom'
+}
+
+export function normalizeAssistantGroupList(groups = []) {
+  const result = []
+  const seen = new Set()
+  const sourceGroups = Array.isArray(groups) ? groups : []
+  sourceGroups.forEach(item => {
+    const value = normalizeAssistantGroupName(item)
+    const key = value.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    result.push(value)
+  })
+  return result
 }
 
 function inferAssistantNameFromPrompt(item = {}) {
@@ -293,6 +312,24 @@ export function saveCustomAssistants(list) {
     }
   }))
   return saveGlobalSettings({ [CUSTOM_ASSISTANTS_KEY]: normalized })
+}
+
+export function getCustomAssistantGroups(customAssistants = null) {
+  const settings = loadGlobalSettings()
+  const storedGroups = normalizeAssistantGroupList(settings[CUSTOM_ASSISTANT_GROUPS_KEY])
+  const sourceAssistants = Array.isArray(customAssistants) ? customAssistants : getCustomAssistants()
+  const assistantGroups = normalizeAssistantGroupList(
+    sourceAssistants
+      .map(item => item?.group || item?.category)
+      .filter(Boolean)
+  )
+  return normalizeAssistantGroupList([...storedGroups, ...assistantGroups, 'custom'])
+}
+
+export function saveCustomAssistantGroups(groups = []) {
+  return saveGlobalSettings({
+    [CUSTOM_ASSISTANT_GROUPS_KEY]: normalizeAssistantGroupList(groups)
+  })
 }
 
 export async function ensureCustomAssistantRibbonIcons() {
