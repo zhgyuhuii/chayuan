@@ -1795,6 +1795,17 @@
             multiple
             @change="onAttachmentChange"
           />
+          <button
+            type="button"
+            class="knowledge-base-btn"
+            title="选择知识库"
+            @click="openKnowledgeBaseDialog"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5A2.5 2.5 0 0 1 17.5 21H6.5A2.5 2.5 0 0 1 4 18.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V5zm2 3H16v2H8.5zm0 4H16v2H8.5z"/>
+            </svg>
+            <span>选择知识库</span>
+          </button>
           <div class="model-select-wrap" ref="modelSelectRef">
             <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
               <img :src="publicAssetUrl(selectedModelIcon)" class="model-select-icon" alt="" decoding="async" />
@@ -1910,6 +1921,30 @@
         </div>
       </div>
     </main>
+
+    <div v-if="showKnowledgeBaseDialog" class="assistant-recommend-modal-overlay" @click.self="closeKnowledgeBaseDialog">
+      <div class="knowledge-base-modal">
+        <div class="knowledge-base-modal-header">
+          <h4>选择知识库</h4>
+          <button type="button" class="btn-close-modal" @click="closeKnowledgeBaseDialog">×</button>
+        </div>
+        <div class="knowledge-base-modal-body">
+          <div class="knowledge-base-modal-title">功能开发中</div>
+          <p class="knowledge-base-modal-text">详情请关注我们的公众号</p>
+          <div v-if="showFollowDonationQrCode" class="knowledge-base-qr-wrap">
+            <img
+              :src="followDonationQrCode()"
+              alt="智灵鸟科技公众号二维码"
+              class="knowledge-base-qr"
+              loading="lazy"
+              decoding="async"
+              @error="handleDonationQrCodeError('follow')"
+            />
+          </div>
+          <p v-else class="knowledge-base-modal-hint">公众号二维码暂不可用，请访问 aidooo.com 了解详情。</p>
+        </div>
+      </div>
+    </div>
 
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
@@ -3505,6 +3540,7 @@ export default {
       selectedModelId: null,
       modelGroupsVersion: 0,
       modelDropdownOpen: false,
+      showKnowledgeBaseDialog: false,
       modelGroupCollapsed: {},
       isStreaming: false,
       streamingContent: '',
@@ -6544,6 +6580,13 @@ export default {
     },
     closeSidebarFooterSupportDialog() {
       this.sidebarFooterSupportDialogMode = ''
+    },
+    openKnowledgeBaseDialog() {
+      this.modelDropdownOpen = false
+      this.showKnowledgeBaseDialog = true
+    },
+    closeKnowledgeBaseDialog() {
+      this.showKnowledgeBaseDialog = false
     },
     openModelSettings() {
       this.modelDropdownOpen = false
@@ -18838,6 +18881,29 @@ export default {
   display: none;
 }
 
+.knowledge-base-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  border-radius: var(--ai-radius-sm);
+  background: rgba(14, 165, 233, 0.08);
+  color: #0369a1;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.knowledge-base-btn:hover {
+  border-color: rgba(14, 165, 233, 0.42);
+  background: rgba(14, 165, 233, 0.14);
+}
+
 .model-select-wrap {
   position: relative;
   flex-shrink: 0;
@@ -19219,6 +19285,77 @@ export default {
 .assistant-recommend-modal-body {
   padding: 16px 18px 18px;
   overflow-y: auto;
+}
+
+.knowledge-base-modal {
+  width: min(320px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.knowledge-base-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--ai-border);
+}
+
+.knowledge-base-modal-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.knowledge-base-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 18px 20px;
+  text-align: center;
+}
+
+.knowledge-base-modal-title {
+  color: var(--ai-text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.knowledge-base-modal-text {
+  margin: 8px 0 14px;
+  color: var(--ai-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.knowledge-base-qr-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 138px;
+  height: 138px;
+  padding: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+}
+
+.knowledge-base-qr {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.knowledge-base-modal-hint {
+  margin: 0;
+  color: var(--ai-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .assistant-recommend-modal-empty {
