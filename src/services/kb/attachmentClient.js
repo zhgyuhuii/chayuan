@@ -20,10 +20,6 @@ function _normalizeBaseUrl(url) {
   return String(url || '').replace(/\/+$/, '')
 }
 
-function _enc(v) {
-  return encodeURIComponent(String(v || ''))
-}
-
 export function buildDownloadUrl(connection, chunk, options = {}) {
   if (!connection?.baseUrl || !chunk?.kb_name || !chunk?.file_name) return ''
   // 逻辑路径 → 实际路径(JWT 走 /knowledge_base/download_doc;HMAC 走 /openapi/v1/kb/download_doc)
@@ -43,8 +39,10 @@ export function buildDownloadUrl(connection, chunk, options = {}) {
   return `${_normalizeBaseUrl(connection.baseUrl)}${path}?${params.toString()}`
 }
 
+// eslint-disable-next-line no-unused-vars
 export async function refreshToken(_connection, _kbName, _fileName) {
   // v1:依赖搜索批次返回的 token;单独续签接口暂不实现
+  // 签名预留 (connection, kbName, fileName) 给 v2 单独调 /search_batch 抓 token 使用
   return null
 }
 

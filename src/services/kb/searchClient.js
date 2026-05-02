@@ -68,7 +68,7 @@ export async function searchBatchStream(connection, body, onFrame, options = {})
   const reader = resp.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
-  while (true) {
+  for (;;) {
     const { value, done } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })

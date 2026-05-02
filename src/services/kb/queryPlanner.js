@@ -31,8 +31,10 @@ function _autoBudget(len) {
   return 32
 }
 
+// eslint-disable-next-line no-unused-vars
 function _autoSimThreshold(_len) {
-  return 0.85  // §3.2.5.6 #3
+  // _len 预留按文本长度自适应阈值;v1 固定 0.85(详见 §3.2.5.6 #3)
+  return 0.85
 }
 
 async function _emit(onPhase, phase, info) {

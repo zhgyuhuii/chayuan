@@ -84,7 +84,6 @@ export default {
   data() {
     return {
       localCollapsed: this.initialCollapsed,
-      _scoredCache: null,
     }
   },
   computed: {
@@ -92,17 +91,13 @@ export default {
       return Array.isArray(this.sources) && this.sources.length > 0
     },
     scoredSources() {
-      if (this._scoredCache) return this._scoredCache
+      // Vue computed 自带缓存:仅在 sources/queryText 变化时重算,无需手写 cache
       try {
-        const out = credibilityScorer.score(this.sources, { queryText: this.queryText })
-        this._scoredCache = out
-        return out
+        return credibilityScorer.score(this.sources, { queryText: this.queryText })
       } catch (e) { return this.sources }
     },
   },
   watch: {
-    sources() { this._scoredCache = null },
-    queryText() { this._scoredCache = null },
     initialCollapsed(v) { this.localCollapsed = v },
   },
   methods: {
@@ -137,7 +132,9 @@ export default {
         return attachmentClient.buildDownloadUrl(this.connection, s, { preview: false })
       } catch (e) { return '' }
     },
+    // eslint-disable-next-line no-unused-vars
     async onDownload(s, ev) {
+      // ev 预留:模板里 @click="onDownload(s, $event)" 时拿到原生事件,可在子方法里 preventDefault
       const url = this.downloadUrl(s)
       if (!url) return
       try {
