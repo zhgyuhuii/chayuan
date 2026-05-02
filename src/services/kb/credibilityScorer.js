@@ -58,7 +58,9 @@ function _bucket(trust) {
 }
 
 export function score(chunks, options = {}) {
-  const { query = '', mode = 'qa', queries = [], weights = {} } = options
+  // mode 暂未参与权重计算(Phase 4.1 预留 verify/summarize 不同权重表),
+  // 这里只解构 query/queries/weights;mode 通过 options 透传给上层 promptBuilder
+  const { query = '', queries = [], weights = {} } = options
   const w = { ...DEFAULTS, ...weights }
 
   const queryTextAll = [query, ...queries.map(q => q?.text || '')].join(' ')
@@ -99,7 +101,7 @@ export function score(chunks, options = {}) {
 function _titleHit(c, queryText) {
   const title = String(c.file_name || c.metadata?.title || '').toLowerCase()
   if (!title) return 0
-  const tokens = queryText.toLowerCase().split(/[\s,，。;；:：()（）\[\]"“”]/).filter(t => t.length >= 2)
+  const tokens = queryText.toLowerCase().split(/[\s,，。;；:：()（）[\]"“”]/).filter(t => t.length >= 2)
   if (tokens.length === 0) return 0
   let hit = 0
   for (const tok of tokens) if (title.includes(tok)) hit++

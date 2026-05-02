@@ -37,8 +37,10 @@ function _cosine(a, b) {
   return dot
 }
 
+// eslint-disable-next-line no-unused-vars
 export async function localEmbed(texts, _options = {}) {
   // v1:用 ngram 向量替代真实 embedding,接口契约保持一致(返回向量数组)
+  // _options 预留 dim/normalize/abortSignal,Phase 3 接真 embedding 时启用
   return texts.map(_ngramVector)
 }
 

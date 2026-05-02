@@ -6,8 +6,6 @@
  * v1 stub:导出真实接口签名 + 朴素实现;Phase 3 完成完整版。
  */
 
-const SENTENCE_BREAKS = /([。！？；!?;]|\.\s+|\n)/g
-
 export function splitByStructure(text) {
   const t = String(text || '')
   if (!t) return []

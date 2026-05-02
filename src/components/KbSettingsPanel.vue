@@ -199,23 +199,23 @@ export default {
       catalogError: '',
       loadingCatalog: false,
       toast: null,
-      _toastTimer: 0,
-      _unsub: null,
-      _unsubFlag: null,
+      toastTimer: 0,
+      unsubStore: null,
+      unsubFlag: null,
       kbFlagEnabled: true,
     }
   },
   async mounted() {
     this.kbFlagEnabled = isFlagEnabled('kbRemoteIntegration')
-    this._unsubFlag = subscribeFlag(({ flag, value }) => {
+    this.unsubFlag = subscribeFlag(({ flag, value }) => {
       if (flag === 'kbRemoteIntegration') this.kbFlagEnabled = !!value
     })
     await this.refreshConnections()
-    this._unsub = connectionStore.subscribe(() => { this.refreshConnections() })
+    this.unsubStore = connectionStore.subscribe(() => { this.refreshConnections() })
   },
   beforeUnmount() {
-    if (this._unsub) try { this._unsub() } catch (e) { /* noop */ }
-    if (this._unsubFlag) try { this._unsubFlag() } catch (e) { /* noop */ }
+    if (this.unsubStore) try { this.unsubStore() } catch (e) { /* noop */ }
+    if (this.unsubFlag) try { this.unsubFlag() } catch (e) { /* noop */ }
   },
   methods: {
     async refreshConnections() {
@@ -418,8 +418,8 @@ export default {
 
     showToast(kind, msg) {
       this.toast = { kind, msg }
-      if (this._toastTimer) clearTimeout(this._toastTimer)
-      this._toastTimer = setTimeout(() => { this.toast = null }, 3500)
+      if (this.toastTimer) clearTimeout(this.toastTimer)
+      this.toastTimer = setTimeout(() => { this.toast = null }, 3500)
     },
     enableKbFlag() {
       setFeatureFlag('kbRemoteIntegration', true)

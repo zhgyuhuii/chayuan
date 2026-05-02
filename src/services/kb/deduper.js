@@ -5,7 +5,9 @@
  * 用于 v1 早期 + 旧版服务端循环 /search_docs 的回退路径。
  */
 
+// eslint-disable-next-line no-unused-vars
 export function merge(chunks, queries) {
+  // queries 参数当前未读取,但保留在签名里,方便后续按 query.weight 重排
   if (!Array.isArray(chunks)) return []
   const byId = new Map()
   for (const c of chunks) {
