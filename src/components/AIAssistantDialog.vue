@@ -529,6 +529,10 @@
                   'has-user-context-meta': msg.role === 'user' && !!getUserMessageContextLabel(msg),
                   'message-text-error': msg.role === 'assistant' && isAssistantErrorMessage(msg)
                 }"
+                :data-active-cite="msg.messageMeta?.kbHoveredCitationId || ''"
+                @mouseover="onMessageTextMouseOver(msg, $event)"
+                @mouseout="onMessageTextMouseOut(msg, $event)"
+                @click="onMessageTextClick(msg, $event)"
               >
                 <template v-if="isAssistantMessagePending(msg, i) && !String(msg.content || '').trim()">
                   <div class="message-waiting-state">
@@ -560,6 +564,20 @@
                 <template v-else>
                   <span v-html="formatMessage(msg.content)"></span>
                   <span v-if="isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
+                  <KbSourceStrip
+                    v-if="msg.role === 'assistant' && msg.messageMeta?.kbSources?.length"
+                    :sources="msg.messageMeta.kbSources"
+                    :kb-bindings="msg.messageMeta.kbBindings"
+                    :connection="getKbConnectionForMessage(msg)"
+                    :kb-error="msg.messageMeta.kbError || ''"
+                    :initial-collapsed="msg.messageMeta.kbStripCollapsed === true"
+                    :hovered-citation-id="msg.messageMeta.kbHoveredCitationId || ''"
+                    :query-text="getMessageUserQueryText(msg, i)"
+                    @toggle="onKbStripToggle(msg, $event)"
+                    @hover-citation="onKbHoverCitation(msg, $event)"
+                    @download-error="onKbDownloadError"
+                    @download-ok="onKbDownloadOk"
+                  />
                   <div v-if="msg.role === 'assistant' && isAssistantErrorMessage(msg)" class="message-error-actions">
                     <button
                       type="button"
@@ -1798,13 +1816,15 @@
           <button
             type="button"
             class="knowledge-base-btn"
-            title="选择知识库"
+            :title="currentChatKbBoundCount ? `已绑定 ${currentChatKbBoundCount} 个知识库 · 点击编辑` : '选择知识库'"
             aria-label="选择知识库"
+            :class="{ 'has-binding': currentChatKbBoundCount > 0 }"
             @click="openKnowledgeBaseDialog"
           >
             <svg class="knowledge-base-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v15.5A2.5 2.5 0 0 1 17.5 20H7.5A2.5 2.5 0 0 1 5 17.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V4zm2 3H16v1.8H9.5zm0 3.8H16v1.8H9.5zm-4 9.2A2.5 2.5 0 0 1 3 16.5V7h2v9.5a.5.5 0 0 0 .5.5z"/>
             </svg>
+            <span v-if="currentChatKbBoundCount > 0" class="kb-binding-badge">{{ currentChatKbBoundCount }}</span>
           </button>
           <div class="model-select-wrap" ref="modelSelectRef">
             <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
@@ -1922,29 +1942,13 @@
       </div>
     </main>
 
-    <div v-if="showKnowledgeBaseDialog" class="assistant-recommend-modal-overlay" @click.self="closeKnowledgeBaseDialog">
-      <div class="knowledge-base-modal">
-        <div class="knowledge-base-modal-header">
-          <h4>选择知识库</h4>
-          <button type="button" class="btn-close-modal" @click="closeKnowledgeBaseDialog">×</button>
-        </div>
-        <div class="knowledge-base-modal-body">
-          <div class="knowledge-base-modal-title">功能开发中</div>
-          <p class="knowledge-base-modal-text">详情请关注我们的公众号</p>
-          <div v-if="showFollowDonationQrCode" class="knowledge-base-qr-wrap">
-            <img
-              :src="followDonationQrCode()"
-              alt="智灵鸟科技公众号二维码"
-              class="knowledge-base-qr"
-              loading="lazy"
-              decoding="async"
-              @error="handleDonationQrCodeError('follow')"
-            />
-          </div>
-          <p v-else class="knowledge-base-modal-hint">公众号二维码暂不可用，请访问 aidooo.com 了解详情。</p>
-        </div>
-      </div>
-    </div>
+    <KbSelectorDialog
+      :visible="showKnowledgeBaseDialog"
+      :initial-binding="currentChatKbBinding"
+      @close="closeKnowledgeBaseDialog"
+      @confirm="onKbBindingConfirm"
+      @goto-settings="onKbGotoSettings"
+    />
 
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
@@ -2182,6 +2186,10 @@ import { readCurrentDocumentPayload } from '../services/documentIntelligence/doc
 import { planTextChunks } from '../services/documentIntelligence/chunkPlanner.js'
 import { resolveExactToolRequest } from '../services/documentIntelligence/exactTools.js'
 import LongTaskRunCard from './LongTaskRunCard.vue'
+import KbSelectorDialog from './KbSelectorDialog.vue'
+import KbSourceStrip from './KbSourceStrip.vue'
+import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
+import services from '../services/index.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -3518,7 +3526,9 @@ function getSelectedModelId() {
 export default {
   name: 'AIAssistantDialog',
   components: {
-    LongTaskRunCard
+    LongTaskRunCard,
+    KbSelectorDialog,
+    KbSourceStrip
   },
   data() {
     return {
@@ -3541,6 +3551,7 @@ export default {
       modelGroupsVersion: 0,
       modelDropdownOpen: false,
       showKnowledgeBaseDialog: false,
+      nextSendKbMode: '',
       modelGroupCollapsed: {},
       isStreaming: false,
       streamingContent: '',
@@ -3677,6 +3688,14 @@ export default {
     },
     currentMessages() {
       return this.currentChat?.messages || []
+    },
+    currentChatKbBinding() {
+      const b = this.currentChat?.kbBindings
+      if (b && Array.isArray(b.kbNames)) return b
+      return { kbNames: [], config: { topK: 5, fusion: 'rrf', hybrid: true, rerank: false } }
+    },
+    currentChatKbBoundCount() {
+      return this.currentChatKbBinding.kbNames.length
     },
     currentMessageCount() {
       return this.currentMessages.length
@@ -5212,6 +5231,10 @@ export default {
     },
     consumeExternalPromptQuery(query = {}) {
       const prompt = String(query?.prompt || '').trim()
+      const kbMode = String(query?.kbMode || '').trim().toLowerCase()
+      if (kbMode && ['verify', 'summarize', 'qa'].includes(kbMode)) {
+        this.nextSendKbMode = kbMode
+      }
       if (!prompt) return
       this.userInput = prompt
       this.$nextTick(() => this.adjustComposerHeight())
@@ -5999,11 +6022,19 @@ export default {
     formatMessage(text) {
       if (!text) return ''
       const raw = prepareDialogDisplayText(String(text))
-      return raw
+      const escaped = raw
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>')
+      return this._injectKbCitations(escaped)
+    },
+    _injectKbCitations(html) {
+      if (!html.includes('[^c')) return html
+      // 限制 c 后面只接数字,避免误伤普通文本 [^cool]
+      return html.replace(/\[\^(c\d+)\]/g, (_, cid) => {
+        return `<sup class="kb-cite" data-id="${cid}" tabindex="0" title="点击或悬停查看知识来源">[${cid}]</sup>`
+      })
     },
     hasMessageGeneratedFiles(message) {
       return Array.isArray(message?.generatedFiles) && message.generatedFiles.length > 0
@@ -6587,6 +6618,103 @@ export default {
     },
     closeKnowledgeBaseDialog() {
       this.showKnowledgeBaseDialog = false
+    },
+    onKbBindingConfirm(binding) {
+      const chat = this.currentChat
+      if (!chat) return
+      chat.kbBindings = {
+        kbNames: Array.isArray(binding?.kbNames) ? binding.kbNames.slice() : [],
+        config: { ...(binding?.config || {}) },
+        updatedAt: Date.now(),
+      }
+      try { this.saveHistory() } catch (e) { /* noop */ }
+      this.showKnowledgeBaseDialog = false
+    },
+    onKbGotoSettings() {
+      this.showKnowledgeBaseDialog = false
+      try {
+        openSettingsWindow({ menu: 'general-settings', sub: 'kb' }, { title: '知识库设置' })
+      } catch (e) { /* noop */ }
+    },
+    clearCurrentChatKbBinding() {
+      const chat = this.currentChat
+      if (!chat) return
+      chat.kbBindings = { kbNames: [], config: {}, updatedAt: Date.now() }
+      try { this.saveHistory() } catch (e) { /* noop */ }
+    },
+    getKbConnectionForMessage(msg) {
+      try {
+        const cs = services.kb?.connectionStore
+        if (!cs) return null
+        const targetId = msg?.messageMeta?.kbConnectionId
+        if (targetId) {
+          const conn = cs.getConnection(targetId)
+          if (conn) return conn
+        }
+        return cs.getCurrentConnection() || null
+      } catch (e) { return null }
+    },
+    getMessageUserQueryText(msg, idx) {
+      if (!Array.isArray(this.currentMessages)) return ''
+      for (let k = idx - 1; k >= 0; k--) {
+        const m = this.currentMessages[k]
+        if (m?.role === 'user') return String(m.content || '')
+      }
+      return ''
+    },
+    onKbStripToggle(msg, collapsed) {
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbStripCollapsed = collapsed
+      try { this.saveHistory() } catch (e) { /* noop */ }
+    },
+    onKbHoverCitation(msg, citationId) {
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbHoveredCitationId = citationId
+    },
+    onKbDownloadError({ source, status, message }) {
+      const desc = source?.file_name ? `「${source.file_name}」` : ''
+      try {
+        alert(`附件下载失败 ${desc}\n\n${message}（HTTP ${status}）`)
+      } catch (e) {
+        console.warn('[KB] download error:', message, status, source)
+      }
+    },
+    onKbDownloadOk(_payload) {
+      // 后续可在此打点
+    },
+    onMessageTextMouseOver(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      const id = String(t.getAttribute('data-id') || '')
+      if (!id) return
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbHoveredCitationId = id
+    },
+    onMessageTextMouseOut(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      if (!msg.messageMeta) return
+      msg.messageMeta.kbHoveredCitationId = ''
+    },
+    onMessageTextClick(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      const id = String(t.getAttribute('data-id') || '')
+      if (!id) return
+      ev.preventDefault()
+      // 点击引用 → 展开 strip + 滚动到对应卡片 + 短时高亮
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbStripCollapsed = false
+      msg.messageMeta.kbHoveredCitationId = id
+      this.$nextTick(() => {
+        try {
+          const wrap = t.closest('.message-content') || t.closest('.message-text')
+          const card = wrap && wrap.querySelector(`.kb-source-card[data-citation-id="${id}"]`)
+          if (card && typeof card.scrollIntoView === 'function') {
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }
+        } catch (e) { /* noop */ }
+      })
     },
     openModelSettings() {
       this.modelDropdownOpen = false
@@ -15373,6 +15501,32 @@ export default {
           ...(assistantMsg.messageMeta && typeof assistantMsg.messageMeta === 'object' ? assistantMsg.messageMeta : {}),
           contextBuildMeta
         }
+
+        try {
+          const overrideKbMode = String(this.nextSendKbMode || '').trim()
+          if (overrideKbMode) this.nextSendKbMode = ''
+          await applyKbRetrievalIfBound({
+            chat: chatObj,
+            userMessage: { content: apiUserContent },
+            kbQueryText: apiUserContent,
+            kbMode: overrideKbMode || 'qa',
+            messagesForApi,
+            assistantMessageMeta: assistantMsg.messageMeta,
+            selectionText: this.selectionContextSnapshot?.text || '',
+            onKbPhase: (phase) => {
+              if (phase?.phase === 'splitting' || phase?.phase === 'clustering' || phase?.phase === 'distilling') {
+                this.updateAssistantLoadingProgress(assistantMsg, {
+                  label: '知识库检索中...',
+                  detail: phase?.detail || '正在准备知识检索查询...',
+                  percent: 80
+                })
+              }
+            }
+          })
+        } catch (kbErr) {
+          console.warn('[KB] retrieval middleware failed:', kbErr)
+          assistantMsg.messageMeta.kbError = kbErr?.message || String(kbErr)
+        }
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: contextBuildMeta?.usedSummary || contextBuildMeta?.wasTrimmed
             ? '已完成上下文治理...'
@@ -19046,6 +19200,60 @@ export default {
   display: none;
 }
 
+.message-text .kb-cite {
+  display: inline-block;
+  vertical-align: super;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  background: #e7eefb;
+  color: #2a6ddf;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.message-text .kb-cite:hover {
+  background: #2a6ddf;
+  color: white;
+  transform: translateY(-1px);
+}
+.message-text .kb-cite:focus-visible {
+  outline: 2px solid #2a6ddf;
+  outline-offset: 1px;
+}
+/* 反向联动:KbSourceStrip hover 卡片 → AIAssistantDialog 在 .message-text 上挂 data-active-cite */
+.message-text[data-active-cite] .kb-cite[data-id]:not([data-id=""]) {
+  /* 可以加点温柔的"不是当前 active"的弱化态;先留空,只做正向高亮 */
+}
+.message-text[data-active-cite="c1"]  .kb-cite[data-id="c1"],
+.message-text[data-active-cite="c2"]  .kb-cite[data-id="c2"],
+.message-text[data-active-cite="c3"]  .kb-cite[data-id="c3"],
+.message-text[data-active-cite="c4"]  .kb-cite[data-id="c4"],
+.message-text[data-active-cite="c5"]  .kb-cite[data-id="c5"],
+.message-text[data-active-cite="c6"]  .kb-cite[data-id="c6"],
+.message-text[data-active-cite="c7"]  .kb-cite[data-id="c7"],
+.message-text[data-active-cite="c8"]  .kb-cite[data-id="c8"],
+.message-text[data-active-cite="c9"]  .kb-cite[data-id="c9"],
+.message-text[data-active-cite="c10"] .kb-cite[data-id="c10"],
+.message-text[data-active-cite="c11"] .kb-cite[data-id="c11"],
+.message-text[data-active-cite="c12"] .kb-cite[data-id="c12"],
+.message-text[data-active-cite="c13"] .kb-cite[data-id="c13"],
+.message-text[data-active-cite="c14"] .kb-cite[data-id="c14"],
+.message-text[data-active-cite="c15"] .kb-cite[data-id="c15"],
+.message-text[data-active-cite="c16"] .kb-cite[data-id="c16"],
+.message-text[data-active-cite="c17"] .kb-cite[data-id="c17"],
+.message-text[data-active-cite="c18"] .kb-cite[data-id="c18"],
+.message-text[data-active-cite="c19"] .kb-cite[data-id="c19"],
+.message-text[data-active-cite="c20"] .kb-cite[data-id="c20"] {
+  background: #f5a623;
+  color: white;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
+}
+
 .knowledge-base-btn {
   display: inline-flex;
   align-items: center;
@@ -19059,10 +19267,34 @@ export default {
   color: var(--ai-text);
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
 }
 
 .knowledge-base-btn:hover {
   border-color: #0ea5e9;
+}
+
+.knowledge-base-btn.has-binding {
+  border-color: #2a6ddf;
+  background: #f0f6ff;
+}
+
+.kb-binding-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #2a6ddf;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 9px;
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 0 2px white;
 }
 
 .knowledge-base-icon {

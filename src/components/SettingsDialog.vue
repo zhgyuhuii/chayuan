@@ -1900,6 +1900,14 @@
             </div>
           </div>
 
+          <!-- 知识库设置（plan v1.3 §2.1） -->
+          <div
+            v-else-if="activeMainMenu === 'general' && activeSubMenu === 'kb'"
+            class="config-panel kb-settings-host"
+          >
+            <KbSettingsPanel />
+          </div>
+
           <!-- 其他常规设置 -->
           <div
             v-else-if="activeMainMenu === 'general' && activeSubMenu"
@@ -2348,6 +2356,7 @@ import {
   upsertRegressionSample
 } from '../utils/assistantRegressionSampleStore.js'
 import { getMultimodalServerFallbackConfig } from '../utils/multimodalServerBridge.js'
+import KbSettingsPanel from './KbSettingsPanel.vue'
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value))
@@ -2383,6 +2392,7 @@ const MODEL_INVENTORY = [
 
 export default {
   name: 'SettingsDialog',
+  components: { KbSettingsPanel },
   data() {
     return {
       // 主菜单
@@ -2395,7 +2405,8 @@ export default {
         { key: 'general', label: '常规设置', icon: '⚙️' }
       ],
       generalSubMenus: [
-        { key: 'data', label: '数据设置' }
+        { key: 'data', label: '数据设置' },
+        { key: 'kb', label: '知识库设置' }
       ],
       // 模型设置用的清单：固定清单 + getDefaultModels 全部，带图标
       allModels: [],
@@ -3480,6 +3491,12 @@ export default {
         })
       } else if (menu === 'model-settings') {
         this.selectMainMenu('model-settings')
+      } else if (menu === 'general-settings' || menu === 'general') {
+        this.selectMainMenu('general')
+        const sub = String(query?.sub || '').trim()
+        if (sub) {
+          this.$nextTick(() => { this.selectSubMenu(sub) })
+        }
       } else if (!menu) {
         this.$nextTick(() => {
           this.applyInitialMenuSelection()
@@ -7693,6 +7710,12 @@ export default {
 .config-panel.form-saved {
   opacity: 0.6;
   pointer-events: none;
+}
+
+/* 知识库设置面板 host:让 KbSettingsPanel 占满父容器,不复用 form-saved 状态 */
+.config-panel.kb-settings-host {
+  padding: 0;
+  overflow: hidden;
 }
 
 .config-panel.form-saved .config-input,

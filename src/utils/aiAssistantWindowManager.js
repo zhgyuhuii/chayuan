@@ -57,6 +57,10 @@ function normalizeQuery(query) {
   if (['image', 'audio', 'video'].includes(multimodal)) {
     normalized.multimodal = multimodal
   }
+  const kbMode = String(query?.kbMode || '').trim().toLowerCase()
+  if (['verify', 'summarize', 'qa'].includes(kbMode)) {
+    normalized.kbMode = kbMode
+  }
   return normalized
 }
 

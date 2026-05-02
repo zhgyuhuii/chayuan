@@ -21,7 +21,8 @@ const KNOWN_FLAGS = Object.freeze({
   rolloutBucketing:    { default: false, description: '启用 5%→25%→50%→100% 灰度分桶' },
   personalMemoryInject:{ default: false, description: '把 personalMemory 注入 system prompt' },
   rateLimiter:         { default: false, description: '启用 LLM 调用 token bucket 限流' },
-  experimentalAbortV2: { default: false, description: '启用改进的 chatApiAbortAware' }
+  experimentalAbortV2: { default: false, description: '启用改进的 chatApiAbortAware' },
+  kbRemoteIntegration: { default: true,  description: '启用远程知识库集成(检索/引用/下载);灰度回滚开关' }
 })
 
 function load() {

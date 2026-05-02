@@ -255,6 +255,11 @@ const ribbonHelpers = {
   visibility: ribbonVisibilityHelpersLib
 }
 
+/* ────────── 远程知识库整合(chayuan-server) ────────── */
+import kbModule from './kb/index.js'
+
+const kb = kbModule
+
 /* ────────── 默认导出 ────────── */
 
 export default {
@@ -274,12 +279,14 @@ export default {
   assistantEvolution,
   schema,
   ui,
-  ribbonHelpers
+  ribbonHelpers,
+  kb
 }
 
 export {
   evolution, assistant, perf, flags, toast,
   host, router, workflow, ribbonHelpers, evolutionExtras,
   documentIntelligence, toolRegistry, workflowOrchestration,
-  assistantEvolution, schema, ui, sendPipeline
+  assistantEvolution, schema, ui, sendPipeline,
+  kb
 }

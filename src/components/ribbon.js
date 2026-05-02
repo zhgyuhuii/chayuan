@@ -3562,6 +3562,15 @@ function OnAction(control) {
         autoSend: '1'
       })
       break
+    case 'btnKbVerifySelection':
+      triggerKnowledgeBaseAction('verify')
+      break
+    case 'btnKbSummarizeSelection':
+      triggerKnowledgeBaseAction('summarize')
+      break
+    case 'btnKbQASelection':
+      triggerKnowledgeBaseAction('qa')
+      break
     default:
       if (eleId === 'btnCustomAssistantCreate') {
         openAssistantSettings('create-custom-assistant')
@@ -4135,8 +4144,87 @@ function OnContextMenuAction(control) {
     } else {
       alert('请先选择要添加的内容')
     }
+    return true
+  }
+  // 知识库 3 入口（context menu / table cell context menu 共用同一 handler）
+  if (
+    eleId === 'btnContextKbVerifySelection' ||
+    eleId === 'btnContextKbSummarizeSelection' ||
+    eleId === 'btnContextKbQASelection'
+  ) {
+    const mode = eleId === 'btnContextKbVerifySelection' ? 'verify'
+              : eleId === 'btnContextKbSummarizeSelection' ? 'summarize'
+              : 'qa'
+    triggerKnowledgeBaseAction(mode)
+    return true
   }
   return true
+}
+
+// ---------------------------------------------------------------------------
+// 知识库 3 入口（plan v1.3 §5.4 触发器）
+// ---------------------------------------------------------------------------
+
+function _kbActionPromptTemplate(mode, snippet) {
+  const head = snippet.length > 1500 ? snippet.slice(0, 1500) + '\n（已截断）' : snippet
+  if (mode === 'verify') {
+    return [
+      '请基于绑定的知识库核对以下选中内容的事实正确性。',
+      '若发现与知识库不一致之处,请指出具体出入,并引用对应来源 [^cN]。',
+      '若知识库未覆盖,请明确说明"知识库未覆盖,以下为基于一般常识的判断"。',
+      '',
+      '【待核对内容】',
+      head,
+    ].join('\n')
+  }
+  if (mode === 'summarize') {
+    return [
+      '请基于绑定的知识库,结合以下选中内容,生成一份简明摘要。',
+      '要求:',
+      '1) 区分"原文已有要点"与"知识库补充背景";',
+      '2) 关键事实必须引用知识库来源 [^cN];',
+      '3) 控制在 200 字以内。',
+      '',
+      '【原文片段】',
+      head,
+    ].join('\n')
+  }
+  return [
+    '请基于绑定的知识库回答以下问题(若选中的是问题原文请直接作答;若是陈述请理解为追问其相关知识)。',
+    '要求:每条关键判断都要标注来源 [^cN];知识库未覆盖时请明确说明。',
+    '',
+    '【问题/上下文】',
+    head,
+  ].join('\n')
+}
+
+function triggerKnowledgeBaseAction(mode) {
+  try {
+    const payload = resolveContextSelectionPayload() || {}
+    const text = String(payload?.text || '').trim()
+    if (!text) {
+      alert('请先选中需要 ' + (
+        mode === 'verify' ? '核对'
+        : mode === 'summarize' ? '总结'
+        : '问答'
+      ) + ' 的内容')
+      return
+    }
+    try {
+      window.Application.PluginStorage.setItem('assistant_selected_content', text)
+      window.Application.PluginStorage.setItem('assistant_selected_context', JSON.stringify(payload))
+    } catch (e) {}
+    const prompt = _kbActionPromptTemplate(mode, text)
+    showAIAssistantDialog({
+      from: 'context',
+      kbMode: mode,
+      prompt,
+      autoSend: '1',
+    })
+  } catch (e) {
+    console.error('triggerKnowledgeBaseAction failed:', e)
+    try { alert('打开知识库辅助失败: ' + (e?.message || e)) } catch (_) {}
+  }
 }
 // 样式数据
 const styleItems = [

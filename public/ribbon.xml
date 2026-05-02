@@ -32,6 +32,11 @@
                     <button id="btnTextToImage" label="文本转图像" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <!-- <button id="btnTextToAudio" label="文本转语音" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/> -->
                     <button id="btnTextToVideo" label="文本转视频" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <menu id="menuKnowledgeBaseSelection" label="知识库" getImage="ribbon.GetImage" size="large">
+                        <button id="btnKbVerifySelection" label="知识库核对本段" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnKbSummarizeSelection" label="知识库总结本段" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                        <button id="btnKbQASelection" label="知识库问答本段" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />
+                    </menu>
                     <button id="btnAssistantPrimarySlot1" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot2" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot3" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
@@ -141,6 +146,14 @@
                     getImage="ribbon.GetImage"
                     getVisible="ribbon.OnGetContextMenuVisible"
                     invalidateContentOnDrop="true"/>
+            <menu id="menuContextKnowledgeBase"
+                  label="察元AI知识库"
+                  getImage="ribbon.GetImage"
+                  getVisible="ribbon.OnGetContextMenuVisible">
+                <button id="btnContextKbVerifySelection" label="知识库核对本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+                <button id="btnContextKbSummarizeSelection" label="知识库总结本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+                <button id="btnContextKbQASelection" label="知识库问答本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+            </menu>
             <button id="btnContextAssistantSlot1"
                     label="智能助手"
                     getLabel="ribbon.OnGetLabel"
@@ -191,6 +204,14 @@
                     getImage="ribbon.GetImage"
                     getVisible="ribbon.OnGetContextMenuVisible"
                     invalidateContentOnDrop="true"/>
+            <menu id="menuContextKnowledgeBaseTableCell"
+                  label="察元AI知识库"
+                  getImage="ribbon.GetImage"
+                  getVisible="ribbon.OnGetContextMenuVisible">
+                <button id="btnContextKbVerifySelectionTableCell" label="知识库核对本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+                <button id="btnContextKbSummarizeSelectionTableCell" label="知识库总结本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+                <button id="btnContextKbQASelectionTableCell" label="知识库问答本段" onAction="ribbon.OnContextMenuAction" getImage="ribbon.GetImage" />
+            </menu>
             <button id="btnContextAssistantSlot1TableCell"
                     label="智能助手"
                     getLabel="ribbon.OnGetLabel"
