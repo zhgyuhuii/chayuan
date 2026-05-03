@@ -2072,6 +2072,7 @@ import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSet
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { reportError } from '../utils/reportError.js'
+import { inAppAlert, inAppConfirm } from '../utils/inAppDialog.js'
 /** 工具栏 SVG 用 Vite ?inline 打进 data: URL；头像 PNG 用预生成模块避免产物再拆出独立 png 请求 */
 import logoAvatarDataUrl from '../assets/ai-assistant/logoAvatarDataUrl.js'
 import chatAttachSvgInline from '../assets/ai-assistant/chat-attach.svg?inline'
@@ -6082,10 +6083,15 @@ export default {
       this.currentChatId = id
       this.saveHistory()
     },
-    deleteChat(id) {
+    async deleteChat(id) {
       const targetIndex = this.chatHistory.findIndex(chat => chat.id === id)
       if (targetIndex < 0) return
-      const confirmed = window.confirm('确认删除这个会话吗？删除后无法恢复。')
+      const confirmed = await inAppConfirm('确认删除这个会话吗？删除后无法恢复。', {
+        title: '删除会话',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      })
       if (!confirmed) return
       const remaining = this.chatHistory.filter(chat => chat.id !== id)
       this.chatHistory = remaining
@@ -6381,12 +6387,12 @@ export default {
     },
     async downloadGeneratedFile(file) {
       if (this.isGeneratedFilePending(file)) {
-        alert('附件仍在生成中，请稍候下载')
+        inAppAlert('附件仍在生成中，请稍候下载')
         return
       }
       const url = this.ensureGeneratedFileDownloadUrl(file)
       if (!url) {
-        alert('当前文件下载链接不可用，请重新生成一次')
+        inAppAlert('当前文件下载链接不可用，请重新生成一次')
         return
       }
       const fileName = this.ensureGeneratedFileSaveName(file)
@@ -6394,7 +6400,7 @@ export default {
       if (savePath) {
         const saved = await this.writeGeneratedFileToPath(file, savePath, url)
         if (saved) {
-          alert('文件已保存：' + savePath.split(/[/\\]/).pop())
+          inAppAlert('文件已保存：' + savePath.split(/[/\\]/).pop(), { title: '保存成功' })
           return
         }
         console.warn('WPS API 写入失败，回退到浏览器下载:', savePath)
@@ -6758,7 +6764,7 @@ export default {
     onKbDownloadError({ source, status, message }) {
       const desc = source?.file_name ? `「${source.file_name}」` : ''
       try {
-        alert(`附件下载失败 ${desc}\n\n${message}（HTTP ${status}）`)
+        inAppAlert(`附件下载失败 ${desc}\n\n${message}（HTTP ${status}）`, { title: '下载失败' })
       } catch (e) {
         console.warn('[KB] download error:', message, status, source)
       }
@@ -6804,15 +6810,20 @@ export default {
       this.modelDropdownOpen = false
       openSettingsWindow({ menu: 'model-settings' }, { title: '模型设置' })
     },
-    deleteCustomAssistant(item) {
+    async deleteCustomAssistant(item) {
       if (!this.isCustomAssistant(item)) return
       const name = item.shortLabel || item.label || '未命名助手'
-      const confirmed = window.confirm(`确认删除助手“${name}”吗？删除后无法恢复。`)
+      const confirmed = await inAppConfirm(`确认删除助手“${name}”吗？删除后无法恢复。`, {
+        title: '删除助手',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      })
       if (!confirmed) return
       const next = getCustomAssistants().filter(entry => entry.id !== item.key)
       const saved = saveCustomAssistants(next)
       if (!saved) {
-        alert('删除助手失败，请稍后重试')
+        await inAppAlert('删除助手失败，请稍后重试')
         return
       }
       this.loadAssistantItems()
@@ -7246,7 +7257,7 @@ export default {
       if (this.isStreaming) return
       const userMessage = this.findPreviousUserMessage(message)
       if (!userMessage) {
-        alert('未找到可重试的上一条请求')
+        inAppAlert('未找到可重试的上一条请求')
         return
       }
       const text = String(userMessage?.content || '').trim()
@@ -7351,7 +7362,7 @@ export default {
     runRecommendedAssistant(recommendation) {
       const item = this.getAssistantItemByKey(recommendation?.key)
       if (!item) {
-        alert('未找到对应助手')
+        inAppAlert('未找到对应助手')
         return
       }
       this.showAssistantRecommendModal = false
@@ -8364,10 +8375,12 @@ export default {
       this.saveHistory()
     },
     confirmAssistantRun(launchInfo) {
-      if (!launchInfo?.requiresFullDocumentConfirm) return true
+      // 返回 Promise<boolean> — 调用方需 await。原同步 window.confirm 会让 ShowDialog 关闭。
+      if (!launchInfo?.requiresFullDocumentConfirm) return Promise.resolve(true)
       const length = Number(launchInfo.inputLength || 0)
-      return window.confirm(
-        `“${launchInfo.title || '该助手'}”将处理全文内容（约 ${length} 字），是否继续执行？`
+      return inAppConfirm(
+        `“${launchInfo.title || '该助手'}”将处理全文内容（约 ${length} 字），是否继续执行？`,
+        { title: '处理全文', okText: '继续', cancelText: '取消' }
       )
     },
     getGeneratedOutputTaskStatusText(task) {
@@ -8875,10 +8888,11 @@ export default {
       this.saveHistory()
     },
     confirmDocumentCommentRun(intent) {
-      if (intent?.scope !== 'document') return true
+      if (intent?.scope !== 'document') return Promise.resolve(true)
       const length = Number(String(getDocumentText() || '').trim().length || 0)
-      return window.confirm(
-        `将按当前要求扫描全文并逐处添加批注（约 ${length} 字），是否继续执行？`
+      return inAppConfirm(
+        `将按当前要求扫描全文并逐处添加批注（约 ${length} 字），是否继续执行？`,
+        { title: '扫描全文添加批注', okText: '继续', cancelText: '取消' }
       )
     },
     getDocumentCommentTaskStatusText(task) {
@@ -9029,12 +9043,12 @@ export default {
       if (this.isStreaming || message?.activeGeneratedOutputRun?.status === 'running') return
       const retryPayload = message?.activeGeneratedOutputRun?.retryPayload
       if (!retryPayload?.text || !retryPayload?.intent) {
-        alert('未找到可重试的生成参数')
+        inAppAlert('未找到可重试的生成参数')
         return
       }
       const model = this.filteredModelList.find(item => item.id === retryPayload.modelId) || this.selectedModel
       if (!model) {
-        alert('当前没有可用模型，无法重试')
+        inAppAlert('当前没有可用模型，无法重试')
         return
       }
       const previousUserMessage = this.findPreviousUserMessage(message)
@@ -9072,7 +9086,7 @@ export default {
       const rollbackCandidate = task?.data?.rollbackCandidate || run?.rollbackCandidate
       const backupId = String(rollbackCandidate?.backupId || '').trim()
       if (!backupId) {
-        alert('当前任务没有可回滚的文档备份')
+        inAppAlert('当前任务没有可回滚的文档备份')
         return
       }
       try {
@@ -9107,7 +9121,7 @@ export default {
       const retryPayload = previousTask?.data?.retryPayload || previousRun?.retryPayload
       const assistantId = String(retryPayload?.assistantId || previousTask?.data?.assistantId || '').trim()
       if (!assistantId) {
-        alert('未找到可重试的助手任务参数')
+        inAppAlert('未找到可重试的助手任务参数')
         return
       }
       const overrides = {
@@ -9137,7 +9151,7 @@ export default {
       }
       const { taskId, promise } = startAssistantTask(assistantId, overrides)
       if (!taskId) {
-        alert('助手任务重试失败，未能创建任务')
+        inAppAlert('助手任务重试失败，未能创建任务')
         return
       }
       message.isLoading = true
@@ -9277,7 +9291,7 @@ export default {
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
 
-      if (!this.confirmDocumentCommentRun(intent)) {
+      if (!(await this.confirmDocumentCommentRun(intent))) {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         assistantMsg.content = '已取消本次批注任务。'
@@ -9542,7 +9556,7 @@ export default {
       if (files.length === 0) return
       const remainingCount = MAX_ATTACHMENT_COUNT - this.attachments.length
       if (remainingCount <= 0) {
-        alert(`最多只能添加 ${MAX_ATTACHMENT_COUNT} 个附件`)
+        inAppAlert(`最多只能添加 ${MAX_ATTACHMENT_COUNT} 个附件`)
         event.target.value = ''
         return
       }
@@ -9550,7 +9564,7 @@ export default {
       const nextAttachments = []
       for (const file of acceptedFiles) {
         if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
-          alert(`文件“${file.name}”超过 ${formatAttachmentSize(MAX_ATTACHMENT_FILE_SIZE)}，暂不支持添加`)
+          inAppAlert(`文件“${file.name}”超过 ${formatAttachmentSize(MAX_ATTACHMENT_FILE_SIZE)}，暂不支持添加`)
           continue
         }
         const item = {
@@ -10358,7 +10372,7 @@ export default {
       const context = this.buildGeneratedOutputContext(text, intent)
       if (intent?.action === 'report' && context.scope === 'document' && String(context.documentText || '').length > DIRECT_DOCUMENT_CHAR_LIMIT) {
         const { chunks } = this.getDocumentChunks(context.documentText, 'synthesize')
-        if (!this.confirmDocumentChunkSubmission(context.documentText, chunks.length)) {
+        if (!(await this.confirmDocumentChunkSubmission(context.documentText, chunks.length))) {
           return
         }
       }
@@ -14122,13 +14136,15 @@ export default {
         { role: 'user', content: userPrompt }
       ]
     },
-    confirmDocumentRevisionRun(intent, sourceInfo, chunkCount = 1) {
+    async confirmDocumentRevisionRun(intent, sourceInfo, chunkCount = 1) {
       if (sourceInfo?.actualScope !== 'document') return true
       const scopeLabel = this.getDocumentRevisionPurposeLabel(intent)
       const charCount = Number(String(sourceInfo?.sourceText || '').length || 0)
-      if (!window.confirm(`将读取全文并生成“${scopeLabel}”预览（约 ${charCount} 字），确认后才会写回文档。是否继续？`)) {
-        return false
-      }
+      const ok = await inAppConfirm(
+        `将读取全文并生成“${scopeLabel}”预览（约 ${charCount} 字），确认后才会写回文档。是否继续？`,
+        { title: `生成${scopeLabel}预览`, okText: '继续', cancelText: '取消' }
+      )
+      if (!ok) return false
       if (chunkCount > 1) {
         return this.confirmDocumentChunkSubmission(sourceInfo?.sourceText || '', chunkCount)
       }
@@ -14294,7 +14310,7 @@ export default {
           assistantMsg.activeDocumentRevisionRun,
           chunks.length > 1 ? `本次将按 ${chunks.length} 段依次处理。` : '本次无需分段，直接处理当前内容。'
         )
-        if (!this.confirmDocumentRevisionRun(resolvedIntent, sourceInfo, chunks.length)) {
+        if (!(await this.confirmDocumentRevisionRun(resolvedIntent, sourceInfo, chunks.length))) {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.content = '已取消本次文档修订。'
           assistantMsg.isLoading = false
@@ -14541,9 +14557,10 @@ export default {
     },
     confirmDocumentChunkSubmission(documentText, chunkCount) {
       const charCount = Number(documentText?.length || 0)
-      if (charCount <= DIRECT_DOCUMENT_CHAR_LIMIT && chunkCount <= 1) return true
-      return window.confirm(
-        `当前文档约 ${charCount} 字，超出单次推荐长度，将按 ${chunkCount} 段提交处理。\n\n继续后会自动分段并合并结果，耗时会更久。\n\n是否继续？`
+      if (charCount <= DIRECT_DOCUMENT_CHAR_LIMIT && chunkCount <= 1) return Promise.resolve(true)
+      return inAppConfirm(
+        `当前文档约 ${charCount} 字，超出单次推荐长度，将按 ${chunkCount} 段提交处理。\n\n继续后会自动分段并合并结果，耗时会更久。\n\n是否继续？`,
+        { title: '分段提交', okText: '继续', cancelText: '取消' }
       )
     },
     buildDocumentTransformChunkMessages(userText, chunkText, index, total, attachmentPrompt = '') {
@@ -14718,7 +14735,7 @@ export default {
     sendSelectionAwareTranslateMessage(userContent, model, intent, prepared = null) {
       const selectionContext = this.resolveBestSelectionContext()
       if (!selectionContext?.text) {
-        alert('请先选中文本，或将光标放到需要翻译的段落中')
+        inAppAlert('请先选中文本，或将光标放到需要翻译的段落中')
         return
       }
 
@@ -14786,13 +14803,13 @@ export default {
     async sendDocumentAwareMessage(userContent, model, prepared = null) {
       const { documentText, snapshot, documentCharCount } = this.getCurrentDocumentPayload()
       if (!documentText) {
-        alert('当前文档为空，暂时没有可提交的正文内容')
+        inAppAlert('当前文档为空，暂时没有可提交的正文内容')
         return
       }
 
       const strategy = classifyDocumentRequestStrategy(userContent)
       const { chunks } = this.getDocumentChunks(documentText, strategy)
-      if (!this.confirmDocumentChunkSubmission(documentText, chunks.length)) {
+      if (!(await this.confirmDocumentChunkSubmission(documentText, chunks.length))) {
         return
       }
 
@@ -15118,7 +15135,7 @@ export default {
       if (!item?.key || this.assistantRunLoadingKey) return
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
-        if (!this.confirmAssistantRun(launchInfo)) return
+        if (!(await this.confirmAssistantRun(launchInfo))) return
         if (this.shouldCollectAssistantRunParameters(item)) {
           this.showAssistantRunParameterCollection(item)
           return
@@ -15141,7 +15158,7 @@ export default {
         )
         promise.catch((error) => {
           if (error?.code === 'TASK_CANCELLED') return
-          alert(error?.message || '助手执行失败')
+          inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
         }).finally(() => {
           if (this.assistantRunLoadingKey === item.key) {
             this.assistantRunLoadingKey = ''
@@ -15149,7 +15166,7 @@ export default {
         })
       } catch (error) {
         this.assistantRunLoadingKey = ''
-        alert(error?.message || '助手执行失败')
+        await inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
       }
     },
     async sendMessage() {
@@ -15157,7 +15174,10 @@ export default {
       const text = this.userInput.trim()
       if ((!text && this.attachments.length === 0) || this.isStreaming) return
       if (this.activeDocumentRevisionRunContext?.messageId) {
-        window.alert('当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。')
+        await inAppAlert(
+          '当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。',
+          { title: '修订预览生成中' }
+        )
         return
       }
 
@@ -15219,8 +15239,9 @@ export default {
           messages.splice(userIndex, 1)
         }
         this.saveHistory()
-        const shouldOpenSettings = window.confirm(
-          '当前还没有可用模型。请先在设置中开启提供商、填写 API 地址与密钥，并刷新模型清单。是否现在前往模型设置？'
+        const shouldOpenSettings = await inAppConfirm(
+          '当前还没有可用模型。请先在设置中开启提供商、填写 API 地址与密钥，并刷新模型清单。是否现在前往模型设置？',
+          { title: '没有可用模型', okText: '前往设置', cancelText: '稍后再说' }
         )
         if (shouldOpenSettings) {
           this.openModelSettings()
@@ -15826,7 +15847,7 @@ export default {
     confirmInsert() {
       const text = prepareDialogDisplayText(this.insertModalContent.trim())
       if (!text) {
-        alert('内容不能为空')
+        inAppAlert('内容不能为空')
         return
       }
       this.showInsertModal = false

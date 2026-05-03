@@ -2278,6 +2278,7 @@ import {
 } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
+import { inAppConfirm } from '../utils/inAppDialog.js'
 import { inferModelRecordType, inferModelType, getModelTypeLabel, matchesModelType, normalizeModelType } from '../utils/modelTypeUtils.js'
 import { getChunkSettings, saveChunkSettings } from '../utils/chunkSettings.js'
 import {
@@ -6378,7 +6379,10 @@ export default {
     },
     async restoreSelectedBackupRecord() {
       if (!this.selectedBackupRecord || this.isRestoringBackupRecord) return
-      const confirmed = window.confirm(`确认恢复备份版本「${this.selectedBackupRecord.documentName || '文档'}」吗？这会覆盖源文件当前内容。`)
+      const confirmed = await inAppConfirm(
+        `确认恢复备份版本「${this.selectedBackupRecord.documentName || '文档'}」吗？这会覆盖源文件当前内容。`,
+        { title: '恢复备份', okText: '恢复', cancelText: '取消', danger: true }
+      )
       if (!confirmed) return
       this.isRestoringBackupRecord = true
       try {
