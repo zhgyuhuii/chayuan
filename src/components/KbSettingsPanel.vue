@@ -6,157 +6,157 @@
       连接和绑定仍可配置,但发送消息时不会触发知识库检索。
       <button class="btn-link" @click="enableKbFlag">立即启用</button>
     </div>
-    <!-- 左侧:连接列表 + 新增按钮 -->
-    <aside class="kb-conn-list">
-      <div class="kb-conn-list-header">
-        <span>知识库连接</span>
-        <button class="btn-icon" title="新增连接" @click="onCreate">＋</button>
-      </div>
-      <ul class="kb-conn-items">
-        <li
-          v-for="c in connections"
-          :key="c.id"
-          :class="{ active: selectedId === c.id, 'is-current': currentId === c.id }"
-          @click="selectConnection(c.id)"
-        >
-          <div class="kb-conn-name">
-            {{ c.name || '(未命名连接)' }}
-            <span v-if="currentId === c.id" class="kb-conn-current-badge">当前</span>
-          </div>
-          <div class="kb-conn-meta">
-            <span class="kb-conn-mode">{{ c.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
-            <span class="kb-conn-host">{{ shortHost(c.baseUrl) }}</span>
-          </div>
-        </li>
-        <li v-if="!connections.length" class="kb-conn-empty">
-          还没有连接，点击右上角 <b>＋</b> 新增
-        </li>
-      </ul>
-    </aside>
 
-    <!-- 右侧:表单 + 树形清单 -->
-    <section v-if="form" class="kb-conn-detail">
-      <header class="kb-detail-head">
-        <input
-          v-model="form.name"
-          class="kb-input"
-          placeholder="连接名称（如：公司知识中心）"
-          maxlength="64"
-          @input="markDirty"
-        />
-        <div class="kb-actions">
-          <button v-if="form.id !== currentId" class="btn-secondary" @click="setCurrent">设为当前</button>
-          <button class="btn-secondary" @click="onTest" :disabled="testing">
-            {{ testing ? '测试中…' : '测试连通' }}
-          </button>
-          <button class="btn-primary" @click="onSave" :disabled="!dirty || saving">
-            {{ saving ? '保存中…' : '保存' }}
-          </button>
-          <button v-if="form.id" class="btn-danger" @click="onDelete">删除</button>
+    <div class="kb-three-cols">
+      <!-- ============ 左:连接列表 ============ -->
+      <aside class="kb-col-conn-list">
+        <div class="kb-col-header">
+          <span>知识库连接</span>
+          <button class="btn-icon" title="新增连接" @click="onCreate">＋</button>
         </div>
-      </header>
+        <ul class="kb-conn-items">
+          <li
+            v-for="c in connections"
+            :key="c.id"
+            :class="{ active: selectedId === c.id, 'is-current': currentId === c.id }"
+            @click="selectConnection(c.id)"
+          >
+            <div class="kb-conn-name">
+              {{ c.name || '(未命名连接)' }}
+              <span v-if="currentId === c.id" class="kb-conn-current-badge">当前</span>
+            </div>
+            <div class="kb-conn-meta">
+              <span class="kb-conn-mode">{{ c.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
+              <span class="kb-conn-host" :title="c.baseUrl">{{ shortHost(c.baseUrl) }}</span>
+            </div>
+          </li>
+          <li v-if="!connections.length" class="kb-conn-empty">
+            还没有连接，点击右上角 <b>＋</b> 新增
+          </li>
+        </ul>
+      </aside>
 
-      <div class="kb-form-grid">
-        <label>
-          <span>服务地址</span>
-          <input v-model="form.baseUrl" class="kb-input" placeholder="https://kb.example.com" @input="markDirty" />
-        </label>
-        <label>
-          <span>鉴权方式</span>
-          <select v-model="form.authMode" class="kb-input" @change="onAuthModeChange">
-            <option value="jwt">账号密码（JWT）</option>
-            <option value="hmac">应用接入（APPID + AppKey）</option>
-          </select>
-        </label>
-
-        <template v-if="form.authMode === 'jwt'">
-          <label>
-            <span>用户名</span>
-            <input v-model="form.jwt.username" class="kb-input" autocomplete="off" @input="markDirty" />
-          </label>
-          <label>
-            <span>密码</span>
-            <input v-model="passwordInput" type="password" class="kb-input" autocomplete="new-password" placeholder="保留空白则使用上次保存的值" @input="markDirty" />
-          </label>
-        </template>
+      <!-- ============ 中:详情 + 操作 + 测试结果 ============ -->
+      <section class="kb-col-detail" :class="{ empty: !selected }">
+        <div v-if="!selected" class="kb-detail-empty-hint">
+          请在左侧选择连接，或点击 <b>＋</b> 新增。
+        </div>
 
         <template v-else>
-          <label>
-            <span>APPID</span>
-            <input v-model="form.hmac.appId" class="kb-input" autocomplete="off" placeholder="32 位 hex 应用 ID" @input="markDirty" />
-          </label>
-          <label>
-            <span>AppKey / AppSecret</span>
-            <input v-model="appSecretInput" type="password" class="kb-input" autocomplete="new-password" placeholder="保留空白则使用上次保存的值" @input="markDirty" />
-          </label>
-        </template>
-      </div>
+          <header class="kb-detail-head">
+            <div class="kb-detail-title-block">
+              <h3 class="kb-detail-title" :title="selected.name">
+                {{ selected.name || '(未命名连接)' }}
+                <span v-if="currentId === selected.id" class="kb-conn-current-badge">当前</span>
+              </h3>
+              <div class="kb-detail-subtitle" :title="selected.baseUrl">
+                <span class="kb-conn-mode">{{ selected.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
+                <span class="kb-detail-host">{{ selected.baseUrl }}</span>
+              </div>
+            </div>
+            <div class="kb-actions">
+              <button v-if="selected.id !== currentId" class="btn-secondary" @click="setCurrent">设为当前</button>
+              <button class="btn-secondary" @click="onTest" :disabled="testing">
+                {{ testing ? '测试中…' : '测试连通' }}
+              </button>
+              <button class="btn-secondary" @click="onEdit">编辑</button>
+              <button class="btn-danger" @click="onDelete">删除</button>
+            </div>
+          </header>
 
-      <!-- 测试连通结果 -->
-      <div v-if="testResult" class="kb-test-result" :class="{ ok: testResult.ok, fail: !testResult.ok }">
-        <ol class="kb-test-steps">
-          <li v-for="s in testResult.steps" :key="s.name" :class="{ ok: s.ok, fail: !s.ok }">
-            <span class="kb-step-icon">{{ s.ok ? '✓' : '✗' }}</span>
-            <span class="kb-step-label">{{ s.label }}</span>
-            <span v-if="s.latencyMs" class="kb-step-latency">{{ s.latencyMs }}ms</span>
-            <span v-if="s.error" class="kb-step-error">{{ s.error }}</span>
-            <span v-else-if="s.name === 'kb' && s.kbCount !== undefined" class="kb-step-extra">
-              已授权 {{ s.kbCount }} 个知识库
+          <!-- 身份/状态摘要 -->
+          <div class="kb-detail-summary">
+            <span class="kb-summary-item">
+              <span class="kb-summary-key">主体</span>
+              <span class="kb-summary-val" v-if="selected.authMode === 'jwt'">
+                用户 · {{ selected.jwt?.username || '-' }}
+              </span>
+              <span class="kb-summary-val" v-else>
+                APP · {{ shortAppId(selected.hmac?.appId) }}
+              </span>
             </span>
-          </li>
-        </ol>
-        <div v-if="testResult.summary" class="kb-test-summary">
-          <span v-if="testResult.summary.subjectKind === 'app'">
-            主体类型：APP
-            <template v-if="testResult.summary.identity?.name"> · {{ testResult.summary.identity.name }}</template>
-            <template v-if="testResult.summary.identity?.allowPublicKbs"> · 已开启公开 KB 访问</template>
-            <template v-else> · 未开启公开 KB 访问</template>
-          </span>
-          <span v-else>主体类型：用户 ({{ testResult.summary.identity?.username || '-' }})</span>
-        </div>
-        <div v-if="testResult.summary?.aclHint" class="kb-acl-hint">
-          ⚠ {{ testResult.summary.aclHint }}
-          <template v-if="form.authMode === 'hmac' && form.hmac?.appId">
-            <button class="btn-link" @click="copyGrantsCurl">复制管理员授权命令</button>
-          </template>
-        </div>
-        <div v-if="!testResult.ok && testResult.hint" class="kb-test-hint">{{ testResult.hint }}</div>
-      </div>
+            <span v-if="testResult" class="kb-summary-item">
+              <span class="kb-summary-key">连通</span>
+              <span class="kb-summary-val" :class="testResult.ok ? 'ok' : 'fail'">
+                {{ testResult.ok ? '✓ 正常' : '✗ 异常' }}
+              </span>
+            </span>
+            <span v-if="catalog.length" class="kb-summary-item">
+              <span class="kb-summary-key">可见 KB</span>
+              <span class="kb-summary-val ok">{{ countKbs }} 个</span>
+            </span>
+          </div>
 
-      <!-- 知识库清单(树形) -->
-      <div class="kb-tree-section">
-        <div class="kb-tree-header">
+          <!-- 测试连通详情(三步) -->
+          <div v-if="testResult" class="kb-test-result" :class="{ ok: testResult.ok, fail: !testResult.ok }">
+            <ol class="kb-test-steps">
+              <li v-for="s in testResult.steps" :key="s.name" :class="{ ok: s.ok, fail: !s.ok }">
+                <span class="kb-step-icon">{{ s.ok ? '✓' : '✗' }}</span>
+                <span class="kb-step-label">{{ s.label }}</span>
+                <span v-if="s.latencyMs" class="kb-step-latency">{{ s.latencyMs }}ms</span>
+                <span v-if="s.error" class="kb-step-error">{{ s.error }}</span>
+                <span v-else-if="s.name === 'kb' && s.kbCount !== undefined" class="kb-step-extra">
+                  已授权 {{ s.kbCount }} 个知识库
+                </span>
+              </li>
+            </ol>
+            <div v-if="testResult.summary?.aclHint" class="kb-acl-hint">
+              ⚠ {{ testResult.summary.aclHint }}
+              <template v-if="selected.authMode === 'hmac' && selected.hmac?.appId">
+                <button class="btn-link" @click="copyGrantsCurl">复制管理员授权命令</button>
+              </template>
+            </div>
+            <div v-if="!testResult.ok && testResult.hint" class="kb-test-hint">{{ testResult.hint }}</div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ============ 右:KB 树 ============ -->
+      <aside class="kb-col-tree">
+        <div class="kb-col-header">
           <span>可访问的知识库</span>
-          <button class="btn-link" @click="loadCatalog(true)" :disabled="loadingCatalog">
+          <button v-if="selected" class="btn-link" @click="loadCatalog(true)" :disabled="loadingCatalog">
             {{ loadingCatalog ? '加载中…' : '刷新' }}
           </button>
         </div>
-        <div v-if="catalogError" class="kb-tree-error">{{ catalogError }}</div>
+        <div v-if="!selected" class="kb-tree-empty">请先在左侧选择连接</div>
+        <div v-else-if="catalogError" class="kb-tree-error">{{ catalogError }}</div>
+        <div v-else-if="loadingCatalog && !catalog.length" class="kb-tree-empty">加载中…</div>
         <ul v-else-if="catalog.length" class="kb-tree">
           <li v-for="group in catalog" :key="group.id" class="kb-tree-group">
-            <div class="kb-tree-group-name">{{ group.name }}</div>
-            <ul>
-              <li v-for="kb in group.children" :key="kb.id" class="kb-tree-item">
+            <div class="kb-tree-group-name" :class="{ collapsible: true, collapsed: collapsedGroups[group.id] }"
+                 @click="toggleGroup(group.id)">
+              <span class="kb-tree-caret">{{ collapsedGroups[group.id] ? '▶' : '▼' }}</span>
+              <span class="kb-tree-group-text">{{ group.name }}</span>
+              <span class="kb-tree-group-count">{{ group.children?.length || 0 }}</span>
+            </div>
+            <ul v-show="!collapsedGroups[group.id]">
+              <li v-for="kb in group.children" :key="kb.id" class="kb-tree-item" :title="kb.name">
                 <span class="kb-tree-icon">📚</span>
                 <span class="kb-tree-name">{{ kb.name }}</span>
-                <span v-if="kb.role" class="kb-role-badge" :data-role="kb.role">
+                <span v-if="kb.role" class="kb-role-badge" :data-role="kb.role" :title="roleFullLabel(kb.role)">
                   {{ roleLabel(kb.role) }}
                 </span>
-                <span v-if="kb.kb?.visibility === 'public'" class="kb-vis-badge">公开</span>
+                <span v-if="kb.kb?.visibility === 'public'" class="kb-vis-badge" title="公开知识库">公</span>
               </li>
-              <li v-if="!group.children.length" class="kb-tree-empty">该分组暂无可见知识库</li>
+              <li v-if="!group.children?.length" class="kb-tree-empty-row">该分组暂无可见知识库</li>
             </ul>
           </li>
         </ul>
-        <div v-else-if="!loadingCatalog && testResult?.ok" class="kb-tree-empty">
-          暂无可见的知识库；请联系管理员授权。
+        <div v-else-if="!loadingCatalog" class="kb-tree-empty">
+          <div>暂无可见的知识库</div>
+          <div class="kb-tree-empty-sub">先点中栏的"测试连通"或"刷新",或联系管理员授权。</div>
         </div>
-      </div>
-    </section>
+      </aside>
+    </div>
 
-    <section v-else class="kb-conn-detail kb-conn-detail-empty">
-      请在左侧选择连接，或点击 <b>＋</b> 新增。
-    </section>
+    <!-- 新增/编辑弹窗 -->
+    <KbConnectionFormDialog
+      :visible="formDialog.visible"
+      :connection="formDialog.connection"
+      @close="formDialog.visible = false"
+      @saved="onDialogSaved"
+    />
 
     <transition name="fade">
       <div v-if="toast" class="kb-toast" :class="toast.kind">{{ toast.msg }}</div>
@@ -167,43 +167,37 @@
 <script>
 import services from '../services/index.js'
 import { isEnabled as isFlagEnabled, setFlag as setFeatureFlag, subscribe as subscribeFlag } from '../utils/featureFlags.js'
+import KbConnectionFormDialog from './KbConnectionFormDialog.vue'
 
-const { connectionStore, connectionCipher, healthProbe, kbCatalog, kbCatalogCache } = services.kb
-
-function blankConnection() {
-  return {
-    id: '',
-    name: '',
-    baseUrl: '',
-    authMode: 'jwt',
-    jwt: { username: '', ciphertext_password: '' },
-    hmac: { appId: '', ciphertext_appSecret: '' },
-  }
-}
+const { connectionStore, healthProbe, kbCatalog, kbCatalogCache } = services.kb
 
 export default {
   name: 'KbSettingsPanel',
+  components: { KbConnectionFormDialog },
   data() {
     return {
       connections: [],
       currentId: '',
       selectedId: '',
-      form: null,
-      passwordInput: '',
-      appSecretInput: '',
-      dirty: false,
-      saving: false,
+      selected: null,        // 当前选中连接的完整对象(只读快照)
       testing: false,
       testResult: null,
       catalog: [],
       catalogError: '',
       loadingCatalog: false,
+      collapsedGroups: {},
       toast: null,
       toastTimer: 0,
       unsubStore: null,
       unsubFlag: null,
       kbFlagEnabled: true,
+      formDialog: { visible: false, connection: null },
     }
+  },
+  computed: {
+    countKbs() {
+      return this.catalog.reduce((acc, g) => acc + (g.children?.length || 0), 0)
+    },
   },
   async mounted() {
     this.kbFlagEnabled = isFlagEnabled('kbRemoteIntegration')
@@ -216,6 +210,7 @@ export default {
   beforeUnmount() {
     if (this.unsubStore) try { this.unsubStore() } catch (e) { /* noop */ }
     if (this.unsubFlag) try { this.unsubFlag() } catch (e) { /* noop */ }
+    if (this.toastTimer) clearTimeout(this.toastTimer)
   },
   methods: {
     async refreshConnections() {
@@ -223,9 +218,9 @@ export default {
         this.connections = await connectionStore.listConnections()
         this.currentId = (await connectionStore.getCurrentConnection())?.id || ''
         if (!this.selectedId && this.connections.length) {
-          this.selectedId = this.currentId || this.connections[0].id
-        }
-        if (this.selectedId) {
+          await this.selectConnection(this.currentId || this.connections[0].id)
+        } else if (this.selectedId) {
+          // 当前选中可能被外部 store 改了 → 同步刷新 selected
           await this.selectConnection(this.selectedId, true)
         }
       } catch (e) {
@@ -236,84 +231,43 @@ export default {
     async selectConnection(id, silent = false) {
       this.selectedId = id
       const c = await connectionStore.getConnection(id)
-      if (!c) {
-        this.form = null
-        return
-      }
-      this.form = JSON.parse(JSON.stringify(c))
-      // 不要把密文 echo 到输入框,只在用户输入新值时再写
-      this.passwordInput = ''
-      this.appSecretInput = ''
-      this.dirty = false
+      this.selected = c ? JSON.parse(JSON.stringify(c)) : null
       this.testResult = null
       this.catalog = []
       this.catalogError = ''
-      // 初次进入时如果上次保存过 ok,直接预拉一次清单(不阻塞 UI)
-      if (!silent) {
+      // 切换连接时尝试预拉一次目录(走缓存,失败不打扰)
+      if (!silent && this.selected) {
         this.loadCatalog(false).catch(() => {})
       }
     },
 
     onCreate() {
-      this.form = blankConnection()
-      this.form.id = `kb-conn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-      this.passwordInput = ''
-      this.appSecretInput = ''
-      this.selectedId = ''
-      this.dirty = true
-      this.testResult = null
-      this.catalog = []
+      this.formDialog.connection = null
+      this.formDialog.visible = true
     },
 
-    async onAuthModeChange() {
-      this.markDirty()
-      this.testResult = null
-      this.catalog = []
-      // 切换鉴权方式后清掉对面字段的密文,防止误用
-      if (this.form.authMode === 'jwt') {
-        this.form.hmac = { appId: '', ciphertext_appSecret: '' }
-      } else {
-        this.form.jwt = { username: '', ciphertext_password: '' }
-      }
+    onEdit() {
+      if (!this.selected) return
+      this.formDialog.connection = JSON.parse(JSON.stringify(this.selected))
+      this.formDialog.visible = true
     },
 
-    markDirty() { this.dirty = true },
-
-    async onSave() {
-      if (!this.form?.baseUrl) {
-        this.showToast('error', '请填写服务地址')
-        return
-      }
-      this.saving = true
-      try {
-        const draft = JSON.parse(JSON.stringify(this.form))
-        // 即时加密用户输入的明文凭据;空白 = 沿用旧密文
-        if (draft.authMode === 'jwt' && this.passwordInput) {
-          draft.jwt.ciphertext_password = await connectionCipher.encrypt(this.passwordInput)
-        }
-        if (draft.authMode === 'hmac' && this.appSecretInput) {
-          draft.hmac.ciphertext_appSecret = await connectionCipher.encrypt(this.appSecretInput)
-        }
-        await connectionStore.upsertConnection(draft)
-        this.passwordInput = ''
-        this.appSecretInput = ''
-        this.dirty = false
-        this.showToast('success', '已保存')
-        await this.refreshConnections()
-        this.selectedId = draft.id
-        kbCatalogCache.invalidate(`list:${draft.id}`)
-        kbCatalogCache.invalidate(`tree:${draft.id}`)
-      } catch (e) {
-        this.showToast('error', `保存失败：${e.message || e}`)
-      } finally {
-        this.saving = false
-      }
+    async onDialogSaved({ id, mode }) {
+      this.formDialog.visible = false
+      this.formDialog.connection = null
+      kbCatalogCache.invalidate(`list:${id}`)
+      kbCatalogCache.invalidate(`tree:${id}`)
+      this.selectedId = id
+      await this.refreshConnections()
+      this.showToast('success', mode === 'edit' ? '已保存修改' : '已创建连接')
+      // 新建后自动尝试拉一次 catalog 让用户立刻看到右栏树
+      this.loadCatalog(true).catch(() => {})
     },
 
     async setCurrent() {
-      if (!this.form?.id) return
+      if (!this.selected?.id) return
       try {
-        await connectionStore.setCurrentConnection(this.form.id)
+        await connectionStore.setCurrentConnection(this.selected.id)
         await this.refreshConnections()
         this.showToast('success', '已设为当前连接')
       } catch (e) {
@@ -322,14 +276,17 @@ export default {
     },
 
     async onDelete() {
-      if (!this.form?.id) return
-      if (!confirm(`确认删除连接「${this.form.name || this.form.id}」？此操作不可恢复。`)) return
+      if (!this.selected?.id) return
+      const name = this.selected.name || this.selected.id
+      if (!confirm(`确认删除连接「${name}」？此操作不可恢复。`)) return
       try {
-        await connectionStore.removeConnection(this.form.id)
-        kbCatalogCache.invalidate(`list:${this.form.id}`)
-        kbCatalogCache.invalidate(`tree:${this.form.id}`)
-        this.form = null
+        await connectionStore.removeConnection(this.selected.id)
+        kbCatalogCache.invalidate(`list:${this.selected.id}`)
+        kbCatalogCache.invalidate(`tree:${this.selected.id}`)
+        this.selected = null
         this.selectedId = ''
+        this.testResult = null
+        this.catalog = []
         await this.refreshConnections()
         this.showToast('success', '已删除')
       } catch (e) {
@@ -338,25 +295,16 @@ export default {
     },
 
     async onTest() {
-      if (!this.form?.baseUrl) {
-        this.showToast('error', '请先填写服务地址')
+      if (!this.selected?.baseUrl) {
+        this.showToast('error', '该连接缺少服务地址')
         return
       }
       this.testing = true
       this.testResult = null
       try {
-        // 临时合成一个连接用于测试（不写盘）
-        const probeConn = JSON.parse(JSON.stringify(this.form))
-        if (this.form.authMode === 'jwt' && this.passwordInput) {
-          probeConn.jwt.ciphertext_password = await connectionCipher.encrypt(this.passwordInput)
-        }
-        if (this.form.authMode === 'hmac' && this.appSecretInput) {
-          probeConn.hmac.ciphertext_appSecret = await connectionCipher.encrypt(this.appSecretInput)
-        }
-        this.testResult = await healthProbe.run(probeConn)
+        this.testResult = await healthProbe.run(this.selected)
         if (this.testResult.ok) {
-          // 用同一个 probeConn 拉一次目录,展示
-          this.loadCatalog(true, probeConn).catch((e) => {
+          this.loadCatalog(true).catch((e) => {
             this.catalogError = `加载列表失败：${e.message || e}`
           })
         }
@@ -367,18 +315,22 @@ export default {
       }
     },
 
-    async loadCatalog(force = false, probeConn = null) {
-      const conn = probeConn || this.form
-      if (!conn?.id || !conn?.baseUrl) return
+    async loadCatalog(force = false) {
+      if (!this.selected?.id || !this.selected?.baseUrl) return
       this.loadingCatalog = true
       this.catalogError = ''
       try {
-        this.catalog = await kbCatalog.fetchTree(conn, { force })
+        this.catalog = await kbCatalog.fetchTree(this.selected, { force })
       } catch (e) {
+        this.catalog = []
         this.catalogError = `加载列表失败：${e.message || e}`
       } finally {
         this.loadingCatalog = false
       }
+    },
+
+    toggleGroup(gid) {
+      this.collapsedGroups = { ...this.collapsedGroups, [gid]: !this.collapsedGroups[gid] }
     },
 
     roleLabel(role) {
@@ -390,16 +342,27 @@ export default {
         default:       return '?'
       }
     },
+    roleFullLabel(role) {
+      switch (role) {
+        case 'owner':  return '所有者(Owner)'
+        case 'editor': return '可编辑(Editor)'
+        case 'reader': return '只读(Reader)'
+        case 'admin':  return '管理员(Admin)'
+        default:       return role || '未知'
+      }
+    },
 
     shortHost(url) {
-      try {
-        const u = new URL(url)
-        return u.host
-      } catch (e) { return url || '' }
+      try { return new URL(url).host } catch (e) { return url || '' }
+    },
+    shortAppId(id) {
+      const s = String(id || '')
+      if (s.length <= 12) return s
+      return `${s.slice(0, 6)}…${s.slice(-4)}`
     },
 
     async copyGrantsCurl() {
-      const appId = this.form?.hmac?.appId
+      const appId = this.selected?.hmac?.appId
       if (!appId) return
       const cmd = [
         `# 用 admin 身份(JWT)调以下接口给 APP ${appId} 授权一个知识库`,
@@ -432,26 +395,42 @@ export default {
 
 <style scoped>
 .kb-settings-panel {
+  position: relative;
   display: flex;
+  flex-direction: column;
   height: 100%;
   font-size: 13px;
   color: #2a2a2a;
 }
 
-.kb-conn-list {
-  width: 220px;
-  border-right: 1px solid #e6e8ec;
-  display: flex;
-  flex-direction: column;
-  background: #f7f8fa;
+.kb-three-cols {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px minmax(360px, 1fr) minmax(260px, 360px);
+  min-height: 0;
 }
-.kb-conn-list-header {
+
+/* 容器较窄时(< 880px),把"中"和"右"叠起来,中→上,右→下 */
+@media (max-width: 880px) {
+  .kb-three-cols {
+    grid-template-columns: 200px 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+  .kb-col-conn-list { grid-row: span 2; }
+  .kb-col-detail { grid-column: 2; grid-row: 1; }
+  .kb-col-tree { grid-column: 2; grid-row: 2; border-top: 1px solid #e6e8ec; }
+}
+
+/* ---- 通用 column header ---- */
+.kb-col-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
   font-weight: 600;
   border-bottom: 1px solid #e6e8ec;
+  flex-shrink: 0;
+  background: #f7f8fa;
 }
 .btn-icon {
   border: none;
@@ -463,6 +442,14 @@ export default {
 }
 .btn-icon:hover { color: #1452c4; }
 
+/* ---- 左:连接列表 ---- */
+.kb-col-conn-list {
+  border-right: 1px solid #e6e8ec;
+  display: flex;
+  flex-direction: column;
+  background: #fafbfc;
+  min-width: 0;
+}
 .kb-conn-items {
   list-style: none;
   margin: 0;
@@ -485,6 +472,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
+  word-break: break-all;
 }
 .kb-conn-current-badge {
   font-size: 10px;
@@ -499,11 +487,18 @@ export default {
   gap: 8px;
   font-size: 11px;
   color: #888;
+  align-items: center;
 }
 .kb-conn-mode {
   padding: 1px 6px;
   background: #e3e6eb;
   border-radius: 4px;
+}
+.kb-conn-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
 }
 .kb-conn-empty {
   padding: 20px 12px;
@@ -512,50 +507,70 @@ export default {
   text-align: center;
 }
 
-.kb-conn-detail {
-  flex: 1;
+/* ---- 中:详情 ---- */
+.kb-col-detail {
   padding: 16px 20px;
   overflow-y: auto;
+  border-right: 1px solid #e6e8ec;
+  min-width: 0;
 }
-.kb-conn-detail-empty {
+.kb-col-detail.empty {
   display: flex;
   align-items: center;
   justify-content: center;
   color: #888;
 }
+.kb-detail-empty-hint { color: #888; font-size: 13px; }
 
 .kb-detail-head {
   display: flex;
   gap: 12px;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
 }
-.kb-detail-head .kb-input { flex: 1; font-weight: 600; font-size: 14px; }
-.kb-actions { display: flex; gap: 8px; }
-
-.kb-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 20px;
-  margin-bottom: 16px;
+.kb-detail-title-block {
+  flex: 1;
+  min-width: 0;
 }
-.kb-form-grid label {
+.kb-detail-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.kb-form-grid label > span {
+.kb-detail-subtitle {
+  display: flex;
+  gap: 8px;
   font-size: 12px;
-  color: #555;
+  color: #666;
+  align-items: center;
 }
-.kb-input {
-  border: 1px solid #cfd4db;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 13px;
-  outline: none;
+.kb-detail-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.kb-input:focus { border-color: #2a6ddf; }
+.kb-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+.kb-detail-summary {
+  display: flex;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f7f8fa;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.kb-summary-item { display: flex; gap: 6px; font-size: 12px; }
+.kb-summary-key { color: #888; }
+.kb-summary-val { font-weight: 500; }
+.kb-summary-val.ok { color: #2aa353; }
+.kb-summary-val.fail { color: #c0392b; }
 
 .btn-primary, .btn-secondary, .btn-danger, .btn-link {
   border-radius: 4px;
@@ -568,6 +583,7 @@ export default {
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-secondary { background: white; color: #333; border-color: #cfd4db; }
 .btn-secondary:hover:not(:disabled) { background: #f0f4fa; }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger { background: white; color: #c0392b; border-color: #e9b4ad; }
 .btn-danger:hover { background: #fbeae8; }
 .btn-link {
@@ -579,7 +595,7 @@ export default {
 }
 
 .kb-test-result {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   padding: 12px 14px;
   border-radius: 6px;
   border: 1px solid #e6e8ec;
@@ -601,7 +617,6 @@ export default {
 .kb-step-latency { font-size: 11px; color: #888; }
 .kb-step-error { color: #c0392b; font-size: 12px; }
 .kb-step-extra { color: #2aa353; font-size: 12px; }
-.kb-test-summary { margin-top: 6px; font-size: 12px; color: #555; }
 .kb-acl-hint {
   margin-top: 6px;
   padding: 6px 10px;
@@ -612,41 +627,61 @@ export default {
 }
 .kb-test-hint { margin-top: 6px; font-size: 12px; color: #888; }
 
-.kb-tree-section {
-  border: 1px solid #e6e8ec;
-  border-radius: 6px;
-  padding: 12px 14px;
-  background: #fff;
-}
-.kb-tree-header {
+/* ---- 右:KB 树 ---- */
+.kb-col-tree {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  font-weight: 600;
+  flex-direction: column;
+  background: #fff;
+  min-width: 0;
+  overflow: hidden;
 }
-.kb-tree-error {
-  color: #c0392b;
-  font-size: 12px;
-  padding: 8px 0;
+.kb-tree {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px;
+  overflow-y: auto;
+  flex: 1;
 }
-.kb-tree { list-style: none; margin: 0; padding: 0; }
-.kb-tree-group { margin-bottom: 10px; }
+.kb-tree-group { margin-bottom: 8px; }
 .kb-tree-group-name {
   font-size: 12px;
-  color: #888;
+  color: #555;
   margin-bottom: 4px;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
 }
-.kb-tree-group ul { list-style: none; margin: 0; padding: 0 0 0 12px; }
+.kb-tree-group-name:hover { color: #2a6ddf; }
+.kb-tree-caret { font-size: 9px; color: #999; width: 10px; }
+.kb-tree-group-text { flex: 1; }
+.kb-tree-group-count {
+  font-size: 10px;
+  background: #eef0f3;
+  color: #666;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.kb-tree-group ul { list-style: none; margin: 0; padding: 0 0 0 18px; }
 .kb-tree-item {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  padding: 4px 0;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: default;
 }
-.kb-tree-icon { font-size: 14px; }
-.kb-tree-name { flex: 1; }
+.kb-tree-item:hover { background: #f0f4fa; }
+.kb-tree-icon { font-size: 13px; }
+.kb-tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-tree-empty-row { padding: 4px 6px; color: #aaa; font-size: 11px; }
 .kb-role-badge {
   font-size: 10px;
   font-weight: 600;
@@ -654,6 +689,7 @@ export default {
   border-radius: 8px;
   background: #e3e6eb;
   color: #555;
+  flex-shrink: 0;
 }
 .kb-role-badge[data-role='owner'] { background: #ffe9c2; color: #b76e00; }
 .kb-role-badge[data-role='editor'] { background: #cfe6ff; color: #1856b2; }
@@ -665,14 +701,25 @@ export default {
   border-radius: 8px;
   background: #f0f4fa;
   color: #555;
+  flex-shrink: 0;
 }
 .kb-tree-empty {
-  padding: 12px 0;
+  padding: 16px 12px;
   color: #999;
   font-size: 12px;
   text-align: center;
 }
+.kb-tree-empty-sub { color: #aaa; font-size: 11px; margin-top: 4px; }
+.kb-tree-error {
+  padding: 12px;
+  color: #c0392b;
+  font-size: 12px;
+  background: #fcf3f2;
+  margin: 10px;
+  border-radius: 4px;
+}
 
+/* ---- toast / banner ---- */
 .kb-toast {
   position: fixed;
   right: 20px;
@@ -691,10 +738,6 @@ export default {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
 .kb-flag-banner {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
   background: #fff7e6;
   border-bottom: 1px solid #f0b842;
   color: #8a5a00;
@@ -703,7 +746,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 10;
+  flex-shrink: 0;
 }
 .kb-flag-banner code {
   background: #fff;
@@ -715,8 +758,5 @@ export default {
 }
 .kb-flag-banner .btn-link {
   margin-left: auto;
-}
-.kb-settings-panel {
-  position: relative;
 }
 </style>
