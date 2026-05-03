@@ -33,7 +33,18 @@
           @mouseleave="onHover('')"
           :class="{ highlighted: hoveredCitationId === `c${idx + 1}` }"
         >
-          <div class="kb-source-head">
+          <div class="kb-source-head" @click="toggleSource(s, idx)">
+            <button
+              type="button"
+              class="kb-source-expand"
+              :title="isSourceExpanded(s, idx) ? '折叠片段详情' : '展开片段详情'"
+              :aria-expanded="isSourceExpanded(s, idx)"
+              @click.stop="toggleSource(s, idx)"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" :class="{ rotated: isSourceExpanded(s, idx) }">
+                <path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/>
+              </svg>
+            </button>
             <span class="kb-source-cite">[c{{ idx + 1 }}]</span>
             <span class="kb-source-stars" :title="`信任度: ${trustValue(s)}`">
               <span v-for="n in 5" :key="n" :class="['kb-star', n <= starsOf(s) ? 'on' : 'off']">★</span>
@@ -46,12 +57,12 @@
               target="_blank"
               rel="noopener noreferrer"
               :title="`下载附件: ${s.file_name}`"
-              @click.prevent="onDownload(s, $event)"
+              @click.prevent.stop="onDownload(s, $event)"
             >📎 {{ shortFileName(s.file_name) }}</a>
             <span v-else class="kb-source-noattachment">{{ shortFileName(s.file_name) }}</span>
           </div>
-          <div class="kb-source-snippet">{{ snippet(s) }}</div>
-          <div v-if="s.metadata?.section_title || s.from_section_ids?.length" class="kb-source-meta">
+          <div v-if="isSourceExpanded(s, idx)" class="kb-source-snippet">{{ snippet(s) }}</div>
+          <div v-if="isSourceExpanded(s, idx) && (s.metadata?.section_title || s.from_section_ids?.length)" class="kb-source-meta">
             <template v-if="s.metadata?.section_title">
               §{{ s.metadata.section_title }}
             </template>
@@ -71,7 +82,7 @@
 <script>
 import services from '../services/index.js'
 
-const { attachmentClient, credibilityScorer } = services.kb
+const { attachmentClient, authClient, credibilityScorer } = services.kb
 
 export default {
   name: 'KbSourceStrip',
@@ -80,13 +91,14 @@ export default {
     kbBindings: { type: Object, default: () => ({ kbNames: [] }) },
     connection: { type: Object, default: null },
     kbError: { type: String, default: '' },
-    initialCollapsed: { type: Boolean, default: false },
+    initialCollapsed: { type: Boolean, default: true },
     hoveredCitationId: { type: String, default: '' },
     queryText: { type: String, default: '' },
   },
   data() {
     return {
       localCollapsed: this.initialCollapsed,
+      expandedSourceKeys: {},
     }
   },
   computed: {
@@ -116,6 +128,19 @@ export default {
       this.localCollapsed = !this.localCollapsed
       this.$emit('toggle', this.localCollapsed)
     },
+    sourceKey(s, idx) {
+      return `${s?.chunk_id || s?.id || ''}::${s?.kb_name || ''}::${s?.file_name || ''}::${idx}`
+    },
+    isSourceExpanded(s, idx) {
+      return this.expandedSourceKeys[this.sourceKey(s, idx)] === true
+    },
+    toggleSource(s, idx) {
+      const key = this.sourceKey(s, idx)
+      this.expandedSourceKeys = {
+        ...this.expandedSourceKeys,
+        [key]: !this.expandedSourceKeys[key]
+      }
+    },
     starsOf(s) {
       const idx = this.sources.indexOf(s)
       const enriched = this.scoredSources?.[idx]
@@ -138,10 +163,18 @@ export default {
       return `${n.slice(0, 28)}…${n.slice(-6)}`
     },
     downloadUrl(s) {
-      if (!this.connection || !s?.file_name) return ''
+      if (!this.canDownload(s)) return ''
       try {
-        return attachmentClient.buildDownloadUrl(this.connection, s, { preview: false })
+        return attachmentClient.buildDownloadUrl(this.connection, s, { preview: false, includeToken: false })
       } catch (e) { return '' }
+    },
+    canDownload(s) {
+      if (!this.connection || !s?.file_name || !s?.kb_name) return false
+      const kbName = String(s.kb_name || '')
+      const kind = String(s?.metadata?.kind || s?.kind || '').toLowerCase()
+      if (kbName.startsWith('src:') || kbName.startsWith('office:')) return false
+      if (kind && kind !== 'document') return false
+      return true
     },
     // eslint-disable-next-line no-unused-vars
     async onDownload(s, ev) {
@@ -149,7 +182,8 @@ export default {
       const url = this.downloadUrl(s)
       if (!url) return
       try {
-        const resp = await fetch(url, { method: 'GET', mode: 'cors' })
+        const auth = authClient.createAuthClient(this.connection)
+        const resp = await auth.fetch(url, { method: 'GET', timeoutMs: 30_000 })
         if (!resp.ok) {
           const body = await resp.text()
           const msg = attachmentClient.humanizeDownloadError(resp.status, body)
@@ -265,7 +299,19 @@ export default {
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 4px;
+  cursor: pointer;
 }
+.kb-source-expand {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #667085;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.kb-source-expand svg { transition: transform 0.15s ease; }
+.kb-source-expand svg.rotated { transform: rotate(90deg); }
 .kb-source-cite {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 11px;

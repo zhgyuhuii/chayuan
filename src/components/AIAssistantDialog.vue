@@ -570,7 +570,7 @@
                     :kb-bindings="msg.messageMeta.kbBindings"
                     :connection="getKbConnectionForMessage(msg)"
                     :kb-error="msg.messageMeta.kbError || ''"
-                    :initial-collapsed="msg.messageMeta.kbStripCollapsed === true"
+                    :initial-collapsed="msg.messageMeta.kbStripCollapsed !== false"
                     :hovered-citation-id="msg.messageMeta.kbHoveredCitationId || ''"
                     :query-text="getMessageUserQueryText(msg, i)"
                     @toggle="onKbStripToggle(msg, $event)"
