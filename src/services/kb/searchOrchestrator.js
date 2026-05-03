@@ -125,6 +125,72 @@ async function _fallbackLoopSearchDocs(connection, queries, kbNames, body, signa
   return { merged: all }
 }
 
+function _normalizeKuId(name) {
+  const text = String(name || '').trim()
+  if (!text) return ''
+  if (/^(doc|src|office):/.test(text)) return text
+  return `doc:${text}`
+}
+
+function _textFromUniverseHit(hit) {
+  return String(
+    hit?.text
+    || hit?.page_content
+    || hit?.content
+    || hit?.caption
+    || hit?.summary
+    || ''
+  )
+}
+
+function _universeAskToMerged(resp, queries) {
+  const blocks = Array.isArray(resp?.data?.results)
+    ? resp.data.results
+    : (Array.isArray(resp?.results) ? resp.results : [])
+  const merged = []
+  for (const block of blocks) {
+    const kuId = String(block?.ku_id || '')
+    const kind = String(block?.kind || '')
+    const hits = Array.isArray(block?.results) ? block.results : []
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i] || {}
+      const text = _textFromUniverseHit(hit)
+      if (!text.trim()) continue
+      const metadata = {
+        ...(hit.metadata || hit.meta || {}),
+        ku_id: kuId,
+        kind,
+        source_id: hit.source_id ?? hit.id
+      }
+      merged.push({
+        chunk_id: hit.chunk_id || hit.id || `${kuId || 'ku'}::${i}`,
+        text,
+        metadata,
+        kb_name: hit.kb_name || hit.knowledge_base_name || kuId,
+        file_name: hit.file_name || hit.source || hit.title || hit.name || '',
+        score: Number(hit.score ?? hit.rerank_score ?? hit.metadata?.score ?? 0),
+        from_query_tags: queries.map(q => q.tag).filter(Boolean),
+        from_section_ids: queries.flatMap(q => q.sectionIds || [])
+      })
+    }
+  }
+  return { merged }
+}
+
+async function _fallbackUniverseAsk(connection, query, queries, kbNames, body, signal) {
+  const kuIds = Array.from(new Set(kbNames.map(_normalizeKuId).filter(Boolean)))
+  if (!kuIds.length) return { merged: [] }
+  const out = await searchClient.askUniverse(connection, {
+    query,
+    ku_ids: kuIds,
+    top_k: body.top_k_per_query,
+    use_hybrid: body.use_hybrid,
+    use_rerank: body.use_rerank,
+    rewrite_strategy: 'auto'
+  }, { signal })
+  return _universeAskToMerged(out?.data || out, queries)
+}
+
 export async function run(options = {}) {
   const {
     connection,
@@ -211,9 +277,14 @@ export async function run(options = {}) {
         resp = out?.data || out
       } catch (e) {
         if (e?.code === 'ENDPOINT_NOT_FOUND') {
-          // 兜底:循环 /search_docs
-          if (typeof onPhase === 'function') await onPhase('fallback_search_docs', {})
-          resp = await _fallbackLoopSearchDocs(connection, queries, kbBindings.kbNames, body, ctrl.signal)
+          if ((connection.authMode || 'jwt') === 'jwt') {
+            if (typeof onPhase === 'function') await onPhase('fallback_knowledge_universe', {})
+            resp = await _fallbackUniverseAsk(connection, query, queries, kbBindings.kbNames, body, ctrl.signal)
+          } else {
+            // App/HMAC 模式没有 knowledge_universe/ask,只能尝试老 search_docs。
+            if (typeof onPhase === 'function') await onPhase('fallback_search_docs', {})
+            resp = await _fallbackLoopSearchDocs(connection, queries, kbBindings.kbNames, body, ctrl.signal)
+          }
         } else {
           throw e
         }
