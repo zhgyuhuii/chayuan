@@ -20,19 +20,24 @@ function _normalizeBaseUrl(url) {
   return String(url || '').replace(/\/+$/, '')
 }
 
+function _normalizeDocumentKbName(name) {
+  const text = String(name || '').trim()
+  return text.startsWith('doc:') ? text.slice(4) : text
+}
+
 export function buildDownloadUrl(connection, chunk, options = {}) {
   if (!connection?.baseUrl || !chunk?.kb_name || !chunk?.file_name) return ''
   // 逻辑路径 → 实际路径(JWT 走 /knowledge_base/download_doc;HMAC 走 /openapi/v1/kb/download_doc)
   const logical = options.preview ? '/knowledge_base/preview_doc' : '/knowledge_base/download_doc'
   const path = _resolvePath(connection, logical) || logical
   const params = new URLSearchParams()
-  params.set('knowledge_base_name', chunk.kb_name)
+  params.set('knowledge_base_name', _normalizeDocumentKbName(chunk.kb_name))
   params.set('file_name', chunk.file_name)
   // openapi /kb/download_doc 也接 ?preview= 参数(我们 preview/download 共享 endpoint)
   if (options.preview && path.includes('/openapi/v1/kb/download_doc')) {
     params.set('preview', 'true')
   }
-  if (chunk.download_token) {
+  if (options.includeToken !== false && chunk.download_token) {
     // 服务端 _QUERY_TOKEN_ALLOWED_PATHS 接受 ?token=;openapi 路径在 endpoint 内显式校验
     params.set('token', chunk.download_token)
   }

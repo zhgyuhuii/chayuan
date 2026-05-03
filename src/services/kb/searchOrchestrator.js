@@ -143,6 +143,30 @@ function _textFromUniverseHit(hit) {
   )
 }
 
+function _stringifyRows(rows, columns = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return ''
+  const head = Array.isArray(columns) && columns.length ? `字段: ${columns.join(', ')}` : ''
+  const lines = rows.slice(0, 20).map((row, idx) => {
+    if (row && typeof row === 'object' && !Array.isArray(row)) {
+      return `${idx + 1}. ${Object.entries(row).map(([k, v]) => `${k}=${String(v)}`).join('; ')}`
+    }
+    if (Array.isArray(row)) return `${idx + 1}. ${row.map(v => String(v)).join(' | ')}`
+    return `${idx + 1}. ${String(row)}`
+  })
+  const more = rows.length > 20 ? `\n... 仅展示前 20 行,共 ${rows.length} 行` : ''
+  return [head, lines.join('\n')].filter(Boolean).join('\n') + more
+}
+
+function _blockText(block) {
+  const parts = []
+  if (block?.summary) parts.push(`结构化查询摘要:\n${block.summary}`)
+  if (block?.text) parts.push(`结构化查询结果:\n${block.text}`)
+  if (block?.sql) parts.push(`执行 SQL:\n${block.sql}`)
+  const rowsText = _stringifyRows(block?.rows, block?.columns)
+  if (rowsText) parts.push(`结果行:\n${rowsText}`)
+  return parts.join('\n\n').trim()
+}
+
 function _universeAskToMerged(resp, queries) {
   const blocks = Array.isArray(resp?.data?.results)
     ? resp.data.results
@@ -151,7 +175,31 @@ function _universeAskToMerged(resp, queries) {
   for (const block of blocks) {
     const kuId = String(block?.ku_id || '')
     const kind = String(block?.kind || '')
-    const hits = Array.isArray(block?.results) ? block.results : []
+    const hits = Array.isArray(block?.results)
+      ? block.results
+      : (Array.isArray(block?.hits) ? block.hits : [])
+    if (hits.length === 0) {
+      const text = _blockText(block)
+      if (text) {
+        merged.push({
+          chunk_id: `${kuId || 'ku'}::block`,
+          text,
+          metadata: {
+            ku_id: kuId,
+            kind,
+            sql: block?.sql || '',
+            columns: block?.columns || [],
+            rows: block?.rows || []
+          },
+          kb_name: kuId,
+          file_name: '',
+          score: 1,
+          from_query_tags: queries.map(q => q.tag).filter(Boolean),
+          from_section_ids: queries.flatMap(q => q.sectionIds || [])
+        })
+      }
+      continue
+    }
     for (let i = 0; i < hits.length; i++) {
       const hit = hits[i] || {}
       const text = _textFromUniverseHit(hit)
@@ -186,7 +234,7 @@ async function _fallbackUniverseAsk(connection, query, queries, kbNames, body, s
     top_k: body.top_k_per_query,
     use_hybrid: body.use_hybrid,
     use_rerank: body.use_rerank,
-    rewrite_strategy: 'auto'
+    rewrite_strategy: 'passthrough'
   }, { signal })
   return _universeAskToMerged(out?.data || out, queries)
 }
