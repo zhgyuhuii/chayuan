@@ -6,6 +6,7 @@
  * 三个函数:
  *   - searchBatch(connection, body, { signal })          同步批量
  *   - searchBatchStream(connection, body, onFrame, ...)  SSE 版
+ *   - askUniverse(connection, body, { signal })           JWT 统一智库兜底
  *   - searchDocs(connection, body, { signal })           兼容旧端点;404 回退用
  */
 
@@ -87,6 +88,34 @@ export async function searchBatchStream(connection, body, onFrame, options = {})
   }
 }
 
+export async function askUniverse(connection, body, options = {}) {
+  const auth = createAuthClient(connection)
+  const path = _resolvePath(connection, '/knowledge_universe/ask')
+  if (!path) {
+    const err = new Error('knowledge_universe/ask not available in current auth mode')
+    err.code = 'PATH_UNSUPPORTED'
+    throw err
+  }
+  const resp = await auth.fetch(path, {
+    method: 'POST',
+    body,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs || 30_000
+  })
+  if (resp.status === 404) {
+    const err = new Error('knowledge_universe/ask endpoint not found')
+    err.code = 'ENDPOINT_NOT_FOUND'
+    throw err
+  }
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    const err = new Error(`knowledge_universe/ask HTTP ${resp.status}: ${text.slice(0, 200)}`)
+    err.status = resp.status
+    throw err
+  }
+  return resp.json()
+}
+
 function _parseSseFrame(raw) {
   if (!raw) return null
   let event = 'message'
@@ -125,4 +154,4 @@ export async function searchDocs(connection, body, options = {}) {
   return resp.json()
 }
 
-export default { searchBatch, searchBatchStream, searchDocs }
+export default { searchBatch, searchBatchStream, askUniverse, searchDocs }
