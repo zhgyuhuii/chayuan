@@ -26,7 +26,9 @@ export async function queryUnified(connection, body, options = {}) {
     method: 'POST',
     body,
     signal: options.signal,
-    timeoutMs: options.timeoutMs || 30_000
+    // 90s:LangChain SQLDatabaseChain 走"只读判断 + SQL 生成 + 行执行 + 自然语言总结"
+    // 一共 3 次 LLM round-trip,远端 ollama / OpenAI 慢时 30s 容易被打断。
+    timeoutMs: options.timeoutMs || 90_000
   })
   if (resp.status === 404) {
     const err = new Error('kb-query unified endpoint not found')
