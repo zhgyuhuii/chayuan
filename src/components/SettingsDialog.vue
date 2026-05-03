@@ -7977,17 +7977,31 @@ input:checked + .slider:before {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  /* WPS 侧边栏 ≤400px 时单行容不下 "标题 + 长 hint + 搜索框 + 全部展开按钮",
+     允许换行,actions 区域整体掉到下一行,避免压到标题/hint。 */
+  flex-wrap: wrap;
+}
+
+/* 左侧标题 + hint 容器:必须能在窄宽下被压扁,避免溢出到 actions 后面。 */
+.assistant-preset-panel-head > div:first-child {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .assistant-preset-head-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  /* 不再 flex-shrink:0;窄宽时让出空间给 wrap,自己整体掉到第二行。 */
+  flex-shrink: 1;
+  flex-wrap: wrap;
 }
 
 .assistant-preset-search-input {
-  width: 160px;
+  /* 默认仍然 160px,但允许 grow / shrink,避免在 wrap 情况下出现奇怪的截断或多余空白。 */
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 240px;
   padding: 6px 10px;
   font-size: 12px;
   border: 1px solid #e5e7eb;

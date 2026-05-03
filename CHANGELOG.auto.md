@@ -1,3 +1,21 @@
+## 2026-05-03 19:55:02 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/AIAssistantDialog.vue`
+- ` M src/components/SettingsDialog.vue`
+
+### Diff Stat
+
+```text
+ src/components/AIAssistantDialog.vue | 20 ++++++++++++++++++++
+ src/components/SettingsDialog.vue    | 18 ++++++++++++++++--
+ 2 files changed, 36 insertions(+), 2 deletions(-)
+```
+
 ## 2026-05-03 19:34:12 +0800 - chayuan
 
 - Branch: `feat/kb-integration`

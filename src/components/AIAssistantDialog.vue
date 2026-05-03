@@ -10668,6 +10668,26 @@ export default {
           reason: '请求更像直接调用 WPS 能力。'
         }
       }
+      // 判断/审查类问题:用户在让 AI 评估正确性,不是让 AI 改文档。
+      // 必须在 document-operation 总命中之前拦截 — 否则 DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN
+      // 仅凭"文档"两字就高置信打成 document-operation,再走 inferDocumentOperationRouteWithModel
+      // 被 LLM 选成 document-revision:proofread/clarify/correct-description 三件套。
+      // 例:"文档信息正确吗" / "判断这段是否符合制度" / "对照知识库审一下"。
+      const JUDGE_OR_REVIEW_PATTERN = new RegExp([
+        '判断', '判定', '核对', '对照', '对比', '审查', '审核', '审阅', '核查', '合规',
+        '是否(?:正确|准确|一致|存在|符合|相同|有误|无误|完整|有问题|有错)',
+        '(?:正确|准确|一致|对|错)(?:吗|不|否)',
+        '有(?:没|无)?(?:错|问题|歧义|偏差)',
+      ].join('|'))
+      // 写回类动词 — 命中说明用户想直接修改文档(应回到 document-operation/revision 链路)。
+      const DOC_WRITE_BACK_PATTERN = /(修正|改正|纠正|改写|重写|润色|优化|替换|改成|换成|修改成|插入|追加|加入|删除|移除|去掉|移动|复制|粘贴|翻译|译成|翻成|扩写|扩展|扩充|展开|丰富|续写|补充|延伸|细化|脱密|脱敏|占位符|加粗|标红|对齐|字号|字体|行距|统一术语|批注|批示|导出.{0,4}(报告|PDF|Word|文件)|生成.{0,6}(图片|视频|语音|报告))/
+      if (JUDGE_OR_REVIEW_PATTERN.test(normalized) && !DOC_WRITE_BACK_PATTERN.test(normalized)) {
+        return {
+          kind: 'chat',
+          confidence: 'high',
+          reason: '请求在让 AI 判断/审查正确性,而非写回文档。按普通对话处理(若挂了知识库,会自动作为 KB 问答上下文)。'
+        }
+      }
       if (
         this.shouldTryDocumentOperationRouting(normalized) ||
         this.shouldTryDocumentRelocationIntent(normalized) ||
