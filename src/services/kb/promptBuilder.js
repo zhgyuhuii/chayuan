@@ -98,12 +98,15 @@ const SUMMARIZE_SYSTEM = `你是总结助手。请把以下知识片段整理为
 - 片段间存在冲突时,在对应章节末尾用一行"⚠️ 资料分歧"列出双方 [^cN];
 - 总长度控制在 **不超过 2500 字**(片段越少越精简,通常每个片段对应 100-300 字总结)。`
 
-export function build({ mode = 'qa', sources = [], userQuery = '', selectionText = '' } = {}) {
+export function build({ mode = 'qa', sources = [], userQuery = '', selectionText = '', contextText = '' } = {}) {
   const trimmed = _truncateChunks(sources)
   const isEmpty = trimmed.length === 0
   const sourcesBlock = isEmpty
     ? EMPTY_SOURCES_NOTICE
     : _renderSources(trimmed)
+  const contextBlock = String(contextText || '').trim()
+    ? `\n\n【当前材料】\n${String(contextText || '').trim().slice(0, 12000)}`
+    : ''
   const citationMap = _buildCitationMap(trimmed)
 
   let systemPrompt
@@ -136,7 +139,7 @@ export function build({ mode = 'qa', sources = [], userQuery = '', selectionText
       systemPrompt = QA_SYSTEM
       userPrompt = isEmpty
         ? `【无可用片段】\n${EMPTY_SOURCES_NOTICE}\n\n【问题】\n${userQuery}`
-        : `【片段】\n${sourcesBlock}\n\n【问题】\n${userQuery}`
+        : `【片段】\n${sourcesBlock}${contextBlock}\n\n【问题】\n${userQuery}`
       break
   }
 
