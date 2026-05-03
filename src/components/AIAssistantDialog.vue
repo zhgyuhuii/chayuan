@@ -19333,6 +19333,16 @@ export default {
   flex-direction: row;
   align-items: flex-end;
   gap: 8px;
+  /* WPS 侧边栏宽度收窄时,默认 nowrap 会把 textarea 挤到几像素宽,
+     于是用户每打一个汉字都换行。允许工具按钮在窄宽下整体换行,textarea 仍能保持可读宽度。 */
+  flex-wrap: wrap;
+}
+.input-row > .text-input {
+  /* textarea 在所有同行按钮之上独占一条:flex-basis 100% 强制它不被挤压。
+     窄宽下整体表现为"输入框一条 + 工具按钮一条",而非逐字符断行。 */
+  flex-basis: 100%;
+  min-width: 0;
+  order: -1;
 }
 
 .chat-attachment-input {
