@@ -7,7 +7,13 @@
       <button class="btn-link" @click="enableKbFlag">立即启用</button>
     </div>
 
-    <div class="kb-two-cols">
+    <!-- 零连接空态:整面铺一张拓扑动效图,顶部右上角"新建连接"按钮 -->
+    <KbEmptyTopology
+      v-if="!connections.length"
+      @create="onCreate"
+    />
+
+    <div v-else class="kb-two-cols">
       <!-- ============ 左 4 :知识库连接 ============ -->
       <aside class="kb-col-conn">
         <div class="kb-col-header">
@@ -137,12 +143,13 @@
 import services from '../services/index.js'
 import { isEnabled as isFlagEnabled, setFlag as setFeatureFlag, subscribe as subscribeFlag } from '../utils/featureFlags.js'
 import KbConnectionFormDialog from './KbConnectionFormDialog.vue'
+import KbEmptyTopology from './KbEmptyTopology.vue'
 
 const { connectionStore, healthProbe, kbCatalog, kbCatalogCache } = services.kb
 
 export default {
   name: 'KbSettingsPanel',
-  components: { KbConnectionFormDialog },
+  components: { KbConnectionFormDialog, KbEmptyTopology },
   data() {
     return {
       connections: [],

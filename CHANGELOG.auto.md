@@ -1,3 +1,20 @@
+## 2026-05-03 20:35:38 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/KbSettingsPanel.vue`
+- `?? src/components/KbEmptyTopology.vue`
+
+### Diff Stat
+
+```text
+ src/components/KbSettingsPanel.vue | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+```
+
 ## 2026-05-03 19:55:02 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
