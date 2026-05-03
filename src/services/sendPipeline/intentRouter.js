@@ -1,4 +1,5 @@
 import { classifyIntent, isHighConfidence } from '../../utils/router/localIntentClassifier.js'
+import { buildUnifiedIntentPlan } from '../intent/unifiedIntentRouter.js'
 
 const MODEL_ROUTE_CACHE_TTL_MS = 2 * 60 * 1000
 const MODEL_ROUTE_CACHE_MAX = 80
@@ -29,9 +30,17 @@ export function buildModelRouteCacheKey(text = '', options = {}) {
   const attachmentSig = (Array.isArray(options.attachments) ? options.attachments : [])
     .map(item => `${String(item?.name || '').trim()}:${Number(item?.size || item?.content?.length || 0)}`)
     .join('|')
+  const kbBinding = options.kbBindings || options.knowledge || {}
+  const kbSig = [
+    ...(Array.isArray(kbBinding?.kuIds) ? kbBinding.kuIds : []),
+    ...(Array.isArray(kbBinding?.ku_ids) ? kbBinding.ku_ids : []),
+    ...(Array.isArray(kbBinding?.kbNames) ? kbBinding.kbNames : []),
+    ...(Array.isArray(kbBinding?.sourceRefs) ? kbBinding.sourceRefs.map(ref => ref?.kuId || ref?.kb_id || ref?.id) : [])
+  ].map(v => String(v || '').trim()).filter(Boolean).sort().join('|')
   return [
     modelKey,
     options.hasSelection === true ? 'sel:1' : 'sel:0',
+    kbSig ? `kb:${kbSig}` : 'kb:0',
     attachmentSig,
     normalizeTextForCache(text)
   ].join('\n')
@@ -71,9 +80,14 @@ export function clearModelRouteCache() {
 
 export function resolveLocalIntentShortcut(text = '', options = {}) {
   const ruleIntent = normalizeIntent(options.ruleIntent)
+  const unifiedPlan = buildUnifiedIntentPlan(text, {
+    ...options,
+    ruleIntent
+  })
   if (ruleIntent.confidence === 'high') {
     return {
       ...ruleIntent,
+      unifiedPlan,
       shortcut: 'rule-high-confidence',
       reason: [ruleIntent.reason, '本地规则高置信，已跳过模型路由。'].filter(Boolean).join(' ')
     }
@@ -87,6 +101,11 @@ export function resolveLocalIntentShortcut(text = '', options = {}) {
     return {
       kind: String(localIntent.kind || 'chat').trim() || 'chat',
       confidence: 'high',
+      unifiedPlan: buildUnifiedIntentPlan(text, {
+        ...options,
+        ruleIntent,
+        localIntent
+      }),
       reason: [
         localIntent.reason,
         localIntent.subKind ? `本地子类型：${localIntent.subKind}` : '',
@@ -99,13 +118,23 @@ export function resolveLocalIntentShortcut(text = '', options = {}) {
 
   return {
     ...ruleIntent,
+    unifiedPlan: buildUnifiedIntentPlan(text, {
+      ...options,
+      ruleIntent,
+      localIntent
+    }),
     shortcut: '',
     localIntent
   }
 }
 
+export function resolveUnifiedIntentPlan(text = '', options = {}) {
+  return buildUnifiedIntentPlan(text, options)
+}
+
 export default {
   resolveLocalIntentShortcut,
+  resolveUnifiedIntentPlan,
   buildModelRouteCacheKey,
   getCachedModelRouteIntent,
   setCachedModelRouteIntent,

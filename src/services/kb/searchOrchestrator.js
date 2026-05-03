@@ -132,6 +132,22 @@ function _normalizeKuId(name) {
   return `doc:${text}`
 }
 
+function _bindingKuIds(kbBindings) {
+  const explicit = Array.isArray(kbBindings?.kuIds) ? kbBindings.kuIds : []
+  const fromRefs = Array.isArray(kbBindings?.sourceRefs)
+    ? kbBindings.sourceRefs.map(r => r?.kuId || r?.kb_id || r?.id)
+    : []
+  const legacy = Array.isArray(kbBindings?.kbNames) ? kbBindings.kbNames : []
+  return Array.from(new Set([...explicit, ...fromRefs, ...legacy].map(_normalizeKuId).filter(Boolean)))
+}
+
+function _shouldUseUnified(kbBindings) {
+  const refs = Array.isArray(kbBindings?.sourceRefs) ? kbBindings.sourceRefs : []
+  const kuIds = _bindingKuIds(kbBindings)
+  if (refs.some(r => ['structured', 'vector', 'image', 'office'].includes(String(r?.kind || '').toLowerCase()))) return true
+  return kuIds.some(id => /^(src|office):/.test(id))
+}
+
 function _textFromUniverseHit(hit) {
   return String(
     hit?.text
@@ -239,6 +255,44 @@ async function _fallbackUniverseAsk(connection, query, queries, kbNames, body, s
   return _universeAskToMerged(out?.data || out, queries)
 }
 
+function _unifiedToMerged(resp, queries) {
+  const items = Array.isArray(resp?.data?.items) ? resp.data.items : (Array.isArray(resp?.items) ? resp.items : [])
+  const merged = []
+  for (const item of items) {
+    const blocks = Array.isArray(item?.blocks) ? item.blocks : []
+    for (const block of blocks) {
+      const blockKind = String(block?.kind || '')
+      for (let i = 0; i < (block?.results || []).length; i++) {
+        const hit = block.results[i] || {}
+        const text = _textFromUniverseHit(hit) || _blockText({ ...hit, kind: blockKind })
+        if (!String(text || '').trim()) continue
+        const citation = hit.citation && typeof hit.citation === 'object' ? hit.citation : {}
+        const metadata = {
+          ...(hit.metadata || {}),
+          ...(citation || {}),
+          ku_id: block.kb_id,
+          kind: blockKind,
+          source_type: hit.source_type || blockKind,
+          sql: hit.sql || citation.sql || block?.diagnostic?.sql || '',
+          columns: hit.columns || citation.columns || [],
+          rows: hit.rows || citation.rows || []
+        }
+        merged.push({
+          chunk_id: hit.hit_id || hit.chunk_id || `${block.kb_id || 'ku'}::${i}`,
+          text,
+          metadata,
+          kb_name: block.kb_id || hit.kb_name || '',
+          file_name: citation.file_name || hit.file_name || citation.collection || block.display_name || '',
+          score: Number(hit.score ?? 1),
+          from_query_tags: queries.map(q => q.tag).filter(Boolean),
+          from_section_ids: queries.flatMap(q => q.sectionIds || [])
+        })
+      }
+    }
+  }
+  return { merged }
+}
+
 export async function run(options = {}) {
   const {
     connection,
@@ -252,7 +306,8 @@ export async function run(options = {}) {
   } = options
 
   if (!connection) throw new Error('connection is required')
-  if (!kbBindings?.kbNames?.length) throw new Error('kbBindings.kbNames is required')
+  const kuIds = _bindingKuIds(kbBindings)
+  if (!kuIds.length) throw new Error('kbBindings.kuIds is required')
 
   const totalStart = Date.now()
   const ctrl = new AbortController()
@@ -295,7 +350,7 @@ export async function run(options = {}) {
         weight: q.weight,
         section_ids: q.sectionIds
       })),
-      knowledge_base_names: kbBindings.kbNames,
+      knowledge_base_names: kbBindings.kbNames?.length ? kbBindings.kbNames : kuIds,
       top_k_per_query: kbBindings.topK || 6,
       score_threshold: kbBindings.scoreThreshold ?? 0.3,
       use_hybrid: kbBindings.hybrid !== false,
@@ -306,7 +361,7 @@ export async function run(options = {}) {
     }
 
     const sig = _sha1Hex(JSON.stringify({
-      q: queries.map(q => q.text), kbs: [...kbBindings.kbNames].sort(),
+      q: queries.map(q => q.text), kbs: [...kuIds].sort(),
       k: body.top_k_per_query, hybrid: body.use_hybrid, rerank: body.use_rerank,
       merge: body.merge_strategy
     }))
@@ -321,17 +376,34 @@ export async function run(options = {}) {
       const fetchStart = Date.now()
       let resp
       try {
-        const out = await searchClient.searchBatch(connection, body, { signal: ctrl.signal })
-        resp = out?.data || out
+        if (_shouldUseUnified(kbBindings)) {
+          if (typeof onPhase === 'function') await onPhase('unified_kb_query', { kuIds })
+          const out = await searchClient.queryUnified(connection, {
+            ku_ids: kuIds,
+            contents: [{ content_id: 'query', text: query }],
+            options: {
+              top_k: body.top_k_per_query,
+              score_threshold: body.score_threshold,
+              use_hybrid: body.use_hybrid,
+              use_rerank: body.use_rerank,
+              merge_strategy: body.merge_strategy,
+              return_diagnostics: true
+            }
+          }, { signal: ctrl.signal })
+          resp = _unifiedToMerged(out, queries)
+        } else {
+          const out = await searchClient.searchBatch(connection, body, { signal: ctrl.signal })
+          resp = out?.data || out
+        }
       } catch (e) {
         if (e?.code === 'ENDPOINT_NOT_FOUND') {
           if ((connection.authMode || 'jwt') === 'jwt') {
             if (typeof onPhase === 'function') await onPhase('fallback_knowledge_universe', {})
-            resp = await _fallbackUniverseAsk(connection, query, queries, kbBindings.kbNames, body, ctrl.signal)
+            resp = await _fallbackUniverseAsk(connection, query, queries, kuIds, body, ctrl.signal)
           } else {
             // App/HMAC 模式没有 knowledge_universe/ask,只能尝试老 search_docs。
             if (typeof onPhase === 'function') await onPhase('fallback_search_docs', {})
-            resp = await _fallbackLoopSearchDocs(connection, queries, kbBindings.kbNames, body, ctrl.signal)
+            resp = await _fallbackLoopSearchDocs(connection, queries, kuIds, body, ctrl.signal)
           }
         } else {
           throw e

@@ -175,7 +175,7 @@ export default {
   methods: {
     async init() {
       this.error = ''
-      this.selected = new Set(this.initialBinding?.kbNames || [])
+      this.selected = new Set(this.initialBinding?.kuIds?.length ? this.initialBinding.kuIds : (this.initialBinding?.kbNames || []))
       const cfg = this.initialBinding?.config || {}
       this.config = {
         topK: Number(cfg.topK) || 5,
@@ -240,6 +240,22 @@ export default {
     },
     clearAll() { this.selected = new Set() },
     isSelected(id) { return this.selected.has(id) },
+    selectedSourceRefs() {
+      const byId = new Map()
+      for (const group of this.tree || []) {
+        for (const kb of group.children || []) {
+          const raw = kb.kb?.raw || {}
+          byId.set(kb.id, {
+            kuId: kb.kb?.kuId || raw.ku_id || kb.id,
+            kind: kb.kb?.kind || raw.kind || '',
+            subKind: raw.sub_kind || raw.vs_type || '',
+            name: kb.kb?.name || kb.name || '',
+            displayName: kb.name || kb.kb?.displayName || ''
+          })
+        }
+      }
+      return this.selectedNames.map(id => byId.get(id) || { kuId: id, kind: id.startsWith('src:') ? 'source' : 'document', name: id })
+    },
     isExpired(kb) {
       if (!kb?.kb?.grantExpiresAt) return false
       try {
@@ -267,8 +283,12 @@ export default {
     },
     close() { this.$emit('close') },
     confirm() {
+      const sourceRefs = this.selectedSourceRefs()
+      const kuIds = sourceRefs.map(r => r.kuId).filter(Boolean)
       this.$emit('confirm', {
         kbNames: this.selectedNames,
+        kuIds,
+        sourceRefs,
         config: { ...this.config },
         connectionId: this.currentConnectionId
       })

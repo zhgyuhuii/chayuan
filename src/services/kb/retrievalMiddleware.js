@@ -114,8 +114,26 @@ export async function applyKbRetrievalIfBound(ctx) {
 
 function _normalizeBinding(raw) {
   const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
+  const sourceRefs = Array.from(new Map(
+    (Array.isArray(raw?.sourceRefs) ? raw.sourceRefs : [])
+      .map(r => ({
+        kuId: String(r?.kuId || r?.kb_id || r?.id || '').trim(),
+        kind: String(r?.kind || '').trim(),
+        subKind: String(r?.subKind || r?.sub_kind || '').trim(),
+        name: String(r?.name || r?.displayName || r?.display_name || '').trim()
+      }))
+      .filter(r => r.kuId)
+      .map(r => [r.kuId, r])
+  ).values())
+  const kuIds = Array.from(new Set([
+    ...(Array.isArray(raw?.kuIds) ? raw.kuIds : []),
+    ...sourceRefs.map(r => r.kuId)
+  ].map(v => String(v || '').trim()).filter(Boolean)))
   const kbNames = Array.from(new Set(
-    (Array.isArray(raw?.kbNames) ? raw.kbNames : [])
+    [
+      ...(Array.isArray(raw?.kbNames) ? raw.kbNames : []),
+      ...kuIds
+    ]
       .map(v => String(v || '').trim())
       .filter(Boolean)
   ))
@@ -126,6 +144,8 @@ function _normalizeBinding(raw) {
   return {
     ...raw,
     kbNames,
+    kuIds,
+    sourceRefs,
     connectionId: String(raw?.connectionId || '').trim(),
     topK: Number.isFinite(topK) && topK > 0 ? topK : 5,
     finalTopK: Number.isFinite(finalTopK) && finalTopK > 0 ? finalTopK : undefined,
