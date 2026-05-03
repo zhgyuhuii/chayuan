@@ -32,7 +32,10 @@
         </div>
 
         <!-- 第二列：模型清单 / 分类 -->
-        <div class="settings-column column-2">
+        <div
+          class="settings-column column-2"
+          :class="{ 'column-2-narrow': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+        >
           <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像） -->
           <div v-if="activeMainMenu === 'model-settings'" class="model-list-container">
             <div class="search-box">
@@ -392,7 +395,10 @@
         </div>
 
         <!-- 第三列：模型设置 / 选择模型 / 配置详情 -->
-        <div class="settings-column column-3">
+        <div
+          class="settings-column column-3"
+          :class="{ 'column-3-wide': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+        >
           <!-- 模型设置 → 第三级：模型设置 -->
           <div v-if="activeMainMenu === 'model-settings' && selectedModel" class="config-panel" :class="{ 'form-saved': isFormSaved }">
             <div class="column-title">模型设置</div>
@@ -6671,6 +6677,13 @@ export default {
   overflow-y: auto;
 }
 
+/* 知识库设置子菜单激活时把第二列收窄(20 字符宽度足够),
+   把腾出的空间让给第三列内嵌的 KbSettingsPanel 双栏布局 */
+.column-2.column-2-narrow {
+  width: 200px;
+  min-width: 200px;
+}
+
 .column-3 {
   width: 46%;
   flex-shrink: 0;
@@ -6678,6 +6691,14 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 知识库设置激活时:第三列吸收第二列让出的空间,让 KbSettingsPanel
+   两栏(连接 4 / KB 树 6)有充足展开宽度 */
+.column-3.column-3-wide {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 第一列：主菜单，不滚动 */

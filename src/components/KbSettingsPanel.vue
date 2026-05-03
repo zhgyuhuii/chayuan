@@ -7,13 +7,14 @@
       <button class="btn-link" @click="enableKbFlag">立即启用</button>
     </div>
 
-    <div class="kb-three-cols">
-      <!-- ============ 左:连接列表 ============ -->
-      <aside class="kb-col-conn-list">
+    <div class="kb-two-cols">
+      <!-- ============ 左 4 :知识库连接 ============ -->
+      <aside class="kb-col-conn">
         <div class="kb-col-header">
           <span>知识库连接</span>
           <button class="btn-icon" title="新增连接" @click="onCreate">＋</button>
         </div>
+
         <ul class="kb-conn-items">
           <li
             v-for="c in connections"
@@ -21,13 +22,50 @@
             :class="{ active: selectedId === c.id, 'is-current': currentId === c.id }"
             @click="selectConnection(c.id)"
           >
-            <div class="kb-conn-name">
-              {{ c.name || '(未命名连接)' }}
-              <span v-if="currentId === c.id" class="kb-conn-current-badge">当前</span>
+            <div class="kb-conn-row">
+              <div class="kb-conn-name" :title="c.name || c.id">
+                {{ c.name || '(未命名连接)' }}
+                <span v-if="currentId === c.id" class="kb-conn-current-badge">当前</span>
+              </div>
+              <div class="kb-conn-meta">
+                <span class="kb-conn-mode">{{ c.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
+                <span class="kb-conn-host" :title="c.baseUrl">{{ shortHost(c.baseUrl) }}</span>
+              </div>
             </div>
-            <div class="kb-conn-meta">
-              <span class="kb-conn-mode">{{ c.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
-              <span class="kb-conn-host" :title="c.baseUrl">{{ shortHost(c.baseUrl) }}</span>
+
+            <!-- 选中态展开:操作 + 测试结果 -->
+            <div v-if="selectedId === c.id && selected" class="kb-conn-detail" @click.stop>
+              <div class="kb-actions">
+                <button v-if="selected.id !== currentId" class="btn-secondary kb-act-btn" @click.stop="setCurrent">
+                  设为当前
+                </button>
+                <button class="btn-secondary kb-act-btn" @click.stop="onTest" :disabled="testing">
+                  {{ testing ? '测试中…' : '测试连通' }}
+                </button>
+                <button class="btn-secondary kb-act-btn" @click.stop="onEdit">编辑</button>
+                <button class="btn-danger kb-act-btn" @click.stop="onDelete">删除</button>
+              </div>
+
+              <div v-if="testResult" class="kb-test-result" :class="{ ok: testResult.ok, fail: !testResult.ok }">
+                <ol class="kb-test-steps">
+                  <li v-for="s in testResult.steps" :key="s.name" :class="{ ok: s.ok, fail: !s.ok }">
+                    <span class="kb-step-icon">{{ s.ok ? '✓' : '✗' }}</span>
+                    <span class="kb-step-label">{{ s.label }}</span>
+                    <span v-if="s.latencyMs" class="kb-step-latency">{{ s.latencyMs }}ms</span>
+                    <span v-if="s.error" class="kb-step-error">{{ s.error }}</span>
+                    <span v-else-if="s.name === 'kb' && s.kbCount !== undefined" class="kb-step-extra">
+                      {{ s.kbCount }} 个
+                    </span>
+                  </li>
+                </ol>
+                <div v-if="testResult.summary?.aclHint" class="kb-acl-hint">
+                  ⚠ {{ testResult.summary.aclHint }}
+                  <template v-if="selected.authMode === 'hmac' && selected.hmac?.appId">
+                    <button class="btn-link" @click.stop="copyGrantsCurl">复制管理员授权命令</button>
+                  </template>
+                </div>
+                <div v-if="!testResult.ok && testResult.hint" class="kb-test-hint">{{ testResult.hint }}</div>
+              </div>
             </div>
           </li>
           <li v-if="!connections.length" class="kb-conn-empty">
@@ -36,96 +74,28 @@
         </ul>
       </aside>
 
-      <!-- ============ 中:详情 + 操作 + 测试结果 ============ -->
-      <section class="kb-col-detail" :class="{ empty: !selected }">
-        <div v-if="!selected" class="kb-detail-empty-hint">
-          请在左侧选择连接，或点击 <b>＋</b> 新增。
-        </div>
-
-        <template v-else>
-          <header class="kb-detail-head">
-            <div class="kb-detail-title-block">
-              <h3 class="kb-detail-title" :title="selected.name">
-                {{ selected.name || '(未命名连接)' }}
-                <span v-if="currentId === selected.id" class="kb-conn-current-badge">当前</span>
-              </h3>
-              <div class="kb-detail-subtitle" :title="selected.baseUrl">
-                <span class="kb-conn-mode">{{ selected.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
-                <span class="kb-detail-host">{{ selected.baseUrl }}</span>
-              </div>
-            </div>
-            <div class="kb-actions">
-              <button v-if="selected.id !== currentId" class="btn-secondary" @click="setCurrent">设为当前</button>
-              <button class="btn-secondary" @click="onTest" :disabled="testing">
-                {{ testing ? '测试中…' : '测试连通' }}
-              </button>
-              <button class="btn-secondary" @click="onEdit">编辑</button>
-              <button class="btn-danger" @click="onDelete">删除</button>
-            </div>
-          </header>
-
-          <!-- 身份/状态摘要 -->
-          <div class="kb-detail-summary">
-            <span class="kb-summary-item">
-              <span class="kb-summary-key">主体</span>
-              <span class="kb-summary-val" v-if="selected.authMode === 'jwt'">
-                用户 · {{ selected.jwt?.username || '-' }}
-              </span>
-              <span class="kb-summary-val" v-else>
-                APP · {{ shortAppId(selected.hmac?.appId) }}
-              </span>
-            </span>
-            <span v-if="testResult" class="kb-summary-item">
-              <span class="kb-summary-key">连通</span>
-              <span class="kb-summary-val" :class="testResult.ok ? 'ok' : 'fail'">
-                {{ testResult.ok ? '✓ 正常' : '✗ 异常' }}
-              </span>
-            </span>
-            <span v-if="catalog.length" class="kb-summary-item">
-              <span class="kb-summary-key">可见 KB</span>
-              <span class="kb-summary-val ok">{{ countKbs }} 个</span>
-            </span>
-          </div>
-
-          <!-- 测试连通详情(三步) -->
-          <div v-if="testResult" class="kb-test-result" :class="{ ok: testResult.ok, fail: !testResult.ok }">
-            <ol class="kb-test-steps">
-              <li v-for="s in testResult.steps" :key="s.name" :class="{ ok: s.ok, fail: !s.ok }">
-                <span class="kb-step-icon">{{ s.ok ? '✓' : '✗' }}</span>
-                <span class="kb-step-label">{{ s.label }}</span>
-                <span v-if="s.latencyMs" class="kb-step-latency">{{ s.latencyMs }}ms</span>
-                <span v-if="s.error" class="kb-step-error">{{ s.error }}</span>
-                <span v-else-if="s.name === 'kb' && s.kbCount !== undefined" class="kb-step-extra">
-                  已授权 {{ s.kbCount }} 个知识库
-                </span>
-              </li>
-            </ol>
-            <div v-if="testResult.summary?.aclHint" class="kb-acl-hint">
-              ⚠ {{ testResult.summary.aclHint }}
-              <template v-if="selected.authMode === 'hmac' && selected.hmac?.appId">
-                <button class="btn-link" @click="copyGrantsCurl">复制管理员授权命令</button>
-              </template>
-            </div>
-            <div v-if="!testResult.ok && testResult.hint" class="kb-test-hint">{{ testResult.hint }}</div>
-          </div>
-        </template>
-      </section>
-
-      <!-- ============ 右:KB 树 ============ -->
+      <!-- ============ 右 6 :可访问知识库树 ============ -->
       <aside class="kb-col-tree">
         <div class="kb-col-header">
-          <span>可访问的知识库</span>
+          <span>
+            可访问知识库
+            <span v-if="selected && countKbs > 0" class="kb-tree-total">{{ countKbs }} 个</span>
+          </span>
           <button v-if="selected" class="btn-link" @click="loadCatalog(true)" :disabled="loadingCatalog">
             {{ loadingCatalog ? '加载中…' : '刷新' }}
           </button>
         </div>
+
         <div v-if="!selected" class="kb-tree-empty">请先在左侧选择连接</div>
         <div v-else-if="catalogError" class="kb-tree-error">{{ catalogError }}</div>
         <div v-else-if="loadingCatalog && !catalog.length" class="kb-tree-empty">加载中…</div>
         <ul v-else-if="catalog.length" class="kb-tree">
           <li v-for="group in catalog" :key="group.id" class="kb-tree-group">
-            <div class="kb-tree-group-name" :class="{ collapsible: true, collapsed: collapsedGroups[group.id] }"
-                 @click="toggleGroup(group.id)">
+            <div
+              class="kb-tree-group-name"
+              :class="{ collapsed: collapsedGroups[group.id] }"
+              @click="toggleGroup(group.id)"
+            >
               <span class="kb-tree-caret">{{ collapsedGroups[group.id] ? '▶' : '▼' }}</span>
               <span class="kb-tree-group-text">{{ group.name }}</span>
               <span class="kb-tree-group-count">{{ group.children?.length || 0 }}</span>
@@ -145,12 +115,11 @@
         </ul>
         <div v-else-if="!loadingCatalog" class="kb-tree-empty">
           <div>暂无可见的知识库</div>
-          <div class="kb-tree-empty-sub">先点中栏的"测试连通"或"刷新",或联系管理员授权。</div>
+          <div class="kb-tree-empty-sub">先点左栏的"测试连通"或"刷新",或联系管理员授权。</div>
         </div>
       </aside>
     </div>
 
-    <!-- 新增/编辑弹窗 -->
     <KbConnectionFormDialog
       :visible="formDialog.visible"
       :connection="formDialog.connection"
@@ -179,7 +148,7 @@ export default {
       connections: [],
       currentId: '',
       selectedId: '',
-      selected: null,        // 当前选中连接的完整对象(只读快照)
+      selected: null,
       testing: false,
       testResult: null,
       catalog: [],
@@ -220,7 +189,6 @@ export default {
         if (!this.selectedId && this.connections.length) {
           await this.selectConnection(this.currentId || this.connections[0].id)
         } else if (this.selectedId) {
-          // 当前选中可能被外部 store 改了 → 同步刷新 selected
           await this.selectConnection(this.selectedId, true)
         }
       } catch (e) {
@@ -235,7 +203,6 @@ export default {
       this.testResult = null
       this.catalog = []
       this.catalogError = ''
-      // 切换连接时尝试预拉一次目录(走缓存,失败不打扰)
       if (!silent && this.selected) {
         this.loadCatalog(false).catch(() => {})
       }
@@ -260,7 +227,6 @@ export default {
       this.selectedId = id
       await this.refreshConnections()
       this.showToast('success', mode === 'edit' ? '已保存修改' : '已创建连接')
-      // 新建后自动尝试拉一次 catalog 让用户立刻看到右栏树
       this.loadCatalog(true).catch(() => {})
     },
 
@@ -355,11 +321,6 @@ export default {
     shortHost(url) {
       try { return new URL(url).host } catch (e) { return url || '' }
     },
-    shortAppId(id) {
-      const s = String(id || '')
-      if (s.length <= 12) return s
-      return `${s.slice(0, 6)}…${s.slice(-4)}`
-    },
 
     async copyGrantsCurl() {
       const appId = this.selected?.hmac?.appId
@@ -403,25 +364,14 @@ export default {
   color: #2a2a2a;
 }
 
-.kb-three-cols {
+.kb-two-cols {
   flex: 1;
   display: grid;
-  grid-template-columns: 200px minmax(360px, 1fr) minmax(260px, 360px);
+  grid-template-columns: 4fr 6fr;
   min-height: 0;
 }
 
-/* 容器较窄时(< 880px),把"中"和"右"叠起来,中→上,右→下 */
-@media (max-width: 880px) {
-  .kb-three-cols {
-    grid-template-columns: 200px 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-  .kb-col-conn-list { grid-row: span 2; }
-  .kb-col-detail { grid-column: 2; grid-row: 1; }
-  .kb-col-tree { grid-column: 2; grid-row: 2; border-top: 1px solid #e6e8ec; }
-}
-
-/* ---- 通用 column header ---- */
+/* 通用 column header */
 .kb-col-header {
   display: flex;
   justify-content: space-between;
@@ -431,6 +381,15 @@ export default {
   border-bottom: 1px solid #e6e8ec;
   flex-shrink: 0;
   background: #f7f8fa;
+}
+.kb-col-header > span { display: flex; align-items: center; gap: 8px; }
+.kb-tree-total {
+  font-size: 11px;
+  font-weight: 500;
+  color: #888;
+  background: #eef0f3;
+  padding: 1px 6px;
+  border-radius: 8px;
 }
 .btn-icon {
   border: none;
@@ -442,13 +401,14 @@ export default {
 }
 .btn-icon:hover { color: #1452c4; }
 
-/* ---- 左:连接列表 ---- */
-.kb-col-conn-list {
-  border-right: 1px solid #e6e8ec;
+/* ---- 左 4 :连接列表 + 选中后 actions + 测试结果 ---- */
+.kb-col-conn {
   display: flex;
   flex-direction: column;
+  border-right: 1px solid #e6e8ec;
   background: #fafbfc;
   min-width: 0;
+  overflow: hidden;
 }
 .kb-conn-items {
   list-style: none;
@@ -457,22 +417,30 @@ export default {
   overflow-y: auto;
   flex: 1;
 }
-.kb-conn-items li {
-  padding: 10px 12px;
+.kb-conn-items > li {
   cursor: pointer;
   border-bottom: 1px solid #eef0f3;
+  transition: background-color .15s;
 }
-.kb-conn-items li:hover { background: #eef4ff; }
-.kb-conn-items li.active { background: #e1edff; }
-.kb-conn-items li.is-current .kb-conn-name::before {
+.kb-conn-items > li:hover .kb-conn-row { background: #eef4ff; }
+.kb-conn-items > li.active { background: #e6efff; }
+.kb-conn-items > li.is-current .kb-conn-name::before {
   content: '●'; color: #2a6ddf; margin-right: 4px;
+}
+.kb-conn-row {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .kb-conn-name {
   font-weight: 500;
   display: flex;
   align-items: center;
   gap: 6px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .kb-conn-current-badge {
   font-size: 10px;
@@ -482,7 +450,6 @@ export default {
   border-radius: 8px;
 }
 .kb-conn-meta {
-  margin-top: 4px;
   display: flex;
   gap: 8px;
   font-size: 11px;
@@ -498,136 +465,66 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 110px;
+  flex: 1;
 }
 .kb-conn-empty {
   padding: 20px 12px;
   color: #888;
   font-size: 12px;
   text-align: center;
+  cursor: default !important;
 }
 
-/* ---- 中:详情 ---- */
-.kb-col-detail {
-  padding: 16px 20px;
-  overflow-y: auto;
-  border-right: 1px solid #e6e8ec;
-  min-width: 0;
+/* 选中态展开:操作 + 测试结果 */
+.kb-conn-detail {
+  padding: 8px 12px 12px;
+  background: #fff;
+  border-top: 1px dashed #d6dde6;
+  cursor: default;
 }
-.kb-col-detail.empty {
+.kb-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #888;
-}
-.kb-detail-empty-hint { color: #888; font-size: 13px; }
-
-.kb-detail-head {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 14px;
-}
-.kb-detail-title-block {
-  flex: 1;
-  min-width: 0;
-}
-.kb-detail-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kb-detail-subtitle {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  color: #666;
-  align-items: center;
-}
-.kb-detail-host {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kb-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-
-.kb-detail-summary {
-  display: flex;
-  gap: 16px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: #f7f8fa;
-  margin-bottom: 14px;
+  gap: 6px;
   flex-wrap: wrap;
+  margin-bottom: 10px;
 }
-.kb-summary-item { display: flex; gap: 6px; font-size: 12px; }
-.kb-summary-key { color: #888; }
-.kb-summary-val { font-weight: 500; }
-.kb-summary-val.ok { color: #2aa353; }
-.kb-summary-val.fail { color: #c0392b; }
+.kb-act-btn { padding: 5px 10px; font-size: 12px; }
 
-.btn-primary, .btn-secondary, .btn-danger, .btn-link {
-  border-radius: 4px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-.btn-primary { background: #2a6ddf; color: white; border-color: #2a6ddf; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { background: white; color: #333; border-color: #cfd4db; }
-.btn-secondary:hover:not(:disabled) { background: #f0f4fa; }
-.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-danger { background: white; color: #c0392b; border-color: #e9b4ad; }
-.btn-danger:hover { background: #fbeae8; }
-.btn-link {
-  background: transparent;
-  color: #2a6ddf;
-  text-decoration: underline;
-  border: none;
-  padding: 0;
-}
-
+/* ---- 测试结果 ---- */
 .kb-test-result {
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border-radius: 4px;
   border: 1px solid #e6e8ec;
   background: #fafbfc;
+  font-size: 12px;
 }
 .kb-test-result.ok { border-color: #b6e0c2; background: #f4fbf6; }
 .kb-test-result.fail { border-color: #f0c8c4; background: #fcf3f2; }
 .kb-test-steps { list-style: none; margin: 0; padding: 0; }
 .kb-test-steps li {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  padding: 4px 0;
+  padding: 2px 0;
 }
-.kb-step-icon { width: 16px; text-align: center; }
+.kb-step-icon { width: 14px; text-align: center; }
 .kb-test-steps li.ok .kb-step-icon { color: #2aa353; }
 .kb-test-steps li.fail .kb-step-icon { color: #c0392b; }
-.kb-step-label { min-width: 80px; font-weight: 500; }
-.kb-step-latency { font-size: 11px; color: #888; }
-.kb-step-error { color: #c0392b; font-size: 12px; }
-.kb-step-extra { color: #2aa353; font-size: 12px; }
+.kb-step-label { min-width: 60px; font-weight: 500; }
+.kb-step-latency { font-size: 10px; color: #888; }
+.kb-step-error { color: #c0392b; font-size: 11px; word-break: break-all; }
+.kb-step-extra { color: #2aa353; font-size: 11px; }
 .kb-acl-hint {
   margin-top: 6px;
-  padding: 6px 10px;
+  padding: 5px 8px;
   background: #fff7e6;
   border-left: 3px solid #f0b842;
-  font-size: 12px;
+  font-size: 11px;
   border-radius: 3px;
 }
-.kb-test-hint { margin-top: 6px; font-size: 12px; color: #888; }
+.kb-test-hint { margin-top: 4px; font-size: 11px; color: #888; }
 
-/* ---- 右:KB 树 ---- */
+/* ---- 右 6 :KB 树 ---- */
 .kb-col-tree {
   display: flex;
   flex-direction: column;
@@ -717,6 +614,29 @@ export default {
   background: #fcf3f2;
   margin: 10px;
   border-radius: 4px;
+}
+
+/* ---- 通用按钮 ---- */
+.btn-primary, .btn-secondary, .btn-danger, .btn-link {
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-primary { background: #2a6ddf; color: white; border-color: #2a6ddf; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: white; color: #333; border-color: #cfd4db; }
+.btn-secondary:hover:not(:disabled) { background: #f0f4fa; }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger { background: white; color: #c0392b; border-color: #e9b4ad; }
+.btn-danger:hover { background: #fbeae8; }
+.btn-link {
+  background: transparent;
+  color: #2a6ddf;
+  text-decoration: underline;
+  border: none;
+  padding: 0;
 }
 
 /* ---- toast / banner ---- */
