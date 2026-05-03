@@ -1,3 +1,21 @@
+## 2026-05-03 20:59:50 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/AIAssistantDialog.vue`
+- ` M src/components/KbEmptyTopology.vue`
+
+### Diff Stat
+
+```text
+ src/components/AIAssistantDialog.vue |  10 ++
+ src/components/KbEmptyTopology.vue   | 263 +++++++++++++++++++++++------------
+ 2 files changed, 182 insertions(+), 91 deletions(-)
+```
+
 ## 2026-05-03 20:35:38 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
