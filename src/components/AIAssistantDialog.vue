@@ -565,7 +565,7 @@
                   <span v-html="formatMessage(msg.content)"></span>
                   <span v-if="isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
-                    v-if="msg.role === 'assistant' && msg.messageMeta?.kbSources?.length"
+                    v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
                     :sources="msg.messageMeta.kbSources"
                     :kb-bindings="msg.messageMeta.kbBindings"
                     :connection="getKbConnectionForMessage(msg)"
@@ -2208,6 +2208,47 @@ const DONATION_ALIPAY_QR_CODE = 'images/pay/alipay.png'
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_MAX_WIDTH_FALLBACK = 460
 const MAIN_AREA_MIN_WIDTH = 420
+const DEFAULT_KB_BINDING_CONFIG = Object.freeze({
+  topK: 5,
+  fusion: 'rrf',
+  hybrid: true,
+  rerank: false
+})
+
+function normalizeKbBinding(raw = {}) {
+  const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
+  const kbNames = Array.from(new Set(
+    (Array.isArray(raw?.kbNames) ? raw.kbNames : [])
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+  ))
+  const topK = Number(raw?.topK ?? cfg.topK)
+  const finalTopK = Number(raw?.finalTopK ?? cfg.finalTopK)
+  const scoreThreshold = Number(raw?.scoreThreshold ?? cfg.scoreThreshold)
+  const fusion = String(raw?.mergeStrategy || raw?.fusion || cfg.mergeStrategy || cfg.fusion || DEFAULT_KB_BINDING_CONFIG.fusion).trim() || DEFAULT_KB_BINDING_CONFIG.fusion
+  const hybrid = (raw?.hybrid ?? cfg.hybrid ?? DEFAULT_KB_BINDING_CONFIG.hybrid) !== false
+  const rerank = (raw?.rerank ?? cfg.rerank ?? DEFAULT_KB_BINDING_CONFIG.rerank) === true
+  const normalized = {
+    kbNames,
+    config: {
+      ...DEFAULT_KB_BINDING_CONFIG,
+      ...cfg,
+      topK: Number.isFinite(topK) && topK > 0 ? topK : DEFAULT_KB_BINDING_CONFIG.topK,
+      fusion,
+      hybrid,
+      rerank
+    },
+    topK: Number.isFinite(topK) && topK > 0 ? topK : DEFAULT_KB_BINDING_CONFIG.topK,
+    mergeStrategy: fusion,
+    hybrid,
+    rerank,
+    connectionId: String(raw?.connectionId || '').trim(),
+    updatedAt: Number(raw?.updatedAt || 0) || 0
+  }
+  if (Number.isFinite(finalTopK) && finalTopK > 0) normalized.finalTopK = finalTopK
+  if (Number.isFinite(scoreThreshold)) normalized.scoreThreshold = scoreThreshold
+  return normalized
+}
 
 const TRANSLATION_TARGET_LANGUAGE_RULES = [
   { label: '英文', pattern: /(英文|英语|english)/i },
@@ -3690,9 +3731,7 @@ export default {
       return this.currentChat?.messages || []
     },
     currentChatKbBinding() {
-      const b = this.currentChat?.kbBindings
-      if (b && Array.isArray(b.kbNames)) return b
-      return { kbNames: [], config: { topK: 5, fusion: 'rrf', hybrid: true, rerank: false } }
+      return normalizeKbBinding(this.currentChat?.kbBindings)
     },
     currentChatKbBoundCount() {
       return this.currentChatKbBinding.kbNames.length
@@ -5925,7 +5964,9 @@ export default {
           }
         }
 
-        this.chatHistory = Array.isArray(parsed) ? parsed : []
+        this.chatHistory = Array.isArray(parsed)
+          ? parsed.map(chat => this.normalizeChatRecord(chat))
+          : []
         if (currentId && this.chatHistory.some(c => c.id === currentId)) {
           this.currentChatId = currentId
         } else if (this.chatHistory.length > 0) {
@@ -5997,9 +6038,22 @@ export default {
         console.debug('保存对话历史失败:', e)
       }
     },
+    normalizeChatRecord(chat) {
+      const out = chat && typeof chat === 'object' ? { ...chat } : {}
+      out.id = String(out.id || `chat_${Date.now()}`)
+      out.title = String(out.title || '新对话')
+      out.messages = Array.isArray(out.messages) ? out.messages : []
+      out.kbBindings = normalizeKbBinding(out.kbBindings)
+      return out
+    },
     newChat() {
       const id = 'chat_' + Date.now()
-      this.chatHistory.unshift({ id, title: '新对话', messages: [] })
+      this.chatHistory.unshift({
+        id,
+        title: '新对话',
+        messages: [],
+        kbBindings: normalizeKbBinding()
+      })
       this.currentChatId = id
       this.saveHistory()
     },
@@ -6620,14 +6674,13 @@ export default {
       this.showKnowledgeBaseDialog = false
     },
     onKbBindingConfirm(binding) {
-      const chat = this.currentChat
+      const chat = this.getOrCreateWritableChat()
       if (!chat) return
-      chat.kbBindings = {
-        kbNames: Array.isArray(binding?.kbNames) ? binding.kbNames.slice() : [],
-        config: { ...(binding?.config || {}) },
-        updatedAt: Date.now(),
-      }
-      try { this.saveHistory() } catch (e) { /* noop */ }
+      chat.kbBindings = normalizeKbBinding({
+        ...binding,
+        updatedAt: Date.now()
+      })
+      try { this.saveHistory({ flush: true }) } catch (e) { /* noop */ }
       this.showKnowledgeBaseDialog = false
     },
     onKbGotoSettings() {
@@ -6639,8 +6692,18 @@ export default {
     clearCurrentChatKbBinding() {
       const chat = this.currentChat
       if (!chat) return
-      chat.kbBindings = { kbNames: [], config: {}, updatedAt: Date.now() }
-      try { this.saveHistory() } catch (e) { /* noop */ }
+      chat.kbBindings = normalizeKbBinding({ updatedAt: Date.now() })
+      try { this.saveHistory({ flush: true }) } catch (e) { /* noop */ }
+    },
+    shouldShowKbSourceStrip(msg) {
+      const meta = msg?.messageMeta || {}
+      return !!(
+        (Array.isArray(meta.kbSources) && meta.kbSources.length > 0) ||
+        meta.kbError ||
+        meta.kbPromptError ||
+        meta.kbPlan ||
+        meta.kbBindings?.kbNames?.length
+      )
     },
     getKbConnectionForMessage(msg) {
       try {
@@ -15513,11 +15576,13 @@ export default {
             messagesForApi,
             assistantMessageMeta: assistantMsg.messageMeta,
             selectionText: this.selectionContextSnapshot?.text || '',
-            onKbPhase: (phase) => {
-              if (phase?.phase === 'splitting' || phase?.phase === 'clustering' || phase?.phase === 'distilling') {
+            onKbPhase: (phase, info = {}) => {
+              const phaseName = typeof phase === 'string' ? phase : phase?.phase
+              const phaseInfo = typeof phase === 'string' ? info : (phase || {})
+              if (phaseName === 'splitting' || phaseName === 'clustering' || phaseName === 'distilling') {
                 this.updateAssistantLoadingProgress(assistantMsg, {
                   label: '知识库检索中...',
-                  detail: phase?.detail || '正在准备知识检索查询...',
+                  detail: phaseInfo?.detail || '正在准备知识检索查询...',
                   percent: 80
                 })
               }
@@ -19275,15 +19340,22 @@ export default {
 }
 
 .knowledge-base-btn.has-binding {
-  border-color: #2a6ddf;
-  background: #f0f6ff;
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.18), 0 8px 18px rgba(29, 78, 216, 0.22);
+}
+
+.knowledge-base-btn.has-binding:hover {
+  border-color: #1e40af;
+  background: #1e40af;
 }
 
 .kb-binding-badge {
   position: absolute;
   top: -4px;
   right: -4px;
-  background: #2a6ddf;
+  background: #0f172a;
   color: white;
   font-size: 10px;
   font-weight: 600;

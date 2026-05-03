@@ -20,6 +20,7 @@
  *   /knowledge_base/download_doc               → openapi: /openapi/v1/kb/download_doc
  *   /knowledge_base/preview_doc                → openapi: /openapi/v1/kb/download_doc(preview=true)
  *   /knowledge_base/search_docs (回退)         → 仅 JWT 支持(openapi 不开放,鼓励走 batch)
+ *   /knowledge_universe/list                   → 仅 JWT 支持(用户智库全集)
  *   /knowledge_universe/tree                   → 仅 JWT 支持(openapi 不开放;HMAC 只能拿平铺列表)
  *   /healthz                                   → 两边都不走鉴权,直接平凡映射
  *   /auth/me / /auth/login / /auth/refresh     → 仅 JWT
@@ -44,6 +45,7 @@ const JWT_ONLY = new Set([
   '/auth/me',
   '/auth/login',
   '/auth/refresh',
+  '/knowledge_universe/list',
   '/knowledge_universe/tree',
   '/knowledge_base/search_docs',  // 鼓励 HMAC 走 search_batch
 ])

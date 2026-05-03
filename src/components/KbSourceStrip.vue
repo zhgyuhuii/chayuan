@@ -14,7 +14,7 @@
       <span class="kb-strip-line"></span>
       <span class="kb-strip-label">
         <span class="kb-strip-icon">📚</span>
-        知识来源 · {{ sources.length }} 条
+        {{ stripTitle }}
         <template v-if="kbBindings?.kbNames?.length">
           · {{ kbBindings.kbNames.join('、') }}
         </template>
@@ -23,7 +23,7 @@
     </div>
 
     <div v-if="!localCollapsed" class="kb-strip-body">
-      <ul class="kb-source-list">
+      <ul v-if="hasSourceItems" class="kb-source-list">
         <li
           v-for="(s, idx) in sources"
           :key="`${s.kb_name}-${s.file_name}-${idx}`"
@@ -61,6 +61,9 @@
           </div>
         </li>
       </ul>
+      <div v-else class="kb-source-empty">
+        {{ kbError ? `检索失败：${kbError}` : '已检索所选知识库，但没有命中可引用内容。' }}
+      </div>
     </div>
   </div>
 </template>
@@ -88,7 +91,15 @@ export default {
   },
   computed: {
     hasSources() {
+      return this.hasSourceItems || !!this.kbError || !!this.kbBindings?.kbNames?.length
+    },
+    hasSourceItems() {
       return Array.isArray(this.sources) && this.sources.length > 0
+    },
+    stripTitle() {
+      if (this.hasSourceItems) return `知识来源 · ${this.sources.length} 条`
+      if (this.kbError) return '知识库检索异常'
+      return '知识库已检索 · 0 条'
     },
     scoredSources() {
       // Vue computed 自带缓存:仅在 sources/queryText 变化时重算,无需手写 cache
@@ -223,6 +234,16 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.kb-source-empty {
+  padding: 8px 10px;
+  border: 1px dashed #d7dce3;
+  border-radius: 6px;
+  background: #fafbfc;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .kb-source-card {

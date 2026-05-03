@@ -6,11 +6,11 @@
  *   - fetchTree(connection, { signal, force }) → 按 universe 分组的树
  *
  * 数据归一:
- *   服务端 list_knowledge_bases 返回的可能是 string[] 或 KnowledgeBaseSchema[];
+ *   服务端可能返回 Knowledge Universe(KuItem)、KnowledgeBaseSchema 或 string[];
  *   两种形态都归一为:
  *   {
- *     id,            // = kb_name
- *     name,          // = kb_info?.title || kb_name
+ *     id,            // = ku_id || kb_name
+ *     name,          // = display_name || kb_info?.title || kb_name
  *     vectorStore,
  *     fileCount,
  *     visibility,
@@ -33,19 +33,31 @@ function _normalizeKb(raw) {
       grantExpiresAt: null, raw
     }
   }
+  const id = raw.ku_id || raw.kb_name || raw.id || ''
+  const name = raw.display_name
+    || raw.kb_info?.title
+    || (typeof raw.kb_info === 'string' && raw.kb_info ? raw.kb_info : '')
+    || raw.name
+    || raw.kb_name
+    || raw.id
+    || raw.ku_id
+    || ''
+  const count = raw.count ?? raw.file_count ?? raw.kb_info?.file_count ?? 0
   // role 来源(plan §4.3.4 get_kb_role_for_subject):
   //   服务端在响应里 inline 'role' / 'grant_source' / 'grant_expires_at'
   //   字段名向后兼容:role | acl_role | my_role
-  const role = raw.role || raw.acl_role || raw.my_role || null
+  const role = raw.role || raw.access_role || raw.acl_role || raw.my_role || null
   // grant_source: 'owner' | 'admin' | 'public' | 'grant'
   const grantSource = raw.grant_source || (role === 'owner' ? 'owner' : (role === 'admin' ? 'admin' : null))
   return {
-    id: raw.kb_name || raw.id || '',
-    name: raw.kb_info?.title || raw.kb_name || raw.id || '',
-    vectorStore: raw.vs_type || raw.vector_store_type || '',
-    fileCount: Number(raw.file_count || raw.kb_info?.file_count || 0),
+    id,
+    name,
+    vectorStore: raw.vs_type || raw.vector_store_type || raw.kind || '',
+    fileCount: Number(count || 0),
     visibility: raw.visibility || 'private',
     ownerId: raw.owner_id || null,
+    kind: raw.kind || raw.vs_type || '',
+    kuId: raw.ku_id || id,
     universe: raw.universe || null,
     role,                                       // 'owner' | 'editor' | 'reader' | 'admin'
     grantSource,                                // owner / admin / public / grant
@@ -62,14 +74,33 @@ export async function fetchList(connection, options = {}) {
     if (hit) return hit
   }
   const auth = createAuthClient(connection)
-  const path = _resolvePath(connection, '/knowledge_base/list_knowledge_bases')
-  if (!path) throw new Error('list_knowledge_bases not available in current auth mode')
-  const resp = await auth.fetch(path, {
-    method: 'GET',
-    signal: options.signal
-  })
+  let resp = null
+  let source = ''
+
+  // JWT 用户登录场景优先使用与 chayuan-client 一致的智库全集接口。
+  const universePath = _resolvePath(connection, '/knowledge_universe/list')
+  if (universePath) {
+    const sep = universePath.includes('?') ? '&' : '?'
+    resp = await auth.fetch(`${universePath}${sep}include_vector=true`, {
+      method: 'GET',
+      signal: options.signal
+    })
+    source = 'knowledge_universe/list'
+  }
+
+  // HMAC App 接入或老服务端降级到兼容 KB 列表。
+  if (!resp || !resp.ok) {
+    const path = _resolvePath(connection, '/knowledge_base/list_knowledge_bases')
+    if (!path) throw new Error('list_knowledge_bases not available in current auth mode')
+    resp = await auth.fetch(path, {
+      method: 'GET',
+      signal: options.signal
+    })
+    source = 'list_knowledge_bases'
+  }
+
   if (!resp.ok) {
-    throw new Error(`list_knowledge_bases HTTP ${resp.status}`)
+    throw new Error(`${source} HTTP ${resp.status}`)
   }
   const data = await resp.json()
   const list = Array.isArray(data?.data) ? data.data.map(_normalizeKb) : []
