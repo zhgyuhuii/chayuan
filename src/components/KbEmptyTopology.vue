@@ -217,53 +217,53 @@
         </g>
 
         <!-- Stage 2.1:察元智库 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('zhiku')" tabindex="0" role="button" aria-label="察元智库 — 查看介绍">
           <rect x="620" y="15" width="190" height="75" rx="16" fill="url(#kbHubFill)" stroke="url(#kbNodeStroke)" stroke-width="2" />
-          <text x="715" y="42" text-anchor="middle" class="kb-node-title kb-node-title-strong">察元智库</text>
+          <text x="715" y="42" text-anchor="middle" class="kb-node-title kb-node-title-strong">📚 察元智库</text>
           <text x="715" y="60" text-anchor="middle" class="kb-node-sub">Knowledge Universe</text>
-          <text x="715" y="78" text-anchor="middle" class="kb-node-sub kb-node-sub-faint">统一查询 / 权限 / 引用</text>
+          <text x="715" y="78" text-anchor="middle" class="kb-node-sub kb-node-sub-faint">点击查看 · 统一查询 / 权限 / 引用</text>
         </g>
 
         <!-- Stage 2.2:察元办公 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('bangong')" tabindex="0" role="button" aria-label="察元办公 — 查看介绍">
           <rect x="620" y="115" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="140" text-anchor="middle" class="kb-node-title">察元办公</text>
-          <text x="715" y="161" text-anchor="middle" class="kb-node-sub">Office · Word / Excel / PPT</text>
+          <text x="715" y="140" text-anchor="middle" class="kb-node-title">📝 察元办公</text>
+          <text x="715" y="161" text-anchor="middle" class="kb-node-sub">点击查看 · 在线编辑 / 智能改写 / 脱密</text>
         </g>
 
         <!-- Stage 2.3:模型广场 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('moxing')" tabindex="0" role="button" aria-label="模型广场 — 查看介绍">
           <rect x="620" y="205" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="230" text-anchor="middle" class="kb-node-title">模型广场</text>
-          <text x="715" y="251" text-anchor="middle" class="kb-node-sub">LLM · 嵌入 · 重排 · 多模态</text>
+          <text x="715" y="230" text-anchor="middle" class="kb-node-title">🤖 模型广场</text>
+          <text x="715" y="251" text-anchor="middle" class="kb-node-sub">点击查看 · 多模型 / 多模态 / 路由</text>
         </g>
 
         <!-- Stage 2.4:智能空间 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('kongjian')" tabindex="0" role="button" aria-label="智能空间 — 查看介绍">
           <rect x="620" y="295" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="320" text-anchor="middle" class="kb-node-title">智能空间</text>
-          <text x="715" y="341" text-anchor="middle" class="kb-node-sub">工作流 · Notebook · 应用编排</text>
+          <text x="715" y="320" text-anchor="middle" class="kb-node-title">🧩 智能空间</text>
+          <text x="715" y="341" text-anchor="middle" class="kb-node-sub">点击查看 · 工作流 / Notebook / 编排</text>
         </g>
 
         <!-- Stage 2.5:应用市场 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('shichang')" tabindex="0" role="button" aria-label="应用市场 — 查看介绍">
           <rect x="620" y="385" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="410" text-anchor="middle" class="kb-node-title">应用市场</text>
-          <text x="715" y="431" text-anchor="middle" class="kb-node-sub">业务应用 · 插件 · 自定义助手</text>
+          <text x="715" y="410" text-anchor="middle" class="kb-node-title">📦 应用市场</text>
+          <text x="715" y="431" text-anchor="middle" class="kb-node-sub">点击查看 · 业务应用 / 插件 / 私有库</text>
         </g>
 
         <!-- Stage 2.6:训练数据中心 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('xunlian')" tabindex="0" role="button" aria-label="训练数据中心 — 查看介绍">
           <rect x="620" y="475" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="500" text-anchor="middle" class="kb-node-title">训练数据中心</text>
-          <text x="715" y="521" text-anchor="middle" class="kb-node-sub">标注样本 · 反馈 · 微调任务</text>
+          <text x="715" y="500" text-anchor="middle" class="kb-node-title">🎯 训练数据中心</text>
+          <text x="715" y="521" text-anchor="middle" class="kb-node-sub">点击查看 · 标注 / 微调 / 反馈闭环</text>
         </g>
 
         <!-- Stage 2.7:我的待办 -->
-        <g filter="url(#kbNodeShadow)">
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('daiban')" tabindex="0" role="button" aria-label="我的待办 — 查看介绍">
           <rect x="620" y="565" width="190" height="60" rx="14" fill="url(#kbNodeFill)" stroke="url(#kbNodeStroke)" stroke-width="1.5" />
-          <text x="715" y="590" text-anchor="middle" class="kb-node-title">我的待办</text>
-          <text x="715" y="611" text-anchor="middle" class="kb-node-sub">任务清单 · 提醒 · 触发应用</text>
+          <text x="715" y="590" text-anchor="middle" class="kb-node-title">✅ 我的待办</text>
+          <text x="715" y="611" text-anchor="middle" class="kb-node-sub">点击查看 · 任务清单 / 提醒 / 触发应用</text>
         </g>
 
         <!-- ────────────── Stage 3 ────────────── -->
@@ -335,11 +335,60 @@
     <footer class="kb-empty-topology-foot">
       <span class="kb-empty-topology-tip">
         <span class="kb-empty-dot" />
-        <strong>蓝色实线</strong>:用户问题 → 助手编排 → 模块 → 具体能力源(知识源 / 模型源 / 应用源)
-        <span class="kb-empty-dot kb-empty-dot-warm" />
-        <strong>橙色虚线</strong>:跨模块引用 / 反馈回流(办公↔智库,训练↔智库/模型,空间/待办→应用库)
+        点击拓扑中的任意 <strong>模块节点</strong> 查看它解决什么痛点、有哪些能力、可接入哪些数据源
       </span>
     </footer>
+
+    <!-- 模块介绍弹窗:点击 Stage 2 节点后展示 -->
+    <transition name="kb-modal">
+      <div
+        v-if="activeModuleData"
+        class="kb-empty-modal-overlay"
+        @click.self="closeModule"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div class="kb-empty-modal" @click.stop>
+          <header class="kb-empty-modal-head">
+            <span class="kb-empty-modal-icon">{{ activeModuleData.icon }}</span>
+            <div class="kb-empty-modal-title">
+              <h3>{{ activeModuleData.name }}</h3>
+              <p>{{ activeModuleData.tagline }}</p>
+            </div>
+            <button
+              type="button"
+              class="kb-empty-modal-close"
+              @click="closeModule"
+              aria-label="关闭"
+            >×</button>
+          </header>
+
+          <section class="kb-empty-modal-section">
+            <h4><span class="kb-empty-modal-pin">🎯</span>切入痛点</h4>
+            <ul class="kb-empty-modal-list kb-empty-modal-list-pain">
+              <li v-for="p in activeModuleData.painPoints" :key="p">{{ p }}</li>
+            </ul>
+          </section>
+
+          <section class="kb-empty-modal-section">
+            <h4><span class="kb-empty-modal-pin">🔧</span>核心能力</h4>
+            <ul class="kb-empty-modal-list kb-empty-modal-list-feat">
+              <li v-for="f in activeModuleData.features" :key="f">{{ f }}</li>
+            </ul>
+          </section>
+
+          <section class="kb-empty-modal-section">
+            <h4><span class="kb-empty-modal-pin">🔌</span>可接入</h4>
+            <p class="kb-empty-modal-line">{{ activeModuleData.dataSources }}</p>
+          </section>
+
+          <section class="kb-empty-modal-section kb-empty-modal-solves">
+            <h4><span class="kb-empty-modal-pin">✨</span>解决什么问题</h4>
+            <p class="kb-empty-modal-line">{{ activeModuleData.solves }}</p>
+          </section>
+        </div>
+      </div>
+    </transition>
   </section>
 </template>
 
@@ -386,6 +435,160 @@ const TYPE_INTERVAL_MAIN_MS = 90  // 主标节奏(慢一点,有仪式感)
 const TYPE_INTERVAL_SUB_MS  = 35  // 副标节奏(快一点,顺着阅读流)
 const TAGLINE_PAUSE_BETWEEN_MS = 280  // 主标完→副标开始 之间的小停顿
 
+// ─────────────────────────────────────────────────────────────
+// 模块介绍知识库 — 拓扑图中每个 Stage 2 节点点击后弹窗展示
+// 文案围绕真实业务痛点 → 能力 → 数据接入 → 解决问题 四档结构
+// ─────────────────────────────────────────────────────────────
+const MODULES = {
+  zhiku: {
+    icon: '📚',
+    name: '察元智库',
+    tagline: 'Knowledge Universe · 把企业散落的知识汇成一个入口',
+    painPoints: [
+      '企业资料散落在文档库、业务库、ES、向量库、图片里,业务问个问题要切多个系统',
+      'IT 部门对接每个数据源都要单独开发权限和接口,维护成本高',
+      'AI 给的答案没引用、没溯源,业务用了不敢相信,出错没人背锅',
+      '新增一份文件 / 一张表,要跑一堆同步脚本才能"被搜到"',
+    ],
+    features: [
+      '一个 API 接通六类源:文档 / 结构化 / 搜索 / 半结构化 / 向量 / 图像',
+      '智能路由:关键词找 ES,聚合走 SQL,语义走向量 + 文档,自动选最优',
+      '统一权限:用户 / 角色 / 公开 / 私有 一套规则覆盖所有源',
+      '引用回链:每条答案带 [N] 标号,可一键跳回原文 / 原表 / 原图',
+      '增量索引:文件入库自动分块、向量化、上线,无需手工刷新',
+      '诊断面板:每次检索回包包含 路由 / 召回 / 重排 / 耗时 全程 trace',
+    ],
+    dataSources: 'Word/PDF/MD/HTML 文档 · MySQL/Oracle/PostgreSQL/达梦 · ElasticSearch · MongoDB · Milvus/向量库 · JPG/PNG 图像',
+    solves: '让"问一句拿一答"真正跨越数据孤岛;让 IT 团队从 N 套对接 → 1 套对接;让答案可信、可溯源、可审计。',
+  },
+  bangong: {
+    icon: '📝',
+    name: '察元办公',
+    tagline: 'Office · 让 AI 真正贴着文档工作',
+    painPoints: [
+      '写报告 / 标书 / 合同 / 周报靠手工查资料 + 反复改稿,效率低',
+      '改一处怕影响别处,全文校对靠人眼,错别字/格式错误难以根治',
+      '敏感信息(身份证、合同金额、客户名)泄露风险高,人工脱敏漏检多',
+      '术语不统一(同一概念多种说法)、章节编号乱、图表说明缺失',
+    ],
+    features: [
+      '在线编辑 + 多人协作,光标实时同步、版本历史、断点续写',
+      '智能改写 / 润色 / 扩写 / 缩写 / 翻译 / 摘要,选段一键完成',
+      '自动批注:错别字、语病、歧义、描述不准、术语不统一,挨个标出来',
+      '一键脱密:身份证 / 手机号 / 金额 / 客户名 等敏感实体识别 + 占位符替换 + 可逆复原',
+      '写作时自动触发智库检索,把相关条款 / 数据 / 历史报告嵌入正文',
+      '格式批量处理:章节编号、表格规范、图片说明、目录、参考文献',
+    ],
+    dataSources: 'Word(.docx)· Excel(.xlsx)· PowerPoint(.pptx)· PDF · Markdown · 富文本',
+    solves: '把"查 + 写 + 改 + 审"四件事压成一件事,报告类高频场景提速 5-10 倍;减少格式错误和敏感信息漏检;让团队术语和模板真正落地。',
+  },
+  moxing: {
+    icon: '🤖',
+    name: '模型广场',
+    tagline: 'Model Marketplace · 模型自由 · 数据不出域',
+    painPoints: [
+      '不同业务需要不同模型:写文用 Claude,中文用 DeepSeek,代码用 Qwen-Coder,选型混乱',
+      '敏感数据出企业网络风险大,合规部门不敢批',
+      '云厂商时不时抽风,单点依赖一挂全公司停摆',
+      'Token 成本不透明,谁用了多少花了多少没人说得清',
+    ],
+    features: [
+      '一套 OpenAI 兼容协议接通任意模型:GPT / Claude / Gemini / DeepSeek / 通义 / 文心 / 智谱 / 豆包 ...',
+      '本地推理引擎并存:Ollama · vLLM · TGI · 自部署模型,敏感任务强制走离线',
+      '多模态全覆盖:LLM / 嵌入 / 重排 / ASR / TTS / OCR / VLM / Text-to-Image / Text-to-Video',
+      '智能路由:按任务类型 / 成本 / 延迟 / 可用性 自动挑模型;一个挂了切下一个',
+      '用户 / 部门级配额 + Token 监控 + 调用审计',
+      '模型评测台:Golden Set 自动跑分,选型有数据撑腰',
+    ],
+    dataSources: '云厂商 API(OpenAI 兼容)· 本地引擎(Ollama / vLLM / TGI)· 自部署模型 · 闭源商业模型',
+    solves: '让模型选型自由(不绑死一家);让敏感数据"想留就留"(强制走离线);让单点故障不再瘫痪业务;让算力账单可拆分到部门和个人。',
+  },
+  kongjian: {
+    icon: '🧩',
+    name: '智能空间',
+    tagline: 'Smart Space · 把"反复做的事"沉淀成 Agent',
+    painPoints: [
+      '复杂业务要多步流程(查 → 分析 → 生成 → 发送),用户每次都重新写 Prompt',
+      '业务人员不会写代码,做不了自定义 Agent;开发外包 → 反应慢 + 维护贵',
+      '同事踩过的坑、调好的 Prompt 难分享,组织内每个人都从零开始',
+      '同样的工作流跨季度反复做,每次重头来一遍',
+    ],
+    features: [
+      '可视化工作流编排:拖拽节点、连接、条件分支、并发 / 串行,Notebook 风格',
+      '内置 30+ 节点:KB 检索 · SQL 查询 · 文档读写 · API 调用 · 模型调用 · 文件批处理 · 邮件 · 飞书 / 企微',
+      '模板库:财报分析 / 合同审核 / 周报生成 / 客服话术 / 招投标拆解 ... 开箱即用',
+      '团队协作:工作流像代码一样有版本、有 review、可回滚',
+      '一键发布:工作流变成应用,直接进应用市场让全公司用',
+      'Notebook 模式:数据分析师能边跑边调,把分析流程沉淀给业务',
+    ],
+    dataSources: '可调用任意 chayuan 模块的能力(智库 / 模型 / 办公 / 应用市场 / 训练中心)+ 任意 HTTP API',
+    solves: '把"老员工的隐性经验"显性化为可复用的 Agent;让业务自己能搭流程,不再排队等开发;让组织级生产力沉淀成可分发资产。',
+  },
+  shichang: {
+    icon: '📦',
+    name: '应用市场',
+    tagline: 'App Market · AI 能做的事变成可发现的产品',
+    painPoints: [
+      '每个团队都有"写周报 / 做对比 / 生成 PPT / 写邮件"等同质需求,重复开发、重复维护',
+      '成熟解决方案分散在某个员工电脑里,新人入职从零摸索',
+      '采购的第三方 AI 应用接口不统一,集成难、运维贵',
+      'AI 应用没评分、没文档,选型靠口口相传',
+    ],
+    features: [
+      '官方应用 + 第三方 + 企业内私有应用,统一商店',
+      '分类齐全:写作 / 数据分析 / 客服 / 财务 / 法务 / 营销 / HR / 运维',
+      '一键安装、参数化配置、立即使用,无需 DevOps 介入',
+      '评分 + 收藏 + 评论 + 使用统计,选型有真实口碑',
+      '插件无处不在:可在 WPS 加载项内 / 对话框内 / 独立页 / 工作流节点 调用',
+      '私有应用库:企业内部应用只对本企业可见,商业机密不外泄',
+    ],
+    dataSources: '工作流(来自智能空间)· Prompt 模板 · 外部 API · 智库检索 · 模型调用',
+    solves: '让"造一次,全公司用"变成默认;让外采 AI 应用有统一入口和审计;让组织内的好实践不再靠人传人。',
+  },
+  xunlian: {
+    icon: '🎯',
+    name: '训练数据中心',
+    tagline: 'Training Center · 让 AI 越用越准 · 反馈即资产',
+    painPoints: [
+      '通用 LLM 在企业垂直业务里准确率掉一半,但微调数据从哪来?',
+      '人工标注成本高、质量参差;采集流程做了一半就废了',
+      'AI 答对了没人记下,答错了没人纠正,白白浪费用户的反馈',
+      '微调出新模型怎么平稳上线?旧模型怎么对比?评测靠拍脑袋',
+    ],
+    features: [
+      '自动采样:用户的"赞 / 踩 / 批改 / 重写"操作,实时进入样本池',
+      '标注台:支持 单选 / 多选 / 排序 / 重写 / 对比打分 / 多人交叉验证',
+      '样本治理:自动去重、脏数据过滤、按领域分类、版本控制',
+      '微调任务:LoRA / QLoRA / 全量 / DPO / RLHF,一键起跑、监控、回滚',
+      '评测体系:Golden Set + Gate 测试 + 评分趋势 + 回归告警',
+      '闭环上线:微调好的模型一键发布到模型广场,业务无感切换',
+    ],
+    dataSources: '用户操作日志(脱敏)· 人工标注 · 外部公开数据集 · 业务文档 / 对话历史',
+    solves: '让企业的每一次反馈都变成训练资产;让模型从"通用 60 分"养到"业务 90 分";让微调成本可控、效果可量化、上线可回滚。',
+  },
+  daiban: {
+    icon: '✅',
+    name: '我的待办',
+    tagline: 'My Tasks · 把 AI 建议变成 AI 执行',
+    painPoints: [
+      'AI 给了一堆"建议",但人还得手动去做,等于换个地方堆积事项',
+      '复杂任务跨天 / 跨部门,容易丢失;状态、依赖、负责人混乱',
+      'AI 任务、邮件提醒、Tasks 工具各一个池子,信息分散',
+      '任务做完没复盘,经验沉淀不到组织里',
+    ],
+    features: [
+      '从对话 / 文档 / 智库自动识别"待办":"明天 10 点前提交报告" → 自动建任务',
+      '分组视图:我的 / 被分配给我 / 我分给别人 / 跟踪我创建的',
+      '关联应用 / 工作流:点一下就启动对应 Agent,任务和能力打通',
+      '智能提醒:到期、关键节点、依赖任务完成、上下游变化',
+      '与日历 / 邮件 / 飞书 / 企微 双向同步,不再信息分散',
+      '完成后自动归档为知识资产,反哺到智库供未来检索',
+    ],
+    dataSources: '对话历史 · 文档识别 · 应用执行结果 · 日历 / 邮件 / 协作工具',
+    solves: '让 AI 不再只是"给建议",而是接到落地的执行链路上;让跨人/跨天/跨部门的任务不再丢;让每次完成的任务都成为下次的输入。',
+  },
+}
+
 export default {
   name: 'KbEmptyTopology',
   emits: ['create'],
@@ -409,7 +612,13 @@ export default {
       taglineSubShown: '',
       taglineMainDone: false,
       taglineSubDone: false,
+      activeModule: null,    // 当前打开介绍弹窗的模块 key(zhiku/bangong/...);null = 关闭
     }
+  },
+  computed: {
+    activeModuleData() {
+      return this.activeModule ? MODULES[this.activeModule] : null
+    },
   },
   mounted() {
     this._typeTimers = []
@@ -435,6 +644,12 @@ export default {
   methods: {
     onQrError() {
       this.qrLoaded = false
+    },
+    showModule(key) {
+      if (MODULES[key]) this.activeModule = key
+    },
+    closeModule() {
+      this.activeModule = null
     },
     startTypingMain() {
       let i = 0
@@ -706,6 +921,162 @@ export default {
 
 /* QR 浮卡保持在最上层,不被光斑遮挡 */
 .kb-empty-qrcode { z-index: 5; }
+
+/* SVG 内可点击节点:鼠标手 + hover 抬升 + 焦点环 */
+.kb-topo-clickable { cursor: pointer; transition: transform 0.2s ease; transform-origin: center; transform-box: fill-box; }
+.kb-topo-clickable:hover rect { stroke: #2a6ddf; stroke-width: 2.4; filter: drop-shadow(0 4px 12px rgba(42, 109, 223, 0.28)); }
+.kb-topo-clickable:hover { transform: translateY(-2px); }
+.kb-topo-clickable:focus { outline: none; }
+.kb-topo-clickable:focus-visible rect { stroke: #6635b6; stroke-width: 2.6; }
+
+/* ─────── 模块介绍弹窗 ─────── */
+.kb-empty-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 24px;
+}
+.kb-empty-modal {
+  width: 100%;
+  max-width: 580px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32), 0 4px 12px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(216, 224, 236, 0.8);
+}
+.kb-empty-modal-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #eef2f8;
+  background: linear-gradient(135deg, #f7faff 0%, #ffffff 100%);
+}
+.kb-empty-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  font-size: 24px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #eef3ff 0%, #f5e9ff 100%);
+  border: 1px solid #c8d4f0;
+}
+.kb-empty-modal-title h3 {
+  margin: 0 0 2px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2a44;
+}
+.kb-empty-modal-title p {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7891;
+  letter-spacing: 0.02em;
+}
+.kb-empty-modal-close {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.kb-empty-modal-close:hover { background: #f1f5f9; color: #1f2a44; }
+
+.kb-empty-modal-section { padding: 14px 22px; border-top: 1px solid #f4f6fa; }
+.kb-empty-modal-section:first-of-type { border-top: none; }
+.kb-empty-modal-section h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2a44;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.02em;
+}
+.kb-empty-modal-pin { font-size: 14px; }
+
+.kb-empty-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kb-empty-modal-list li {
+  position: relative;
+  padding: 6px 10px 6px 26px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #475569;
+  border-radius: 8px;
+}
+.kb-empty-modal-list li::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 13px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.kb-empty-modal-list-pain li {
+  background: linear-gradient(90deg, rgba(255, 235, 220, 0.4) 0%, transparent 100%);
+}
+.kb-empty-modal-list-pain li::before { background: #ff8a4c; }
+.kb-empty-modal-list-feat li {
+  background: linear-gradient(90deg, rgba(232, 240, 255, 0.55) 0%, transparent 100%);
+}
+.kb-empty-modal-list-feat li::before { background: #2a6ddf; }
+
+.kb-empty-modal-line {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #475569;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-left: 3px solid #6ea8ff;
+  border-radius: 6px;
+}
+.kb-empty-modal-solves .kb-empty-modal-line {
+  background: linear-gradient(90deg, #f0fdf6 0%, #ffffff 100%);
+  border-left-color: #16a34a;
+  color: #1e3a2b;
+  font-weight: 500;
+}
+
+/* 弹窗过渡 */
+.kb-modal-enter-active,
+.kb-modal-leave-active { transition: opacity 0.22s ease; }
+.kb-modal-enter-active .kb-empty-modal,
+.kb-modal-leave-active .kb-empty-modal {
+  transition: transform 0.28s cubic-bezier(.2,.8,.2,1), opacity 0.22s ease;
+}
+.kb-modal-enter-from,
+.kb-modal-leave-to { opacity: 0; }
+.kb-modal-enter-from .kb-empty-modal,
+.kb-modal-leave-to .kb-empty-modal {
+  opacity: 0;
+  transform: translateY(20px) scale(0.96);
+}
 
 /* 流光:在 stroke-dasharray 上滚 stroke-dashoffset */
 .kb-topo-flows-cool path {

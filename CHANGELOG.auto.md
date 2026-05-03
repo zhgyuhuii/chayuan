@@ -1,3 +1,19 @@
+## 2026-05-03 21:55:18 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/KbEmptyTopology.vue`
+
+### Diff Stat
+
+```text
+ src/components/KbEmptyTopology.vue | 419 ++++++++++++++++++++++++++++++++++---
+ 1 file changed, 395 insertions(+), 24 deletions(-)
+```
+
 ## 2026-05-03 21:51:41 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
