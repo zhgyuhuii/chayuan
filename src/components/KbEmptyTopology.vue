@@ -316,6 +316,67 @@
       </svg>
     </div>
 
+    <!-- 部署模式 + 操作系统支持 -->
+    <div class="kb-empty-deploy">
+      <div class="kb-empty-deploy-head">
+        <span class="kb-empty-deploy-label">部署模式</span>
+        <span class="kb-empty-deploy-hint">点击查看每种部署的适用场景与硬件 / 系统要求</span>
+      </div>
+      <div class="kb-empty-deploy-cards">
+        <button
+          type="button"
+          class="kb-empty-deploy-card"
+          @click="showModule('deploy_standalone')"
+          aria-label="单机部署 — 查看介绍"
+        >
+          <span class="kb-empty-deploy-icon">💻</span>
+          <span class="kb-empty-deploy-name">单机部署</span>
+          <span class="kb-empty-deploy-brief">5 分钟一键启动 · 适合 POC / 小团队</span>
+        </button>
+        <button
+          type="button"
+          class="kb-empty-deploy-card"
+          @click="showModule('deploy_offline')"
+          aria-label="离线部署 — 查看介绍"
+        >
+          <span class="kb-empty-deploy-icon">🔒</span>
+          <span class="kb-empty-deploy-name">离线部署</span>
+          <span class="kb-empty-deploy-brief">数据 0 出网 · 等保 / 信创合规</span>
+        </button>
+        <button
+          type="button"
+          class="kb-empty-deploy-card"
+          @click="showModule('deploy_service')"
+          aria-label="服务部署 — 查看介绍"
+        >
+          <span class="kb-empty-deploy-icon">🌐</span>
+          <span class="kb-empty-deploy-name">服务部署</span>
+          <span class="kb-empty-deploy-brief">部门 / 中型企业 · 50-500 用户</span>
+        </button>
+        <button
+          type="button"
+          class="kb-empty-deploy-card"
+          @click="showModule('deploy_cluster')"
+          aria-label="集群部署 — 查看介绍"
+        >
+          <span class="kb-empty-deploy-icon">🏢</span>
+          <span class="kb-empty-deploy-name">集群部署</span>
+          <span class="kb-empty-deploy-brief">5000+ 用户 · HA · 多地容灾</span>
+        </button>
+      </div>
+
+      <div class="kb-empty-deploy-os">
+        <span class="kb-empty-deploy-label">支持系统</span>
+        <span class="kb-empty-os-chip">🪟 Windows 10/11/Server 2019+</span>
+        <span class="kb-empty-os-chip">🐧 Linux Ubuntu/CentOS/RHEL/Debian</span>
+        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 麒麟 V10</span>
+        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 统信 UOS</span>
+        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 中科方德 / 红旗</span>
+        <span class="kb-empty-os-chip">🍎 macOS 12+</span>
+        <span class="kb-empty-os-chip kb-empty-os-chip-arch">⚙️ 鲲鹏 / 飞腾 / 龙芯 / 兆芯</span>
+      </div>
+    </div>
+
     <!-- 醒目广告语:流式逐字打出,模拟 LLM 输出,带闪烁光标 -->
     <div class="kb-empty-tagline" role="banner">
       <h2 class="kb-empty-tagline-main">
@@ -613,6 +674,98 @@ const MODULES = {
     ],
     dataSources: '对话历史 · 文档识别 · 应用执行结果 · 日历 / 邮件 / 协作工具',
     solves: '让 AI 不再只是"给建议",而是接到落地的执行链路上;让跨人/跨天/跨部门的任务不再丢;让每次完成的任务都成为下次的输入。',
+  },
+
+  // ─── 部署模式 ───
+  deploy_standalone: {
+    icon: '💻',
+    name: '单机部署',
+    tagline: 'Standalone · 一台电脑跑完整套察元',
+    painPoints: [
+      '想试用但公司没运维资源,IT 排期遥遥无期',
+      'POC 阶段不想买服务器,但又要业务部门看到实际效果',
+      '数据量小、用户少,搞集群是杀鸡用牛刀',
+      '出差 / 现场演示找不到稳定网络',
+    ],
+    features: [
+      '一键安装包(Windows / Linux / macOS),5 分钟启动',
+      'Server + Client + 模型 + 向量库,全部装在一台机器',
+      '默认本地 SQLite + 本地 Redis-lite + FAISS 向量库,零外部依赖',
+      '可选启用本地 Ollama,跑 7B-14B 模型',
+      'WPS 加载项直连本机 server,所见即所得',
+      '完整数据备份导出 → 上线服务版时一键迁移',
+    ],
+    dataSources: '本地 SQLite/PostgreSQL · 本地 Redis · 本地 FAISS · 本地 Ollama 模型',
+    solves: '把"先试再说"变成 5 分钟的事;让业务部门 POC 不用排队等运维;出差现场也能稳定演示。',
+  },
+
+  deploy_offline: {
+    icon: '🔒',
+    name: '离线部署',
+    tagline: 'Air-gapped · 数据 0 出网 · 等保 / 信创合规',
+    painPoints: [
+      '数据敏感,合规要求"任何字节都不能出公司网络"',
+      '政府 / 金融 / 军工 / 医疗等场景过不了等保三级 / 国密评估',
+      '云厂商 API 调用记录可能被追溯,法务部门不批',
+      '现网设备老旧,装包要带依赖、带模型权重、带证书',
+    ],
+    features: [
+      '离线安装包:含完整依赖镜像 + 模型权重 + 国产 CA 证书',
+      '内网模型推理:Ollama / vLLM / TGI 自部署,不调用任何云 API',
+      '国密改造:SM2 / SM3 / SM4 加签验签 + HTTPS 国密套件',
+      '等保三级配套文档 + 测评报告 + 加固脚本',
+      '审计 / 留痕全开:操作日志、AI 调用日志、知识库访问日志归档 ≥ 6 个月',
+      '信创栈适配:麒麟 V10 + 鲲鹏 / 飞腾 / 龙芯 + 达梦 / 人大金仓',
+    ],
+    dataSources: '内网 PostgreSQL / 达梦 / 人大金仓 · 内网 Redis · 内网向量库 · 内网模型(自部署)',
+    solves: '让政企 / 金融 / 军工真正能用 AI — 数据 100% 留内网,合规审查可过,既享受 AI 又守住红线。',
+  },
+
+  deploy_service: {
+    icon: '🌐',
+    name: '服务部署',
+    tagline: 'Service · 中型企业 / 部门级中央服务',
+    painPoints: [
+      '部门 50-500 人共用,中央服务必须稳但又上不到大集群预算',
+      '远程办公 / 多分支机构访问需求,本地单机不够',
+      'IT 想要单一可信源,业务想要灵活接入,两边平衡难',
+      '标准化部署成本最低,但要预留未来 3 年扩容空间',
+    ],
+    features: [
+      '1-2 台服务器跑 server,客户端任意连(WPS 加载项 / Web / Desktop)',
+      '集中式 PostgreSQL + Redis + 向量库(可分服务器)',
+      'SSO / LDAP / 企业微信 / 飞书 / 钉钉 单点登录',
+      '基于角色的多租户:部门隔离、权限分层、配额可拆',
+      '在线热更新 + 一键回滚,无需停服',
+      '资源监控 + 告警:Prometheus / Grafana 适配',
+      '从单机版无缝升级,数据 0 丢失',
+    ],
+    dataSources: '集中 PostgreSQL · Redis · Milvus / Qdrant 向量库 · 模型广场(本地 + 云)',
+    solves: '让中型企业 / 部门级 AI 服务以最低 TCO 上线;让 IT 一次搭好,业务自由扩展;为未来集群升级铺好路。',
+  },
+
+  deploy_cluster: {
+    icon: '🏢',
+    name: '集群部署',
+    tagline: 'Cluster · 大型集团 5000+ 用户 · HA · 多地容灾',
+    painPoints: [
+      '集团级 5000-50000 用户,单机房扛不住并发',
+      '关键服务 99.9% SLA,任何节点故障要分钟级切换',
+      '多地办公 / 多分公司,需要按地域部署 + 数据回源',
+      '业务高峰期(报表季 / 招标季)流量翻 5-10 倍,弹性必须',
+    ],
+    features: [
+      '多 server 节点 + Nginx / HAProxy 负载均衡',
+      'PostgreSQL 主从 + 读写分离 + Patroni 自动故障切换',
+      'Redis Cluster / Sentinel 高可用',
+      'Milvus 分布式 / Qdrant 多节点 向量库分片',
+      'Kubernetes 编排可选:HPA 自动扩容 + Helm Chart 一键升级',
+      '多地容灾:同城双活 / 异地灾备(主-备 / 主-主)',
+      '全链路 trace + APM:Jaeger / SkyWalking / OTLP',
+      '蓝绿 / 灰度 / 金丝雀发布,生产环境零停机',
+    ],
+    dataSources: '分布式 PostgreSQL / TiDB · Redis 集群 · 分布式向量库 · 模型集群(GPU 池化)',
+    solves: '让千人级 / 万人级集团 AI 平台扛得住高并发、过得了 SLA、扛得住故障;让运维从"救火"变"看仪表盘"。',
   },
 }
 
@@ -1213,6 +1366,115 @@ export default {
 .kb-node-sub-sm             { font-size: 10px;   fill: #6b7891; }
 .kb-node-sub-faint          { fill: #97a2bd; }
 .kb-flow-label              { font-size: 10.5px; fill: #c97b4a; font-weight: 500; }
+
+/* 部署模式 + 操作系统支持面板 */
+.kb-empty-deploy {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 8px;
+  border-top: 1px solid #eef2f8;
+  background: linear-gradient(180deg, rgba(247, 250, 255, 0.6) 0%, transparent 100%);
+}
+.kb-empty-deploy-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kb-empty-deploy-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #4a5878;
+  letter-spacing: 0.04em;
+}
+.kb-empty-deploy-hint { font-size: 11px; color: #94a3b8; }
+
+.kb-empty-deploy-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.kb-empty-deploy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #d8e0ec;
+  background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+.kb-empty-deploy-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 35%, rgba(110, 168, 255, 0.18) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+.kb-empty-deploy-card:hover {
+  border-color: #6ea8ff;
+  box-shadow: 0 4px 14px rgba(110, 168, 255, 0.22);
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #f7faff 0%, #eef3ff 100%);
+}
+.kb-empty-deploy-card:hover::after { transform: translateX(120%); }
+.kb-empty-deploy-card:focus { outline: none; }
+.kb-empty-deploy-card:focus-visible { border-color: #6635b6; box-shadow: 0 0 0 3px rgba(102, 53, 182, 0.18); }
+
+.kb-empty-deploy-icon { font-size: 18px; line-height: 1; }
+.kb-empty-deploy-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2a44;
+  letter-spacing: 0.02em;
+}
+.kb-empty-deploy-brief { font-size: 11px; color: #6b7891; line-height: 1.45; }
+
+/* OS 支持 chip 行 */
+.kb-empty-deploy-os {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding-top: 4px;
+}
+.kb-empty-os-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #d8e0ec;
+  color: #1f2a44;
+  white-space: nowrap;
+}
+.kb-empty-os-chip-cn {
+  background: linear-gradient(135deg, #fff1eb 0%, #ffe1d3 100%);
+  border-color: #f4b88e;
+  color: #8a4a18;
+  font-weight: 500;
+}
+.kb-empty-os-chip-arch {
+  background: linear-gradient(135deg, #eef9f1 0%, #d9f2e1 100%);
+  border-color: #97cfa9;
+  color: #1f6f3a;
+}
+
+/* 窄宽下 4 列 → 2 列 */
+@media (max-width: 760px) {
+  .kb-empty-deploy-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* 醒目广告语 — 流式打字机 */
 .kb-empty-tagline {
