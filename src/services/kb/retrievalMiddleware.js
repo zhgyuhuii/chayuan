@@ -81,13 +81,22 @@ export async function applyKbRetrievalIfBound(ctx) {
     return ctx
   }
 
-  const { systemPrompt, userPrompt, citationMap } = buildPrompt({
+  const { systemPrompt, userPrompt, citationMap, error: pbError } = buildPrompt({
     mode,
     sources,
     userQuery: queryText,
     selectionText: ctx.selectionText
   })
   ctx.assistantMessageMeta.kbCitationMap = citationMap
+
+  // promptBuilder 显式报错时(如 verify 缺 selectionText),挂到 meta 给 UI 展示
+  if (pbError) {
+    ctx.assistantMessageMeta.kbPromptError = pbError
+    if (pbError === 'missing_selection') {
+      ctx.assistantMessageMeta.kbWarning =
+        '⚠️ 核对模式需要先在文档里选中要核对的段落,本次将仅展示检索到的相关知识片段供你参考。'
+    }
+  }
 
   // 注入 system prompt;若用户最后一条 message 是 selection 类型,可改写 user content
   _prependSystemMessage(ctx, systemPrompt)

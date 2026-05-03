@@ -14,6 +14,8 @@
 		"test:evolution": "node scripts/test-evolution-smoke.mjs",
 		"test:services": "node scripts/test-service-smoke.mjs",
 		"test:kb-integration": "node scripts/test-kb-integration-smoke.mjs",
+		"audit:kb-prompts": "node scripts/audit-kb-prompts.mjs",
+		"audit:kb-prompts:dump": "node scripts/audit-kb-prompts.mjs --dump",
 		"audit:integration": "node scripts/integration-audit.mjs --orphans",
 		"audit:full": "node scripts/integration-audit.mjs",
 		"generate:logo-avatar-dataurl": "node scripts/generate-logo-avatar-dataurl.mjs",
