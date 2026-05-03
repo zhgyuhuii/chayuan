@@ -45,7 +45,9 @@ async function _ensureWorkerPlanner() {
 }
 
 const FINAL_TOP_K_DEFAULT = 12
-const TOTAL_TIMEOUT_MS = 60_000
+// 120s:总超时必须比下层 queryUnified (90s) + 偶发重试 + 后处理留出余量,
+// 否则 orchestrator 的 AbortController 会把已经成功的请求半途砍掉。
+const TOTAL_TIMEOUT_MS = 120_000
 
 const _batchLru = new Map()  // signature → { value, expireAt }
 const LRU_TTL_MS = 5 * 60_000
