@@ -15125,9 +15125,12 @@ export default {
       this.startMessageEntryEffect(userMessageId, 'user')
       this.startMessageEntryEffect(assistantMsg?.id, 'assistant')
 
-      const localFaq = this.shouldUseCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
-        ? this.buildCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
-        : resolveAssistantLocalFaq(text)
+      const hasBoundKnowledgeBase = this.currentChatKbBinding.kbNames.length > 0
+      const localFaq = hasBoundKnowledgeBase
+        ? null
+        : (this.shouldUseCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
+            ? this.buildCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
+            : resolveAssistantLocalFaq(text))
       if (localFaq) {
         this.startAssistantLocalFaqMessage(prepared, localFaq)
         return
