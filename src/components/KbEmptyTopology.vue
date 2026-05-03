@@ -52,7 +52,7 @@
       <!-- 公众号二维码:右下角浮卡。
            qrCodeSrc 通过 prop 透传(默认指向 chayuan/public/wechat-qrcode.png);
            如果项目没放图,会自动 fallback 到 SVG 占位图案,不会显示破图。 -->
-      <aside class="kb-empty-qrcode" :title="'扫码关注察元公众号'">
+      <aside class="kb-empty-qrcode" :title="'扫码关注察元公众号 — 同一个码也是支持我们的入口'">
         <div class="kb-empty-qrcode-image">
           <img
             v-if="qrLoaded"
@@ -107,8 +107,8 @@
           </svg>
         </div>
         <div class="kb-empty-qrcode-cap">
-          <strong>关注我们</strong>
-          <span>扫码进察元公众号 · 持续获取产品动态</span>
+          <strong>关注我们 · 支持我们</strong>
+          <span>同一二维码 · 进察元公众号</span>
         </div>
       </aside>
 
@@ -317,11 +317,19 @@
       </svg>
     </div>
 
-    <!-- 醒目广告语:整张拓扑底部主推 slogan,占满一行,渐变文字 + 微动画 -->
+    <!-- 醒目广告语:流式逐字打出,模拟 LLM 输出,带闪烁光标 -->
     <div class="kb-empty-tagline" role="banner">
-      <h2 class="kb-empty-tagline-main">现代化 AI 办公平台</h2>
-      <p class="kb-empty-tagline-sub">
-        WPS 原生 · 文档 + 数据 + 模型 + 应用,一以贯之 · 从一句问询,到完整产出
+      <h2 class="kb-empty-tagline-main">
+        <span class="kb-empty-tagline-text">{{ taglineMainShown }}</span>
+        <span
+          v-if="!taglineMainDone || !taglineSubDone"
+          class="kb-empty-tagline-cursor"
+          :class="{ 'on-main': !taglineMainDone, 'on-sub': taglineMainDone }"
+          aria-hidden="true"
+        />
+      </h2>
+      <p class="kb-empty-tagline-sub" v-show="taglineMainDone">
+        {{ taglineSubShown }}
       </p>
     </div>
 
@@ -337,6 +345,13 @@
 </template>
 
 <script>
+// 广告语原文 — 流式打字机驱动逐字渲染 taglineMainShown / taglineSubShown
+const TAGLINE_MAIN = '现代化 AI 办公平台'
+const TAGLINE_SUB  = 'WPS 原生 · 文档 + 数据 + 模型 + 应用,一以贯之 · 从一句问询,到完整产出'
+const TYPE_INTERVAL_MAIN_MS = 90  // 主标节奏(慢一点,有仪式感)
+const TYPE_INTERVAL_SUB_MS  = 35  // 副标节奏(快一点,顺着阅读流)
+const TAGLINE_PAUSE_BETWEEN_MS = 280  // 主标完→副标开始 之间的小停顿
+
 export default {
   name: 'KbEmptyTopology',
   emits: ['create'],
@@ -351,12 +366,70 @@ export default {
   },
   data() {
     return {
-      qrLoaded: true,  // 默认认为可加载;@error 触发后置 false 走 SVG 占位
+      qrLoaded: true,        // @error 触发后置 false 走 SVG 占位
+      taglineMainShown: '',
+      taglineSubShown: '',
+      taglineMainDone: false,
+      taglineSubDone: false,
+    }
+  },
+  mounted() {
+    this._typeTimers = []
+    // 检测 prefers-reduced-motion,直接定稿不打字
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) {
+      this.taglineMainShown = TAGLINE_MAIN
+      this.taglineSubShown = TAGLINE_SUB
+      this.taglineMainDone = true
+      this.taglineSubDone = true
+      return
+    }
+    this.startTypingMain()
+  },
+  beforeUnmount() {
+    if (Array.isArray(this._typeTimers)) {
+      this._typeTimers.forEach(t => clearTimeout(t))
+      this._typeTimers = []
     }
   },
   methods: {
     onQrError() {
       this.qrLoaded = false
+    },
+    startTypingMain() {
+      let i = 0
+      const tick = () => {
+        if (i >= TAGLINE_MAIN.length) {
+          this.taglineMainDone = true
+          // 主标打完,延迟一拍再打副标
+          const t = setTimeout(() => this.startTypingSub(), TAGLINE_PAUSE_BETWEEN_MS)
+          this._typeTimers.push(t)
+          return
+        }
+        // Array.from 处理 emoji / 多字节字符;TAGLINE_MAIN 全是 BMP 字符也安全
+        this.taglineMainShown = Array.from(TAGLINE_MAIN).slice(0, i + 1).join('')
+        i += 1
+        const t = setTimeout(tick, TYPE_INTERVAL_MAIN_MS)
+        this._typeTimers.push(t)
+      }
+      tick()
+    },
+    startTypingSub() {
+      let i = 0
+      const chars = Array.from(TAGLINE_SUB)
+      const tick = () => {
+        if (i >= chars.length) {
+          this.taglineSubDone = true
+          return
+        }
+        this.taglineSubShown = chars.slice(0, i + 1).join('')
+        i += 1
+        const t = setTimeout(tick, TYPE_INTERVAL_SUB_MS)
+        this._typeTimers.push(t)
+      }
+      tick()
     },
   },
 }
@@ -535,17 +608,24 @@ export default {
 .kb-node-sub-faint          { fill: #97a2bd; }
 .kb-flow-label              { font-size: 10.5px; fill: #c97b4a; font-weight: 500; }
 
-/* 醒目广告语 */
+/* 醒目广告语 — 流式打字机 */
 .kb-empty-tagline {
   flex-shrink: 0;
   text-align: center;
   padding: 14px 18px 6px;
+  /* 预留副标行高,避免打字过程中布局上下抖动 */
+  min-height: 70px;
 }
 .kb-empty-tagline-main {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.kb-empty-tagline-text {
   background: linear-gradient(90deg, #2a6ddf 0%, #6635b6 50%, #c97b4a 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -561,10 +641,26 @@ export default {
   letter-spacing: 0.04em;
   color: #6b7891;
 }
+/* 打字机闪烁光标 — 主标和副标共用,通过 .on-main/.on-sub 切换尺寸 */
+.kb-empty-tagline-cursor {
+  display: inline-block;
+  width: 2px;
+  background: #6635b6;
+  vertical-align: -3px;
+  margin-left: 4px;
+  animation: kbCursorBlink 0.85s steps(1, end) infinite;
+  border-radius: 1px;
+}
+.kb-empty-tagline-cursor.on-main { height: 26px; }
+.kb-empty-tagline-cursor.on-sub  { height: 14px; background: #6b7891; vertical-align: -1px; }
 
 @keyframes kbTaglineSheen {
   0%, 100% { background-position: 0% 50%; }
   50%      { background-position: 100% 50%; }
+}
+@keyframes kbCursorBlink {
+  0%, 50%   { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
 /* 公众号二维码:固定在 canvas 右下角 */
