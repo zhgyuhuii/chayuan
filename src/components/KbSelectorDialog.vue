@@ -136,6 +136,7 @@ export default {
       selected: new Set(),
       filterText: '',
       collapsed: {},
+      currentConnectionId: '',
       config: {
         topK: 5,
         fusion: 'rrf',
@@ -182,12 +183,16 @@ export default {
         hybrid: cfg.hybrid !== false,
         rerank: cfg.rerank === true
       }
-      const conn = await connectionStore.getCurrentConnection()
+      const preferredConnectionId = String(this.initialBinding?.connectionId || '').trim()
+      let conn = preferredConnectionId ? connectionStore.getConnection(preferredConnectionId) : null
+      if (!conn) conn = await connectionStore.getCurrentConnection()
       if (!conn) {
         this.hasConnection = false
+        this.currentConnectionId = ''
         return
       }
       this.hasConnection = true
+      this.currentConnectionId = conn.id || ''
       await this.loadTree(conn)
     },
     async refresh() {
@@ -264,7 +269,8 @@ export default {
     confirm() {
       this.$emit('confirm', {
         kbNames: this.selectedNames,
-        config: { ...this.config }
+        config: { ...this.config },
+        connectionId: this.currentConnectionId
       })
       this.$emit('close')
     },

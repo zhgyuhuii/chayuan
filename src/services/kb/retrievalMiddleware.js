@@ -24,7 +24,7 @@
  *   4. 把 sources + plan 元信息挂到 assistantMessageMeta 给气泡 UI 用
  */
 
-import { getCurrentConnection } from './connectionStore.js'
+import { getConnection, getCurrentConnection } from './connectionStore.js'
 import { run as runSearch } from './searchOrchestrator.js'
 import { build as buildPrompt } from './promptBuilder.js'
 import { isEnabled as _isFlagEnabled } from '../../utils/featureFlags.js'
@@ -37,10 +37,10 @@ export async function applyKbRetrievalIfBound(ctx) {
     if (!_isFlagEnabled('kbRemoteIntegration')) return ctx
   } catch (e) { /* 缺 featureFlags 模块时默认放行 */ }
 
-  const binding = ctx?.chat?.kbBindings
+  const binding = _normalizeBinding(ctx?.chat?.kbBindings)
   if (!binding?.kbNames?.length) return ctx
 
-  const connection = getCurrentConnection()
+  const connection = (binding.connectionId ? getConnection(binding.connectionId) : null) || getCurrentConnection()
   if (!connection) return ctx
 
   const queryText = ctx.kbQueryText || ctx.userMessage?.content || ''
@@ -113,6 +113,37 @@ export async function applyKbRetrievalIfBound(ctx) {
   }
 
   return ctx
+}
+
+function _normalizeBinding(raw) {
+  const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
+  const kbNames = Array.from(new Set(
+    (Array.isArray(raw?.kbNames) ? raw.kbNames : [])
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+  ))
+  const topK = Number(raw?.topK ?? cfg.topK)
+  const finalTopK = Number(raw?.finalTopK ?? cfg.finalTopK)
+  const scoreThreshold = Number(raw?.scoreThreshold ?? cfg.scoreThreshold)
+  const mergeStrategy = String(raw?.mergeStrategy || raw?.fusion || cfg.mergeStrategy || cfg.fusion || 'rrf').trim() || 'rrf'
+  return {
+    ...raw,
+    kbNames,
+    connectionId: String(raw?.connectionId || '').trim(),
+    topK: Number.isFinite(topK) && topK > 0 ? topK : 5,
+    finalTopK: Number.isFinite(finalTopK) && finalTopK > 0 ? finalTopK : undefined,
+    scoreThreshold: Number.isFinite(scoreThreshold) ? scoreThreshold : undefined,
+    hybrid: (raw?.hybrid ?? cfg.hybrid) !== false,
+    rerank: (raw?.rerank ?? cfg.rerank) === true,
+    mergeStrategy,
+    config: {
+      ...cfg,
+      topK: Number.isFinite(topK) && topK > 0 ? topK : 5,
+      fusion: mergeStrategy,
+      hybrid: (raw?.hybrid ?? cfg.hybrid) !== false,
+      rerank: (raw?.rerank ?? cfg.rerank) === true
+    }
+  }
 }
 
 function _prependSystemMessage(ctx, content) {
