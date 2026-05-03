@@ -101,15 +101,10 @@ export async function applyKbRetrievalIfBound(ctx) {
   // 注入 system prompt;若用户最后一条 message 是 selection 类型,可改写 user content
   _prependSystemMessage(ctx, systemPrompt)
 
-  if (mode === 'verify' || mode === 'summarize') {
-    // 这两种 mode 让 LLM 看 userPrompt 比 user 原话更直接
-    const last = ctx.messagesForApi[ctx.messagesForApi.length - 1]
-    if (last && last.role === 'user') {
-      last.content = userPrompt
-    }
-  } else {
-    // qa 模式:保留用户原问,sources 通过 system 给到
-    // 但 system 里的 sourcesBlock 已经够用,user 不动
+  const last = ctx.messagesForApi[ctx.messagesForApi.length - 1]
+  if (last && last.role === 'user' && userPrompt) {
+    // userPrompt 内含【知识库片段】和【问题】;QA 也必须替换,否则模型看不到检索内容。
+    last.content = userPrompt
   }
 
   return ctx
