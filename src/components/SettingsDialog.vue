@@ -3655,6 +3655,7 @@ export default {
         const params = new URLSearchParams(hashQuery || searchQuery)
         const menu = params.get('menu')
         const item = params.get('item')
+        const sub = params.get('sub')
         if (menu && HIDDEN_SETTINGS_MAIN_MENU_KEYS.has(menu)) {
           this.selectMainMenu('model-settings')
           return
@@ -3669,6 +3670,13 @@ export default {
           })
         } else if (menu === 'model-settings') {
           this.selectMainMenu('model-settings')
+        } else if (menu === 'general-settings' || menu === 'general') {
+          // 从外部("前往设置"按钮)指定到常规设置 + 子页(如 sub=kb 跳到知识库设置)。
+          // 之前这里没处理 general 分支,导致新窗口落地后停在默认菜单,kb 子项要再点一次。
+          this.selectMainMenu('general')
+          if (sub) {
+            this.$nextTick(() => { this.selectSubMenu(sub) })
+          }
         }
       } catch (e) {
         console.warn('applyInitialMenuSelection:', e)

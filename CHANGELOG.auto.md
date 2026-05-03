@@ -1,3 +1,21 @@
+## 2026-05-03 22:13:38 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/SettingsDialog.vue`
+- ` M src/utils/settingsWindowManager.js`
+
+### Diff Stat
+
+```text
+ src/components/SettingsDialog.vue  | 8 ++++++++
+ src/utils/settingsWindowManager.js | 5 +++++
+ 2 files changed, 13 insertions(+)
+```
+
 ## 2026-05-03 22:08:47 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
