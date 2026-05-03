@@ -316,67 +316,6 @@
       </svg>
     </div>
 
-    <!-- 部署模式 + 操作系统支持 -->
-    <div class="kb-empty-deploy">
-      <div class="kb-empty-deploy-head">
-        <span class="kb-empty-deploy-label">部署模式</span>
-        <span class="kb-empty-deploy-hint">点击查看每种部署的适用场景与硬件 / 系统要求</span>
-      </div>
-      <div class="kb-empty-deploy-cards">
-        <button
-          type="button"
-          class="kb-empty-deploy-card"
-          @click="showModule('deploy_standalone')"
-          aria-label="单机部署 — 查看介绍"
-        >
-          <span class="kb-empty-deploy-icon">💻</span>
-          <span class="kb-empty-deploy-name">单机部署</span>
-          <span class="kb-empty-deploy-brief">5 分钟一键启动 · 适合 POC / 小团队</span>
-        </button>
-        <button
-          type="button"
-          class="kb-empty-deploy-card"
-          @click="showModule('deploy_offline')"
-          aria-label="离线部署 — 查看介绍"
-        >
-          <span class="kb-empty-deploy-icon">🔒</span>
-          <span class="kb-empty-deploy-name">离线部署</span>
-          <span class="kb-empty-deploy-brief">数据 0 出网 · 等保 / 信创合规</span>
-        </button>
-        <button
-          type="button"
-          class="kb-empty-deploy-card"
-          @click="showModule('deploy_service')"
-          aria-label="服务部署 — 查看介绍"
-        >
-          <span class="kb-empty-deploy-icon">🌐</span>
-          <span class="kb-empty-deploy-name">服务部署</span>
-          <span class="kb-empty-deploy-brief">部门 / 中型企业 · 50-500 用户</span>
-        </button>
-        <button
-          type="button"
-          class="kb-empty-deploy-card"
-          @click="showModule('deploy_cluster')"
-          aria-label="集群部署 — 查看介绍"
-        >
-          <span class="kb-empty-deploy-icon">🏢</span>
-          <span class="kb-empty-deploy-name">集群部署</span>
-          <span class="kb-empty-deploy-brief">5000+ 用户 · HA · 多地容灾</span>
-        </button>
-      </div>
-
-      <div class="kb-empty-deploy-os">
-        <span class="kb-empty-deploy-label">支持系统</span>
-        <span class="kb-empty-os-chip">🪟 Windows 10/11/Server 2019+</span>
-        <span class="kb-empty-os-chip">🐧 Linux Ubuntu/CentOS/RHEL/Debian</span>
-        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 麒麟 V10</span>
-        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 统信 UOS</span>
-        <span class="kb-empty-os-chip kb-empty-os-chip-cn">🇨🇳 中科方德 / 红旗</span>
-        <span class="kb-empty-os-chip">🍎 macOS 12+</span>
-        <span class="kb-empty-os-chip kb-empty-os-chip-arch">⚙️ 鲲鹏 / 飞腾 / 龙芯 / 兆芯</span>
-      </div>
-    </div>
-
     <!-- 醒目广告语:流式逐字打出,模拟 LLM 输出,带闪烁光标 -->
     <div class="kb-empty-tagline" role="banner">
       <h2 class="kb-empty-tagline-main">
@@ -391,6 +330,33 @@
       <p class="kb-empty-tagline-sub" v-show="taglineMainDone">
         {{ taglineSubShown }}
       </p>
+    </div>
+
+    <!-- 紧凑参考条:部署模式 + 操作系统支持 — 单行,不抢拓扑视觉
+         设计上:中性灰蓝、字号 11px、悬停才点亮蓝色,与拓扑节点形成清晰层级差 -->
+    <div class="kb-empty-info-strip">
+      <div class="kb-empty-info-group">
+        <span class="kb-empty-info-label">部署</span>
+        <button type="button" class="kb-empty-info-chip" @click="showModule('deploy_standalone')">
+          <span aria-hidden="true">💻</span>单机
+        </button>
+        <button type="button" class="kb-empty-info-chip" @click="showModule('deploy_service')">
+          <span aria-hidden="true">🌐</span>服务
+        </button>
+        <button type="button" class="kb-empty-info-chip" @click="showModule('deploy_cluster')">
+          <span aria-hidden="true">🏢</span>集群
+        </button>
+      </div>
+      <span class="kb-empty-info-sep" aria-hidden="true">·</span>
+      <div class="kb-empty-info-group">
+        <span class="kb-empty-info-label">系统</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">Windows</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">Linux</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">麒麟 V10</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">统信 UOS</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">macOS</span>
+        <span class="kb-empty-info-chip kb-empty-info-chip-static">鲲鹏/飞腾/龙芯</span>
+      </div>
     </div>
 
     <footer class="kb-empty-topology-foot">
@@ -697,28 +663,6 @@ const MODULES = {
     ],
     dataSources: '本地 SQLite/PostgreSQL · 本地 Redis · 本地 FAISS · 本地 Ollama 模型',
     solves: '把"先试再说"变成 5 分钟的事;让业务部门 POC 不用排队等运维;出差现场也能稳定演示。',
-  },
-
-  deploy_offline: {
-    icon: '🔒',
-    name: '离线部署',
-    tagline: 'Air-gapped · 数据 0 出网 · 等保 / 信创合规',
-    painPoints: [
-      '数据敏感,合规要求"任何字节都不能出公司网络"',
-      '政府 / 金融 / 军工 / 医疗等场景过不了等保三级 / 国密评估',
-      '云厂商 API 调用记录可能被追溯,法务部门不批',
-      '现网设备老旧,装包要带依赖、带模型权重、带证书',
-    ],
-    features: [
-      '离线安装包:含完整依赖镜像 + 模型权重 + 国产 CA 证书',
-      '内网模型推理:Ollama / vLLM / TGI 自部署,不调用任何云 API',
-      '国密改造:SM2 / SM3 / SM4 加签验签 + HTTPS 国密套件',
-      '等保三级配套文档 + 测评报告 + 加固脚本',
-      '审计 / 留痕全开:操作日志、AI 调用日志、知识库访问日志归档 ≥ 6 个月',
-      '信创栈适配:麒麟 V10 + 鲲鹏 / 飞腾 / 龙芯 + 达梦 / 人大金仓',
-    ],
-    dataSources: '内网 PostgreSQL / 达梦 / 人大金仓 · 内网 Redis · 内网向量库 · 内网模型(自部署)',
-    solves: '让政企 / 金融 / 军工真正能用 AI — 数据 100% 留内网,合规审查可过,既享受 AI 又守住红线。',
   },
 
   deploy_service: {
@@ -1367,113 +1311,73 @@ export default {
 .kb-node-sub-faint          { fill: #97a2bd; }
 .kb-flow-label              { font-size: 10.5px; fill: #c97b4a; font-weight: 500; }
 
-/* 部署模式 + 操作系统支持面板 */
-.kb-empty-deploy {
+/* 紧凑参考条:部署 + 系统支持 — 单行,中性配色,不与拓扑抢戏。
+   设计原则:
+     · 字号 11px 比拓扑节点小一档,形成层级;
+     · 单行 flex-wrap,空间不够再换行,绝不堆视觉重量;
+     · 默认中性灰蓝(#475569 / #cbd5e1),只在 hover 时点亮蓝色;
+     · 不用渐变 / 阴影 / 大色块,所有装饰留给拓扑本身。 */
+.kb-empty-info-strip {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 18px 8px;
-  border-top: 1px solid #eef2f8;
-  background: linear-gradient(180deg, rgba(247, 250, 255, 0.6) 0%, transparent 100%);
-}
-.kb-empty-deploy-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.kb-empty-deploy-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #4a5878;
-  letter-spacing: 0.04em;
-}
-.kb-empty-deploy-hint { font-size: 11px; color: #94a3b8; }
-
-.kb-empty-deploy-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-.kb-empty-deploy-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid #d8e0ec;
-  background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
-  border-radius: 12px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-  position: relative;
-  overflow: hidden;
-}
-.kb-empty-deploy-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 35%, rgba(110, 168, 255, 0.18) 50%, transparent 65%);
-  transform: translateX(-120%);
-  transition: transform 0.6s ease;
-  pointer-events: none;
-}
-.kb-empty-deploy-card:hover {
-  border-color: #6ea8ff;
-  box-shadow: 0 4px 14px rgba(110, 168, 255, 0.22);
-  transform: translateY(-2px);
-  background: linear-gradient(135deg, #f7faff 0%, #eef3ff 100%);
-}
-.kb-empty-deploy-card:hover::after { transform: translateX(120%); }
-.kb-empty-deploy-card:focus { outline: none; }
-.kb-empty-deploy-card:focus-visible { border-color: #6635b6; box-shadow: 0 0 0 3px rgba(102, 53, 182, 0.18); }
-
-.kb-empty-deploy-icon { font-size: 18px; line-height: 1; }
-.kb-empty-deploy-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2a44;
-  letter-spacing: 0.02em;
-}
-.kb-empty-deploy-brief { font-size: 11px; color: #6b7891; line-height: 1.45; }
-
-/* OS 支持 chip 行 */
-.kb-empty-deploy-os {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  padding-top: 4px;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 8px 18px 4px;
 }
-.kb-empty-os-chip {
+.kb-empty-info-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kb-empty-info-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  margin-right: 2px;
+}
+.kb-empty-info-sep {
+  color: #cbd5e1;
+  font-size: 11px;
+  user-select: none;
+}
+.kb-empty-info-chip {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  padding: 3px 9px;
+  font-family: inherit;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid #d8e0ec;
-  color: #1f2a44;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  color: #475569;
   white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
-.kb-empty-os-chip-cn {
-  background: linear-gradient(135deg, #fff1eb 0%, #ffe1d3 100%);
-  border-color: #f4b88e;
-  color: #8a4a18;
-  font-weight: 500;
+.kb-empty-info-chip:hover {
+  color: #2a6ddf;
+  border-color: #b9c8ff;
+  background: rgba(110, 168, 255, 0.08);
 }
-.kb-empty-os-chip-arch {
-  background: linear-gradient(135deg, #eef9f1 0%, #d9f2e1 100%);
-  border-color: #97cfa9;
-  color: #1f6f3a;
+.kb-empty-info-chip:focus { outline: none; }
+.kb-empty-info-chip:focus-visible {
+  border-color: #6635b6;
+  box-shadow: 0 0 0 2px rgba(102, 53, 182, 0.16);
 }
-
-/* 窄宽下 4 列 → 2 列 */
-@media (max-width: 760px) {
-  .kb-empty-deploy-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* 静态 chip(系统):不可点,鼠标 default,不亮蓝 */
+.kb-empty-info-chip-static {
+  cursor: default;
+  background: transparent;
+}
+.kb-empty-info-chip-static:hover {
+  color: #475569;
+  border-color: #e2e8f0;
+  background: transparent;
 }
 
 /* 醒目广告语 — 流式打字机 */
