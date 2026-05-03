@@ -44,8 +44,13 @@ function normalizeQuery(query) {
   const normalized = {}
   const menu = String(query?.menu || '').trim()
   const item = String(query?.item || '').trim()
+  // sub:在 menu='general' / 'general-settings' 时指定子菜单(例如 'kb' 表示知识库设置)。
+  // 之前白名单只保留 menu 和 item,sub 在窗口间传递的过程中被丢,导致点击"前往设置"
+  // 跳到设置页但停留在默认子页,看不到知识库设置。
+  const sub = String(query?.sub || '').trim()
   if (menu) normalized.menu = menu
   if (item) normalized.item = item
+  if (sub) normalized.sub = sub
   return normalized
 }
 
