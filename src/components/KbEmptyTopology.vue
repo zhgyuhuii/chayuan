@@ -108,7 +108,6 @@
         </div>
         <div class="kb-empty-qrcode-cap">
           <strong>关注我们 · 支持我们</strong>
-          <span>同一二维码 · 进察元公众号</span>
         </div>
       </aside>
 
@@ -345,9 +344,44 @@
 </template>
 
 <script>
-// 广告语原文 — 流式打字机驱动逐字渲染 taglineMainShown / taglineSubShown
-const TAGLINE_MAIN = '现代化 AI 办公平台'
-const TAGLINE_SUB  = 'WPS 原生 · 文档 + 数据 + 模型 + 应用,一以贯之 · 从一句问询,到完整产出'
+// 广告语候选池 — 每次 mount 随机挑一对(主标 + 副标)。
+// 全部基于察元的真实能力面:Agent 编排 / 统一智库 / 多模态 / 反馈闭环 / 模型自由。
+// 不出现 WPS 字样,保持中立的 "现代化 AI 办公平台" 定位。
+const TAGLINE_VARIANTS = [
+  {
+    main: '现代化 AI 办公平台',
+    sub:  'Agent 编排 · 多模态接入 · 闭环进化',
+  },
+  {
+    main: '新一代企业知识中枢',
+    sub:  '文档 · 数据 · 模型 · 应用,一以贯之 · 从一句问询到完整产出',
+  },
+  {
+    main: '让每一份资料都拥有大脑',
+    sub:  '多源知识统一查询 · 多模态能力一站接入 · 反馈闭环越用越好用',
+  },
+  {
+    main: '知识统一 · 模型自由 · 反馈进化',
+    sub:  '搜索 → 思考 → 行动 · 一个入口,完成办公全流程',
+  },
+  {
+    main: '懂数据,会写文档的 AI 助手',
+    sub:  '结构化 / 向量 / 图像 / 文档,一个智库就够了',
+  },
+  {
+    main: '面向办公场景的 AI 中枢',
+    sub:  'Agent 编排 · 知识统一 · 模型自由 · 应用闭环',
+  },
+  {
+    main: '从问答到产出的 AI 平台',
+    sub:  '意图识别 · 多源检索 · 任务编排 · 引用回链',
+  },
+  {
+    main: '把 AI 真正接到企业的每一份资料上',
+    sub:  '不止检索,还能行动 · 不止回答,还能产出',
+  },
+]
+
 const TYPE_INTERVAL_MAIN_MS = 90  // 主标节奏(慢一点,有仪式感)
 const TYPE_INTERVAL_SUB_MS  = 35  // 副标节奏(快一点,顺着阅读流)
 const TAGLINE_PAUSE_BETWEEN_MS = 280  // 主标完→副标开始 之间的小停顿
@@ -361,12 +395,16 @@ export default {
     // 图片加载失败时自动 fallback 到 SVG 占位图案,不会显示破图。
     qrCodeSrc: {
       type: String,
-      default: '/wechat-qrcode.png',
+      default: '/images/pay/follow.png',
     },
   },
   data() {
+    // 每次组件初始化随机挑一对 — 用户每次打开 KB 设置看到的广告语都不一样
+    const pick = TAGLINE_VARIANTS[Math.floor(Math.random() * TAGLINE_VARIANTS.length)]
     return {
       qrLoaded: true,        // @error 触发后置 false 走 SVG 占位
+      taglineMain: pick.main,
+      taglineSub: pick.sub,
       taglineMainShown: '',
       taglineSubShown: '',
       taglineMainDone: false,
@@ -380,8 +418,8 @@ export default {
       && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduce) {
-      this.taglineMainShown = TAGLINE_MAIN
-      this.taglineSubShown = TAGLINE_SUB
+      this.taglineMainShown = this.taglineMain
+      this.taglineSubShown = this.taglineSub
       this.taglineMainDone = true
       this.taglineSubDone = true
       return
@@ -400,16 +438,15 @@ export default {
     },
     startTypingMain() {
       let i = 0
+      const chars = Array.from(this.taglineMain)
       const tick = () => {
-        if (i >= TAGLINE_MAIN.length) {
+        if (i >= chars.length) {
           this.taglineMainDone = true
-          // 主标打完,延迟一拍再打副标
           const t = setTimeout(() => this.startTypingSub(), TAGLINE_PAUSE_BETWEEN_MS)
           this._typeTimers.push(t)
           return
         }
-        // Array.from 处理 emoji / 多字节字符;TAGLINE_MAIN 全是 BMP 字符也安全
-        this.taglineMainShown = Array.from(TAGLINE_MAIN).slice(0, i + 1).join('')
+        this.taglineMainShown = chars.slice(0, i + 1).join('')
         i += 1
         const t = setTimeout(tick, TYPE_INTERVAL_MAIN_MS)
         this._typeTimers.push(t)
@@ -418,7 +455,7 @@ export default {
     },
     startTypingSub() {
       let i = 0
-      const chars = Array.from(TAGLINE_SUB)
+      const chars = Array.from(this.taglineSub)
       const tick = () => {
         if (i >= chars.length) {
           this.taglineSubDone = true
@@ -522,6 +559,7 @@ export default {
   margin-right: 4px;
 }
 .kb-empty-cap-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -533,18 +571,69 @@ export default {
   color: #1f2a44;
   white-space: nowrap;
   cursor: default;
+  overflow: hidden;
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  /* 入场:从下淡入 — stagger 由下面 nth-child 给 delay */
+  animation: kbPillIn 0.55s cubic-bezier(.2,.8,.2,1) backwards;
 }
+/* 鼠标悬停凸显 */
 .kb-empty-cap-pill:hover {
   border-color: #6ea8ff;
-  box-shadow: 0 2px 6px rgba(110, 168, 255, 0.18);
-  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(110, 168, 255, 0.28);
+  transform: translateY(-2px);
+  z-index: 1;
 }
+/* 持续流光:每个胶囊上有一道斜向亮带从左扫到右 */
+.kb-empty-cap-pill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg,
+    transparent 30%,
+    rgba(110, 168, 255, 0.28) 48%,
+    rgba(195, 140, 255, 0.22) 52%,
+    transparent 70%);
+  transform: translateX(-120%);
+  animation: kbPillShimmer 9s linear infinite;
+  pointer-events: none;
+}
+/* 入场 stagger + shimmer 错峰 — 每个胶囊不同节奏避免整齐划一 */
+.kb-empty-cap-pill:nth-of-type(1)  { animation-delay: 0.05s; }
+.kb-empty-cap-pill:nth-of-type(2)  { animation-delay: 0.13s; }
+.kb-empty-cap-pill:nth-of-type(3)  { animation-delay: 0.21s; }
+.kb-empty-cap-pill:nth-of-type(4)  { animation-delay: 0.29s; }
+.kb-empty-cap-pill:nth-of-type(5)  { animation-delay: 0.37s; }
+.kb-empty-cap-pill:nth-of-type(6)  { animation-delay: 0.45s; }
+.kb-empty-cap-pill:nth-of-type(7)  { animation-delay: 0.53s; }
+.kb-empty-cap-pill:nth-of-type(8)  { animation-delay: 0.61s; }
+.kb-empty-cap-pill:nth-of-type(9)  { animation-delay: 0.69s; }
+.kb-empty-cap-pill:nth-of-type(10) { animation-delay: 0.77s; }
+.kb-empty-cap-pill:nth-of-type(1)::after  { animation-delay: 0s; }
+.kb-empty-cap-pill:nth-of-type(2)::after  { animation-delay: 0.9s; }
+.kb-empty-cap-pill:nth-of-type(3)::after  { animation-delay: 1.8s; }
+.kb-empty-cap-pill:nth-of-type(4)::after  { animation-delay: 2.7s; }
+.kb-empty-cap-pill:nth-of-type(5)::after  { animation-delay: 3.6s; }
+.kb-empty-cap-pill:nth-of-type(6)::after  { animation-delay: 4.5s; }
+.kb-empty-cap-pill:nth-of-type(7)::after  { animation-delay: 5.4s; }
+.kb-empty-cap-pill:nth-of-type(8)::after  { animation-delay: 6.3s; }
+.kb-empty-cap-pill:nth-of-type(9)::after  { animation-delay: 7.2s; }
+.kb-empty-cap-pill:nth-of-type(10)::after { animation-delay: 8.1s; }
+
 .kb-empty-cap-pill-em {
   background: linear-gradient(135deg, #e7efff 0%, #f5e9ff 100%);
   border-color: #b9c8ff;
   color: #2a4cb4;
   font-weight: 600;
+}
+
+@keyframes kbPillIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes kbPillShimmer {
+  0%   { transform: translateX(-120%); }
+  18%  { transform: translateX(120%);  }  /* 短促扫过 */
+  100% { transform: translateX(120%);  }  /* 剩下时间静止,等下一轮 */
 }
 
 .kb-empty-topology-canvas {
@@ -555,13 +644,68 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 8px 18px;
+  /* 工程蓝图底色:深一点,衬托节点和线条 */
+  background:
+    radial-gradient(ellipse at top left, rgba(110, 168, 255, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(195, 140, 255, 0.05) 0%, transparent 55%),
+    linear-gradient(180deg, #f3f7fc 0%, #ffffff 100%);
+  overflow: hidden;
 }
+
+/* 缓慢漂浮的彩色光斑 — 增加纵深感,让画面"活"起来但不抢注意力 */
+.kb-empty-topology-canvas::before {
+  content: '';
+  position: absolute;
+  inset: -10%;  /* 向外扩 10% 让光斑边缘漂出去时不留断面 */
+  background:
+    radial-gradient(circle at 18% 28%, rgba(110, 168, 255, 0.22) 0%, transparent 30%),
+    radial-gradient(circle at 78% 72%, rgba(195, 140, 255, 0.20) 0%, transparent 32%),
+    radial-gradient(circle at 50% 92%, rgba(122, 220, 200, 0.16) 0%, transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(255, 178, 122, 0.14) 0%, transparent 28%);
+  filter: blur(6px);
+  animation: kbCanvasFloat 22s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 工程图纸点阵 — 每 24px 一个微小的暗点,精准透气 */
+.kb-empty-topology-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    /* 主点阵 */
+    radial-gradient(circle at 1px 1px, rgba(80, 100, 150, 0.10) 1px, transparent 1.5px),
+    /* 次级辅助线(更稀疏,5x 步长) */
+    linear-gradient(to right, rgba(80, 100, 150, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(80, 100, 150, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px, 120px 120px, 120px 120px;
+  background-position: 0 0, 0 0, 0 0;
+  /* 边缘渐隐 — 让网格不顶到边框 */
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 50%, transparent 95%);
+          mask-image: radial-gradient(ellipse at center, #000 50%, transparent 95%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes kbCanvasFloat {
+  0%, 100% { transform: translate(0, 0) rotate(0deg);     }
+  25%      { transform: translate(20px, -12px) rotate(0.3deg); }
+  50%      { transform: translate(-10px, 14px) rotate(-0.2deg); }
+  75%      { transform: translate(15px, 8px)   rotate(0.2deg); }
+}
+
 .kb-topo-svg {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   max-width: 1300px;
   max-height: 100%;
 }
+
+/* QR 浮卡保持在最上层,不被光斑遮挡 */
+.kb-empty-qrcode { z-index: 5; }
 
 /* 流光:在 stroke-dasharray 上滚 stroke-dashoffset */
 .kb-topo-flows-cool path {
@@ -756,6 +900,11 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .kb-topo-flows-cool path,
   .kb-topo-flows-warm path,
-  .kb-empty-dot { animation: none; }
+  .kb-empty-dot,
+  .kb-empty-cap-pill,
+  .kb-empty-cap-pill::after,
+  .kb-empty-topology-canvas::before,
+  .kb-empty-tagline-cursor,
+  .kb-empty-tagline-text { animation: none; }
 }
 </style>
