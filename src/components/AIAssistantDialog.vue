@@ -2217,8 +2217,26 @@ const DEFAULT_KB_BINDING_CONFIG = Object.freeze({
 
 function normalizeKbBinding(raw = {}) {
   const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
+  const sourceRefs = Array.from(new Map(
+    (Array.isArray(raw?.sourceRefs) ? raw.sourceRefs : [])
+      .map(r => ({
+        kuId: String(r?.kuId || r?.kb_id || r?.id || '').trim(),
+        kind: String(r?.kind || '').trim(),
+        subKind: String(r?.subKind || r?.sub_kind || '').trim(),
+        name: String(r?.name || r?.displayName || r?.display_name || '').trim()
+      }))
+      .filter(r => r.kuId)
+      .map(r => [r.kuId, r])
+  ).values())
+  const kuIds = Array.from(new Set([
+    ...(Array.isArray(raw?.kuIds) ? raw.kuIds : []),
+    ...sourceRefs.map(r => r.kuId)
+  ].map(v => String(v || '').trim()).filter(Boolean)))
   const kbNames = Array.from(new Set(
-    (Array.isArray(raw?.kbNames) ? raw.kbNames : [])
+    [
+      ...(Array.isArray(raw?.kbNames) ? raw.kbNames : []),
+      ...kuIds
+    ]
       .map(v => String(v || '').trim())
       .filter(Boolean)
   ))
@@ -2230,6 +2248,8 @@ function normalizeKbBinding(raw = {}) {
   const rerank = (raw?.rerank ?? cfg.rerank ?? DEFAULT_KB_BINDING_CONFIG.rerank) === true
   const normalized = {
     kbNames,
+    kuIds,
+    sourceRefs,
     config: {
       ...DEFAULT_KB_BINDING_CONFIG,
       ...cfg,
@@ -10736,10 +10756,17 @@ export default {
     },
     async resolvePrimaryConversationIntent(text, model) {
       const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
-      const localShortcut = resolveLocalIntentShortcut(text, {
+      const selectionContext = this.resolveBestSelectionContext()
+      const routeContext = {
         ruleIntent,
-        hasSelection: !!this.resolveBestSelectionContext()?.text,
+        hasSelection: !!selectionContext?.text,
+        selectedText: selectionContext?.text || '',
+        hasDocument: !!getActiveDocument(),
+        kbBindings: this.currentChatKbBinding,
         attachments: this.attachments
+      }
+      const localShortcut = resolveLocalIntentShortcut(text, {
+        ...routeContext
       })
       if (localShortcut.shortcut) {
         return localShortcut
@@ -10747,8 +10774,7 @@ export default {
       const routeCacheOptions = {
         providerId: model?.providerId,
         modelId: model?.modelId,
-        hasSelection: !!this.resolveBestSelectionContext()?.text,
-        attachments: this.attachments
+        ...routeContext
       }
       const cachedIntent = getCachedModelRouteIntent(text, routeCacheOptions)
       if (cachedIntent) return cachedIntent
@@ -15194,31 +15220,42 @@ export default {
 
       try {
         const routeStartedAt = Date.now()
-        const primaryIntent = hasBoundKnowledgeBase
+        const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        const unifiedLane = String(resolvedPrimaryIntent?.unifiedPlan?.lane || '').trim()
+        const primaryIntent = hasBoundKnowledgeBase && unifiedLane === 'knowledge_query'
           ? {
+              ...resolvedPrimaryIntent,
               kind: 'kb-chat',
               confidence: 'high',
-              reason: '已选择知识库，本轮优先进行知识库检索分析，不触发文档写回或修订。'
+              reason: [
+                resolvedPrimaryIntent?.reason,
+                '已选择知识库且识别为纯知识查询，本轮优先进行知识库检索分析。'
+              ].filter(Boolean).join(' ')
             }
-          : await this.resolvePrimaryConversationIntent(text, model)
+          : resolvedPrimaryIntent
         recordPerf({
           kind: 'send.route.primary',
           providerId: model?.providerId,
           modelId: model?.modelId,
           durationMs: Date.now() - routeStartedAt,
           ok: true,
-          note: hasBoundKnowledgeBase ? 'kb-first' : String(primaryIntent?.kind || 'chat')
+          note: hasBoundKnowledgeBase ? `kb:${unifiedLane || 'unknown'}` : String(primaryIntent?.kind || 'chat')
         })
-        const routeKind = String(primaryIntent?.kind || 'chat')
+        let routeKind = String(primaryIntent?.kind || 'chat')
+        if (unifiedLane === 'document_review' || unifiedLane === 'document_operation') routeKind = 'document-operation'
+        else if (unifiedLane === 'assistant_call') routeKind = 'assistant-task'
+        else if (unifiedLane === 'wps_capability') routeKind = 'wps-capability'
+        else if (unifiedLane === 'generated_output') routeKind = 'generated-output'
         assistantMsg.primaryRoute = {
           kind: routeKind,
           confidence: String(primaryIntent?.confidence || '').trim() || 'low',
-          reason: String(primaryIntent?.reason || '').trim()
+          reason: String(primaryIntent?.reason || '').trim(),
+          unifiedPlan: primaryIntent?.unifiedPlan || null
         }
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: `已识别为${this.getMessagePrimaryRouteLabel(assistantMsg) || '当前请求'}...`,
-          detail: hasBoundKnowledgeBase
-            ? '已选择知识库，本轮将先搜索知识库并结合当前材料分析，不会自动写回正文或批注。'
+          detail: hasBoundKnowledgeBase && routeKind === 'kb-chat'
+            ? '已选择知识库，本轮将先搜索知识库并结合当前材料回答。'
             : (this.getMessagePrimaryRouteDetail(assistantMsg) || '正在根据识别结果选择处理链路。'),
           percent: 12
         })

@@ -50,6 +50,7 @@
               <span v-for="n in 5" :key="n" :class="['kb-star', n <= starsOf(s) ? 'on' : 'off']">★</span>
             </span>
             <span class="kb-source-kb" :title="s.kb_name">{{ s.kb_name }}</span>
+            <span class="kb-source-kind">{{ sourceKindLabel(s) }}</span>
             <a
               v-if="downloadUrl(s)"
               class="kb-source-dl"
@@ -62,6 +63,9 @@
             <span v-else class="kb-source-noattachment">{{ shortFileName(s.file_name) }}</span>
           </div>
           <div v-if="isSourceExpanded(s, idx)" class="kb-source-snippet">{{ snippet(s) }}</div>
+          <div v-if="isSourceExpanded(s, idx) && structuredMeta(s)" class="kb-source-meta">
+            {{ structuredMeta(s) }}
+          </div>
           <div v-if="isSourceExpanded(s, idx) && (s.metadata?.section_title || s.from_section_ids?.length)" class="kb-source-meta">
             <template v-if="s.metadata?.section_title">
               §{{ s.metadata.section_title }}
@@ -154,6 +158,26 @@ export default {
     snippet(s) {
       const t = String(s?.page_content || s?.text || '').replace(/\s+/g, ' ').trim()
       return t.length > 280 ? `${t.slice(0, 280)}…` : t
+    },
+    sourceKindLabel(s) {
+      const kind = String(s?.kind || s?.metadata?.kind || s?.metadata?.source_type || '').toLowerCase()
+      if (kind === 'structured') return '结构化'
+      if (kind === 'vector') return '向量'
+      if (kind === 'office') return '办公'
+      return '文档'
+    },
+    structuredMeta(s) {
+      const kind = String(s?.kind || s?.metadata?.kind || s?.metadata?.source_type || '').toLowerCase()
+      if (kind === 'structured') {
+        const table = s?.metadata?.table || s?.metadata?.tables?.[0] || ''
+        const sql = s?.metadata?.sql || ''
+        return [table ? `表: ${table}` : '', sql ? `SQL: ${String(sql).slice(0, 160)}` : ''].filter(Boolean).join(' · ')
+      }
+      if (kind === 'vector') {
+        const collection = s?.metadata?.collection || s?.metadata?.collection_name || ''
+        return collection ? `Collection: ${collection}` : ''
+      }
+      return ''
     },
     shortFileName(name) {
       const n = String(name || '')
@@ -338,6 +362,13 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.kb-source-kind {
+  font-size: 11px;
+  color: #7a4b00;
+  background: #fff3d6;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 .kb-source-dl {
   margin-left: auto;

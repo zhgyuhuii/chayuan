@@ -46,13 +46,19 @@ function _renderSources(sources) {
     const cid = `c${i + 1}`
     const meta = []
     if (s.kb_name) meta.push(`kb=${s.kb_name}`)
+    if (s.kind || s.metadata?.kind || s.metadata?.source_type) {
+      meta.push(`kind=${s.kind || s.metadata?.kind || s.metadata?.source_type}`)
+    }
     if (s.file_name) meta.push(`file=${s.file_name}`)
+    if (s.metadata?.table) meta.push(`table=${s.metadata.table}`)
+    if (s.metadata?.collection) meta.push(`collection=${s.metadata.collection}`)
     if (s.metadata?.section_path) {
       const path = Array.isArray(s.metadata.section_path) ? s.metadata.section_path.join('/') : s.metadata.section_path
       if (path) meta.push(`sec=${path}`)
     }
     if (typeof s.trust === 'number') meta.push(`trust=${s.trust.toFixed(2)}`)
-    return `[${cid}] (${meta.join(', ')})\n${s.text}`
+    const sql = s.metadata?.sql ? `\nSQL: ${String(s.metadata.sql).slice(0, 500)}` : ''
+    return `[${cid}] (${meta.join(', ')})\n${s.text}${sql}`
   }).join('\n\n')
 }
 

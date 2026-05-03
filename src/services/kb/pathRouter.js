@@ -49,6 +49,7 @@ const JWT_ONLY = new Set([
   '/knowledge_universe/list',
   '/knowledge_universe/ask',
   '/knowledge_universe/tree',
+  '/api/v1/kb-query/search',
   '/knowledge_base/search_docs',  // 鼓励 HMAC 走 search_batch
 ])
 
