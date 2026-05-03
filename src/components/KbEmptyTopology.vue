@@ -208,12 +208,12 @@
           <text x="110" y="416" text-anchor="middle" class="kb-node-sub">User Query</text>
         </g>
 
-        <!-- Stage 1:察元 AI 助手 -->
-        <g filter="url(#kbNodeShadow)">
+        <!-- Stage 1:察元 AI 助手(中枢,可点击) -->
+        <g filter="url(#kbNodeShadow)" class="kb-topo-clickable" @click="showModule('aizhushou')" tabindex="0" role="button" aria-label="察元 AI 助手 — 查看介绍">
           <rect x="320" y="355" width="170" height="80" rx="16" fill="url(#kbHubFill)" stroke="url(#kbNodeStroke)" stroke-width="2" />
-          <text x="405" y="382" text-anchor="middle" class="kb-node-title kb-node-title-strong">察元 AI 助手</text>
+          <text x="405" y="382" text-anchor="middle" class="kb-node-title kb-node-title-strong">🧠 察元 AI 助手</text>
           <text x="405" y="402" text-anchor="middle" class="kb-node-sub">Agent / 编排中枢</text>
-          <text x="405" y="420" text-anchor="middle" class="kb-node-sub kb-node-sub-faint">意图识别 · 任务编排 · 引用回链</text>
+          <text x="405" y="420" text-anchor="middle" class="kb-node-sub kb-node-sub-faint">点击查看 · 意图识别 · 任务编排 · 引用回链</text>
         </g>
 
         <!-- Stage 2.1:察元智库 -->
@@ -363,29 +363,31 @@
             >×</button>
           </header>
 
-          <section class="kb-empty-modal-section">
-            <h4><span class="kb-empty-modal-pin">🎯</span>切入痛点</h4>
-            <ul class="kb-empty-modal-list kb-empty-modal-list-pain">
-              <li v-for="p in activeModuleData.painPoints" :key="p">{{ p }}</li>
-            </ul>
-          </section>
+          <div class="kb-empty-modal-body">
+            <section class="kb-empty-modal-section">
+              <h4><span class="kb-empty-modal-pin">🎯</span>现状难题</h4>
+              <ul class="kb-empty-modal-list kb-empty-modal-list-pain">
+                <li v-for="p in activeModuleData.painPoints" :key="p">{{ p }}</li>
+              </ul>
+            </section>
 
-          <section class="kb-empty-modal-section">
-            <h4><span class="kb-empty-modal-pin">🔧</span>核心能力</h4>
-            <ul class="kb-empty-modal-list kb-empty-modal-list-feat">
-              <li v-for="f in activeModuleData.features" :key="f">{{ f }}</li>
-            </ul>
-          </section>
+            <section class="kb-empty-modal-section">
+              <h4><span class="kb-empty-modal-pin">🔧</span>核心能力</h4>
+              <ul class="kb-empty-modal-list kb-empty-modal-list-feat">
+                <li v-for="f in activeModuleData.features" :key="f">{{ f }}</li>
+              </ul>
+            </section>
 
-          <section class="kb-empty-modal-section">
-            <h4><span class="kb-empty-modal-pin">🔌</span>可接入</h4>
-            <p class="kb-empty-modal-line">{{ activeModuleData.dataSources }}</p>
-          </section>
+            <section class="kb-empty-modal-section">
+              <h4><span class="kb-empty-modal-pin">🔌</span>可接入</h4>
+              <p class="kb-empty-modal-line">{{ activeModuleData.dataSources }}</p>
+            </section>
 
-          <section class="kb-empty-modal-section kb-empty-modal-solves">
-            <h4><span class="kb-empty-modal-pin">✨</span>解决什么问题</h4>
-            <p class="kb-empty-modal-line">{{ activeModuleData.solves }}</p>
-          </section>
+            <section class="kb-empty-modal-section kb-empty-modal-solves">
+              <h4><span class="kb-empty-modal-pin">✨</span>解决什么问题</h4>
+              <p class="kb-empty-modal-line">{{ activeModuleData.solves }}</p>
+            </section>
+          </div>
         </div>
       </div>
     </transition>
@@ -434,12 +436,37 @@ const TAGLINE_VARIANTS = [
 const TYPE_INTERVAL_MAIN_MS = 90  // 主标节奏(慢一点,有仪式感)
 const TYPE_INTERVAL_SUB_MS  = 35  // 副标节奏(快一点,顺着阅读流)
 const TAGLINE_PAUSE_BETWEEN_MS = 280  // 主标完→副标开始 之间的小停顿
+const TAGLINE_LINGER_MS = 3500  // 副标全部打完后停留(让用户看清),然后切下一句
 
 // ─────────────────────────────────────────────────────────────
 // 模块介绍知识库 — 拓扑图中每个 Stage 2 节点点击后弹窗展示
 // 文案围绕真实业务痛点 → 能力 → 数据接入 → 解决问题 四档结构
 // ─────────────────────────────────────────────────────────────
 const MODULES = {
+  aizhushou: {
+    icon: '🧠',
+    name: '察元 AI 助手',
+    tagline: 'Agent · 编排中枢 · 用户和察元所有能力之间的唯一入口',
+    painPoints: [
+      '面对 AI 不知道能问什么,试探了几句不出结果就放弃了',
+      '智库 / 办公 / 应用 / 工作流 各自独立入口,业务来回切换、上下文断裂',
+      'AI 答非所问、引用对不上号、改了文档没人能解释为什么这么改',
+      '复杂任务(查资料 + 分析 + 生成报告 + 发出去)要反复对话多次,不会写 prompt 就出不来想要的',
+      '在 WPS 里写文档时还要切到对话窗,光标焦点丢了,效率拉胯',
+    ],
+    features: [
+      '意图识别 + 自动路由:一句话自动判断走 KB 检索 / 走 SQL / 改文档 / 调应用 / 普通对话',
+      '多源融合应答:同时问智库 + 业务库 + 当前文档,综合写一段答案 + [N] 引用',
+      '上下文感知:自动带上当前选中文字、当前段落、当前文档、历史会话',
+      'WPS 内联工作:对当前选区改写 / 翻译 / 脱密 / 批注,不离开 Word/Excel/PPT',
+      '多模态输入:文字 / 语音 / 截图 / 拖入文档,都可以提问',
+      '任务编排:复杂指令自动拆步,Agent 顺序调多个工具(智库 → 模型 → 应用 → 待办)',
+      '中断 / 修正:执行中用户随时打断、修改要求,助手适配重排剩余步骤',
+      '诊断面板:每条回答可展开看完整 trace(走了哪条路由 / 用了哪个模型 / 检索召回了什么)',
+    ],
+    dataSources: '所有 chayuan 模块(智库 / 办公 / 模型广场 / 智能空间 / 应用市场 / 训练中心 / 我的待办)+ 当前 WPS 文档 / 选区 / 历史会话',
+    solves: '把"用 AI"压成一个动作 — 不再切系统、不再写 prompt、不再担心黑盒。让用户用自然语言直接拿结果,让 AI 真正成为可信赖的生产力中枢。',
+  },
   zhiku: {
     icon: '📚',
     name: '察元智库',
@@ -602,12 +629,11 @@ export default {
     },
   },
   data() {
-    // 每次组件初始化随机挑一对 — 用户每次打开 KB 设置看到的广告语都不一样
-    const pick = TAGLINE_VARIANTS[Math.floor(Math.random() * TAGLINE_VARIANTS.length)]
+    // 广告语在 mounted 后由 startTaglineCycle 持续轮换;data 只占位
     return {
       qrLoaded: true,        // @error 触发后置 false 走 SVG 占位
-      taglineMain: pick.main,
-      taglineSub: pick.sub,
+      taglineMain: '',
+      taglineSub: '',
       taglineMainShown: '',
       taglineSubShown: '',
       taglineMainDone: false,
@@ -622,20 +648,26 @@ export default {
   },
   mounted() {
     this._typeTimers = []
-    // 检测 prefers-reduced-motion,直接定稿不打字
+    this._destroyed = false
+    // prefers-reduced-motion:不打字、不轮换,直接定一句
     const reduce = typeof window !== 'undefined'
       && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduce) {
-      this.taglineMainShown = this.taglineMain
-      this.taglineSubShown = this.taglineSub
+      const pick = TAGLINE_VARIANTS[Math.floor(Math.random() * TAGLINE_VARIANTS.length)]
+      this.taglineMain = pick.main
+      this.taglineSub = pick.sub
+      this.taglineMainShown = pick.main
+      this.taglineSubShown = pick.sub
       this.taglineMainDone = true
       this.taglineSubDone = true
       return
     }
-    this.startTypingMain()
+    // 持续轮换:打完一句 → 停留 → 切下一句 → 一直循环到组件卸载
+    this.startTaglineCycle(null)
   },
   beforeUnmount() {
+    this._destroyed = true
     if (Array.isArray(this._typeTimers)) {
       this._typeTimers.forEach(t => clearTimeout(t))
       this._typeTimers = []
@@ -651,10 +683,42 @@ export default {
     closeModule() {
       this.activeModule = null
     },
+
+    /**
+     * 挑下一句广告语 — 避开和上一句相同(候选 ≥ 2 时)。
+     */
+    pickNextVariant(prevMain) {
+      if (TAGLINE_VARIANTS.length <= 1) return TAGLINE_VARIANTS[0]
+      let next = TAGLINE_VARIANTS[Math.floor(Math.random() * TAGLINE_VARIANTS.length)]
+      let guard = 0
+      while (next.main === prevMain && guard < 8) {
+        next = TAGLINE_VARIANTS[Math.floor(Math.random() * TAGLINE_VARIANTS.length)]
+        guard += 1
+      }
+      return next
+    },
+
+    /**
+     * 一轮:重置 → 选新句 → 主标打字 → 副标打字 → 停留 → 自动调下一轮。
+     * 由 mounted 启动,`beforeUnmount` 设 _destroyed=true 自动停止。
+     */
+    startTaglineCycle(prevMain) {
+      if (this._destroyed) return
+      const pick = this.pickNextVariant(prevMain)
+      this.taglineMain = pick.main
+      this.taglineSub = pick.sub
+      this.taglineMainShown = ''
+      this.taglineSubShown = ''
+      this.taglineMainDone = false
+      this.taglineSubDone = false
+      this.startTypingMain()
+    },
+
     startTypingMain() {
       let i = 0
       const chars = Array.from(this.taglineMain)
       const tick = () => {
+        if (this._destroyed) return
         if (i >= chars.length) {
           this.taglineMainDone = true
           const t = setTimeout(() => this.startTypingSub(), TAGLINE_PAUSE_BETWEEN_MS)
@@ -668,12 +732,18 @@ export default {
       }
       tick()
     },
+
     startTypingSub() {
       let i = 0
       const chars = Array.from(this.taglineSub)
       const tick = () => {
+        if (this._destroyed) return
         if (i >= chars.length) {
           this.taglineSubDone = true
+          // 副标打完 → 停留 LINGER_MS 让用户看清 → 切下一句
+          const prevMain = this.taglineMain
+          const t = setTimeout(() => this.startTaglineCycle(prevMain), TAGLINE_LINGER_MS)
+          this._typeTimers.push(t)
           return
         }
         this.taglineSubShown = chars.slice(0, i + 1).join('')
@@ -946,7 +1016,11 @@ export default {
   width: 100%;
   max-width: 580px;
   max-height: calc(100vh - 48px);
-  overflow: auto;
+  /* flex column:头部 flex-shrink:0,body flex:1 overflow-y:auto.
+     这样无论内容多长,头部始终可见,正文区独立滚动,不会出现"标题被滚没"或"底部看不到"。 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #ffffff;
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32), 0 4px 12px rgba(15, 23, 42, 0.08);
@@ -960,7 +1034,23 @@ export default {
   padding: 20px 22px 16px;
   border-bottom: 1px solid #eef2f8;
   background: linear-gradient(135deg, #f7faff 0%, #ffffff 100%);
+  flex-shrink: 0;
 }
+/* 正文滚动区:flex:1 + min-height:0 是 flex 嵌套滚动的关键组合 */
+.kb-empty-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 滚到底/顶时给个柔和提示阴影,告诉用户还有内容 */
+  scrollbar-gutter: stable;
+}
+.kb-empty-modal-body::-webkit-scrollbar { width: 8px; }
+.kb-empty-modal-body::-webkit-scrollbar-track { background: transparent; }
+.kb-empty-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(110, 168, 255, 0.35);
+  border-radius: 4px;
+}
+.kb-empty-modal-body::-webkit-scrollbar-thumb:hover { background: rgba(110, 168, 255, 0.55); }
 .kb-empty-modal-icon {
   display: inline-flex;
   align-items: center;
