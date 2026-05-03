@@ -1525,6 +1525,7 @@ import {
 } from '../utils/assistantSettings.js'
 import { getBuiltinAssistants, getBuiltinAssistantDefinition, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
 import { getTaskById, getTasks, subscribe as subscribeTasks } from '../utils/taskListStore.js'
+import { inAppConfirm } from '../utils/inAppDialog.js'
 import {
   analyzeWorkflowPaths,
   resumeWorkflowDebug,
@@ -3861,13 +3862,13 @@ function confirmCreateWorkflow() {
   validationMessage.value = ''
 }
 
-function deleteWorkflowItems(workflowIds) {
+async function deleteWorkflowItems(workflowIds) {
   const ids = [...new Set((workflowIds || []).filter(Boolean))]
   if (!ids.length) return
   const message = ids.length > 1
     ? `确认删除选中的 ${ids.length} 个工作流吗？`
     : '确认删除当前工作流吗？'
-  if (!window.confirm(message)) return
+  if (!(await inAppConfirm(message, { title: '删除工作流', okText: '删除', cancelText: '取消', danger: true }))) return
   const idSet = new Set(ids)
   openWorkflowIds.value = openWorkflowIds.value.filter(id => !idSet.has(id))
   selectedWorkflowIds.value = selectedWorkflowIds.value.filter(id => !idSet.has(id))

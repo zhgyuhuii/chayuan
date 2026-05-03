@@ -1,3 +1,30 @@
+## 2026-05-04 06:41:43 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/components/AIAssistantDialog.vue`
+- ` M src/components/FormContentPreview.vue`
+- ` M src/components/SettingsDialog.vue`
+- ` M src/components/TaskOrchestrationDialog.vue`
+- ` M src/utils/assistant/builtinAssistantsP5.js`
+- ` M src/utils/assistantTaskRunner.js`
+- `?? src/utils/inAppDialog.js`
+
+### Diff Stat
+
+```text
+ src/components/AIAssistantDialog.vue       | 109 +++++++++++++++++------------
+ src/components/FormContentPreview.vue      |  18 +++--
+ src/components/SettingsDialog.vue          |   6 +-
+ src/components/TaskOrchestrationDialog.vue |   5 +-
+ src/utils/assistant/builtinAssistantsP5.js |   3 +
+ src/utils/assistantTaskRunner.js           |   7 +-
+ 6 files changed, 96 insertions(+), 52 deletions(-)
+```
+
 ## 2026-05-04 06:18:02 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
