@@ -1015,9 +1015,9 @@ export default {
 .kb-empty-modal {
   width: 100%;
   max-width: 580px;
-  max-height: calc(100vh - 48px);
-  /* flex column:头部 flex-shrink:0,body flex:1 overflow-y:auto.
-     这样无论内容多长,头部始终可见,正文区独立滚动,不会出现"标题被滚没"或"底部看不到"。 */
+  /* 比之前 calc(100vh - 48px) 矮一截,留呼吸感;同时 cap 在 640px 避免大屏被无限拉高。
+     min(...) 兼容性:Safari 11.1+ / Chrome 79+ / Firefox 75+ — 都满足。 */
+  max-height: min(72vh, 640px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1041,7 +1041,8 @@ export default {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* 滚到底/顶时给个柔和提示阴影,告诉用户还有内容 */
+  /* 底部留白:防止最后一段(解决什么问题)贴到模态底边,看着像被截 */
+  padding-bottom: 14px;
   scrollbar-gutter: stable;
 }
 .kb-empty-modal-body::-webkit-scrollbar { width: 8px; }
