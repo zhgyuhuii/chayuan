@@ -391,28 +391,53 @@
           </header>
 
           <div class="kb-empty-modal-body">
+            <!-- 流式输出:每个 section 顺序打字,当前节有闪烁光标 — 通过 modalStream 状态驱动 -->
             <section class="kb-empty-modal-section">
               <h4><span class="kb-empty-modal-pin">🎯</span>现状难题</h4>
               <ul class="kb-empty-modal-list kb-empty-modal-list-pain">
-                <li v-for="p in activeModuleData.painPoints" :key="p">{{ p }}</li>
+                <li v-for="(text, idx) in modalStream.painPoints" :key="'pain-' + idx">
+                  {{ text }}<span
+                    v-if="modalStream.activeSection === 'pain' && idx === modalStream.painPoints.length - 1"
+                    class="kb-empty-modal-cursor"
+                    aria-hidden="true"
+                  />
+                </li>
               </ul>
             </section>
 
             <section class="kb-empty-modal-section">
               <h4><span class="kb-empty-modal-pin">🔧</span>核心能力</h4>
               <ul class="kb-empty-modal-list kb-empty-modal-list-feat">
-                <li v-for="f in activeModuleData.features" :key="f">{{ f }}</li>
+                <li v-for="(text, idx) in modalStream.features" :key="'feat-' + idx">
+                  {{ text }}<span
+                    v-if="modalStream.activeSection === 'feat' && idx === modalStream.features.length - 1"
+                    class="kb-empty-modal-cursor"
+                    aria-hidden="true"
+                  />
+                </li>
               </ul>
             </section>
 
             <section class="kb-empty-modal-section">
               <h4><span class="kb-empty-modal-pin">🔌</span>可接入</h4>
-              <p class="kb-empty-modal-line">{{ activeModuleData.dataSources }}</p>
+              <p class="kb-empty-modal-line">
+                {{ modalStream.dataSources }}<span
+                  v-if="modalStream.activeSection === 'src'"
+                  class="kb-empty-modal-cursor"
+                  aria-hidden="true"
+                />
+              </p>
             </section>
 
             <section class="kb-empty-modal-section kb-empty-modal-solves">
               <h4><span class="kb-empty-modal-pin">✨</span>解决什么问题</h4>
-              <p class="kb-empty-modal-line">{{ activeModuleData.solves }}</p>
+              <p class="kb-empty-modal-line">
+                {{ modalStream.solves }}<span
+                  v-if="modalStream.activeSection === 'solves'"
+                  class="kb-empty-modal-cursor"
+                  aria-hidden="true"
+                />
+              </p>
             </section>
           </div>
         </div>
@@ -464,6 +489,12 @@ const TYPE_INTERVAL_MAIN_MS = 90  // 主标节奏(慢一点,有仪式感)
 const TYPE_INTERVAL_SUB_MS  = 35  // 副标节奏(快一点,顺着阅读流)
 const TAGLINE_PAUSE_BETWEEN_MS = 280  // 主标完→副标开始 之间的小停顿
 const TAGLINE_LINGER_MS = 3500  // 副标全部打完后停留(让用户看清),然后切下一句
+
+// 模块介绍弹窗的流式打字节奏 — 总文字量比广告语大,所以单字快一点,
+// 但保留段间和列表项之间的小停顿,让阅读节奏有起伏,不至于像 textarea 倾倒。
+const MODULE_TYPE_MS = 18              // 单字间隔(正文)
+const MODULE_BETWEEN_ITEMS_MS = 90     // 同一 section 内,两个列表项之间的停顿
+const MODULE_BETWEEN_SECTIONS_MS = 220 // 一个 section 打完 → 下一个 section 开始
 
 // ─────────────────────────────────────────────────────────────
 // 模块介绍知识库 — 拓扑图中每个 Stage 2 节点点击后弹窗展示
@@ -736,6 +767,16 @@ export default {
       taglineMainDone: false,
       taglineSubDone: false,
       activeModule: null,    // 当前打开介绍弹窗的模块 key(zhiku/bangong/...);null = 关闭
+      // 模块介绍弹窗的流式状态:section 顺序为 pain → feat → src → solves → null(全部完成)。
+      // 列表型字段(painPoints/features)是"已渲染条目数组",最后一项可能还在打字中;
+      // 文本型字段(dataSources/solves)直接是当前已展示的子串。
+      modalStream: {
+        painPoints: [],
+        features: [],
+        dataSources: '',
+        solves: '',
+        activeSection: null,
+      },
     }
   },
   computed: {
@@ -745,6 +786,8 @@ export default {
   },
   mounted() {
     this._typeTimers = []
+    this._modalTimers = []
+    this._modalStreamToken = 0
     this._destroyed = false
     // prefers-reduced-motion:不打字、不轮换,直接定一句
     const reduce = typeof window !== 'undefined'
@@ -769,16 +812,135 @@ export default {
       this._typeTimers.forEach(t => clearTimeout(t))
       this._typeTimers = []
     }
+    if (Array.isArray(this._modalTimers)) {
+      this._modalTimers.forEach(t => clearTimeout(t))
+      this._modalTimers = []
+    }
   },
   methods: {
     onQrError() {
       this.qrLoaded = false
     },
     showModule(key) {
-      if (MODULES[key]) this.activeModule = key
+      const data = MODULES[key]
+      if (!data) return
+      // 中止之前的 modal 流(包括跨模块切换),重置展示状态
+      this.stopModuleStream()
+      this.activeModule = key
+      this.modalStream = {
+        painPoints: [],
+        features: [],
+        dataSources: '',
+        solves: '',
+        activeSection: null,
+      }
+      // prefers-reduced-motion:不打字,直接全量渲染
+      const reduce = typeof window !== 'undefined'
+        && window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduce) {
+        this.modalStream.painPoints = (data.painPoints || []).slice()
+        this.modalStream.features = (data.features || []).slice()
+        this.modalStream.dataSources = data.dataSources || ''
+        this.modalStream.solves = data.solves || ''
+        this.modalStream.activeSection = null
+        return
+      }
+      // nextTick 让弹窗先挂载,再开始打字 — 避免首字被 enter 过渡吃掉
+      this.$nextTick(() => this.runModuleStream(data))
     },
     closeModule() {
+      this.stopModuleStream()
       this.activeModule = null
+    },
+
+    /**
+     * 清掉所有进行中的 modal timer,并通过自增 token 让仍在排队的 tick 自检后退出。
+     * 不重置 modalStream,显示态由 showModule 下一次重置或 closeModule 隐藏。
+     */
+    stopModuleStream() {
+      this._modalStreamToken = (this._modalStreamToken || 0) + 1
+      if (Array.isArray(this._modalTimers)) {
+        this._modalTimers.forEach(t => clearTimeout(t))
+      }
+      this._modalTimers = []
+    },
+
+    /**
+     * 弹窗内 4 个 section 顺序流式输出:
+     *   painPoints(列表) → features(列表) → dataSources(段落) → solves(段落)。
+     * 每个 tick 检查 token,token 失效则中止 — 切模块/关闭都会让本次 run 优雅退出。
+     */
+    runModuleStream(data) {
+      const token = this._modalStreamToken
+      const aborted = () => this._destroyed || token !== this._modalStreamToken
+
+      // 列表型 section:逐项 push 空字符串到 arr,按字 tick;一项打完停 BETWEEN_ITEMS_MS,再下一项
+      const typeList = (sectionKey, listKey, items, next) => {
+        if (aborted()) return
+        this.modalStream.activeSection = sectionKey
+        const list = items || []
+        let itemIdx = 0
+        const startItem = () => {
+          if (aborted()) return
+          if (itemIdx >= list.length) {
+            const t = setTimeout(next, MODULE_BETWEEN_SECTIONS_MS)
+            this._modalTimers.push(t)
+            return
+          }
+          const chars = Array.from(list[itemIdx] || '')
+          const arr = this.modalStream[listKey]
+          arr.push('')
+          let charIdx = 0
+          const tick = () => {
+            if (aborted()) return
+            if (charIdx >= chars.length) {
+              itemIdx += 1
+              const t = setTimeout(startItem, MODULE_BETWEEN_ITEMS_MS)
+              this._modalTimers.push(t)
+              return
+            }
+            // Vue 3 下数组下标赋值是响应式的
+            arr[arr.length - 1] = chars.slice(0, charIdx + 1).join('')
+            charIdx += 1
+            const t = setTimeout(tick, MODULE_TYPE_MS)
+            this._modalTimers.push(t)
+          }
+          tick()
+        }
+        startItem()
+      }
+
+      // 文本型 section:整段按字 tick
+      const typeText = (sectionKey, fieldKey, text, next) => {
+        if (aborted()) return
+        this.modalStream.activeSection = sectionKey
+        const chars = Array.from(text || '')
+        let i = 0
+        const tick = () => {
+          if (aborted()) return
+          if (i >= chars.length) {
+            const t = setTimeout(next, MODULE_BETWEEN_SECTIONS_MS)
+            this._modalTimers.push(t)
+            return
+          }
+          this.modalStream[fieldKey] = chars.slice(0, i + 1).join('')
+          i += 1
+          const t = setTimeout(tick, MODULE_TYPE_MS)
+          this._modalTimers.push(t)
+        }
+        tick()
+      }
+
+      typeList('pain', 'painPoints', data.painPoints, () => {
+        typeList('feat', 'features', data.features, () => {
+          typeText('src', 'dataSources', data.dataSources, () => {
+            typeText('solves', 'solves', data.solves, () => {
+              if (!aborted()) this.modalStream.activeSection = null
+            })
+          })
+        })
+      })
     },
 
     /**
@@ -1244,6 +1406,19 @@ export default {
   border-left: 3px solid #6ea8ff;
   border-radius: 6px;
 }
+/* 弹窗内的流式光标 — 跟广告语共用 kbCursorBlink keyframes,
+   尺寸压到正文行高,贴在最后一个字符旁,与正文颜色一致蓝紫色保持品牌延续。 */
+.kb-empty-modal-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  margin-left: 3px;
+  background: #6635b6;
+  vertical-align: -2px;
+  border-radius: 1px;
+  animation: kbCursorBlink 0.85s steps(1, end) infinite;
+}
+
 .kb-empty-modal-solves .kb-empty-modal-line {
   background: linear-gradient(90deg, #f0fdf6 0%, #ffffff 100%);
   border-left-color: #16a34a;
