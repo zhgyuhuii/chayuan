@@ -13,6 +13,7 @@
  *   - userMessage:         { content }
  *   - kbQueryText?         发起检索用的文本(默认 userMessage.content)
  *   - kbMode?              'qa' | 'verify' | 'summarize'(默认 qa)
+ *   - contextText?         选区/全文/附件等额外材料,只给模型分析,不作为检索 query
  *   - messagesForApi:      [{role, content}] 准备发给 LLM 的消息
  *   - assistantMessageMeta:   会写入 kbSources / kbBatchPlan / kbCitations
  *   - abortSignal?
@@ -85,7 +86,8 @@ export async function applyKbRetrievalIfBound(ctx) {
     mode,
     sources,
     userQuery: queryText,
-    selectionText: ctx.selectionText
+    selectionText: ctx.selectionText,
+    contextText: ctx.contextText
   })
   ctx.assistantMessageMeta.kbCitationMap = citationMap
 

@@ -3321,7 +3321,7 @@ function normalizePrimaryConversationIntent(value, fallback = {}) {
   const source = value && typeof value === 'object' ? value : {}
   const fallbackValue = fallback && typeof fallback === 'object' ? fallback : {}
   const rawKind = String(source.kind || fallbackValue.kind || 'chat').trim().toLowerCase()
-  const kind = ['chat', 'document-operation', 'wps-capability', 'generated-output', 'assistant-task'].includes(rawKind)
+  const kind = ['chat', 'kb-chat', 'document-operation', 'wps-capability', 'generated-output', 'assistant-task'].includes(rawKind)
     ? rawKind
     : 'chat'
   const rawConfidence = String(source.confidence || fallbackValue.confidence || 'low').trim().toLowerCase()
@@ -4543,6 +4543,7 @@ export default {
     },
     getMessagePrimaryRouteLabel(message) {
       const kind = String(message?.primaryRoute?.kind || '').trim()
+      if (kind === 'kb-chat') return '知识库检索分析'
       if (kind === 'chat') return '普通对话'
       if (kind === 'document-operation') return '文档处理'
       if (kind === 'wps-capability') return 'WPS 操作'
@@ -15136,11 +15137,11 @@ export default {
         return
       }
 
-      const exactTool = resolveExactToolRequest(text, {
+      const exactTool = hasBoundKnowledgeBase ? null : resolveExactToolRequest(text, {
         materialText: this.resolveExactStatsMaterialText(text)
       })
       const exactStats = exactTool?.result
-      if (exactTool?.answer && exactStats) {
+      if (!hasBoundKnowledgeBase && exactTool?.answer && exactStats) {
         this.startAssistantLocalFaqMessage(prepared, {
           type: exactStats.kind,
           title: `${exactStats.targetLabel || '条目'}统计`,
@@ -15193,14 +15194,20 @@ export default {
 
       try {
         const routeStartedAt = Date.now()
-        const primaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        const primaryIntent = hasBoundKnowledgeBase
+          ? {
+              kind: 'kb-chat',
+              confidence: 'high',
+              reason: '已选择知识库，本轮优先进行知识库检索分析，不触发文档写回或修订。'
+            }
+          : await this.resolvePrimaryConversationIntent(text, model)
         recordPerf({
           kind: 'send.route.primary',
           providerId: model?.providerId,
           modelId: model?.modelId,
           durationMs: Date.now() - routeStartedAt,
           ok: true,
-          note: String(primaryIntent?.kind || 'chat')
+          note: hasBoundKnowledgeBase ? 'kb-first' : String(primaryIntent?.kind || 'chat')
         })
         const routeKind = String(primaryIntent?.kind || 'chat')
         assistantMsg.primaryRoute = {
@@ -15210,7 +15217,9 @@ export default {
         }
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: `已识别为${this.getMessagePrimaryRouteLabel(assistantMsg) || '当前请求'}...`,
-          detail: this.getMessagePrimaryRouteDetail(assistantMsg) || '正在根据识别结果选择处理链路。',
+          detail: hasBoundKnowledgeBase
+            ? '已选择知识库，本轮将先搜索知识库并结合当前材料分析，不会自动写回正文或批注。'
+            : (this.getMessagePrimaryRouteDetail(assistantMsg) || '正在根据识别结果选择处理链路。'),
           percent: 12
         })
         this.saveHistory()
@@ -15574,11 +15583,16 @@ export default {
           await applyKbRetrievalIfBound({
             chat: chatObj,
             userMessage: { content: apiUserContent },
-            kbQueryText: apiUserContent,
+            kbQueryText: text,
             kbMode: overrideKbMode || 'qa',
             messagesForApi,
             assistantMessageMeta: assistantMsg.messageMeta,
-            selectionText: this.selectionContextSnapshot?.text || '',
+            selectionText: selectionSnapshot?.text || this.selectionContextSnapshot?.text || '',
+            contextText: [
+              taskInputScope?.resolvedScope === 'document' ? documentText : '',
+              taskInputScope?.resolvedScope === 'selection' ? (selectionSnapshot?.text || '') : '',
+              attachmentsSnapshot?.length ? this.buildAttachmentContext(text, attachmentsSnapshot).attachmentPrompt : ''
+            ].filter(Boolean).join('\n\n'),
             onKbPhase: (phase, info = {}) => {
               const phaseName = typeof phase === 'string' ? phase : phase?.phase
               const phaseInfo = typeof phase === 'string' ? info : (phase || {})
