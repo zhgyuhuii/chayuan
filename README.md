@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/images/ai-assistant.svg" alt="Chayuan 察元 AI" width="120" height="120" />
+<img src="public/images/logo.png" alt="Chayuan 察元 AI" width="120" height="120" />
 
 # 察元 AI 文档助手 · Chayuan AI Document Assistant
 
