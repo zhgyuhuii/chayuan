@@ -10,6 +10,20 @@
 
 ---
 
+## Novedades en v3.0 — Integración RAG de bases de conocimiento remotas
+
+Consumo directo de bases de conocimiento corporativas / de equipo / personales dentro del editor WPS: la pregunta dispara recuperación automática, ensamblaje de contexto y respuesta con citas, además de descarga del adjunto original con un clic.
+
+- **Doble modo de autenticación** (JWT usuario / HMAC aplicación), credenciales cifradas con AES-GCM
+- **Pipeline de recuperación multi-fuente** (`services/kb`): reescritura → búsqueda por lotes → deduplicación → re-ranking → prompt con citas
+- **Barra de citas con descarga del original**, las fuentes documento / estructurada / vectorial / office se diferencian visualmente
+- **Auto-recuperación ante vínculos obsoletos**: si una KB es eliminada o se revocan permisos, la caché se limpia silenciosamente — sin alertas rojas "search_batch HTTP 403"
+- **Reversión con un flag**: `kbRemoteIntegration` desactiva toda la pipeline RAG al instante
+
+Notas de versión completas: [RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md)
+
+---
+
 ## 1. Derechos de autor y licencia
 
 **Nombre del software:** Chayuan AI Document Assistant (nombre de producto en chino **察元 AI 文档助手**, paquete npm **`chayuan`**). Código bajo **[Apache License 2.0](LICENSE)**. Se permite el uso comercial si se cumple la licencia. Los contratos adicionales prevalecen donde apliquen.
