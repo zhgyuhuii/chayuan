@@ -222,9 +222,23 @@ npm run build:wps    # WPS add-in bundle
 |:---:|:---:|:---:|
 | ![screen4](screen/screen4.png) | ![screen5](screen/screen5.png) | ![screen6](screen/screen6.png) |
 
-| screen7 |
+| screen7 | screen8| screen9 |
+|:---:|:---:|:---:|
 |:---:|
-| ![screen7](screen/screen7.png) |
+| ![screen7](screen/screen7.png) | ![screen8](screen/1.png) | ![screen9](screen/2.png) |
+| screen10 | screen11| screen12 |
+|:---:|:---:|:---:|
+|:---:|
+| ![screen10](screen/3.png) | ![screen11](screen/4.png) | ![screen12](screen/5.png) |
+| screen13 | screen14| screen15 |
+|:---:|:---:|:---:|
+|:---:|
+| ![screen13](screen/6.png) | ![screen14](screen/7.png) | ![screen15](screen/8.png) |
+| screen16 | screen17| 
+|:---:|:---:|:---:|
+|:---:|
+| ![screen16](screen/9.png) | ![screen17](screen/10.png) | 
+
 
 ### 仓库内置预览图（`public/images/about/`）
 
