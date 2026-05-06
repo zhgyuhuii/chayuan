@@ -29,8 +29,47 @@ import { getConnection, getCurrentConnection } from './connectionStore.js'
 import { run as runSearch } from './searchOrchestrator.js'
 import { build as buildPrompt } from './promptBuilder.js'
 import { isEnabled as _isFlagEnabled } from '../../utils/featureFlags.js'
+import { fetchList as fetchKbCatalog } from './kbCatalog.js'
+import { invalidate as invalidateKbCatalog } from './kbCatalogCache.js'
 
 const NO_KB_NOTICE = '【知识库提示】未在已绑定的知识库中检索到相关内容,请基于一般常识回答,并明示"知识库未覆盖"。'
+const STALE_KB_NOTICE = '【知识库提示】绑定的知识库已被删除或权限被收回,本次未做检索,请在侧栏重新选择。'
+
+/** 把 binding.kbNames / kuIds 都规范成 doc:/src:/office: 前缀的 ku_id 形式 */
+function _normalizeKuId(name) {
+  const text = String(name || '').trim()
+  if (!text) return ''
+  if (/^(doc|src|office):/.test(text)) return text
+  return `doc:${text}`
+}
+
+/**
+ * 用最近的 catalog 把 binding 中"已不存在 / 无权"的 KB 剔掉。
+ * - 命中缓存即用,5 分钟 TTL 期内零网络;过期 / force=true 才走网络。
+ * - 拿不到 catalog(网络挂 / 接口缺)→ 直接放行,不阻塞搜索。
+ */
+async function _filterBindingByCatalog(connection, binding, { force = false, signal } = {}) {
+  let list = []
+  try {
+    list = await fetchKbCatalog(connection, { force, signal })
+  } catch (e) {
+    return binding   // 兜底:catalog 出错就不过滤,让 runSearch 自己继续
+  }
+  if (!Array.isArray(list) || list.length === 0) return binding
+  const accessible = new Set(list.map(item => _normalizeKuId(item?.kuId || item?.id || item?.kb_name)))
+  const keep = (binding.kbNames || [])
+    .map(_normalizeKuId)
+    .filter(name => accessible.has(name))
+  if (keep.length === binding.kbNames?.length) return binding   // 全部命中,无需修
+  const keepSet = new Set(keep)
+  const filteredSourceRefs = (binding.sourceRefs || []).filter(r => keepSet.has(_normalizeKuId(r?.kuId)))
+  return {
+    ...binding,
+    kbNames: keep,
+    kuIds: keep,
+    sourceRefs: filteredSourceRefs
+  }
+}
 
 export async function applyKbRetrievalIfBound(ctx) {
   // plan v1.3 §5.6 灰度开关:被关闭后整条 KB 链路绕过,kbBindings 仍保留但不影响 chat
@@ -38,16 +77,28 @@ export async function applyKbRetrievalIfBound(ctx) {
     if (!_isFlagEnabled('kbRemoteIntegration')) return ctx
   } catch (e) { /* 缺 featureFlags 模块时默认放行 */ }
 
-  const binding = _normalizeBinding(ctx?.chat?.kbBindings)
-  if (!binding?.kbNames?.length) return ctx
+  const rawBinding = _normalizeBinding(ctx?.chat?.kbBindings)
+  if (!rawBinding?.kbNames?.length) return ctx
 
-  const connection = (binding.connectionId ? getConnection(binding.connectionId) : null) || getCurrentConnection()
+  const connection = (rawBinding.connectionId ? getConnection(rawBinding.connectionId) : null) || getCurrentConnection()
   if (!connection) return ctx
 
   const queryText = ctx.kbQueryText || ctx.userMessage?.content || ''
   if (!queryText.trim()) return ctx
 
   const mode = ctx.kbMode || 'qa'
+
+  // 第 1 道防御:用 catalog 预过滤 binding,把已被删除 / 收回权限的 KB 剔掉,
+  // 避免明知不可用还硬调 search_batch。catalog 缓存 5 分钟,正常路径零网络。
+  let binding = await _filterBindingByCatalog(connection, rawBinding, { signal: ctx.abortSignal })
+  if (!binding.kbNames?.length) {
+    // 绑定的 KB 全数不可用 → 不发起检索,提示用户去侧栏重选
+    if (!ctx.assistantMessageMeta) ctx.assistantMessageMeta = {}
+    ctx.assistantMessageMeta.kbStaleBinding = true
+    ctx.assistantMessageMeta.kbBindings = rawBinding
+    _prependSystemMessage(ctx, STALE_KB_NOTICE)
+    return ctx
+  }
 
   let result
   try {
@@ -61,7 +112,21 @@ export async function applyKbRetrievalIfBound(ctx) {
       chatCompletion: ctx.chatCompletionForDistill
     })
   } catch (e) {
-    // 失败不致命:在 ctx 上记一笔,let UI render warning
+    const status = Number(e?.status || 0)
+    // 第 2 道防御:服务端已强制拒绝(403 无权 / 404 不存在)→ 缓存就是脏的,
+    // 强制刷一次 catalog 让用户下次发消息能看到正确列表;本次不报"检索失败",
+    // 静默走"未注入 KB"分支,避免红字噪音。
+    if (status === 403 || status === 404) {
+      try { invalidateKbCatalog(`list:${connection.id}`) } catch (_) { /* noop */ }
+      // 异步预热(不 await,不阻塞当前 chat 链路)
+      Promise.resolve().then(() => fetchKbCatalog(connection, { force: true })).catch(() => {})
+      if (!ctx.assistantMessageMeta) ctx.assistantMessageMeta = {}
+      ctx.assistantMessageMeta.kbStaleBinding = true
+      ctx.assistantMessageMeta.kbBindings = rawBinding
+      _prependSystemMessage(ctx, STALE_KB_NOTICE)
+      return ctx
+    }
+    // 其他失败(超时 / 5xx / 网络 / 未识别错误):仍按原行为记 kbError,UI 红条提示
     if (ctx.assistantMessageMeta) {
       ctx.assistantMessageMeta.kbError = e.message || String(e)
     }

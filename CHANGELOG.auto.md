@@ -1,3 +1,19 @@
+## 2026-05-06 21:03:54 +0800 - chayuan
+
+- Branch: `feat/kb-integration`
+- Summary: auto-recorded local changes before commit.
+
+### Changed Files
+
+- ` M src/services/kb/retrievalMiddleware.js`
+
+### Diff Stat
+
+```text
+ src/services/kb/retrievalMiddleware.js | 73 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 69 insertions(+), 4 deletions(-)
+```
+
 ## 2026-05-04 06:41:43 +0800 - chayuan
 
 - Branch: `feat/kb-integration`
