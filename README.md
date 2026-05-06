@@ -8,10 +8,24 @@
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Version](https://img.shields.io/badge/version-2.0.0-purple.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-3.0.0-purple.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
+
+---
+
+## v3.0 新增 — 远程知识库 RAG 集成
+
+> WPS 编辑器内直接消费企业 / 团队 / 个人知识库,问答自动检索、拼上下文、带引用,并支持引用气泡内一键下载原文附件。
+
+- **双模认证连接**(JWT 用户 / HMAC 应用),凭据 AES-GCM 加密落盘
+- **多源检索编排**(services/kb):问题改写 → 多查询批量召回 → 去重 → 重排 → 拼引用 prompt
+- **引用展示与原文下载**(KbSourceStrip):信任度星级 + 一键下载,文档 / 结构化 / 向量 / 办公源分类显示
+- **失效自愈**:KB 被删 / 被收回权限时静默清缓存、不再弹红字"检索失败"
+- **一键灰度**:`kbRemoteIntegration` flag 出问题立即关停
+
+完整发布说明:[RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md)
 
 ---
 

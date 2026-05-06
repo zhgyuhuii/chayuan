@@ -1535,7 +1535,12 @@ function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
     : (overrides.documentAction || runtimeConfig.documentAction)
   const inputInfo = resolveDocumentInput(effectiveInputSource)
   const inputText = String(overrides.inputText || inputInfo.text || '').trim()
-  if (!inputText) {
+  // inputOptional:助手定义里可声明"无需文档/选区也能运行"(如出题、空白起草、写邮件等),
+  // 此时空 inputText 不再抛错,而是以空串继续 — userPromptTemplate 里的 {{input}} 会被替换为空,
+  // 模型实际依据 systemPrompt 与用户的对话/参数来产出。
+  const inputOptional = runtimeConfig.inputOptional === true
+    || overrides.allowEmptyInput === true
+  if (!inputText && !inputOptional) {
     throw new Error(inputInfo.source === 'selection'
       ? '请先选中文本再执行该助手'
       : '当前文档没有可处理的文本内容')

@@ -32,7 +32,10 @@
         </div>
 
         <!-- 第二列：模型清单 / 分类 -->
-        <div class="settings-column column-2">
+        <div
+          class="settings-column column-2"
+          :class="{ 'column-2-narrow': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+        >
           <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像） -->
           <div v-if="activeMainMenu === 'model-settings'" class="model-list-container">
             <div class="search-box">
@@ -392,7 +395,10 @@
         </div>
 
         <!-- 第三列：模型设置 / 选择模型 / 配置详情 -->
-        <div class="settings-column column-3">
+        <div
+          class="settings-column column-3"
+          :class="{ 'column-3-wide': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+        >
           <!-- 模型设置 → 第三级：模型设置 -->
           <div v-if="activeMainMenu === 'model-settings' && selectedModel" class="config-panel" :class="{ 'form-saved': isFormSaved }">
             <div class="column-title">模型设置</div>
@@ -1900,6 +1906,14 @@
             </div>
           </div>
 
+          <!-- 知识库设置（plan v1.3 §2.1） -->
+          <div
+            v-else-if="activeMainMenu === 'general' && activeSubMenu === 'kb'"
+            class="config-panel kb-settings-host"
+          >
+            <KbSettingsPanel />
+          </div>
+
           <!-- 其他常规设置 -->
           <div
             v-else-if="activeMainMenu === 'general' && activeSubMenu"
@@ -2264,6 +2278,7 @@ import {
 } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
+import { inAppConfirm } from '../utils/inAppDialog.js'
 import { inferModelRecordType, inferModelType, getModelTypeLabel, matchesModelType, normalizeModelType } from '../utils/modelTypeUtils.js'
 import { getChunkSettings, saveChunkSettings } from '../utils/chunkSettings.js'
 import {
@@ -2348,6 +2363,7 @@ import {
   upsertRegressionSample
 } from '../utils/assistantRegressionSampleStore.js'
 import { getMultimodalServerFallbackConfig } from '../utils/multimodalServerBridge.js'
+import KbSettingsPanel from './KbSettingsPanel.vue'
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value))
@@ -2383,6 +2399,7 @@ const MODEL_INVENTORY = [
 
 export default {
   name: 'SettingsDialog',
+  components: { KbSettingsPanel },
   data() {
     return {
       // 主菜单
@@ -2395,7 +2412,8 @@ export default {
         { key: 'general', label: '常规设置', icon: '⚙️' }
       ],
       generalSubMenus: [
-        { key: 'data', label: '数据设置' }
+        { key: 'data', label: '数据设置' },
+        { key: 'kb', label: '知识库设置' }
       ],
       // 模型设置用的清单：固定清单 + getDefaultModels 全部，带图标
       allModels: [],
@@ -3480,6 +3498,12 @@ export default {
         })
       } else if (menu === 'model-settings') {
         this.selectMainMenu('model-settings')
+      } else if (menu === 'general-settings' || menu === 'general') {
+        this.selectMainMenu('general')
+        const sub = String(query?.sub || '').trim()
+        if (sub) {
+          this.$nextTick(() => { this.selectSubMenu(sub) })
+        }
       } else if (!menu) {
         this.$nextTick(() => {
           this.applyInitialMenuSelection()
@@ -3632,6 +3656,7 @@ export default {
         const params = new URLSearchParams(hashQuery || searchQuery)
         const menu = params.get('menu')
         const item = params.get('item')
+        const sub = params.get('sub')
         if (menu && HIDDEN_SETTINGS_MAIN_MENU_KEYS.has(menu)) {
           this.selectMainMenu('model-settings')
           return
@@ -3646,6 +3671,13 @@ export default {
           })
         } else if (menu === 'model-settings') {
           this.selectMainMenu('model-settings')
+        } else if (menu === 'general-settings' || menu === 'general') {
+          // 从外部("前往设置"按钮)指定到常规设置 + 子页(如 sub=kb 跳到知识库设置)。
+          // 之前这里没处理 general 分支,导致新窗口落地后停在默认菜单,kb 子项要再点一次。
+          this.selectMainMenu('general')
+          if (sub) {
+            this.$nextTick(() => { this.selectSubMenu(sub) })
+          }
         }
       } catch (e) {
         console.warn('applyInitialMenuSelection:', e)
@@ -6347,7 +6379,10 @@ export default {
     },
     async restoreSelectedBackupRecord() {
       if (!this.selectedBackupRecord || this.isRestoringBackupRecord) return
-      const confirmed = window.confirm(`确认恢复备份版本「${this.selectedBackupRecord.documentName || '文档'}」吗？这会覆盖源文件当前内容。`)
+      const confirmed = await inAppConfirm(
+        `确认恢复备份版本「${this.selectedBackupRecord.documentName || '文档'}」吗？这会覆盖源文件当前内容。`,
+        { title: '恢复备份', okText: '恢复', cancelText: '取消', danger: true }
+      )
       if (!confirmed) return
       this.isRestoringBackupRecord = true
       try {
@@ -6654,6 +6689,13 @@ export default {
   overflow-y: auto;
 }
 
+/* 知识库设置子菜单激活时把第二列收窄(20 字符宽度足够),
+   把腾出的空间让给第三列内嵌的 KbSettingsPanel 双栏布局 */
+.column-2.column-2-narrow {
+  width: 200px;
+  min-width: 200px;
+}
+
 .column-3 {
   width: 46%;
   flex-shrink: 0;
@@ -6661,6 +6703,14 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 知识库设置激活时:第三列吸收第二列让出的空间,让 KbSettingsPanel
+   两栏(连接 4 / KB 树 6)有充足展开宽度 */
+.column-3.column-3-wide {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 第一列：主菜单，不滚动 */
@@ -7695,6 +7745,12 @@ export default {
   pointer-events: none;
 }
 
+/* 知识库设置面板 host:让 KbSettingsPanel 占满父容器,不复用 form-saved 状态 */
+.config-panel.kb-settings-host {
+  padding: 0;
+  overflow: hidden;
+}
+
 .config-panel.form-saved .config-input,
 .config-panel.form-saved .path-input {
   background-color: #f5f5f5;
@@ -7933,17 +7989,31 @@ input:checked + .slider:before {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  /* WPS 侧边栏 ≤400px 时单行容不下 "标题 + 长 hint + 搜索框 + 全部展开按钮",
+     允许换行,actions 区域整体掉到下一行,避免压到标题/hint。 */
+  flex-wrap: wrap;
+}
+
+/* 左侧标题 + hint 容器:必须能在窄宽下被压扁,避免溢出到 actions 后面。 */
+.assistant-preset-panel-head > div:first-child {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .assistant-preset-head-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  /* 不再 flex-shrink:0;窄宽时让出空间给 wrap,自己整体掉到第二行。 */
+  flex-shrink: 1;
+  flex-wrap: wrap;
 }
 
 .assistant-preset-search-input {
-  width: 160px;
+  /* 默认仍然 160px,但允许 grow / shrink,避免在 wrap 情况下出现奇怪的截断或多余空白。 */
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 240px;
   padding: 6px 10px;
   font-size: 12px;
   border: 1px solid #e5e7eb;

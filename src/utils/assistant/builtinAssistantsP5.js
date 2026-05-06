@@ -116,6 +116,9 @@ ${COMMON_RULES}
     defaultAction: 'append',
     defaultOutputFormat: 'markdown',
     defaultInputSource: INPUT_SOURCE_DOCUMENT,
+    // 空白文档也能跑:用户在对话中直接说"出 5 道高中数学题",不必先打开讲义。
+    // 有讲义时仍优先用讲义做依据;无讲义时模型按对话上下文出题。
+    inputOptional: true,
     description: '从教学讲义生成 5-8 道针对性题目(选择题 + 简答题混合),含答案与考点说明。',
     systemPrompt: `你是教学设计专家。根据讲义内容出题:覆盖核心概念,有梯度(基础 → 应用 → 拔高),不重复考点。
 

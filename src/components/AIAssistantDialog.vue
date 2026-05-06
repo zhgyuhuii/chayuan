@@ -529,6 +529,10 @@
                   'has-user-context-meta': msg.role === 'user' && !!getUserMessageContextLabel(msg),
                   'message-text-error': msg.role === 'assistant' && isAssistantErrorMessage(msg)
                 }"
+                :data-active-cite="msg.messageMeta?.kbHoveredCitationId || ''"
+                @mouseover="onMessageTextMouseOver(msg, $event)"
+                @mouseout="onMessageTextMouseOut(msg, $event)"
+                @click="onMessageTextClick(msg, $event)"
               >
                 <template v-if="isAssistantMessagePending(msg, i) && !String(msg.content || '').trim()">
                   <div class="message-waiting-state">
@@ -560,6 +564,20 @@
                 <template v-else>
                   <span v-html="formatMessage(msg.content)"></span>
                   <span v-if="isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
+                  <KbSourceStrip
+                    v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
+                    :sources="msg.messageMeta.kbSources"
+                    :kb-bindings="msg.messageMeta.kbBindings"
+                    :connection="getKbConnectionForMessage(msg)"
+                    :kb-error="msg.messageMeta.kbError || ''"
+                    :initial-collapsed="msg.messageMeta.kbStripCollapsed !== false"
+                    :hovered-citation-id="msg.messageMeta.kbHoveredCitationId || ''"
+                    :query-text="getMessageUserQueryText(msg, i)"
+                    @toggle="onKbStripToggle(msg, $event)"
+                    @hover-citation="onKbHoverCitation(msg, $event)"
+                    @download-error="onKbDownloadError"
+                    @download-ok="onKbDownloadOk"
+                  />
                   <div v-if="msg.role === 'assistant' && isAssistantErrorMessage(msg)" class="message-error-actions">
                     <button
                       type="button"
@@ -1798,13 +1816,15 @@
           <button
             type="button"
             class="knowledge-base-btn"
-            title="选择知识库"
+            :title="currentChatKbBoundCount ? `已绑定 ${currentChatKbBoundCount} 个知识库 · 点击编辑` : '选择知识库'"
             aria-label="选择知识库"
+            :class="{ 'has-binding': currentChatKbBoundCount > 0 }"
             @click="openKnowledgeBaseDialog"
           >
             <svg class="knowledge-base-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v15.5A2.5 2.5 0 0 1 17.5 20H7.5A2.5 2.5 0 0 1 5 17.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V4zm2 3H16v1.8H9.5zm0 3.8H16v1.8H9.5zm-4 9.2A2.5 2.5 0 0 1 3 16.5V7h2v9.5a.5.5 0 0 0 .5.5z"/>
             </svg>
+            <span v-if="currentChatKbBoundCount > 0" class="kb-binding-badge">{{ currentChatKbBoundCount }}</span>
           </button>
           <div class="model-select-wrap" ref="modelSelectRef">
             <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
@@ -1922,29 +1942,13 @@
       </div>
     </main>
 
-    <div v-if="showKnowledgeBaseDialog" class="assistant-recommend-modal-overlay" @click.self="closeKnowledgeBaseDialog">
-      <div class="knowledge-base-modal">
-        <div class="knowledge-base-modal-header">
-          <h4>选择知识库</h4>
-          <button type="button" class="btn-close-modal" @click="closeKnowledgeBaseDialog">×</button>
-        </div>
-        <div class="knowledge-base-modal-body">
-          <div class="knowledge-base-modal-title">功能开发中</div>
-          <p class="knowledge-base-modal-text">详情请关注我们的公众号</p>
-          <div v-if="showFollowDonationQrCode" class="knowledge-base-qr-wrap">
-            <img
-              :src="followDonationQrCode()"
-              alt="智灵鸟科技公众号二维码"
-              class="knowledge-base-qr"
-              loading="lazy"
-              decoding="async"
-              @error="handleDonationQrCodeError('follow')"
-            />
-          </div>
-          <p v-else class="knowledge-base-modal-hint">公众号二维码暂不可用，请访问 aidooo.com 了解详情。</p>
-        </div>
-      </div>
-    </div>
+    <KbSelectorDialog
+      :visible="showKnowledgeBaseDialog"
+      :initial-binding="currentChatKbBinding"
+      @close="closeKnowledgeBaseDialog"
+      @confirm="onKbBindingConfirm"
+      @goto-settings="onKbGotoSettings"
+    />
 
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
@@ -2068,6 +2072,7 @@ import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSet
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { reportError } from '../utils/reportError.js'
+import { inAppAlert, inAppConfirm } from '../utils/inAppDialog.js'
 /** 工具栏 SVG 用 Vite ?inline 打进 data: URL；头像 PNG 用预生成模块避免产物再拆出独立 png 请求 */
 import logoAvatarDataUrl from '../assets/ai-assistant/logoAvatarDataUrl.js'
 import chatAttachSvgInline from '../assets/ai-assistant/chat-attach.svg?inline'
@@ -2182,6 +2187,10 @@ import { readCurrentDocumentPayload } from '../services/documentIntelligence/doc
 import { planTextChunks } from '../services/documentIntelligence/chunkPlanner.js'
 import { resolveExactToolRequest } from '../services/documentIntelligence/exactTools.js'
 import LongTaskRunCard from './LongTaskRunCard.vue'
+import KbSelectorDialog from './KbSelectorDialog.vue'
+import KbSourceStrip from './KbSourceStrip.vue'
+import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
+import services from '../services/index.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -2200,6 +2209,67 @@ const DONATION_ALIPAY_QR_CODE = 'images/pay/alipay.png'
 const SIDEBAR_MIN_WIDTH = 240
 const SIDEBAR_MAX_WIDTH_FALLBACK = 460
 const MAIN_AREA_MIN_WIDTH = 420
+const DEFAULT_KB_BINDING_CONFIG = Object.freeze({
+  topK: 5,
+  fusion: 'rrf',
+  hybrid: true,
+  rerank: false
+})
+
+function normalizeKbBinding(raw = {}) {
+  const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
+  const sourceRefs = Array.from(new Map(
+    (Array.isArray(raw?.sourceRefs) ? raw.sourceRefs : [])
+      .map(r => ({
+        kuId: String(r?.kuId || r?.kb_id || r?.id || '').trim(),
+        kind: String(r?.kind || '').trim(),
+        subKind: String(r?.subKind || r?.sub_kind || '').trim(),
+        name: String(r?.name || r?.displayName || r?.display_name || '').trim()
+      }))
+      .filter(r => r.kuId)
+      .map(r => [r.kuId, r])
+  ).values())
+  const kuIds = Array.from(new Set([
+    ...(Array.isArray(raw?.kuIds) ? raw.kuIds : []),
+    ...sourceRefs.map(r => r.kuId)
+  ].map(v => String(v || '').trim()).filter(Boolean)))
+  const kbNames = Array.from(new Set(
+    [
+      ...(Array.isArray(raw?.kbNames) ? raw.kbNames : []),
+      ...kuIds
+    ]
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+  ))
+  const topK = Number(raw?.topK ?? cfg.topK)
+  const finalTopK = Number(raw?.finalTopK ?? cfg.finalTopK)
+  const scoreThreshold = Number(raw?.scoreThreshold ?? cfg.scoreThreshold)
+  const fusion = String(raw?.mergeStrategy || raw?.fusion || cfg.mergeStrategy || cfg.fusion || DEFAULT_KB_BINDING_CONFIG.fusion).trim() || DEFAULT_KB_BINDING_CONFIG.fusion
+  const hybrid = (raw?.hybrid ?? cfg.hybrid ?? DEFAULT_KB_BINDING_CONFIG.hybrid) !== false
+  const rerank = (raw?.rerank ?? cfg.rerank ?? DEFAULT_KB_BINDING_CONFIG.rerank) === true
+  const normalized = {
+    kbNames,
+    kuIds,
+    sourceRefs,
+    config: {
+      ...DEFAULT_KB_BINDING_CONFIG,
+      ...cfg,
+      topK: Number.isFinite(topK) && topK > 0 ? topK : DEFAULT_KB_BINDING_CONFIG.topK,
+      fusion,
+      hybrid,
+      rerank
+    },
+    topK: Number.isFinite(topK) && topK > 0 ? topK : DEFAULT_KB_BINDING_CONFIG.topK,
+    mergeStrategy: fusion,
+    hybrid,
+    rerank,
+    connectionId: String(raw?.connectionId || '').trim(),
+    updatedAt: Number(raw?.updatedAt || 0) || 0
+  }
+  if (Number.isFinite(finalTopK) && finalTopK > 0) normalized.finalTopK = finalTopK
+  if (Number.isFinite(scoreThreshold)) normalized.scoreThreshold = scoreThreshold
+  return normalized
+}
 
 const TRANSLATION_TARGET_LANGUAGE_RULES = [
   { label: '英文', pattern: /(英文|英语|english)/i },
@@ -3272,7 +3342,7 @@ function normalizePrimaryConversationIntent(value, fallback = {}) {
   const source = value && typeof value === 'object' ? value : {}
   const fallbackValue = fallback && typeof fallback === 'object' ? fallback : {}
   const rawKind = String(source.kind || fallbackValue.kind || 'chat').trim().toLowerCase()
-  const kind = ['chat', 'document-operation', 'wps-capability', 'generated-output', 'assistant-task'].includes(rawKind)
+  const kind = ['chat', 'kb-chat', 'document-operation', 'wps-capability', 'generated-output', 'assistant-task'].includes(rawKind)
     ? rawKind
     : 'chat'
   const rawConfidence = String(source.confidence || fallbackValue.confidence || 'low').trim().toLowerCase()
@@ -3518,7 +3588,9 @@ function getSelectedModelId() {
 export default {
   name: 'AIAssistantDialog',
   components: {
-    LongTaskRunCard
+    LongTaskRunCard,
+    KbSelectorDialog,
+    KbSourceStrip
   },
   data() {
     return {
@@ -3541,6 +3613,7 @@ export default {
       modelGroupsVersion: 0,
       modelDropdownOpen: false,
       showKnowledgeBaseDialog: false,
+      nextSendKbMode: '',
       modelGroupCollapsed: {},
       isStreaming: false,
       streamingContent: '',
@@ -3677,6 +3750,12 @@ export default {
     },
     currentMessages() {
       return this.currentChat?.messages || []
+    },
+    currentChatKbBinding() {
+      return normalizeKbBinding(this.currentChat?.kbBindings)
+    },
+    currentChatKbBoundCount() {
+      return this.currentChatKbBinding.kbNames.length
     },
     currentMessageCount() {
       return this.currentMessages.length
@@ -4485,6 +4564,7 @@ export default {
     },
     getMessagePrimaryRouteLabel(message) {
       const kind = String(message?.primaryRoute?.kind || '').trim()
+      if (kind === 'kb-chat') return '知识库检索分析'
       if (kind === 'chat') return '普通对话'
       if (kind === 'document-operation') return '文档处理'
       if (kind === 'wps-capability') return 'WPS 操作'
@@ -5212,6 +5292,10 @@ export default {
     },
     consumeExternalPromptQuery(query = {}) {
       const prompt = String(query?.prompt || '').trim()
+      const kbMode = String(query?.kbMode || '').trim().toLowerCase()
+      if (kbMode && ['verify', 'summarize', 'qa'].includes(kbMode)) {
+        this.nextSendKbMode = kbMode
+      }
       if (!prompt) return
       this.userInput = prompt
       this.$nextTick(() => this.adjustComposerHeight())
@@ -5902,7 +5986,9 @@ export default {
           }
         }
 
-        this.chatHistory = Array.isArray(parsed) ? parsed : []
+        this.chatHistory = Array.isArray(parsed)
+          ? parsed.map(chat => this.normalizeChatRecord(chat))
+          : []
         if (currentId && this.chatHistory.some(c => c.id === currentId)) {
           this.currentChatId = currentId
         } else if (this.chatHistory.length > 0) {
@@ -5974,9 +6060,22 @@ export default {
         console.debug('保存对话历史失败:', e)
       }
     },
+    normalizeChatRecord(chat) {
+      const out = chat && typeof chat === 'object' ? { ...chat } : {}
+      out.id = String(out.id || `chat_${Date.now()}`)
+      out.title = String(out.title || '新对话')
+      out.messages = Array.isArray(out.messages) ? out.messages : []
+      out.kbBindings = normalizeKbBinding(out.kbBindings)
+      return out
+    },
     newChat() {
       const id = 'chat_' + Date.now()
-      this.chatHistory.unshift({ id, title: '新对话', messages: [] })
+      this.chatHistory.unshift({
+        id,
+        title: '新对话',
+        messages: [],
+        kbBindings: normalizeKbBinding()
+      })
       this.currentChatId = id
       this.saveHistory()
     },
@@ -5984,10 +6083,15 @@ export default {
       this.currentChatId = id
       this.saveHistory()
     },
-    deleteChat(id) {
+    async deleteChat(id) {
       const targetIndex = this.chatHistory.findIndex(chat => chat.id === id)
       if (targetIndex < 0) return
-      const confirmed = window.confirm('确认删除这个会话吗？删除后无法恢复。')
+      const confirmed = await inAppConfirm('确认删除这个会话吗？删除后无法恢复。', {
+        title: '删除会话',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      })
       if (!confirmed) return
       const remaining = this.chatHistory.filter(chat => chat.id !== id)
       this.chatHistory = remaining
@@ -5999,11 +6103,19 @@ export default {
     formatMessage(text) {
       if (!text) return ''
       const raw = prepareDialogDisplayText(String(text))
-      return raw
+      const escaped = raw
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>')
+      return this._injectKbCitations(escaped)
+    },
+    _injectKbCitations(html) {
+      if (!html.includes('[^c')) return html
+      // 限制 c 后面只接数字,避免误伤普通文本 [^cool]
+      return html.replace(/\[\^(c\d+)\]/g, (_, cid) => {
+        return `<sup class="kb-cite" data-id="${cid}" tabindex="0" title="点击或悬停查看知识来源">[${cid}]</sup>`
+      })
     },
     hasMessageGeneratedFiles(message) {
       return Array.isArray(message?.generatedFiles) && message.generatedFiles.length > 0
@@ -6275,12 +6387,12 @@ export default {
     },
     async downloadGeneratedFile(file) {
       if (this.isGeneratedFilePending(file)) {
-        alert('附件仍在生成中，请稍候下载')
+        inAppAlert('附件仍在生成中，请稍候下载')
         return
       }
       const url = this.ensureGeneratedFileDownloadUrl(file)
       if (!url) {
-        alert('当前文件下载链接不可用，请重新生成一次')
+        inAppAlert('当前文件下载链接不可用，请重新生成一次')
         return
       }
       const fileName = this.ensureGeneratedFileSaveName(file)
@@ -6288,7 +6400,7 @@ export default {
       if (savePath) {
         const saved = await this.writeGeneratedFileToPath(file, savePath, url)
         if (saved) {
-          alert('文件已保存：' + savePath.split(/[/\\]/).pop())
+          inAppAlert('文件已保存：' + savePath.split(/[/\\]/).pop(), { title: '保存成功' })
           return
         }
         console.warn('WPS API 写入失败，回退到浏览器下载:', savePath)
@@ -6588,19 +6700,130 @@ export default {
     closeKnowledgeBaseDialog() {
       this.showKnowledgeBaseDialog = false
     },
+    onKbBindingConfirm(binding) {
+      const chat = this.getOrCreateWritableChat()
+      if (!chat) return
+      chat.kbBindings = normalizeKbBinding({
+        ...binding,
+        updatedAt: Date.now()
+      })
+      try { this.saveHistory({ flush: true }) } catch (e) { /* noop */ }
+      this.showKnowledgeBaseDialog = false
+    },
+    onKbGotoSettings() {
+      this.showKnowledgeBaseDialog = false
+      try {
+        openSettingsWindow({ menu: 'general-settings', sub: 'kb' }, { title: '知识库设置' })
+      } catch (e) { /* noop */ }
+    },
+    clearCurrentChatKbBinding() {
+      const chat = this.currentChat
+      if (!chat) return
+      chat.kbBindings = normalizeKbBinding({ updatedAt: Date.now() })
+      try { this.saveHistory({ flush: true }) } catch (e) { /* noop */ }
+    },
+    shouldShowKbSourceStrip(msg) {
+      const meta = msg?.messageMeta || {}
+      return !!(
+        (Array.isArray(meta.kbSources) && meta.kbSources.length > 0) ||
+        meta.kbError ||
+        meta.kbPromptError ||
+        meta.kbPlan ||
+        meta.kbBindings?.kbNames?.length
+      )
+    },
+    getKbConnectionForMessage(msg) {
+      try {
+        const cs = services.kb?.connectionStore
+        if (!cs) return null
+        const targetId = msg?.messageMeta?.kbConnectionId
+        if (targetId) {
+          const conn = cs.getConnection(targetId)
+          if (conn) return conn
+        }
+        return cs.getCurrentConnection() || null
+      } catch (e) { return null }
+    },
+    getMessageUserQueryText(msg, idx) {
+      if (!Array.isArray(this.currentMessages)) return ''
+      for (let k = idx - 1; k >= 0; k--) {
+        const m = this.currentMessages[k]
+        if (m?.role === 'user') return String(m.content || '')
+      }
+      return ''
+    },
+    onKbStripToggle(msg, collapsed) {
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbStripCollapsed = collapsed
+      try { this.saveHistory() } catch (e) { /* noop */ }
+    },
+    onKbHoverCitation(msg, citationId) {
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbHoveredCitationId = citationId
+    },
+    onKbDownloadError({ source, status, message }) {
+      const desc = source?.file_name ? `「${source.file_name}」` : ''
+      try {
+        inAppAlert(`附件下载失败 ${desc}\n\n${message}（HTTP ${status}）`, { title: '下载失败' })
+      } catch (e) {
+        console.warn('[KB] download error:', message, status, source)
+      }
+    },
+    onKbDownloadOk(_payload) {
+      // 后续可在此打点
+    },
+    onMessageTextMouseOver(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      const id = String(t.getAttribute('data-id') || '')
+      if (!id) return
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbHoveredCitationId = id
+    },
+    onMessageTextMouseOut(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      if (!msg.messageMeta) return
+      msg.messageMeta.kbHoveredCitationId = ''
+    },
+    onMessageTextClick(msg, ev) {
+      const t = ev?.target
+      if (!t || !t.classList || !t.classList.contains('kb-cite')) return
+      const id = String(t.getAttribute('data-id') || '')
+      if (!id) return
+      ev.preventDefault()
+      // 点击引用 → 展开 strip + 滚动到对应卡片 + 短时高亮
+      if (!msg.messageMeta) msg.messageMeta = {}
+      msg.messageMeta.kbStripCollapsed = false
+      msg.messageMeta.kbHoveredCitationId = id
+      this.$nextTick(() => {
+        try {
+          const wrap = t.closest('.message-content') || t.closest('.message-text')
+          const card = wrap && wrap.querySelector(`.kb-source-card[data-citation-id="${id}"]`)
+          if (card && typeof card.scrollIntoView === 'function') {
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }
+        } catch (e) { /* noop */ }
+      })
+    },
     openModelSettings() {
       this.modelDropdownOpen = false
       openSettingsWindow({ menu: 'model-settings' }, { title: '模型设置' })
     },
-    deleteCustomAssistant(item) {
+    async deleteCustomAssistant(item) {
       if (!this.isCustomAssistant(item)) return
       const name = item.shortLabel || item.label || '未命名助手'
-      const confirmed = window.confirm(`确认删除助手“${name}”吗？删除后无法恢复。`)
+      const confirmed = await inAppConfirm(`确认删除助手“${name}”吗？删除后无法恢复。`, {
+        title: '删除助手',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      })
       if (!confirmed) return
       const next = getCustomAssistants().filter(entry => entry.id !== item.key)
       const saved = saveCustomAssistants(next)
       if (!saved) {
-        alert('删除助手失败，请稍后重试')
+        await inAppAlert('删除助手失败，请稍后重试')
         return
       }
       this.loadAssistantItems()
@@ -7034,7 +7257,7 @@ export default {
       if (this.isStreaming) return
       const userMessage = this.findPreviousUserMessage(message)
       if (!userMessage) {
-        alert('未找到可重试的上一条请求')
+        inAppAlert('未找到可重试的上一条请求')
         return
       }
       const text = String(userMessage?.content || '').trim()
@@ -7139,7 +7362,7 @@ export default {
     runRecommendedAssistant(recommendation) {
       const item = this.getAssistantItemByKey(recommendation?.key)
       if (!item) {
-        alert('未找到对应助手')
+        inAppAlert('未找到对应助手')
         return
       }
       this.showAssistantRecommendModal = false
@@ -8152,10 +8375,12 @@ export default {
       this.saveHistory()
     },
     confirmAssistantRun(launchInfo) {
-      if (!launchInfo?.requiresFullDocumentConfirm) return true
+      // 返回 Promise<boolean> — 调用方需 await。原同步 window.confirm 会让 ShowDialog 关闭。
+      if (!launchInfo?.requiresFullDocumentConfirm) return Promise.resolve(true)
       const length = Number(launchInfo.inputLength || 0)
-      return window.confirm(
-        `“${launchInfo.title || '该助手'}”将处理全文内容（约 ${length} 字），是否继续执行？`
+      return inAppConfirm(
+        `“${launchInfo.title || '该助手'}”将处理全文内容（约 ${length} 字），是否继续执行？`,
+        { title: '处理全文', okText: '继续', cancelText: '取消' }
       )
     },
     getGeneratedOutputTaskStatusText(task) {
@@ -8663,10 +8888,11 @@ export default {
       this.saveHistory()
     },
     confirmDocumentCommentRun(intent) {
-      if (intent?.scope !== 'document') return true
+      if (intent?.scope !== 'document') return Promise.resolve(true)
       const length = Number(String(getDocumentText() || '').trim().length || 0)
-      return window.confirm(
-        `将按当前要求扫描全文并逐处添加批注（约 ${length} 字），是否继续执行？`
+      return inAppConfirm(
+        `将按当前要求扫描全文并逐处添加批注（约 ${length} 字），是否继续执行？`,
+        { title: '扫描全文添加批注', okText: '继续', cancelText: '取消' }
       )
     },
     getDocumentCommentTaskStatusText(task) {
@@ -8817,12 +9043,12 @@ export default {
       if (this.isStreaming || message?.activeGeneratedOutputRun?.status === 'running') return
       const retryPayload = message?.activeGeneratedOutputRun?.retryPayload
       if (!retryPayload?.text || !retryPayload?.intent) {
-        alert('未找到可重试的生成参数')
+        inAppAlert('未找到可重试的生成参数')
         return
       }
       const model = this.filteredModelList.find(item => item.id === retryPayload.modelId) || this.selectedModel
       if (!model) {
-        alert('当前没有可用模型，无法重试')
+        inAppAlert('当前没有可用模型，无法重试')
         return
       }
       const previousUserMessage = this.findPreviousUserMessage(message)
@@ -8860,7 +9086,7 @@ export default {
       const rollbackCandidate = task?.data?.rollbackCandidate || run?.rollbackCandidate
       const backupId = String(rollbackCandidate?.backupId || '').trim()
       if (!backupId) {
-        alert('当前任务没有可回滚的文档备份')
+        inAppAlert('当前任务没有可回滚的文档备份')
         return
       }
       try {
@@ -8895,7 +9121,7 @@ export default {
       const retryPayload = previousTask?.data?.retryPayload || previousRun?.retryPayload
       const assistantId = String(retryPayload?.assistantId || previousTask?.data?.assistantId || '').trim()
       if (!assistantId) {
-        alert('未找到可重试的助手任务参数')
+        inAppAlert('未找到可重试的助手任务参数')
         return
       }
       const overrides = {
@@ -8925,7 +9151,7 @@ export default {
       }
       const { taskId, promise } = startAssistantTask(assistantId, overrides)
       if (!taskId) {
-        alert('助手任务重试失败，未能创建任务')
+        inAppAlert('助手任务重试失败，未能创建任务')
         return
       }
       message.isLoading = true
@@ -9065,7 +9291,7 @@ export default {
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
 
-      if (!this.confirmDocumentCommentRun(intent)) {
+      if (!(await this.confirmDocumentCommentRun(intent))) {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         assistantMsg.content = '已取消本次批注任务。'
@@ -9330,7 +9556,7 @@ export default {
       if (files.length === 0) return
       const remainingCount = MAX_ATTACHMENT_COUNT - this.attachments.length
       if (remainingCount <= 0) {
-        alert(`最多只能添加 ${MAX_ATTACHMENT_COUNT} 个附件`)
+        inAppAlert(`最多只能添加 ${MAX_ATTACHMENT_COUNT} 个附件`)
         event.target.value = ''
         return
       }
@@ -9338,7 +9564,7 @@ export default {
       const nextAttachments = []
       for (const file of acceptedFiles) {
         if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
-          alert(`文件“${file.name}”超过 ${formatAttachmentSize(MAX_ATTACHMENT_FILE_SIZE)}，暂不支持添加`)
+          inAppAlert(`文件“${file.name}”超过 ${formatAttachmentSize(MAX_ATTACHMENT_FILE_SIZE)}，暂不支持添加`)
           continue
         }
         const item = {
@@ -10146,7 +10372,7 @@ export default {
       const context = this.buildGeneratedOutputContext(text, intent)
       if (intent?.action === 'report' && context.scope === 'document' && String(context.documentText || '').length > DIRECT_DOCUMENT_CHAR_LIMIT) {
         const { chunks } = this.getDocumentChunks(context.documentText, 'synthesize')
-        if (!this.confirmDocumentChunkSubmission(context.documentText, chunks.length)) {
+        if (!(await this.confirmDocumentChunkSubmission(context.documentText, chunks.length))) {
           return
         }
       }
@@ -10456,6 +10682,26 @@ export default {
           reason: '请求更像直接调用 WPS 能力。'
         }
       }
+      // 判断/审查类问题:用户在让 AI 评估正确性,不是让 AI 改文档。
+      // 必须在 document-operation 总命中之前拦截 — 否则 DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN
+      // 仅凭"文档"两字就高置信打成 document-operation,再走 inferDocumentOperationRouteWithModel
+      // 被 LLM 选成 document-revision:proofread/clarify/correct-description 三件套。
+      // 例:"文档信息正确吗" / "判断这段是否符合制度" / "对照知识库审一下"。
+      const JUDGE_OR_REVIEW_PATTERN = new RegExp([
+        '判断', '判定', '核对', '对照', '对比', '审查', '审核', '审阅', '核查', '合规',
+        '是否(?:正确|准确|一致|存在|符合|相同|有误|无误|完整|有问题|有错)',
+        '(?:正确|准确|一致|对|错)(?:吗|不|否)',
+        '有(?:没|无)?(?:错|问题|歧义|偏差)',
+      ].join('|'))
+      // 写回类动词 — 命中说明用户想直接修改文档(应回到 document-operation/revision 链路)。
+      const DOC_WRITE_BACK_PATTERN = /(修正|改正|纠正|改写|重写|润色|优化|替换|改成|换成|修改成|插入|追加|加入|删除|移除|去掉|移动|复制|粘贴|翻译|译成|翻成|扩写|扩展|扩充|展开|丰富|续写|补充|延伸|细化|脱密|脱敏|占位符|加粗|标红|对齐|字号|字体|行距|统一术语|批注|批示|导出.{0,4}(报告|PDF|Word|文件)|生成.{0,6}(图片|视频|语音|报告))/
+      if (JUDGE_OR_REVIEW_PATTERN.test(normalized) && !DOC_WRITE_BACK_PATTERN.test(normalized)) {
+        return {
+          kind: 'chat',
+          confidence: 'high',
+          reason: '请求在让 AI 判断/审查正确性,而非写回文档。按普通对话处理(若挂了知识库,会自动作为 KB 问答上下文)。'
+        }
+      }
       if (
         this.shouldTryDocumentOperationRouting(normalized) ||
         this.shouldTryDocumentRelocationIntent(normalized) ||
@@ -10544,10 +10790,17 @@ export default {
     },
     async resolvePrimaryConversationIntent(text, model) {
       const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
-      const localShortcut = resolveLocalIntentShortcut(text, {
+      const selectionContext = this.resolveBestSelectionContext()
+      const routeContext = {
         ruleIntent,
-        hasSelection: !!this.resolveBestSelectionContext()?.text,
+        hasSelection: !!selectionContext?.text,
+        selectedText: selectionContext?.text || '',
+        hasDocument: !!getActiveDocument(),
+        kbBindings: this.currentChatKbBinding,
         attachments: this.attachments
+      }
+      const localShortcut = resolveLocalIntentShortcut(text, {
+        ...routeContext
       })
       if (localShortcut.shortcut) {
         return localShortcut
@@ -10555,8 +10808,7 @@ export default {
       const routeCacheOptions = {
         providerId: model?.providerId,
         modelId: model?.modelId,
-        hasSelection: !!this.resolveBestSelectionContext()?.text,
-        attachments: this.attachments
+        ...routeContext
       }
       const cachedIntent = getCachedModelRouteIntent(text, routeCacheOptions)
       if (cachedIntent) return cachedIntent
@@ -13884,13 +14136,15 @@ export default {
         { role: 'user', content: userPrompt }
       ]
     },
-    confirmDocumentRevisionRun(intent, sourceInfo, chunkCount = 1) {
+    async confirmDocumentRevisionRun(intent, sourceInfo, chunkCount = 1) {
       if (sourceInfo?.actualScope !== 'document') return true
       const scopeLabel = this.getDocumentRevisionPurposeLabel(intent)
       const charCount = Number(String(sourceInfo?.sourceText || '').length || 0)
-      if (!window.confirm(`将读取全文并生成“${scopeLabel}”预览（约 ${charCount} 字），确认后才会写回文档。是否继续？`)) {
-        return false
-      }
+      const ok = await inAppConfirm(
+        `将读取全文并生成“${scopeLabel}”预览（约 ${charCount} 字），确认后才会写回文档。是否继续？`,
+        { title: `生成${scopeLabel}预览`, okText: '继续', cancelText: '取消' }
+      )
+      if (!ok) return false
       if (chunkCount > 1) {
         return this.confirmDocumentChunkSubmission(sourceInfo?.sourceText || '', chunkCount)
       }
@@ -14056,7 +14310,7 @@ export default {
           assistantMsg.activeDocumentRevisionRun,
           chunks.length > 1 ? `本次将按 ${chunks.length} 段依次处理。` : '本次无需分段，直接处理当前内容。'
         )
-        if (!this.confirmDocumentRevisionRun(resolvedIntent, sourceInfo, chunks.length)) {
+        if (!(await this.confirmDocumentRevisionRun(resolvedIntent, sourceInfo, chunks.length))) {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.content = '已取消本次文档修订。'
           assistantMsg.isLoading = false
@@ -14303,9 +14557,10 @@ export default {
     },
     confirmDocumentChunkSubmission(documentText, chunkCount) {
       const charCount = Number(documentText?.length || 0)
-      if (charCount <= DIRECT_DOCUMENT_CHAR_LIMIT && chunkCount <= 1) return true
-      return window.confirm(
-        `当前文档约 ${charCount} 字，超出单次推荐长度，将按 ${chunkCount} 段提交处理。\n\n继续后会自动分段并合并结果，耗时会更久。\n\n是否继续？`
+      if (charCount <= DIRECT_DOCUMENT_CHAR_LIMIT && chunkCount <= 1) return Promise.resolve(true)
+      return inAppConfirm(
+        `当前文档约 ${charCount} 字，超出单次推荐长度，将按 ${chunkCount} 段提交处理。\n\n继续后会自动分段并合并结果，耗时会更久。\n\n是否继续？`,
+        { title: '分段提交', okText: '继续', cancelText: '取消' }
       )
     },
     buildDocumentTransformChunkMessages(userText, chunkText, index, total, attachmentPrompt = '') {
@@ -14480,7 +14735,7 @@ export default {
     sendSelectionAwareTranslateMessage(userContent, model, intent, prepared = null) {
       const selectionContext = this.resolveBestSelectionContext()
       if (!selectionContext?.text) {
-        alert('请先选中文本，或将光标放到需要翻译的段落中')
+        inAppAlert('请先选中文本，或将光标放到需要翻译的段落中')
         return
       }
 
@@ -14548,13 +14803,13 @@ export default {
     async sendDocumentAwareMessage(userContent, model, prepared = null) {
       const { documentText, snapshot, documentCharCount } = this.getCurrentDocumentPayload()
       if (!documentText) {
-        alert('当前文档为空，暂时没有可提交的正文内容')
+        inAppAlert('当前文档为空，暂时没有可提交的正文内容')
         return
       }
 
       const strategy = classifyDocumentRequestStrategy(userContent)
       const { chunks } = this.getDocumentChunks(documentText, strategy)
-      if (!this.confirmDocumentChunkSubmission(documentText, chunks.length)) {
+      if (!(await this.confirmDocumentChunkSubmission(documentText, chunks.length))) {
         return
       }
 
@@ -14880,7 +15135,7 @@ export default {
       if (!item?.key || this.assistantRunLoadingKey) return
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
-        if (!this.confirmAssistantRun(launchInfo)) return
+        if (!(await this.confirmAssistantRun(launchInfo))) return
         if (this.shouldCollectAssistantRunParameters(item)) {
           this.showAssistantRunParameterCollection(item)
           return
@@ -14903,7 +15158,7 @@ export default {
         )
         promise.catch((error) => {
           if (error?.code === 'TASK_CANCELLED') return
-          alert(error?.message || '助手执行失败')
+          inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
         }).finally(() => {
           if (this.assistantRunLoadingKey === item.key) {
             this.assistantRunLoadingKey = ''
@@ -14911,7 +15166,7 @@ export default {
         })
       } catch (error) {
         this.assistantRunLoadingKey = ''
-        alert(error?.message || '助手执行失败')
+        await inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
       }
     },
     async sendMessage() {
@@ -14919,7 +15174,10 @@ export default {
       const text = this.userInput.trim()
       if ((!text && this.attachments.length === 0) || this.isStreaming) return
       if (this.activeDocumentRevisionRunContext?.messageId) {
-        window.alert('当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。')
+        await inAppAlert(
+          '当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。',
+          { title: '修订预览生成中' }
+        )
         return
       }
 
@@ -14934,19 +15192,22 @@ export default {
       this.startMessageEntryEffect(userMessageId, 'user')
       this.startMessageEntryEffect(assistantMsg?.id, 'assistant')
 
-      const localFaq = this.shouldUseCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
-        ? this.buildCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
-        : resolveAssistantLocalFaq(text)
+      const hasBoundKnowledgeBase = this.currentChatKbBinding.kbNames.length > 0
+      const localFaq = hasBoundKnowledgeBase
+        ? null
+        : (this.shouldUseCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
+            ? this.buildCurrentDocumentIntroLocalFaq(text, selectionSnapshot)
+            : resolveAssistantLocalFaq(text))
       if (localFaq) {
         this.startAssistantLocalFaqMessage(prepared, localFaq)
         return
       }
 
-      const exactTool = resolveExactToolRequest(text, {
+      const exactTool = hasBoundKnowledgeBase ? null : resolveExactToolRequest(text, {
         materialText: this.resolveExactStatsMaterialText(text)
       })
       const exactStats = exactTool?.result
-      if (exactTool?.answer && exactStats) {
+      if (!hasBoundKnowledgeBase && exactTool?.answer && exactStats) {
         this.startAssistantLocalFaqMessage(prepared, {
           type: exactStats.kind,
           title: `${exactStats.targetLabel || '条目'}统计`,
@@ -14978,8 +15239,9 @@ export default {
           messages.splice(userIndex, 1)
         }
         this.saveHistory()
-        const shouldOpenSettings = window.confirm(
-          '当前还没有可用模型。请先在设置中开启提供商、填写 API 地址与密钥，并刷新模型清单。是否现在前往模型设置？'
+        const shouldOpenSettings = await inAppConfirm(
+          '当前还没有可用模型。请先在设置中开启提供商、填写 API 地址与密钥，并刷新模型清单。是否现在前往模型设置？',
+          { title: '没有可用模型', okText: '前往设置', cancelText: '稍后再说' }
         )
         if (shouldOpenSettings) {
           this.openModelSettings()
@@ -14999,24 +15261,43 @@ export default {
 
       try {
         const routeStartedAt = Date.now()
-        const primaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        const unifiedLane = String(resolvedPrimaryIntent?.unifiedPlan?.lane || '').trim()
+        const primaryIntent = hasBoundKnowledgeBase && unifiedLane === 'knowledge_query'
+          ? {
+              ...resolvedPrimaryIntent,
+              kind: 'kb-chat',
+              confidence: 'high',
+              reason: [
+                resolvedPrimaryIntent?.reason,
+                '已选择知识库且识别为纯知识查询，本轮优先进行知识库检索分析。'
+              ].filter(Boolean).join(' ')
+            }
+          : resolvedPrimaryIntent
         recordPerf({
           kind: 'send.route.primary',
           providerId: model?.providerId,
           modelId: model?.modelId,
           durationMs: Date.now() - routeStartedAt,
           ok: true,
-          note: String(primaryIntent?.kind || 'chat')
+          note: hasBoundKnowledgeBase ? `kb:${unifiedLane || 'unknown'}` : String(primaryIntent?.kind || 'chat')
         })
-        const routeKind = String(primaryIntent?.kind || 'chat')
+        let routeKind = String(primaryIntent?.kind || 'chat')
+        if (unifiedLane === 'document_review' || unifiedLane === 'document_operation') routeKind = 'document-operation'
+        else if (unifiedLane === 'assistant_call') routeKind = 'assistant-task'
+        else if (unifiedLane === 'wps_capability') routeKind = 'wps-capability'
+        else if (unifiedLane === 'generated_output') routeKind = 'generated-output'
         assistantMsg.primaryRoute = {
           kind: routeKind,
           confidence: String(primaryIntent?.confidence || '').trim() || 'low',
-          reason: String(primaryIntent?.reason || '').trim()
+          reason: String(primaryIntent?.reason || '').trim(),
+          unifiedPlan: primaryIntent?.unifiedPlan || null
         }
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: `已识别为${this.getMessagePrimaryRouteLabel(assistantMsg) || '当前请求'}...`,
-          detail: this.getMessagePrimaryRouteDetail(assistantMsg) || '正在根据识别结果选择处理链路。',
+          detail: hasBoundKnowledgeBase && routeKind === 'kb-chat'
+            ? '已选择知识库，本轮将先搜索知识库并结合当前材料回答。'
+            : (this.getMessagePrimaryRouteDetail(assistantMsg) || '正在根据识别结果选择处理链路。'),
           percent: 12
         })
         this.saveHistory()
@@ -15373,6 +15654,39 @@ export default {
           ...(assistantMsg.messageMeta && typeof assistantMsg.messageMeta === 'object' ? assistantMsg.messageMeta : {}),
           contextBuildMeta
         }
+
+        try {
+          const overrideKbMode = String(this.nextSendKbMode || '').trim()
+          if (overrideKbMode) this.nextSendKbMode = ''
+          await applyKbRetrievalIfBound({
+            chat: chatObj,
+            userMessage: { content: apiUserContent },
+            kbQueryText: text,
+            kbMode: overrideKbMode || 'qa',
+            messagesForApi,
+            assistantMessageMeta: assistantMsg.messageMeta,
+            selectionText: selectionSnapshot?.text || this.selectionContextSnapshot?.text || '',
+            contextText: [
+              taskInputScope?.resolvedScope === 'document' ? documentText : '',
+              taskInputScope?.resolvedScope === 'selection' ? (selectionSnapshot?.text || '') : '',
+              attachmentsSnapshot?.length ? this.buildAttachmentContext(text, attachmentsSnapshot).attachmentPrompt : ''
+            ].filter(Boolean).join('\n\n'),
+            onKbPhase: (phase, info = {}) => {
+              const phaseName = typeof phase === 'string' ? phase : phase?.phase
+              const phaseInfo = typeof phase === 'string' ? info : (phase || {})
+              if (phaseName === 'splitting' || phaseName === 'clustering' || phaseName === 'distilling') {
+                this.updateAssistantLoadingProgress(assistantMsg, {
+                  label: '知识库检索中...',
+                  detail: phaseInfo?.detail || '正在准备知识检索查询...',
+                  percent: 80
+                })
+              }
+            }
+          })
+        } catch (kbErr) {
+          console.warn('[KB] retrieval middleware failed:', kbErr)
+          assistantMsg.messageMeta.kbError = kbErr?.message || String(kbErr)
+        }
         this.updateAssistantLoadingProgress(assistantMsg, {
           label: contextBuildMeta?.usedSummary || contextBuildMeta?.wasTrimmed
             ? '已完成上下文治理...'
@@ -15533,7 +15847,7 @@ export default {
     confirmInsert() {
       const text = prepareDialogDisplayText(this.insertModalContent.trim())
       if (!text) {
-        alert('内容不能为空')
+        inAppAlert('内容不能为空')
         return
       }
       this.showInsertModal = false
@@ -19040,10 +19354,74 @@ export default {
   flex-direction: row;
   align-items: flex-end;
   gap: 8px;
+  /* WPS 侧边栏宽度收窄时,默认 nowrap 会把 textarea 挤到几像素宽,
+     于是用户每打一个汉字都换行。允许工具按钮在窄宽下整体换行,textarea 仍能保持可读宽度。 */
+  flex-wrap: wrap;
+}
+.input-row > .text-input {
+  /* textarea 在所有同行按钮之上独占一条:flex-basis 100% 强制它不被挤压。
+     窄宽下整体表现为"输入框一条 + 工具按钮一条",而非逐字符断行。 */
+  flex-basis: 100%;
+  min-width: 0;
+  order: -1;
 }
 
 .chat-attachment-input {
   display: none;
+}
+
+.message-text .kb-cite {
+  display: inline-block;
+  vertical-align: super;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  background: #e7eefb;
+  color: #2a6ddf;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.message-text .kb-cite:hover {
+  background: #2a6ddf;
+  color: white;
+  transform: translateY(-1px);
+}
+.message-text .kb-cite:focus-visible {
+  outline: 2px solid #2a6ddf;
+  outline-offset: 1px;
+}
+/* 反向联动:KbSourceStrip hover 卡片 → AIAssistantDialog 在 .message-text 上挂 data-active-cite */
+.message-text[data-active-cite] .kb-cite[data-id]:not([data-id=""]) {
+  /* 可以加点温柔的"不是当前 active"的弱化态;先留空,只做正向高亮 */
+}
+.message-text[data-active-cite="c1"]  .kb-cite[data-id="c1"],
+.message-text[data-active-cite="c2"]  .kb-cite[data-id="c2"],
+.message-text[data-active-cite="c3"]  .kb-cite[data-id="c3"],
+.message-text[data-active-cite="c4"]  .kb-cite[data-id="c4"],
+.message-text[data-active-cite="c5"]  .kb-cite[data-id="c5"],
+.message-text[data-active-cite="c6"]  .kb-cite[data-id="c6"],
+.message-text[data-active-cite="c7"]  .kb-cite[data-id="c7"],
+.message-text[data-active-cite="c8"]  .kb-cite[data-id="c8"],
+.message-text[data-active-cite="c9"]  .kb-cite[data-id="c9"],
+.message-text[data-active-cite="c10"] .kb-cite[data-id="c10"],
+.message-text[data-active-cite="c11"] .kb-cite[data-id="c11"],
+.message-text[data-active-cite="c12"] .kb-cite[data-id="c12"],
+.message-text[data-active-cite="c13"] .kb-cite[data-id="c13"],
+.message-text[data-active-cite="c14"] .kb-cite[data-id="c14"],
+.message-text[data-active-cite="c15"] .kb-cite[data-id="c15"],
+.message-text[data-active-cite="c16"] .kb-cite[data-id="c16"],
+.message-text[data-active-cite="c17"] .kb-cite[data-id="c17"],
+.message-text[data-active-cite="c18"] .kb-cite[data-id="c18"],
+.message-text[data-active-cite="c19"] .kb-cite[data-id="c19"],
+.message-text[data-active-cite="c20"] .kb-cite[data-id="c20"] {
+  background: #f5a623;
+  color: white;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
 }
 
 .knowledge-base-btn {
@@ -19059,10 +19437,41 @@ export default {
   color: var(--ai-text);
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
 }
 
 .knowledge-base-btn:hover {
   border-color: #0ea5e9;
+}
+
+.knowledge-base-btn.has-binding {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.18), 0 8px 18px rgba(29, 78, 216, 0.22);
+}
+
+.knowledge-base-btn.has-binding:hover {
+  border-color: #1e40af;
+  background: #1e40af;
+}
+
+.kb-binding-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #0f172a;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 9px;
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 0 0 2px white;
 }
 
 .knowledge-base-icon {

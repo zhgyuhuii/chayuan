@@ -255,6 +255,14 @@ const ribbonHelpers = {
   visibility: ribbonVisibilityHelpersLib
 }
 
+/* ────────── 远程知识库整合(chayuan-server) ────────── */
+// 用 namespace import 同时拿到 default 包装 (connection/catalog/search/...) 和
+// named exports (connectionStore/connectionCipher/healthProbe/kbCatalog 等),
+// 保证 services.kb.connectionCipher 等子模块对外可见。
+import * as kbNs from './kb/index.js'
+
+const kb = { ...kbNs.default, ...kbNs }
+
 /* ────────── 默认导出 ────────── */
 
 export default {
@@ -274,12 +282,14 @@ export default {
   assistantEvolution,
   schema,
   ui,
-  ribbonHelpers
+  ribbonHelpers,
+  kb
 }
 
 export {
   evolution, assistant, perf, flags, toast,
   host, router, workflow, ribbonHelpers, evolutionExtras,
   documentIntelligence, toolRegistry, workflowOrchestration,
-  assistantEvolution, schema, ui, sendPipeline
+  assistantEvolution, schema, ui, sendPipeline,
+  kb
 }

@@ -69,7 +69,19 @@ function isAbsolutePath(p) {
   return s.startsWith('/') || /^[A-Za-z]:[\\/]/.test(s)
 }
 
+// 某些 WPS 宿主版本里 FileSystem.writeFileString 把第一个参数当作 key 而非路径,
+// 含 / 或 \ 时直接抛 'path cannot contains "/" or "\\"'。每次 saveToFile 都重试只会
+// 在控制台刷屏,而 localStorage 兜底其实是工作的。一旦命中此错误就一次性 disable 文件路径,
+// 后续调用静默走 localStorage / PluginStorage。
+let _fileWriteDisabled = false
+
+function _isPathSeparatorRejection(err) {
+  const msg = String(err?.message || err || '').toLowerCase()
+  return msg.includes('path cannot') && (msg.includes('/') || msg.includes('\\'))
+}
+
 function saveToFile(obj) {
+  if (_fileWriteDisabled) return false
   try {
     const path = joinDataPath(FILE_NAME) || getSettingsPath()
     if (!path) return false
@@ -82,6 +94,11 @@ function saveToFile(obj) {
     const json = JSON.stringify(obj, null, 2)
     return !!(fs.writeFileString ? fs.writeFileString(path, json) : fs.WriteFile(path, json))
   } catch (e) {
+    if (_isPathSeparatorRejection(e)) {
+      _fileWriteDisabled = true
+      console.info('globalSettings saveToFile: 当前 WPS 宿主不支持带分隔符的文件路径,改用 localStorage 持久化。')
+      return false
+    }
     console.warn('globalSettings saveToFile:', e)
     return false
   }
@@ -131,6 +148,9 @@ export function saveGlobalSettings(partial) {
     console.error('globalSettings: 保存失败（文件和 localStorage 均不可用）')
     return false
   }
-  if (!fileOk) console.warn('globalSettings: 文件保存失败，已保存到 localStorage')
+  // 文件路径已被宿主拒绝时,saveToFile 内部已一次性 info 提示,这里就不再每次都 warn。
+  if (!fileOk && !_fileWriteDisabled) {
+    console.warn('globalSettings: 文件保存失败，已保存到 localStorage')
+  }
   return true
 }

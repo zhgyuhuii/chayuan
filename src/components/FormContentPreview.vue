@@ -66,6 +66,7 @@
 
 <script>
 import { loadRulesFromDoc } from '../utils/templateRules.js'
+import { inAppConfirm } from '../utils/inAppDialog.js'
 
 export default {
   name: 'FormContentPreview',
@@ -157,13 +158,17 @@ export default {
         if (input) input.focus()
       })
     },
-    onEditBlur(item, idx) {
+    async onEditBlur(item, idx) {
       const key = item.bookmarkName + '-' + idx
       if (this.editingKey !== key) return
       const current = (this.editContent || '').trim()
       const original = (this.editOriginalContent || '').trim()
       if (current !== original) {
-        const ok = window.confirm('内容有编辑，是否替换原有内容？')
+        const ok = await inAppConfirm('内容有编辑，是否替换原有内容？', {
+          title: '替换书签内容',
+          okText: '替换',
+          cancelText: '放弃修改'
+        })
         if (ok) {
           this.doReplaceBookmark(item, current)
         } else {
@@ -221,8 +226,13 @@ export default {
         this.errorMsg = '定位失败：' + (e.message || e)
       }
     },
-    onDeleteItem(item, idx) {
-      if (!window.confirm('确定要删除该标签及其内容吗？')) return
+    async onDeleteItem(item, idx) {
+      if (!(await inAppConfirm('确定要删除该标签及其内容吗？', {
+        title: '删除标签',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      }))) return
       try {
         const doc = window.Application?.ActiveDocument
         if (!doc) {

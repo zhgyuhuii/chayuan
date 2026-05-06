@@ -10,6 +10,20 @@
 
 ---
 
+## What's new in v3.0 — Remote Knowledge Base RAG
+
+In-editor consumption of enterprise / team / personal KBs: questions trigger automatic retrieval, context assembly and grounded answers with one-click attachment download.
+
+- **Dual auth modes** (JWT user / HMAC application), credentials sealed with AES-GCM
+- **Multi-source retrieval pipeline** (`services/kb`): rewrite → batch search → dedup → rerank → cite-aware prompt
+- **Citation strip with original-file download**, document / structured / vector / office sources are typed and rendered distinctly
+- **Self-healing on stale bindings**: when a bound KB is deleted or revoked, the cache is invalidated silently — no more red "search_batch HTTP 403" toasts
+- **One-flag rollback**: `kbRemoteIntegration` disables the whole RAG pipeline at once
+
+Full release notes: [RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md)
+
+---
+
 ## 1. Copyright and license
 
 **Software name:** Chayuan AI Document Assistant (Chinese product name **察元 AI 文档助手**, npm package **`chayuan`**).
