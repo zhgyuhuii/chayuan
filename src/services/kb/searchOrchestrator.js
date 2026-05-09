@@ -399,7 +399,10 @@ export async function run(options = {}) {
         }
       } catch (e) {
         if (e?.code === 'ENDPOINT_NOT_FOUND') {
-          if ((connection.authMode || 'jwt') === 'jwt') {
+          // jwt 与 none(单机本机直连)都能调 /knowledge_universe/ask;
+          // 只有 hmac(App 模式)的 OpenAPI 通道里没有这个端点,要回到 search_docs。
+          const mode = connection.authMode || 'jwt'
+          if (mode === 'jwt' || mode === 'none') {
             if (typeof onPhase === 'function') await onPhase('fallback_knowledge_universe', {})
             resp = await _fallbackUniverseAsk(connection, query, queries, kuIds, body, ctrl.signal)
           } else {

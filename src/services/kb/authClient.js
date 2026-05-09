@@ -1,5 +1,5 @@
 /**
- * authClient — 双模 fetch 包装(JWT / HMAC)
+ * authClient — 三模 fetch 包装(JWT / HMAC / none)
  *
  * 设计参考:
  *   - plan-knowledge-base-integration.md §3.2.2
@@ -14,6 +14,9 @@
  *   - body 必须是 stringified JSON;空 body 用 "{}"(HMAC 签名一致性)
  *   - JWT 模式 401 → 自动 refresh 一次,再失败抛出
  *   - HMAC 时间戳取秒级 unix ts;服务端容忍 ±300s 漂移
+ *   - none 模式:不发任何 Authorization / x-app-id / x-sign 头,不触发 login,
+ *     不在 401 时 refresh。专给「察元单机版后端(AUTH_REQUIRED=False)」用,
+ *     后端 require_auth_enabled() 在该模式下注入游客身份 (id=-1),KB 端点透明放行。
  *
  * v1 实现策略:
  *   - 把 connection 中的 ciphertext_password / ciphertext_appSecret 在调用时
@@ -105,7 +108,10 @@ export function createAuthClient(connection, options = {}) {
       headers.set('Content-Type', 'application/json')
     }
 
-    if (connection.authMode === 'jwt') {
+    if (connection.authMode === 'none') {
+      // 单机本机直连:不附任何鉴权头。后端单机 profile 把 AUTH_REQUIRED 关掉,
+      // require_auth_enabled() 返回游客身份 (id=-1),KB / universe 端点透明放行。
+    } else if (connection.authMode === 'jwt') {
       if (!accessToken) await _login()
       headers.set('Authorization', `Bearer ${accessToken}`)
     } else if (connection.authMode === 'hmac') {

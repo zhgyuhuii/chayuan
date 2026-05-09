@@ -5,9 +5,11 @@
  *   {
  *     version: 1,
  *     current: 'conn-uuid-xxx',
- *     list: [{ id, name, baseUrl, authMode: 'jwt'|'hmac',
+ *     list: [{ id, name, baseUrl, authMode: 'jwt'|'hmac'|'none',
  *              jwt:  { username, ciphertext_password, accessToken?, refreshToken?, expAt? },
  *              hmac: { appId, ciphertext_appSecret },
+ *              // authMode='none':察元单机版本机直连;无 jwt/hmac 字段;
+ *              //   后端 AUTH_REQUIRED=false 注入游客身份 (id=-1),KB 端点透明放行。
  *              healthSnapshot, createdAt, updatedAt }]
  *   }
  *

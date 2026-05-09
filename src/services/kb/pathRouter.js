@@ -61,13 +61,21 @@ const HMAC_ONLY = new Set([
 
 /**
  * 解析逻辑路径到实际路径。
- * @param {object} connection 含 authMode='jwt'|'hmac'
+ * @param {object} connection 含 authMode='jwt'|'hmac'|'none'
  * @param {string} logicalPath 例 '/knowledge_base/search_batch'
  * @returns {string|null} 实际路径;null 表示该模式下不支持
  */
 export function resolve(connection, logicalPath) {
   if (!connection || !logicalPath) return null
   const mode = connection.authMode || 'jwt'
+
+  // 单机本机直连:走 jwt 同款路径(/knowledge_base/* 与 /knowledge_universe/* 直接命中
+  // 后端单机模式的游客放行路径)。auth/login auth/refresh 这些登录端点也合法,但实际
+  // 不会被调到 — none 模式跳过所有 login/refresh。
+  if (mode === 'none') {
+    if (HMAC_ONLY.has(logicalPath)) return null
+    return logicalPath
+  }
 
   if (mode === 'jwt') {
     if (HMAC_ONLY.has(logicalPath)) return null

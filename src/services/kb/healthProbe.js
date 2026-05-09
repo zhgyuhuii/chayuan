@@ -35,8 +35,13 @@ async function _rawHealthz(baseUrl, signal) {
 async function _credCheck(connection, auth, signal) {
   const start = _ms()
   try {
-    // HMAC: /openapi/v1/ping (GET);JWT: /auth/me (GET)
-    const path = connection.authMode === 'hmac' ? '/openapi/v1/ping' : '/auth/me'
+    // HMAC: /openapi/v1/ping;JWT: /auth/me;
+    // none(单机本机直连):没有「我是谁」端点 — /auth/me 在游客模式下也会返回固定身份,
+    //   但更稳的是探一次 /healthz(单机版后端 100% 放行,不走鉴权链),只判可达。
+    let path
+    if (connection.authMode === 'hmac') path = '/openapi/v1/ping'
+    else if (connection.authMode === 'none') path = '/healthz'
+    else path = '/auth/me'
     const init = { method: 'GET', signal }
     const resp = await auth.fetch(path, init)
     if (!resp.ok) {
@@ -51,27 +56,39 @@ async function _credCheck(connection, auth, signal) {
     }
     const data = await resp.json().catch(() => ({}))
     // 从响应头/数据推断主体类型;服务端 §4.3 会写 X-Subject-Kind
-    const subjectKind = (resp.headers.get('x-subject-kind') || '').toLowerCase()
-      || (connection.authMode === 'hmac' ? 'app' : 'user')
+    const headerKind = (resp.headers.get('x-subject-kind') || '').toLowerCase()
+    let subjectKind
+    if (headerKind) subjectKind = headerKind
+    else if (connection.authMode === 'hmac') subjectKind = 'app'
+    else if (connection.authMode === 'none') subjectKind = 'local'
+    else subjectKind = 'user'
+    let identity
+    if (connection.authMode === 'hmac') {
+      identity = {
+        appId: data?.app_id || data?.app_id_str || connection.hmac?.appId,
+        name: data?.name || '',
+        allowPublicKbs: !!data?.allow_public_kbs,
+        rateLimitPerMin: data?.rate_limit_per_min,
+        dailyQuota: data?.daily_quota
+      }
+    } else if (connection.authMode === 'none') {
+      identity = {
+        username: '本地用户',
+        role: 'owner'
+      }
+    } else {
+      identity = {
+        username: data?.username || data?.name || '',
+        role: data?.role || 'user'
+      }
+    }
     return {
       ok: true,
       status: resp.status,
       latencyMs: _ms() - start,
       requestId: resp.headers.get('x-request-id') || '',
       subjectKind,
-      // 用户态:data.username/role;应用态:data.app_id/name/allow_public_kbs
-      identity: connection.authMode === 'hmac'
-        ? {
-            appId: data?.app_id || data?.app_id_str || connection.hmac?.appId,
-            name: data?.name || '',
-            allowPublicKbs: !!data?.allow_public_kbs,
-            rateLimitPerMin: data?.rate_limit_per_min,
-            dailyQuota: data?.daily_quota
-          }
-        : {
-            username: data?.username || data?.name || '',
-            role: data?.role || 'user'
-          },
+      identity,
       data
     }
   } catch (e) {

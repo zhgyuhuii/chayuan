@@ -36,12 +36,20 @@
               <label class="kb-form-row span-2">
                 <span class="kb-form-label">鉴权方式</span>
                 <select v-model="form.authMode" class="kb-input" @change="onAuthModeChange">
+                  <option value="none">单机本机直连（无认证）— 察元单机版</option>
                   <option value="jwt">账号密码（JWT）— 个人账号</option>
                   <option value="hmac">应用接入（APPID + AppKey）— 部门/服务级</option>
                 </select>
               </label>
 
-              <template v-if="form.authMode === 'jwt'">
+              <template v-if="form.authMode === 'none'">
+                <div class="kb-form-row span-2 kb-form-tip">
+                  连本机察元单机版后端(127.0.0.1:62581)使用,不需要任何账号或密钥;
+                  后端 ``AUTH_REQUIRED=false`` 自动放行游客,知识库与文档透明可见。
+                </div>
+              </template>
+
+              <template v-else-if="form.authMode === 'jwt'">
                 <label class="kb-form-row">
                   <span class="kb-form-label">用户名<em>*</em></span>
                   <input v-model="form.jwt.username" class="kb-input" autocomplete="off" />
@@ -149,7 +157,9 @@ function blank() {
     id: '',
     name: '',
     baseUrl: '',
-    authMode: 'jwt',
+    // 默认「单机本机直连」 — 与桌面单机版形态对齐,用户大多数场景就是这个;
+    // 切到 jwt / hmac 只是下拉选一下的事。
+    authMode: 'none',
     jwt: { username: '', ciphertext_password: '' },
     hmac: { appId: '', ciphertext_appSecret: '' },
   }
@@ -177,6 +187,10 @@ export default {
     mode() { return this.connection?.id ? 'edit' : 'create' },
     canSave() {
       if (!this.form.name?.trim() || !this.form.baseUrl?.trim()) return false
+      if (this.form.authMode === 'none') {
+        // 单机本机直连:只要有 name + baseUrl 就够了
+        return true
+      }
       if (this.form.authMode === 'jwt') {
         if (!this.form.jwt.username?.trim()) return false
         // 新建时必须填密码;编辑时可以保留空白
@@ -217,7 +231,12 @@ export default {
     onAuthModeChange() {
       this.testResult = null
       // 切换鉴权方式时清掉对面字段密文,防止误用
-      if (this.form.authMode === 'jwt') {
+      if (this.form.authMode === 'none') {
+        this.form.jwt = { username: '', ciphertext_password: '' }
+        this.form.hmac = { appId: '', ciphertext_appSecret: '' }
+        this.passwordInput = ''
+        this.appSecretInput = ''
+      } else if (this.form.authMode === 'jwt') {
         this.form.hmac = { appId: '', ciphertext_appSecret: '' }
         this.appSecretInput = ''
       } else {
