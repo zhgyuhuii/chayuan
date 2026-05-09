@@ -24,8 +24,13 @@
 
               <label class="kb-form-row span-2">
                 <span class="kb-form-label">服务地址<em>*</em></span>
-                <input v-model="form.baseUrl" class="kb-input" placeholder="https://kb.example.com" />
-                <small class="kb-form-tip">chayuan-server 的根地址(不含具体路径)。</small>
+                <input
+                  v-model="form.baseUrl"
+                  class="kb-input"
+                  placeholder="https://kb.example.com 或 localhost / 127.0.0.1"
+                  @blur="onBaseUrlBlur"
+                />
+                <small class="kb-form-tip">chayuan-server 的根地址(不含具体路径)。未填写协议时默认 http;本地地址未填写端口时默认 62581。</small>
               </label>
 
               <label class="kb-form-row span-2">
@@ -111,6 +116,34 @@
 import services from '../services/index.js'
 const { connectionStore, connectionCipher, healthProbe } = services.kb
 
+const DEFAULT_LOCAL_PORT = '62581'
+
+// 把用户输入的服务地址规范化:
+//   1. 缺协议 → 补 http://
+//   2. host 是 localhost / IPv4 / IPv6 且没填端口 → 补默认端口 62581
+//      (chayuan-server 默认端口;域名场景保持原样,走 80/443)
+function normalizeBaseUrl(input) {
+  let s = String(input || '').trim()
+  if (!s) return s
+  if (!/^https?:\/\//i.test(s)) {
+    s = 'http://' + s
+  }
+  let u
+  try { u = new URL(s) } catch (e) { return s.replace(/\/+$/, '') }
+  if (!u.port) {
+    // 浏览器实现的 hostname 对 IPv6 不带方括号,但 Node 的 WHATWG URL 会保留,这里两种都处理
+    const host = u.hostname.replace(/^\[|\]$/g, '')
+    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    const isIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
+    const isIPv6 = host.includes(':') && /^[0-9a-fA-F:]+$/.test(host)
+    if (isLocalhost || isIPv4 || isIPv6) {
+      u.port = DEFAULT_LOCAL_PORT
+    }
+  }
+  const path = u.pathname.replace(/\/+$/, '')
+  return path && path !== '/' ? `${u.origin}${path}` : u.origin
+}
+
 function blank() {
   return {
     id: '',
@@ -193,8 +226,13 @@ export default {
       }
     },
     onCancel() { this.$emit('close') },
+    onBaseUrlBlur() {
+      const next = normalizeBaseUrl(this.form.baseUrl)
+      if (next !== this.form.baseUrl) this.form.baseUrl = next
+    },
     async onTest() {
       if (!this.form.baseUrl) return
+      this.form.baseUrl = normalizeBaseUrl(this.form.baseUrl)
       this.testing = true
       this.testResult = null
       try {
@@ -214,6 +252,7 @@ export default {
     },
     async onSave() {
       if (!this.canSave) return
+      this.form.baseUrl = normalizeBaseUrl(this.form.baseUrl)
       this.saving = true
       try {
         const draft = JSON.parse(JSON.stringify(this.form))
