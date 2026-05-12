@@ -127,6 +127,14 @@
               <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="openAssistantGroupDialog">
                 新建分组
               </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-compact assistant-import-btn"
+                :disabled="chayuanSpaceSyncing"
+                @click="syncFromChayuanSpace"
+              >
+                {{ chayuanSpaceSyncing ? '同步中…' : '从智能空间同步' }}
+              </button>
               <input
                 ref="assistantImportInputRef"
                 type="file"
@@ -2303,6 +2311,11 @@ import {
 } from '../utils/assistantSettings.js'
 import { consumeAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.js'
 import { startAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
+import {
+  getChayuanSpaceConfig,
+  saveChayuanSpaceConfig,
+  syncDocAssistantsFromSpace,
+} from '../utils/chayuanSpaceClient.js'
 import { normalizeAssistantConfig, validateAssistantConfig } from '../services/assistantStudio/assistantConfigSchema.js'
 import {
   readAssistantRecommendationApplyRequest,
@@ -2521,6 +2534,8 @@ export default {
       activeAssistantSettingItem: 'spell-check',
       assistantSettingsMap: {},
       customAssistants: [],
+      // 智能空间(chayuan-server)同步状态;UI 上 disable 按钮防止重复点击。
+      chayuanSpaceSyncing: false,
       assistantCustomGroups: [],
       assistantForm: createCustomAssistantDraft(),
       assistantPrefillNotice: null,
@@ -4581,6 +4596,54 @@ export default {
     },
     triggerAssistantImport() {
       this.$refs.assistantImportInputRef?.click?.()
+    },
+    /**
+     * 从 chayuan-server 智能空间拉取"文档助手"应用,合并到本地自定义助手列表。
+     *
+     * 第一次点击时若未配置 baseUrl / token,会用 window.prompt 简单收集一次,
+     * 持久化到 globalSettings.chayuanSpaceConfig 供后续复用。失败抛错走 showMessage。
+     */
+    async syncFromChayuanSpace() {
+      if (this.chayuanSpaceSyncing) return
+      let cfg = getChayuanSpaceConfig()
+      if (!cfg.baseUrl) {
+        const url = (window.prompt(
+          '请输入智能空间(chayuan-server)地址,例如:http://localhost:7861',
+          cfg.baseUrl || '',
+        ) || '').trim()
+        if (!url) return
+        cfg = saveChayuanSpaceConfig({ baseUrl: url })
+      }
+      if (!cfg.token) {
+        const token = (window.prompt(
+          '请输入访问 token(从 chayuan-client 登录后获取)',
+          cfg.token || '',
+        ) || '').trim()
+        if (!token) return
+        cfg = saveChayuanSpaceConfig({ token })
+      }
+      this.chayuanSpaceSyncing = true
+      try {
+        const result = await syncDocAssistantsFromSpace({
+          onProgress: (done, total, name) => {
+            // 进度提示在 messages bar 实时刷新;done 从 0 开始
+            if (total > 0 && done >= 0) {
+              this.showMessage(`同步中(${done + 1}/${total}):${name}`, 'info')
+            }
+          },
+        })
+        // 同步后刷新本地列表,顺手把可见性写入顶栏菜单
+        this.customAssistants = getCustomAssistants() || []
+        this.persistAssistantConfigState('同步成功,但顶栏菜单刷新失败,请稍后重试保存')
+        this.showMessage(
+          `同步完成:新增 ${result.added} 个,更新 ${result.updated} 个,共 ${result.total} 个`,
+          'success',
+        )
+      } catch (error) {
+        this.showMessage(error?.message || '同步失败,请检查智能空间地址 / token 是否正确', 'error')
+      } finally {
+        this.chayuanSpaceSyncing = false
+      }
     },
     onAssistantImportFileChange(event) {
       const file = event?.target?.files?.[0]
