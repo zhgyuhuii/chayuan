@@ -39,17 +39,61 @@
               </div>
             </div>
 
-            <!-- 选中态展开:操作 + 测试结果 -->
+            <!-- 选中态展开:操作 + 测试结果。原文字按钮挤太满,改成图标按钮 + title 提示。 -->
             <div v-if="selectedId === c.id && selected" class="kb-conn-detail" @click.stop>
-              <div class="kb-actions">
-                <button v-if="selected.id !== currentId" class="btn-secondary kb-act-btn" @click.stop="setCurrent">
-                  设为当前
+              <div class="kb-actions kb-actions-icons">
+                <button
+                  v-if="selected.id !== currentId"
+                  type="button"
+                  class="kb-icon-btn"
+                  title="设为当前连接"
+                  aria-label="设为当前连接"
+                  @click.stop="setCurrent"
+                >
+                  <!-- 星形 = 设为当前 -->
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <path fill="currentColor" d="M8 1.5l1.93 4.07 4.32.51-3.18 2.94.85 4.27L8 11.18 4.08 13.29l.85-4.27L1.75 6.08l4.32-.51z"/>
+                  </svg>
                 </button>
-                <button class="btn-secondary kb-act-btn" @click.stop="onTest" :disabled="testing">
-                  {{ testing ? '测试中…' : '测试连通' }}
+                <button
+                  type="button"
+                  class="kb-icon-btn"
+                  :class="{ 'is-busy': testing }"
+                  :title="testing ? '测试中…' : '测试连通'"
+                  :aria-label="testing ? '测试中' : '测试连通'"
+                  :disabled="testing"
+                  @click.stop="onTest"
+                >
+                  <!-- 闪电 = 测试连通 -->
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <path fill="currentColor" d="M9 1L3 9h4l-1 6 6-8H8z"/>
+                  </svg>
                 </button>
-                <button class="btn-secondary kb-act-btn" @click.stop="onEdit">编辑</button>
-                <button class="btn-danger kb-act-btn" @click.stop="onDelete">删除</button>
+                <button
+                  type="button"
+                  class="kb-icon-btn"
+                  title="编辑连接"
+                  aria-label="编辑连接"
+                  @click.stop="onEdit"
+                >
+                  <!-- 铅笔 = 编辑 -->
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <path fill="currentColor" d="M12.5 1.5l2 2L5 13l-3 1 1-3zM11 3l2 2"/>
+                    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M11 3l2 2"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="kb-icon-btn kb-icon-btn-danger"
+                  title="删除连接"
+                  aria-label="删除连接"
+                  @click.stop="onDelete"
+                >
+                  <!-- 垃圾桶 = 删除 -->
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                    <path fill="currentColor" d="M5 2h6v1h3v1H2V3h3zm-2 3h10l-1 9.5a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 4 14.5zm3 2v6h1V7zm3 0v6h1V7z"/>
+                  </svg>
+                </button>
               </div>
 
               <div v-if="testResult" class="kb-test-result" :class="{ ok: testResult.ok, fail: !testResult.ok }">
@@ -535,6 +579,57 @@ export default {
   margin-bottom: 10px;
 }
 .kb-act-btn { padding: 5px 10px; font-size: 12px; }
+
+/* 操作行图标按钮:文字按钮挤太满,改成 28x28 的图标按钮,鼠标悬停 title 给文字 */
+.kb-actions-icons {
+  gap: 4px;
+}
+.kb-icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfd4db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
+  line-height: 0;
+}
+.kb-icon-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+.kb-icon-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.kb-icon-btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+.kb-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.kb-icon-btn.is-busy svg {
+  animation: kbIconSpin 1.1s linear infinite;
+}
+@keyframes kbIconSpin {
+  to { transform: rotate(360deg); }
+}
+.kb-icon-btn-danger {
+  color: #c0392b;
+  border-color: #e9b4ad;
+}
+.kb-icon-btn-danger:hover:not(:disabled) {
+  background: #fbeae8;
+  border-color: #e07b6f;
+  color: #b91c1c;
+}
 
 /* ---- 测试结果 ---- */
 .kb-test-result {
