@@ -28,14 +28,73 @@
       <h2 class="about-h2">察元是什么</h2>
       <div class="about-intro-card">
         <p>
-          察元（Chayuan）是专为 WPS 文字环境设计的加载项产品，将大语言模型能力嵌入选区感知、全文上下文、模板与规则、任务清单等工作流中。您可在<strong>不离开文档</strong>的情况下完成对话、生成与修改建议，并按需将结果写回正文或批注。
-        </p>
-        <p class="about-intro-offline">
-          <strong>离线模型与数据边界：</strong>察元将「支持离线/本地大模型」作为核心能力之一。在设置中启用 Ollama 或填写内网 OpenAI 兼容地址后，推理流量可限制在<strong>本机或单位内网</strong>，适合对<strong>外网隔离、数据不出域、合规审计</strong>有要求的场景；与云端 API 模式可同时配置，按会话或助手灵活选用。
+          <strong>察元(Chayuan)</strong>不是一个孤立工具,而是一组共享同一套<strong>对话引擎 / 知识库结构 / 设计系统</strong>的 AI 办公产品。
+          按部署形态和模块边界分为 <strong>4 档</strong>:开源 WPS 加载项、单机桌面版、服务版(团队)、至臻版(企业)。
+          你现在使用的就是<strong>开源 WPS 加载项</strong> — 把大模型直接写进 WPS Writer,在不离开文档的情况下完成对话、检索、审校与写回。
         </p>
         <p>
-          产品持续迭代<strong>审查与合规</strong>、<strong>任务编排</strong>、<strong>多模态与多供应商模型</strong>等能力，并欢迎通过官网与公众号反馈需求，与我们共同完善「察元」在真实办公场景中的表现。
+          四个产品的"差异"只在<strong>部署位置 / 用户上限 / 模块开放度</strong>,引擎层完全一致。这意味着:
+          团队从 WPS 加载项迁到桌面版,助手 / 模型 / 知识库设置几乎零迁移成本;
+          再到服务版,只是把"单机"变成"≤50 人服务化";
+          再升到至臻版,补齐<strong>在线办公 / 智能空间 / 应用市场 / 训练数据中心</strong>四个企业级模块。
         </p>
+        <p class="about-intro-offline">
+          <strong>离线模型与数据边界:</strong>无论哪一档,察元都把<strong>离线 / 本地大模型</strong>列为一等公民 —
+          可接 Ollama / LM Studio / Xinference / OneAPI / vLLM 等 OpenAI 兼容网关;
+          密钥、对话、知识库、向量索引全部落在<strong>本机或单位内网</strong>,适合<strong>外网隔离、数据不出域、合规审计</strong>场景。
+          云端 API 与离线模型可以同时配置,按会话或助手灵活切换。
+        </p>
+        <p>
+          下方架构图把四个产品和六大共享模块的关系画出来 —
+          点任意节点能看到它的核心能力以及和其它产品 / 模块之间的连接关系。
+        </p>
+      </div>
+
+      <!-- ───── 至臻版 4 大模块实景截图(取自 aidooo.com 官方) ───── -->
+      <div class="about-modules-gallery">
+        <p class="about-modules-gallery-eyebrow">至臻版(企业版)四大独有模块 · 实景</p>
+        <p class="about-muted about-modules-gallery-lead">
+          以下截图来自官方网站
+          <a class="about-inline-link" href="https://aidooo.com" target="_blank" rel="noreferrer" @click.prevent="openAidooo">aidooo.com</a>,
+          展示<strong>至臻版客户端</strong>独有的四个企业级模块。当前 WPS 加载项 / 桌面版 / 服务版均不含这些模块;
+          需要的话可联系商务定制。
+        </p>
+        <div class="about-modules-grid">
+          <figure
+            v-for="m in premiumModuleShots"
+            :key="m.key"
+            class="about-module-shot"
+            tabindex="0"
+            role="button"
+            :aria-label="`${m.title} · 点击放大`"
+            @click="openShotLightbox({ src: m.src, alt: m.title, caption: m.caption })"
+            @keydown.enter.prevent="openShotLightbox({ src: m.src, alt: m.title, caption: m.caption })"
+            @keydown.space.prevent="openShotLightbox({ src: m.src, alt: m.title, caption: m.caption })"
+          >
+            <div class="about-module-shot-frame">
+              <div class="about-module-shot-bar" aria-hidden="true">
+                <span class="about-module-shot-dot is-r"></span>
+                <span class="about-module-shot-dot is-y"></span>
+                <span class="about-module-shot-dot is-g"></span>
+                <span class="about-module-shot-url">aidooo.com / {{ m.urlPath }}</span>
+              </div>
+              <img
+                v-if="!moduleShotErr[m.key]"
+                class="about-module-shot-img"
+                :src="publicAssetUrl(m.src)"
+                :alt="m.title"
+                loading="lazy"
+                @error="onModuleShotError(m.key)"
+              />
+              <div v-else class="about-module-shot-placeholder">{{ m.title }}</div>
+            </div>
+            <figcaption>
+              <span class="about-module-shot-tag">模块 0{{ m.idx }} · {{ m.tag }}</span>
+              <strong>{{ m.title }}</strong>
+              <span class="about-module-shot-desc">{{ m.caption }}</span>
+            </figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 
@@ -391,6 +450,41 @@ export default {
       shotLightbox: null,
       modelGroups: MODEL_GROUPS,
       productFamily: PRODUCT_FAMILY,
+      moduleShotErr: {},
+      /*
+       * 至臻版独占的 4 大模块实景图,来源:/work/website/public/images/business/。
+       * 文案对齐 /work/website/src/components/BusinessShowcaseSection.vue 的 CARDS_ZH。
+       */
+      premiumModuleShots: [
+        {
+          key: 'office', idx: 1, tag: 'OFFICE',
+          title: '察元办公 · 在线文档协同',
+          urlPath: 'office',
+          src: 'images/about/business/office.jpg',
+          caption: '浏览器内 Word / Excel / PPT 兼容编辑;我的 / 组织 / 共享给我 / 收藏 / 回收站五库归一,文档级 ACL + 评论 + 版本。'
+        },
+        {
+          key: 'space', idx: 2, tag: 'SPACE',
+          title: '智能空间 · 应用工作台',
+          urlPath: 'space',
+          src: 'images/about/business/space.jpg',
+          caption: 'AppStudio(prompt + 资源 + 工具 + Flow)→ AppRuntime(沙箱 + 配额 + 审计)→ AppGallery 团队画廊;密钥集中 + 授权 + 操作日志。'
+        },
+        {
+          key: 'market', idx: 3, tag: 'MARKET',
+          title: '应用市场 · 公开 / 内部双轨',
+          urlPath: 'market',
+          src: 'images/about/business/market.jpg',
+          caption: '已发布应用列入公开市场,匿名访客也能用;内部应用走企业内市场。PublishDialog 四态阶梯发布,管理员审核 + 灰度。'
+        },
+        {
+          key: 'anno', idx: 4, tag: 'ANNOTATION',
+          title: '训练数据中心 · 标注 + 数据挂载',
+          urlPath: 'annotation',
+          src: 'images/about/business/annotation.png',
+          caption: '多人协同标注任务(RAG 评测 / Office 抽取 / 通用 QA),Data Mounts 把外部数据源一站挂载到标注工序,导出直接喂 SFT / DPO 训练管线。'
+        }
+      ],
       featureList: [
         {
           title: '离线与本地模型',
@@ -483,6 +577,9 @@ export default {
     },
     onShotError(key) {
       this.shotErr = { ...this.shotErr, [key]: true }
+    },
+    onModuleShotError(key) {
+      this.moduleShotErr = { ...this.moduleShotErr, [key]: true }
     },
     onFollowQrError() {
       this.showFollowQr = false
@@ -1253,4 +1350,126 @@ export default {
 
 /* 架构组件外壳 — 只在面板里加一点呼吸空间 */
 .about-architecture-wrap { padding-top: 4px; }
+
+/* ───── "察元是什么" 段:至臻版四大模块实景画廊 ───── */
+.about-modules-gallery {
+  margin-top: 22px;
+  padding: 18px 16px 18px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.75));
+  border: 1px solid rgba(96, 165, 250, 0.18);
+}
+.about-modules-gallery-eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: #fbbf24;
+  text-transform: uppercase;
+}
+.about-modules-gallery-lead {
+  margin-bottom: 12px !important;
+  font-size: 12.5px;
+}
+
+.about-modules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 760px) {
+  .about-modules-grid { grid-template-columns: 1fr; }
+}
+
+.about-module-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  cursor: zoom-in;
+  transition: transform 0.18s ease, border-color 0.18s, box-shadow 0.18s;
+}
+.about-module-shot:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.55);
+  box-shadow: 0 12px 30px -14px rgba(96, 165, 250, 0.35);
+}
+.about-module-shot:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.about-module-shot-frame {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: #0b1226;
+}
+.about-module-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, #1e293b, #0f172a);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+.about-module-shot-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+}
+.about-module-shot-dot.is-r { background: #ef4444; }
+.about-module-shot-dot.is-y { background: #f59e0b; }
+.about-module-shot-dot.is-g { background: #22c55e; }
+.about-module-shot-url {
+  margin-left: 8px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.about-module-shot-img {
+  width: 100%;
+  aspect-ratio: 900 / 540;
+  object-fit: cover;
+  display: block;
+}
+.about-module-shot-placeholder {
+  width: 100%;
+  aspect-ratio: 900 / 540;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 12px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.about-module-shot figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+.about-module-shot-tag {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: #93c5fd;
+  text-transform: uppercase;
+}
+.about-module-shot figcaption strong {
+  color: #f1f5f9;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.about-module-shot-desc {
+  color: #94a3b8;
+  font-size: 12px;
+}
 </style>
