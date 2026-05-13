@@ -59,15 +59,21 @@ export default {
         safeImport(() => import('./utils/router/evolutionCommands.js'), m => m.registerEvolutionCommands())
         safeImport(() => import('./utils/router/modelCommands.js'), m => m.registerModelCommands())
         safeImport(() => import('./utils/router/taskCommands.js'), m => m.registerTaskCommands())
-        // bootHelpers + scheduler 串联:auto-boot 之后再装 timer,避免 timer 找不到 deps 直接跳过。
-        safeImport(() => import('./utils/assistant/evolution/bootHelpers.js'), m => {
-          try { m.tryAutoBoot() } catch (_) { /* auto-boot 失败不影响其余 idle 任务 */ }
-          return import('./utils/assistant/evolution/installEvolutionScheduler.js')
-            .then(s => {
-              try { s.installAllEvolutionTimers() } catch (_) { /* timer 安装失败不影响其余 idle 任务 */ }
-            })
-            .catch(() => {})
-        })
+        // ⚠️ 自动进化系统(tryAutoBoot + installAllEvolutionTimers)已暂时关闭:
+        //   - 它会拉入 promotionFlow / raceEvaluator / judge / candidateGenerator 等
+        //     大子图,在每个 webview 冷启动都额外解析,且会在每个 WPS 弹窗里重复
+        //     装 daily 03:00 + 每 2h rollback tick 的定时器;
+        //   - 用户反馈"打开文档加载慢",请求先关掉自动入口;
+        //   - 需要时可以从 ⌘K 输入 `evo.boot` 或在设置页手动启动。
+        // 恢复办法:把下面这块注释解开。
+        // safeImport(() => import('./utils/assistant/evolution/bootHelpers.js'), m => {
+        //   try { m.tryAutoBoot() } catch (_) { /* auto-boot 失败不影响其余 idle 任务 */ }
+        //   return import('./utils/assistant/evolution/installEvolutionScheduler.js')
+        //     .then(s => {
+        //       try { s.installAllEvolutionTimers() } catch (_) { /* timer 安装失败不影响其余 idle 任务 */ }
+        //     })
+        //     .catch(() => {})
+        // })
         safeImport(() => import('./utils/workflow/workflowTelemetryBridge.js'), m => m.installTelemetryBridge())
         safeImport(() => import('./utils/task/taskAchievement.js'), m => m.installAchievementListener())
         safeImport(() => import('./utils/assistant/runtimeAssistantsInstaller.js'), m => m.installRuntimeAssistants())
@@ -82,13 +88,16 @@ export default {
 
     onMounted(() => {
       window.ribbon = ribbon
-      // 首屏必须的同步工作:ribbon 命令注册 + 路由 dialog 标记 + addon base url 同步
-      try { registerRibbonCommands({ ribbon }) } catch (_) { /* 注册失败不阻塞主流程 */ }
+      // 首屏必须的同步工作:路由 dialog 标记 + addon base url 同步(廉价)
       updateDialogPageClass()
       syncAddonBaseUrlToPluginStorage()
-      schedulePreloadAiAssistantRouteChunk()
-      // 其余非关键 boot 推迟到 idle,显著降低首屏 JS 解析量
-      scheduleNonCriticalBoot()
+      // 弹窗 webview 不需要 ribbon 命令面板/AI 助手预加载/后台 boot —
+      // 它们既无 ribbon 可挂,也不应在每个弹窗里再装一份定时器+监听器。
+      if (!isDialog.value) {
+        try { registerRibbonCommands({ ribbon }) } catch (_) { /* 注册失败不阻塞主流程 */ }
+        schedulePreloadAiAssistantRouteChunk()
+        scheduleNonCriticalBoot()
+      }
     })
 
     watch(() => route.path, updateDialogPageClass, { immediate: true })
