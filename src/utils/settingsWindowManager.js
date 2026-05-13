@@ -94,19 +94,42 @@ export function focusExistingSettingsWindow(query = {}) {
   return true
 }
 
+/*
+ * 1366×768 / 1280×800 这类常见笔记本上,固定 1120×820 会把窗口下半截推出屏幕,
+ * "设置"用户根本看不到底部按钮 → 按 screen.availWidth/availHeight 收口,
+ * 留出任务栏 / 边框 / 系统装饰条的安全边距。下界保证小屏幕上也不会被压扁到不可读。
+ */
+const MIN_SETTINGS_W = 800
+const MIN_SETTINGS_H = 560
+const SAFE_MARGIN_W = 60
+const SAFE_MARGIN_H = 80
+
+function fitToScreen(requested, axis) {
+  const isW = axis === 'w'
+  const avail = isW
+    ? (window.screen?.availWidth || requested)
+    : (window.screen?.availHeight || requested)
+  const margin = isW ? SAFE_MARGIN_W : SAFE_MARGIN_H
+  const min = isW ? MIN_SETTINGS_W : MIN_SETTINGS_H
+  return Math.min(requested, Math.max(min, avail - margin))
+}
+
 export function openSettingsWindow(query = {}, options = {}) {
   const normalizedQuery = normalizeQuery(query)
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
-  const width = Number(options?.width) || DEFAULT_SETTINGS_WINDOW_WIDTH
-  const height = Number(options?.height) || DEFAULT_SETTINGS_WINDOW_HEIGHT
+  const dpr = window.devicePixelRatio || 1
+  const requestedW = Number(options?.width) || DEFAULT_SETTINGS_WINDOW_WIDTH
+  const requestedH = Number(options?.height) || DEFAULT_SETTINGS_WINDOW_HEIGHT
+  const width = fitToScreen(requestedW, 'w')
+  const height = fitToScreen(requestedH, 'h')
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(
       url,
       title,
-      width * (window.devicePixelRatio || 1),
-      height * (window.devicePixelRatio || 1),
+      width * dpr,
+      height * dpr,
       false
     )
     return true
