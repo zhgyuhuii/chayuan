@@ -133,6 +133,29 @@
       @saved="onDialogSaved"
     />
 
+    <!--
+      删除确认面板:刻意在 KbSettingsPanel 自家模板里用 <teleport to="body"> 渲染,
+      不再走 inAppConfirm 的全局 DOM 注入。这样:
+        1. 不依赖任何全局 overlay 样式 — 这里背景完全透明,设置窗口不会被罩
+        2. 卡片自带边框 + 阴影,视觉上就是"贴在右下角"的小提示,绝不会让用户感觉设置窗口被隐藏
+        3. 通过 v-if 守门,关闭后立刻销毁,不残留 DOM
+        4. 跟 inAppConfirm 完全独立,如果 WPS WebView 跟 inAppConfirm 有兼容性 bug,这条路完全绕开它
+    -->
+    <teleport to="body">
+      <div v-if="deleteConfirm.open" class="kb-del-confirm-anchor" @click.self="cancelDelete">
+        <div class="kb-del-confirm-card" role="alertdialog" aria-modal="true">
+          <div class="kb-del-confirm-head">删除知识库连接</div>
+          <div class="kb-del-confirm-body">
+            确认删除连接「{{ deleteConfirm.name || deleteConfirm.id }}」？此操作不可恢复。
+          </div>
+          <div class="kb-del-confirm-foot">
+            <button type="button" class="btn-secondary" @click="cancelDelete">取消</button>
+            <button type="button" class="btn-danger" @click="confirmDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
     <transition name="fade">
       <div v-if="toast" class="kb-toast" :class="toast.kind">{{ toast.msg }}</div>
     </transition>
@@ -142,7 +165,6 @@
 <script>
 import services from '../services/index.js'
 import { isEnabled as isFlagEnabled, setFlag as setFeatureFlag, subscribe as subscribeFlag } from '../utils/featureFlags.js'
-import { inAppConfirm } from '../utils/inAppDialog.js'
 import KbConnectionFormDialog from './KbConnectionFormDialog.vue'
 import KbEmptyTopology from './KbEmptyTopology.vue'
 
@@ -169,6 +191,7 @@ export default {
       unsubFlag: null,
       kbFlagEnabled: true,
       formDialog: { visible: false, connection: null },
+      deleteConfirm: { open: false, id: '', name: '' },
     }
   },
   computed: {
@@ -249,26 +272,33 @@ export default {
       }
     },
 
-    async onDelete() {
+    onDelete() {
       if (!this.selected?.id) return
-      const name = this.selected.name || this.selected.id
-      // window.confirm 在 WPS ShowDialog 内嵌 webview 里会被宿主当作新模态窗,
-      // 视觉上"关闭"了设置窗口;改用 inAppConfirm 在同一 webview 内浮层弹出。
-      const ok = await inAppConfirm(`确认删除连接「${name}」？此操作不可恢复。`, {
-        title: '删除知识库连接',
-        okText: '删除',
-        cancelText: '取消',
-        danger: true
-      })
-      if (!ok) return
+      // 不走全局 inAppConfirm,直接打开自家 teleport 卡片,完全绕开外部覆盖层逻辑。
+      // 这样无论 WPS WebView 跟 inAppConfirm 有什么兼容性问题,设置窗口都不会被罩住。
+      this.deleteConfirm = {
+        open: true,
+        id: this.selected.id,
+        name: this.selected.name || this.selected.id
+      }
+    },
+    cancelDelete() {
+      this.deleteConfirm = { open: false, id: '', name: '' }
+    },
+    async confirmDelete() {
+      const target = this.deleteConfirm
+      if (!target?.open || !target.id) return
+      this.deleteConfirm = { open: false, id: '', name: '' }
       try {
-        await connectionStore.removeConnection(this.selected.id)
-        kbCatalogCache.invalidate(`list:${this.selected.id}`)
-        kbCatalogCache.invalidate(`tree:${this.selected.id}`)
-        this.selected = null
-        this.selectedId = ''
-        this.testResult = null
-        this.catalog = []
+        await connectionStore.removeConnection(target.id)
+        kbCatalogCache.invalidate(`list:${target.id}`)
+        kbCatalogCache.invalidate(`tree:${target.id}`)
+        if (this.selectedId === target.id) {
+          this.selected = null
+          this.selectedId = ''
+          this.testResult = null
+          this.catalog = []
+        }
         await this.refreshConnections()
         this.showToast('success', '已删除')
       } catch (e) {
@@ -694,5 +724,58 @@ export default {
 }
 .kb-flag-banner .btn-link {
   margin-left: auto;
+}
+
+/*
+ * 删除确认 — 故意"轻"。
+ * anchor 撑满 viewport 但背景完全透明,不做 dim;只用来截获点击。
+ * card 自己用边框 + 强阴影 + 红框头部凸出"提示"语义。
+ * 这样无论 WPS WebView 怎么渲染,设置窗口都保持完整可见。
+ */
+.kb-del-confirm-anchor {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 2147483600;
+  background: transparent;
+  pointer-events: auto;
+}
+.kb-del-confirm-card {
+  width: min(440px, calc(100vw - 32px));
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #f0c8c4;
+  box-shadow: 0 24px 60px -16px rgba(15, 23, 42, 0.45),
+              0 8px 16px -8px rgba(15, 23, 42, 0.25);
+  font-size: 13px;
+  color: #2a2a2a;
+  overflow: hidden;
+  animation: kbDelConfirmIn 0.16s ease-out;
+}
+@keyframes kbDelConfirmIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.kb-del-confirm-head {
+  padding: 12px 16px;
+  background: #fcf3f2;
+  border-bottom: 1px solid #f0c8c4;
+  font-weight: 600;
+  color: #b91c1c;
+}
+.kb-del-confirm-body {
+  padding: 14px 16px;
+  color: #344056;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.kb-del-confirm-foot {
+  padding: 10px 14px 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>
