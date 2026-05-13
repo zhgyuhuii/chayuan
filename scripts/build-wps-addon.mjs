@@ -30,11 +30,16 @@ function parseArgs(argv) {
 	const skipVite = argv.includes('--skip-vite')
 	const online = argv.includes('--online')
 	const offline = argv.includes('--offline')
+	// 本地调试包:在生成的 publish.xml 里注入 debug="code",
+	// WPS 看到这个属性才会显示宿主自带的"调试"按钮 / 远程调试入口。
+	// 这条只是给本机 install-and-debug 用,正式发布不要带。
+	const debug = argv.includes('--debug')
 	const only = online || offline
 	return {
 		skipVite,
 		online: !only || online,
 		offline: !only || offline,
+		debug,
 	}
 }
 
@@ -74,19 +79,22 @@ function add7z(archivePath, inputPaths) {
 	})
 }
 
-function publishXmlForPkg(pkg) {
+function publishXmlForPkg(pkg, options = {}) {
 	const type = pkg.addonType || 'wps'
+	// debug="code" 让 WPS 宿主显示自带调试按钮 / 启用远程调试。
+	// 只在 --debug build 里附带,默认发布包不带。
+	const debugAttr = options.debug ? ' debug="code"' : ''
 	// enable_dev 仅供本机 wpsjs debug；正式版 / 麒麟 / UOS 等环境需 enable，否则不加载离线包。
 	return (
 		`<?xml version="1.0" encoding="UTF-8"?>\n` +
 		`<jsplugins>\n` +
-		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable" install="null" customDomain=""/>\n` +
+		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable" install="null" customDomain=""${debugAttr}/>\n` +
 		`</jsplugins>\n`
 	)
 }
 
 /** Flat layout for offline / installers: publish.xml + name_version/ (same as wpsjs exe 7z). */
-function writeInstallStaging(distDir, releaseRoot, pkg) {
+function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 	const { name, version } = pkg
 	const staging = path.join(releaseRoot, 'install-staging')
 	fsEx.emptyDirSync(staging)
@@ -105,7 +113,7 @@ function writeInstallStaging(distDir, releaseRoot, pkg) {
 		if (skip.has(file)) continue
 		fsEx.copySync(path.join(distDir, file), path.join(nested, file))
 	}
-	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg), 'utf8')
+	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
 	const meta = {
 		name,
 		version,
@@ -157,7 +165,7 @@ function writeInstallReadme(pkg, releaseDir) {
 
 async function main() {
 	const argv = process.argv.slice(2)
-	const { skipVite, online, offline } = parseArgs(argv)
+	const { skipVite, online, offline, debug } = parseArgs(argv)
 	const pkg = readPkg()
 	const name = pkg.name
 	const version = pkg.version
@@ -181,7 +189,7 @@ async function main() {
 	}
 
 	if (offline) {
-		const staging = writeInstallStaging(distDir, releaseRoot, pkg)
+		const staging = writeInstallStaging(distDir, releaseRoot, pkg, { debug })
 		console.log(`Install staging (for .pkg/.deb/.7z): ${staging}`)
 		const { platform, arch } = currentReleaseTriple()
 		const z7Name = releaseArtifactFilename(name, version, platform, arch, '.7z')

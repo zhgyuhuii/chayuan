@@ -26,6 +26,7 @@
 		"build:wps": "node scripts/build-wps-addon.mjs",
 		"build:wps-online": "node scripts/build-wps-addon.mjs --online",
 		"build:wps-offline": "node scripts/build-wps-addon.mjs --offline",
+		"build:wps-debug": "node scripts/build-wps-addon.mjs --debug",
 		"build:wps-all": "node scripts/build-wps-addon.mjs",
 		"build:wps-exe": "node scripts/run-wpsjs-exe.mjs",
 		"build:wps-pkg-macos": "bash scripts/build-macos-pkg.sh",
