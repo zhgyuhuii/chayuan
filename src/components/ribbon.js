@@ -20,11 +20,14 @@ import {
   MAIN_CONTROL_ASSISTANT_MAP,
   RIBBON_DYNAMIC_SLOT_COUNT
 } from '../utils/assistantRegistry.js'
-import {
-  startAssistantTask,
-  getAssistantLaunchInfo,
-  getTranslateLanguageByControlId
-} from '../utils/assistantTaskRunner.js'
+// assistantTaskRunner 把整个任务运行子图(chatApi / multimodalTaskRunner / artifactRenderer /
+// evolution / taskListStore...)都拉进了主 bundle,但 ribbon 真正用它的 3 个函数都是按钮点击
+// 之后才会到达。改成动态加载,首屏只剩 ribbon 自身,显著减小主包体积。
+let _taskRunnerPromise = null
+function _loadAssistantTaskRunner() {
+  if (!_taskRunnerPromise) _taskRunnerPromise = import('../utils/assistantTaskRunner.js')
+  return _taskRunnerPromise
+}
 import { getDocumentText, getSelectedText } from '../utils/documentActions.js'
 import { getSelectionContextSnapshot } from '../utils/documentContext.js'
 import {
@@ -679,6 +682,7 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
     strictAssistantDefaults: true,
     launchSource: 'ribbon-direct'
   }
+  const { startAssistantTask, getAssistantLaunchInfo } = await _loadAssistantTaskRunner()
   const launchInfo = getAssistantLaunchInfo(assistantId, ribbonOptions)
   if (launchInfo.requiresFullDocumentConfirm) {
     const confirmed = confirmFullDocumentSubmit(launchInfo.title, launchInfo.inputLength)
@@ -3599,9 +3603,10 @@ function OnAction(control) {
         executeConfiguredAssistant(entry.id, entry.title)
         break
       }
-      // 翻译菜单：btnTranslate_xx
+      // 翻译菜单：btnTranslate_xx — 直接从 controlId 切出 langCode,
+      // 不依赖 assistantTaskRunner 的同名 helper,避免为这一步同步等待动态导入。
       if (eleId && eleId.startsWith('btnTranslate_')) {
-        const langCode = getTranslateLanguageByControlId(eleId)
+        const langCode = eleId.slice('btnTranslate_'.length)
         const lang = TRANSLATION_LANGUAGES.find((l) => l.code === langCode)
         executeAssistantFromRibbon('translate', {
           taskTitle: `翻译${lang ? ` - ${lang.label}` : ''}`,
