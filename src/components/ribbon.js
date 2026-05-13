@@ -3137,15 +3137,21 @@ function OnAction(control) {
   const eleId = control.Id
   switch (eleId) {
     // 关于分组
-    case 'btnAboutChayuan':
+    case 'btnAboutChayuan': {
+      // 按显示器可用尺寸"上下左右各留 100px"打开 — 让里面的拓扑架构图
+      // (AboutChayuanArchitecture, viewBox 1280×780)有足够空间正常显示。
+      const aboutDpr = window.devicePixelRatio || 1
+      const aboutW = Math.max(900, (window.screen?.availWidth || 1280) - 200)
+      const aboutH = Math.max(600, (window.screen?.availHeight || 800) - 200)
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/about-chayuan',
         '关于察元',
-        720 * window.devicePixelRatio,
-        640 * window.devicePixelRatio,
+        aboutW * aboutDpr,
+        aboutH * aboutDpr,
         false
       )
       break
+    }
     case 'btnAIWebsites':
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/popup',

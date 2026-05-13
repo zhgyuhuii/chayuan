@@ -95,23 +95,21 @@ export function focusExistingSettingsWindow(query = {}) {
 }
 
 /*
- * 1366×768 / 1280×800 这类常见笔记本上,固定 1120×820 会把窗口下半截推出屏幕,
- * "设置"用户根本看不到底部按钮 → 按 screen.availWidth/availHeight 收口,
- * 留出任务栏 / 边框 / 系统装饰条的安全边距。下界保证小屏幕上也不会被压扁到不可读。
+ * 默认按显示器可用尺寸"上下左右各留 100px"打开 — 让窗口尽量铺满屏幕。
+ * DEFAULT_SETTINGS_WINDOW_WIDTH/HEIGHT 不再作为目标值使用,只作为屏幕信息缺失时
+ * 的兜底参考。下界(MIN_*)保证 1024×600 这类小屏上也不被压扁到不可读。
  */
+const SAFE_MARGIN_EACH_SIDE = 100   // 用户要求:上下左右各留 100px
 const MIN_SETTINGS_W = 800
 const MIN_SETTINGS_H = 560
-const SAFE_MARGIN_W = 60
-const SAFE_MARGIN_H = 80
 
-function fitToScreen(requested, axis) {
+function fillScreen(axis) {
   const isW = axis === 'w'
   const avail = isW
-    ? (window.screen?.availWidth || requested)
-    : (window.screen?.availHeight || requested)
-  const margin = isW ? SAFE_MARGIN_W : SAFE_MARGIN_H
+    ? (window.screen?.availWidth || DEFAULT_SETTINGS_WINDOW_WIDTH)
+    : (window.screen?.availHeight || DEFAULT_SETTINGS_WINDOW_HEIGHT)
   const min = isW ? MIN_SETTINGS_W : MIN_SETTINGS_H
-  return Math.min(requested, Math.max(min, avail - margin))
+  return Math.max(min, avail - SAFE_MARGIN_EACH_SIDE * 2)
 }
 
 export function openSettingsWindow(query = {}, options = {}) {
@@ -119,10 +117,10 @@ export function openSettingsWindow(query = {}, options = {}) {
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
   const dpr = window.devicePixelRatio || 1
-  const requestedW = Number(options?.width) || DEFAULT_SETTINGS_WINDOW_WIDTH
-  const requestedH = Number(options?.height) || DEFAULT_SETTINGS_WINDOW_HEIGHT
-  const width = fitToScreen(requestedW, 'w')
-  const height = fitToScreen(requestedH, 'h')
+  // 默认尺寸 = availSize - 200(100 左 + 100 右 / 100 上 + 100 下);
+  // 显式传 options.width / height 仍然优先,留给特殊场景。
+  const width = Number(options?.width) || fillScreen('w')
+  const height = Number(options?.height) || fillScreen('h')
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(
