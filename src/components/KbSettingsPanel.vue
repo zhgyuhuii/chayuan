@@ -142,6 +142,7 @@
 <script>
 import services from '../services/index.js'
 import { isEnabled as isFlagEnabled, setFlag as setFeatureFlag, subscribe as subscribeFlag } from '../utils/featureFlags.js'
+import { inAppConfirm } from '../utils/inAppDialog.js'
 import KbConnectionFormDialog from './KbConnectionFormDialog.vue'
 import KbEmptyTopology from './KbEmptyTopology.vue'
 
@@ -251,7 +252,15 @@ export default {
     async onDelete() {
       if (!this.selected?.id) return
       const name = this.selected.name || this.selected.id
-      if (!confirm(`确认删除连接「${name}」？此操作不可恢复。`)) return
+      // window.confirm 在 WPS ShowDialog 内嵌 webview 里会被宿主当作新模态窗,
+      // 视觉上"关闭"了设置窗口;改用 inAppConfirm 在同一 webview 内浮层弹出。
+      const ok = await inAppConfirm(`确认删除连接「${name}」？此操作不可恢复。`, {
+        title: '删除知识库连接',
+        okText: '删除',
+        cancelText: '取消',
+        danger: true
+      })
+      if (!ok) return
       try {
         await connectionStore.removeConnection(this.selected.id)
         kbCatalogCache.invalidate(`list:${this.selected.id}`)
