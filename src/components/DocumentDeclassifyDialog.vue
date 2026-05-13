@@ -139,10 +139,10 @@
               @keydown.enter="onConfirm"
             />
           </div>
-          <p v-if="passwordErrorMsg" class="error password-error">{{ passwordErrorMsg }}</p>
           <p class="password-hint">
             密码规则：至少 8 位，必须同时包含大写字母、小写字母、数字和特殊字符。
           </p>
+          <p v-if="passwordErrorMsg" class="error password-error">{{ passwordErrorMsg }}</p>
         </template>
       </template>
     </div>
