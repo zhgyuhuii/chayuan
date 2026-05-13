@@ -97,11 +97,14 @@ export function focusExistingSettingsWindow(query = {}) {
 /*
  * 默认按显示器可用尺寸"上下左右各留 100px"打开 — 让窗口尽量铺满屏幕。
  * DEFAULT_SETTINGS_WINDOW_WIDTH/HEIGHT 不再作为目标值使用,只作为屏幕信息缺失时
- * 的兜底参考。下界(MIN_*)保证 1024×600 这类小屏上也不被压扁到不可读。
+ * 的兜底参考。下界(MIN_*)对应内容(架构图 + 左侧导航)的最小可读尺寸 — 在
+ * 1366×768 这类小笔记本上,"avail - 200" 会得到 1166×528,显得过于压扁;
+ * 提到 1080×720 后,小屏上让 WPS 自动 clamp 到屏幕(效果≈全屏),大屏继续走
+ * "avail - 200"。
  */
 const SAFE_MARGIN_EACH_SIDE = 100   // 用户要求:上下左右各留 100px
-const MIN_SETTINGS_W = 800
-const MIN_SETTINGS_H = 560
+const MIN_SETTINGS_W = 1080
+const MIN_SETTINGS_H = 720
 
 function fillScreen(axis) {
   const isW = axis === 'w'

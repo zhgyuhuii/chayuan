@@ -3140,9 +3140,11 @@ function OnAction(control) {
     case 'btnAboutChayuan': {
       // 按显示器可用尺寸"上下左右各留 100px"打开 — 让里面的拓扑架构图
       // (AboutChayuanArchitecture, viewBox 1280×780)有足够空间正常显示。
+      // 下限 1080×720:小笔记本上"avail - 200"会得到 528 高,装不下架构图;
+      // 抬到 720 后 WPS 会把超出屏幕部分 clamp(效果≈全屏),大屏继续按 100px 留白。
       const aboutDpr = window.devicePixelRatio || 1
-      const aboutW = Math.max(900, (window.screen?.availWidth || 1280) - 200)
-      const aboutH = Math.max(600, (window.screen?.availHeight || 800) - 200)
+      const aboutW = Math.max(1080, (window.screen?.availWidth || 1280) - 200)
+      const aboutH = Math.max(720, (window.screen?.availHeight || 800) - 200)
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/about-chayuan',
         '关于察元',
