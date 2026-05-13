@@ -329,11 +329,15 @@ export default {
     openAddForm() {
       try {
         const url = this.getDialogUrl('add')
+        const dpr = window.devicePixelRatio || 1
+        // 1366×768 / 1280×800 这类常见笔记本上,屏幕可用高度往往只有 ~700,固定 800
+        // 会把弹窗下半截推出屏幕、遮住"确定"按钮。按屏幕可用高度收口,留出任务栏边距。
+        const targetLogicalHeight = Math.min(800, Math.max(420, (window.screen?.availHeight || 800) - 80))
         window.Application.ShowDialog(
           url,
           '添加表单项',
-          520 * (window.devicePixelRatio || 1),
-          800 * (window.devicePixelRatio || 1),
+          520 * dpr,
+          targetLogicalHeight * dpr,
           false
         )
       } catch (error) {
@@ -367,11 +371,13 @@ export default {
       if (!this.selectedId) return
       try {
         const url = this.getDialogUrl('edit', this.selectedId)
+        const dpr = window.devicePixelRatio || 1
+        const targetLogicalHeight = Math.min(800, Math.max(420, (window.screen?.availHeight || 800) - 80))
         window.Application.ShowDialog(
           url,
           '修改表单项',
-          520 * (window.devicePixelRatio || 1),
-          800 * (window.devicePixelRatio || 1),
+          520 * dpr,
+          targetLogicalHeight * dpr,
           false
         )
       } catch (error) {
