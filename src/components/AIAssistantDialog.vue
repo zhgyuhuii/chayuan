@@ -2177,6 +2177,8 @@ import { appendEvaluationRecord, buildChatEvaluationRecord } from '../utils/eval
 import { appendChatMemoryRecord } from '../utils/chatMemoryStore.js'
 import { createThrottledPersister } from '../utils/throttledPersist.js'
 import { record as recordPerf } from '../utils/perfTracker.js'
+import { bootMark, bootMeasure } from '../utils/bootPerf.js'
+bootMark('AIAssistantDialog.vue 模块顶部 import 解析完')
 import {
   getCachedModelRouteIntent,
   resolveLocalIntentShortcut,
@@ -3887,21 +3889,24 @@ export default {
     }
   },
   mounted() {
+    bootMark('AIAssistantDialog mounted 进入')
     this.aiAssistantWindowSession = createAIAssistantWindowSession((request) => {
       this.handleAIAssistantWindowRequest(request)
     })
+    bootMark('createAIAssistantWindowSession 完成')
     const claimed = this.aiAssistantWindowSession.claimOwnership(this.$route?.query || {})
+    bootMark(`claimOwnership 完成 (ok=${claimed.ok}, reason=${claimed.reason || '-'})`)
     if (!claimed.ok && claimed.reason === 'duplicate') {
       window.setTimeout(() => {
         this.closeWindow()
       }, 80)
       return
     }
-    this.loadHistory()
-    this.loadSidebarLayout()
-    this.loadAssistantItems()
-    this.requestAssistantEvolutionSuggestionCheck()
-    this.refreshModelSelection()
+    bootMeasure('loadHistory', () => this.loadHistory())
+    bootMeasure('loadSidebarLayout', () => this.loadSidebarLayout())
+    bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
+    bootMeasure('requestAssistantEvolutionSuggestionCheck', () => this.requestAssistantEvolutionSuggestionCheck())
+    bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''
     const fromContext = new URLSearchParams(hashPart || window.location.search || '').get('from') === 'context'
     const selectedContext = safeParsePluginJson(
@@ -3911,25 +3916,31 @@ export default {
     if (fromContext && selectedContent) {
       // 仅保留为感知上下文，不回填到输入框，避免大段内容挤占输入区域
     }
-    this.consumeExternalPromptQuery(this.$route?.query || {})
-    this.refreshSelectionContext()
-    this.refreshWelcomePrompt()
+    bootMark('PluginStorage 读取(SELECTED_CONTEXT / SELECTED_CONTENT) 完成')
+    bootMeasure('consumeExternalPromptQuery', () => this.consumeExternalPromptQuery(this.$route?.query || {}))
+    bootMeasure('refreshSelectionContext', () => this.refreshSelectionContext())
+    bootMeasure('refreshWelcomePrompt', () => this.refreshWelcomePrompt())
     if (this.currentMessages.length === 0) {
-      this.prepareWelcomeSupportEntryAnimation()
+      bootMeasure('prepareWelcomeSupportEntryAnimation', () => this.prepareWelcomeSupportEntryAnimation())
     }
-    this.$nextTick(() => this.adjustComposerHeight())
-    initTaskListSync()
+    this.$nextTick(() => {
+      bootMeasure('$nextTick → adjustComposerHeight', () => this.adjustComposerHeight())
+      bootMark('AIAssistantDialog $nextTick 完成(视觉上窗口已可交互)')
+    })
+    bootMeasure('initTaskListSync', () => initTaskListSync())
     this.taskListUnsubscribe = subscribeTaskList(() => {
       this.syncGeneratedOutputTaskRuns()
       this.syncAssistantTaskRuns()
       this.syncWpsCapabilityTaskRuns()
       this.syncDocumentCommentTaskRuns()
     })
+    bootMark('subscribeTaskList 注册完成')
     window.addEventListener('focus', this.handleWindowFocus)
     window.addEventListener('storage', this.handleStorageEvent)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('mousemove', this.handleSidebarResize)
     window.addEventListener('mouseup', this.stopSidebarResize)
+    bootMark('AIAssistantDialog mounted 同步部分结束')
   },
   beforeUnmount() {
     window.removeEventListener('focus', this.handleWindowFocus)

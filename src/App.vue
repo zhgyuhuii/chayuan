@@ -12,6 +12,8 @@
 <script>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { bootMark, bootMeasure, bootDump } from './utils/bootPerf.js'
+bootMark('App.vue script 顶部 import 解析中')
 import ribbon from './components/ribbon.js'
 import { syncAddonBaseUrlToPluginStorage } from './utils/publicAssetUrl.js'
 import { schedulePreloadAiAssistantRouteChunk } from './utils/preloadAiAssistantChunk.js'
@@ -21,6 +23,7 @@ import WelcomeBanner from './components/common/WelcomeBanner.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
 import WorkflowResumeDialog from './components/common/WorkflowResumeDialog.vue'
 import TaskCelebration from './components/common/TaskCelebration.vue'
+bootMark('App.vue script 顶部 import 全部解析完')
 // 下列模块都是"非首屏关键"的注册/启动器,改为 idle 时动态导入,首屏 JS 不再为它们等待:
 //   - evolutionCommands / modelCommands / taskCommands: ⌘K 命令面板条目,首次开面板前都用不上
 //   - bootHelpers / installEvolutionScheduler: 进化系统启动 + 长周期定时器(每天 03:00 / 每 2 小时)
@@ -87,17 +90,27 @@ export default {
     }
 
     onMounted(() => {
+      bootMark(`App.vue onMounted 进入 (isDialog=${isDialog.value}, path=${route.path})`)
       window.ribbon = ribbon
       // 首屏必须的同步工作:路由 dialog 标记 + addon base url 同步(廉价)
-      updateDialogPageClass()
-      syncAddonBaseUrlToPluginStorage()
+      bootMeasure('updateDialogPageClass', updateDialogPageClass)
+      bootMeasure('syncAddonBaseUrlToPluginStorage', syncAddonBaseUrlToPluginStorage)
       // 弹窗 webview 不需要 ribbon 命令面板/AI 助手预加载/后台 boot —
       // 它们既无 ribbon 可挂,也不应在每个弹窗里再装一份定时器+监听器。
       if (!isDialog.value) {
-        try { registerRibbonCommands({ ribbon }) } catch (_) { /* 注册失败不阻塞主流程 */ }
+        bootMeasure('registerRibbonCommands', () => {
+          try { registerRibbonCommands({ ribbon }) } catch (_) { /* 注册失败不阻塞主流程 */ }
+        })
+        bootMark('schedulePreloadAiAssistantRouteChunk 调用')
         schedulePreloadAiAssistantRouteChunk()
+        bootMark('scheduleNonCriticalBoot 调用')
         scheduleNonCriticalBoot()
+      } else {
+        bootMark('isDialog=true,跳过 registerRibbonCommands / preload / scheduleNonCriticalBoot')
       }
+      bootMark('App.vue onMounted 退出')
+      // 让首屏所有 mounted 都跑完之后,统一 dump 一次时间线
+      setTimeout(() => bootDump(`route=${route.path}`), 1500)
     })
 
     watch(() => route.path, updateDialogPageClass, { immediate: true })
