@@ -320,7 +320,8 @@ export default {
 .template-form-dialog {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  /* 定高才能让 .dialog-body 内部滚动、页脚固定在底部,避免内容多时把"确定"按钮顶出屏幕 */
+  height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
   font-size: 13px;
   background: #fff;
