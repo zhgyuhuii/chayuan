@@ -2169,7 +2169,7 @@ import { canCreateDocumentBackup, createDocumentBackupRecord, restoreDocumentBac
 import { REPORT_TYPE_OPTIONS, getReportTypeLabel, createDefaultReportSettings, normalizeReportSettings } from '../utils/reportSettings.js'
 import { getReportAssistantPresetGroups, buildReportAssistantPresetDraft } from '../utils/reportAssistantPresets.js'
 import { buildReportDraftWithModel } from '../utils/reportDraftBuilder.js'
-import { createRenderedArtifact } from '../utils/artifactRenderer.js'
+import { createRenderedArtifact, createRenderedArtifactAsync } from '../utils/artifactRenderer.js'
 import { createArtifactRecord } from '../utils/artifactTypes.js'
 import { bindArtifactsToOwner } from '../utils/artifactStore.js'
 import { getCapabilityBusItem } from '../utils/capabilityBus.js'
@@ -6407,12 +6407,17 @@ export default {
       }
       this.triggerGeneratedFileBrowserDownload(url, fileName)
     },
-    createGeneratedTextFile(content, options = {}) {
-      const artifact = createRenderedArtifact(String(content || ''), {
+    async createGeneratedTextFile(content, options = {}) {
+      const ext = String(options.extension || 'md').toLowerCase()
+      const renderArgs = {
         kind: options.kind || 'report',
-        format: options.extension || 'md',
+        format: ext,
         baseName: sanitizeDownloadFileName(options.baseName || '生成结果', '生成结果')
-      })
+      }
+      // xlsx 走异步路径(动态加载 xlsx 库),其他格式走同步路径保持原行为。
+      const artifact = ext === 'xlsx'
+        ? await createRenderedArtifactAsync(String(content || ''), renderArgs)
+        : createRenderedArtifact(String(content || ''), renderArgs)
       return {
         ...artifact,
         status: 'completed',
@@ -10467,23 +10472,22 @@ export default {
           const extension = ['json', 'md', 'csv', 'txt', 'xlsx'].includes(String(intent?.outputFormat || '').toLowerCase())
             ? String(intent.outputFormat).toLowerCase()
             : 'md'
-          assistantMsg.generatedFiles = [
-            this.createGeneratedTextFile(content, {
-              kind: 'report',
-              extension,
-              baseName: intent?.reportContext?.reportName || intent?.fileBaseName || (
-                extension === 'json'
-                  ? '生成报告JSON'
-                  : extension === 'xlsx'
-                    ? '提炼结果表格'
-                  : extension === 'csv'
-                    ? '提炼结果表格'
-                    : extension === 'txt'
-                      ? '提炼结果'
-                      : '生成报告'
-              )
-            })
-          ]
+          const reportFile = await this.createGeneratedTextFile(content, {
+            kind: 'report',
+            extension,
+            baseName: intent?.reportContext?.reportName || intent?.fileBaseName || (
+              extension === 'json'
+                ? '生成报告JSON'
+                : extension === 'xlsx'
+                  ? '提炼结果表格'
+                : extension === 'csv'
+                  ? '提炼结果表格'
+                  : extension === 'txt'
+                    ? '提炼结果'
+                    : '生成报告'
+            )
+          })
+          assistantMsg.generatedFiles = [reportFile]
           this.persistMessageArtifacts(assistantMsg, extension === 'xlsx' ? 'report-xlsx' : 'report-generation')
           const formatLabel = extension === 'json'
             ? 'JSON'
@@ -10507,7 +10511,7 @@ export default {
             kind: 'file',
             baseName: asset.baseName || `${intent?.fileBaseName || '文档附件对象'}_${index + 1}`
           }))
-          const manifest = this.createGeneratedTextFile(JSON.stringify({
+          const manifest = await this.createGeneratedTextFile(JSON.stringify({
             totalObjects: exported.descriptors.length,
             exportedFiles: exported.assets.length,
             unresolvedObjects: exported.unresolved

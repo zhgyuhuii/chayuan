@@ -1,6 +1,6 @@
 import Util from './js/util.js'
 import SystemDemo from './js/systemdemo.js'
-import * as XLSX from 'xlsx'
+// xlsx 仅在"导出表格到 Excel"动作里用到,改为按需动态加载(saves ~600KB+ from main bundle).
 import { getOpenAIModelIndex } from './ribbon/modelHelpers.js'
 import { loadRulesFromDoc, saveRulesToDoc } from '../utils/templateRules.js'
 import { setNewFileMarker, isNewFile } from '../utils/documentTemplates.js'
@@ -1039,7 +1039,7 @@ function showUniformImageFormatDialog() {
 }
 
 // 导出全部表格到Excel（使用xlsx库）
-function exportAllTablesToExcel() {
+async function exportAllTablesToExcel() {
   try {
     const doc = window.Application.ActiveDocument
     if (!doc) {
@@ -1284,6 +1284,8 @@ function exportAllTablesToExcel() {
     if (!saved) {
       console.log('开始使用xlsx库创建Excel文件...')
       try {
+        // 按需加载 xlsx(避免拉进主 bundle 影响首屏)
+        const XLSX = await import('xlsx')
         const workbook = XLSX.utils.book_new()
         
         // 遍历Word文档中的所有表格，将每个表格转换为工作表

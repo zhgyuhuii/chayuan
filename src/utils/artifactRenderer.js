@@ -1,5 +1,12 @@
-import * as XLSX from 'xlsx'
 import { createArtifactRecord } from './artifactTypes.js'
+
+// xlsx ≈ 600KB+ minified; eagerly importing它会把整个主 bundle (index-*.js) 拉到 ~1.2MB,
+// 而它只有 xlsx 格式才需要。改为按需动态加载,主 bundle 显著瘦身,文档打开/任务窗格首屏更快。
+let _xlsxModulePromise = null
+function _loadXlsx() {
+  if (!_xlsxModulePromise) _xlsxModulePromise = import('xlsx')
+  return _xlsxModulePromise
+}
 
 function normalizeString(value, fallback = '') {
   const normalized = String(value || '').trim()
@@ -94,7 +101,7 @@ function buildBlob(content, mimeType) {
   return new Blob([content], { type: mimeType })
 }
 
-function buildWorkbookFromStructuredData(data, defaultSheetName = 'Sheet1') {
+function buildWorkbookFromStructuredData(XLSX, data, defaultSheetName = 'Sheet1') {
   const workbook = XLSX.utils.book_new()
   const structuredSheets = Array.isArray(data?.sheets) ? data.sheets : null
   if (structuredSheets && structuredSheets.length > 0) {
@@ -112,8 +119,9 @@ function buildWorkbookFromStructuredData(data, defaultSheetName = 'Sheet1') {
   return workbook
 }
 
-function buildXlsxBlob(data, sheetName = 'Sheet1') {
-  const workbook = buildWorkbookFromStructuredData(data, sheetName)
+async function buildXlsxBlobAsync(data, sheetName = 'Sheet1') {
+  const XLSX = await _loadXlsx()
+  const workbook = buildWorkbookFromStructuredData(XLSX, data, sheetName)
   const array = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
   return new Blob([array], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -145,14 +153,8 @@ export function renderArtifactContent(content, options = {}) {
     }
   }
   if (format === 'xlsx') {
-    const blob = buildXlsxBlob(data, normalizeString(options.sheetName, 'Sheet1'))
-    return {
-      extension: 'xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      textContent: '',
-      blob,
-      previewText: rowsToCsv(normalizeRows(data)).slice(0, 240)
-    }
+    // 同步入口不直接处理 xlsx,避免把 xlsx 拉进主 bundle;调用方应改用 renderArtifactContentAsync。
+    throw new Error('xlsx artifact must be rendered via renderArtifactContentAsync()')
   }
   if (format === 'html') {
     const rows = normalizeRows(data)
@@ -192,8 +194,7 @@ export function renderArtifactContent(content, options = {}) {
   }
 }
 
-export function createRenderedArtifact(content, options = {}) {
-  const rendered = renderArtifactContent(content, options)
+function _buildArtifactRecordFromRendered(rendered, options) {
   const downloadUrl = URL.createObjectURL(rendered.blob)
   return createArtifactRecord({
     kind: options.kind || options.route || 'report',
@@ -213,4 +214,28 @@ export function createRenderedArtifact(content, options = {}) {
     rootArtifactId: options.rootArtifactId || '',
     retentionTier: options.retentionTier || 'standard'
   })
+}
+
+export function createRenderedArtifact(content, options = {}) {
+  return _buildArtifactRecordFromRendered(renderArtifactContent(content, options), options)
+}
+
+// renderArtifactContent 的 xlsx 异步变体:非 xlsx 直接走同步路径(零额外成本),xlsx 走动态导入。
+export async function renderArtifactContentAsync(content, options = {}) {
+  const format = normalizeString(options.format || options.extension, 'md').toLowerCase()
+  if (format !== 'xlsx') return renderArtifactContent(content, options)
+  const data = safeJsonParse(content, content)
+  const blob = await buildXlsxBlobAsync(data, normalizeString(options.sheetName, 'Sheet1'))
+  return {
+    extension: 'xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    textContent: '',
+    blob,
+    previewText: rowsToCsv(normalizeRows(data)).slice(0, 240)
+  }
+}
+
+export async function createRenderedArtifactAsync(content, options = {}) {
+  const rendered = await renderArtifactContentAsync(content, options)
+  return _buildArtifactRecordFromRendered(rendered, options)
 }
