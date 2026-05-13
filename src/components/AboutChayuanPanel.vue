@@ -39,6 +39,53 @@
       </div>
     </section>
 
+    <!-- ───── 察元产品家族(4 SKU 关系图) ───── -->
+    <section class="about-section about-family">
+      <h2 class="about-h2">察元产品家族</h2>
+      <p class="about-muted">
+        同一套设计 / 知识库结构 / 对话引擎,按部署形态和模块边界分 4 档。
+        <strong>你正在使用的是左侧第一档</strong> — 开源、免费、可自托管的 WPS 加载项。
+      </p>
+      <div class="about-family-grid">
+        <article
+          v-for="sku in productFamily"
+          :key="sku.key"
+          class="about-family-card"
+          :class="[`is-${sku.tone}`, { 'is-current': sku.current }]"
+        >
+          <header class="about-family-head">
+            <span class="about-family-icon">{{ sku.icon }}</span>
+            <div>
+              <h3 class="about-family-name">{{ sku.name }}</h3>
+              <p class="about-family-sub">{{ sku.sub }}</p>
+            </div>
+            <span v-if="sku.current" class="about-family-badge">当前在用</span>
+            <span v-else-if="sku.tone === 'highlight'" class="about-family-badge about-family-badge-warm">推荐企业</span>
+          </header>
+          <p class="about-family-pitch">{{ sku.pitch }}</p>
+          <ul class="about-family-points">
+            <li v-for="(p, i) in sku.points" :key="i">{{ p }}</li>
+          </ul>
+          <footer class="about-family-foot">
+            <span class="about-family-price">{{ sku.price }}</span>
+            <span class="about-family-cta">{{ sku.cta }}</span>
+          </footer>
+        </article>
+      </div>
+      <p class="about-muted about-family-foot-note">
+        想了解服务版 / 至臻版?发邮件到
+        <a class="about-inline-link" href="mailto:cmdbird@163.com" @click.prevent="openExternal('mailto:cmdbird@163.com')">cmdbird@163.com</a>
+        或访问
+        <a class="about-inline-link" href="https://aidooo.com" target="_blank" rel="noreferrer" @click.prevent="openAidooo">aidooo.com</a>
+        按部署形态 / 模块 / 用户数定制授权。
+      </p>
+    </section>
+
+    <!-- ───── 互联架构拓扑(炫酷可点击) ───── -->
+    <section class="about-section about-architecture-wrap">
+      <AboutChayuanArchitecture />
+    </section>
+
     <section class="about-section">
       <h2 class="about-h2">主要功能</h2>
       <ul class="about-features">
@@ -260,9 +307,79 @@ import pkg from '../../package.json'
 import { MODEL_GROUPS } from '@/utils/defaultModelGroups.js'
 import { getModelLogoPath } from '@/utils/modelLogos.js'
 import { publicAssetUrl } from '@/utils/publicAssetUrl.js'
+import AboutChayuanArchitecture from './AboutChayuanArchitecture.vue'
+
+/*
+ * productFamily 文案对齐 /work/website/src/config/productCopy.js 的 EDITION_COMPARE,
+ * 让本加载项里的"关于"页与官方网站完全同源,以后官网改了文案,搬过来就好。
+ */
+const PRODUCT_FAMILY = [
+  {
+    key: 'wps',
+    name: '察元 WPS AI 文档助手',
+    sub: '开源 · 免费 · Apache-2.0',
+    icon: '📄',
+    tone: 'plain',
+    current: true,
+    pitch: '装到 WPS 里,文档级 AI 写作 / 改写 / 摘要 / 引用,内置远程知识库。',
+    points: [
+      '20+ 内置助手,8 种写回方式',
+      '远程知识库 RAG · 引用气泡 · 原文下载',
+      '完全本地化 / 内网部署 · 密钥不出域'
+    ],
+    price: '免费',
+    cta: 'GitHub · Gitee'
+  },
+  {
+    key: 'desktop',
+    name: '察元 AI 桌面版',
+    sub: '单机 · 免费',
+    icon: '💻',
+    tone: 'plain',
+    pitch: '装到本机即用,个人 / 单机,离线可跑、数据不出域。',
+    points: [
+      'Tauri + 嵌入式 Python · 装机离线',
+      '五类知识源统一查询 · Model Arena',
+      '30+ 工具 · MCP 双角色 · 国产化适配'
+    ],
+    price: '免费',
+    cta: '下载桌面版'
+  },
+  {
+    key: 'service',
+    name: '察元 AI 服务版',
+    sub: '团队 · ≤ 50 人 · 商业',
+    icon: '🏢',
+    tone: 'emphasis',
+    pitch: '服务化部署 ≤ 50 人,桌面版能力 + 团队协作 + 基础配额审计。',
+    points: [
+      '服务化部署 · 团队 + 角色',
+      '继承桌面版全部能力',
+      '基础配额 / 审计'
+    ],
+    price: '联系商务',
+    cta: 'cmdbird@163.com'
+  },
+  {
+    key: 'premium',
+    name: '察元 AI 至臻版',
+    sub: '企业 · ≤ 500 人 · 推荐',
+    icon: '👑',
+    tone: 'highlight',
+    pitch: '服务化部署 ≤ 500 人,在线办公 / 智能空间 / 训练数据中心全模块齐全。',
+    points: [
+      '在线 Office + 智能空间 + 应用市场',
+      '训练数据中心 · 微调反馈闭环',
+      'SSO · 审计 · BI 看板'
+    ],
+    price: '联系商务',
+    cta: 'aidooo.com'
+  }
+]
 
 export default {
   name: 'AboutChayuanPanel',
+  components: { AboutChayuanArchitecture },
   data() {
     return {
       appVersion: pkg.version || '',
@@ -273,6 +390,7 @@ export default {
       showAliQr: true,
       shotLightbox: null,
       modelGroups: MODEL_GROUPS,
+      productFamily: PRODUCT_FAMILY,
       featureList: [
         {
           title: '离线与本地模型',
@@ -330,6 +448,13 @@ export default {
           src: 'images/about/screen-3.png',
           alt: '模型设置',
           caption: '模型与供应商配置',
+          hint: '界面示意'
+        },
+        {
+          key: 's4',
+          src: 'images/about/screen-4.png',
+          alt: '知识库连接',
+          caption: '远程知识库连接管理',
           hint: '界面示意'
         }
       ]
@@ -977,4 +1102,155 @@ export default {
   color: #94a3b8;
   text-align: center;
 }
+
+/* ───── 察元产品家族(4 SKU 卡片) ───── */
+.about-family { /* 继承 about-section 即可,这里只做局部修饰 */ }
+.about-family-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 1100px) {
+  .about-family-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .about-family-grid { grid-template-columns: 1fr; }
+}
+.about-family-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.95));
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.about-family-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.45);
+  box-shadow: 0 14px 36px -16px rgba(99, 102, 241, 0.45);
+}
+.about-family-card.is-current {
+  border-color: #60a5fa;
+  background: linear-gradient(160deg, rgba(37, 99, 235, 0.32), rgba(15, 23, 42, 0.95));
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4), 0 14px 36px -14px rgba(96, 165, 250, 0.45);
+}
+.about-family-card.is-highlight {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: linear-gradient(160deg, rgba(180, 83, 9, 0.22), rgba(15, 23, 42, 0.95));
+}
+.about-family-card.is-emphasis {
+  border-color: rgba(168, 85, 247, 0.45);
+  background: linear-gradient(160deg, rgba(126, 34, 206, 0.22), rgba(15, 23, 42, 0.95));
+}
+
+.about-family-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.about-family-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.about-family-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.35;
+}
+.about-family-sub {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: #93c5fd;
+}
+.about-family-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.2);
+  color: #bfdbfe;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  font-weight: 600;
+}
+.about-family-badge-warm {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.5);
+}
+.about-family-pitch {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #cbd5e1;
+}
+.about-family-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.about-family-points li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.55;
+}
+.about-family-points li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.55);
+}
+.is-current .about-family-points li::before { background: #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); }
+.is-highlight .about-family-points li::before { background: #fbbf24; }
+.is-emphasis .about-family-points li::before { background: #c084fc; }
+
+.about-family-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(96, 165, 250, 0.2);
+  font-size: 12px;
+}
+.about-family-price {
+  font-weight: 700;
+  color: #f8fafc;
+}
+.about-family-cta {
+  color: #93c5fd;
+}
+.about-family-foot-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+
+/* 架构组件外壳 — 只在面板里加一点呼吸空间 */
+.about-architecture-wrap { padding-top: 4px; }
 </style>
