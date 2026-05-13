@@ -125,6 +125,7 @@
               type="password"
               class="input-text"
               placeholder="至少 8 位，需包含大小写、数字和特殊字符"
+              @input="onPasswordInput"
             />
           </div>
           <div class="form-group">
@@ -134,9 +135,11 @@
               type="password"
               class="input-text"
               placeholder="再次输入密码"
+              @input="onPasswordInput"
               @keydown.enter="onConfirm"
             />
           </div>
+          <p v-if="passwordErrorMsg" class="error password-error">{{ passwordErrorMsg }}</p>
           <p class="password-hint">
             密码规则：至少 8 位，必须同时包含大写字母、小写字母、数字和特殊字符。
           </p>
@@ -191,6 +194,7 @@ export default {
       step: 'form',
       assistantError: '',
       errorMsg: '',
+      passwordErrorMsg: '',
       assistantOutput: '',
       extractionTaskId: '',
       keywordRows: [createEmptyRow()],
@@ -253,6 +257,9 @@ export default {
       this.errorMsg = ''
       this.refreshPreview()
     },
+    onPasswordInput() {
+      this.passwordErrorMsg = ''
+    },
     refreshPreview() {
       try {
         const preview = buildDeclassifyPreview(this.keywordRows)
@@ -287,18 +294,20 @@ export default {
     },
     async onConfirm() {
       this.errorMsg = ''
+      this.passwordErrorMsg = ''
       const cleanRows = this.getCleanKeywordRows()
       if (cleanRows.length === 0) {
         this.errorMsg = '请至少保留一个涉密关键词'
         return
       }
       if (this.password !== this.confirmPassword) {
-        this.errorMsg = '两次输入的密码不一致'
+        // 密码相关错误显示在密码输入框下方,避免用户看不到顶部的提示
+        this.passwordErrorMsg = '两次输入的密码不一致'
         return
       }
       const validation = validateDeclassifyPassword(this.password)
       if (!validation.ok) {
-        this.errorMsg = validation.errors[0] || '密码强度不符合要求'
+        this.passwordErrorMsg = validation.errors[0] || '密码强度不符合要求'
         return
       }
 
@@ -402,6 +411,10 @@ export default {
 .password-hint {
   color: #6b7280;
   line-height: 1.6;
+}
+
+.password-error {
+  margin: 4px 0 8px;
 }
 
 .summary-grid {
