@@ -124,12 +124,37 @@ function saveToPluginStorage(obj) {
   }
 }
 
-/**
- * 加载全局设置
+/*
+ * 内存缓存。原实现里 loadGlobalSettings() 每次都触发一次 WPS FileSystem 读 + JSON.parse
+ * 整个 settings blob,而 ribbon 动态菜单(察元AI助理 / 察元AI编审 / 更多)展开时会扇出
+ * 100+ 次 loadGlobalSettings(每个 assistant × 每个位置 × per-item GetImage),累计上百
+ * 次同步磁盘 I/O,这是"切菜单卡顿"的核心瓶颈。
+ *
+ * 策略:
+ *   - 第一次 load 读盘,结果留在 _cache,后续 load 直接返回 _cache 引用
+ *   - saveGlobalSettings 写盘成功后直接把新 merged 对象写回 _cache,version++
+ *   - version 计数让外部 memo(loadAssistantSettings 等)可以判断自己的缓存是否过期
+ *   - 外部并发写(例如 devtools 改 localStorage)罕见,提供 _invalidateGlobalSettingsCache 兜底
+ *
+ * 调用方约定:不要 mutate loadGlobalSettings() 的返回值;需要修改请用 saveGlobalSettings。
  */
+let _cache = null
+let _cacheVersion = 0
+
 export function loadGlobalSettings() {
+  if (_cache !== null) return _cache
   const raw = loadRaw()
-  return raw && typeof raw === 'object' ? raw : {}
+  _cache = raw && typeof raw === 'object' ? raw : {}
+  return _cache
+}
+
+export function getGlobalSettingsVersion() {
+  return _cacheVersion
+}
+
+export function _invalidateGlobalSettingsCache() {
+  _cache = null
+  _cacheVersion++
 }
 
 /**
@@ -152,5 +177,8 @@ export function saveGlobalSettings(partial) {
   if (!fileOk && !_fileWriteDisabled) {
     console.warn('globalSettings: 文件保存失败，已保存到 localStorage')
   }
+  // 写盘后刷新缓存,下游 memo 通过 version 判断重算
+  _cache = merged
+  _cacheVersion++
   return true
 }

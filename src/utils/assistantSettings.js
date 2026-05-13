@@ -1,4 +1,4 @@
-import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
+import { loadGlobalSettings, saveGlobalSettings, getGlobalSettingsVersion } from './globalSettings.js'
 import { DEFAULT_ASSISTANT_ICON, buildAssistantRibbonIconValue, normalizeAssistantIcon } from './assistantIcons.js'
 import { createDefaultReportSettings, normalizeReportSettings } from './reportSettings.js'
 import {
@@ -145,7 +145,18 @@ export function getBuiltinAssistantSettingsDefaults() {
   return defaults
 }
 
+/*
+ * 缓存按 globalSettings 的 version 失效。ribbon 动态菜单展开时这条函数会被反复调用,
+ * 缓存后 deepClone+defaults merge 只在 settings 变更后做一次。
+ */
+let _assistantSettingsCache = null
+let _assistantSettingsCacheVersion = -1
+
 export function loadAssistantSettings() {
+  const version = getGlobalSettingsVersion()
+  if (_assistantSettingsCache && _assistantSettingsCacheVersion === version) {
+    return _assistantSettingsCache
+  }
   const settings = loadGlobalSettings()
   const stored = ensureObject(settings[ASSISTANT_SETTINGS_KEY])
   const defaults = getBuiltinAssistantSettingsDefaults()
@@ -165,7 +176,9 @@ export function loadAssistantSettings() {
       }
     }
   })
-  return merged
+  _assistantSettingsCache = merged
+  _assistantSettingsCacheVersion = version
+  return _assistantSettingsCache
 }
 
 export function saveAssistantSettings(settingsMap) {
@@ -203,16 +216,20 @@ export function getAssistantSetting(id) {
 export function updateAssistantSetting(id, partial) {
   const current = loadAssistantSettings()
   const base = current[id] || getAssistantDefaultConfig(id)
-  current[id] = {
-    ...base,
-    ...ensureObject(partial),
-    reportSettings: normalizeReportSettings(partial?.reportSettings, base?.reportSettings),
-    mediaOptions: {
-      ...ensureObject(base?.mediaOptions),
-      ...ensureObject(partial?.mediaOptions)
+  // 不原地修改 current — loadAssistantSettings 现在返回缓存引用,mutate 会污染缓存
+  const next = {
+    ...current,
+    [id]: {
+      ...base,
+      ...ensureObject(partial),
+      reportSettings: normalizeReportSettings(partial?.reportSettings, base?.reportSettings),
+      mediaOptions: {
+        ...ensureObject(base?.mediaOptions),
+        ...ensureObject(partial?.mediaOptions)
+      }
     }
   }
-  return saveAssistantSettings(current)
+  return saveAssistantSettings(next)
 }
 
 export function getCustomAssistants() {
@@ -440,22 +457,46 @@ function buildDisplayEntry(definition, config, source) {
   }
 }
 
+// 按 (assistantId, settings version) 缓存。ribbon GetImage/GetLabel 每个 item 都会触发
+// 同一个 assistantId 的查询,缓存后避免每个 item 都重做 buildDisplayEntry + deepClone。
+const _displayEntryCache = new Map()  // key: `${version}::${assistantId}` → entry|null
+let _displayEntryCacheVersion = -1
+
+function _ensureDisplayEntryCacheVersion() {
+  const v = getGlobalSettingsVersion()
+  if (v !== _displayEntryCacheVersion) {
+    _displayEntryCache.clear()
+    _displayEntryCacheVersion = v
+  }
+  return v
+}
+
 export function getAssistantDisplayEntry(assistantId) {
+  if (!assistantId) return null
+  _ensureDisplayEntryCacheVersion()
+  if (_displayEntryCache.has(assistantId)) return _displayEntryCache.get(assistantId)
+
+  let entry = null
   const builtinDefinition = getBuiltinAssistantDefinition(assistantId)
   if (builtinDefinition) {
     const config = getAssistantSetting(assistantId)
-    if (!config || config.enabled === false) return null
-    return buildDisplayEntry(builtinDefinition, config, 'builtin')
+    if (config && config.enabled !== false) {
+      entry = buildDisplayEntry(builtinDefinition, config, 'builtin')
+    }
+  } else {
+    const custom = getCustomAssistantById(assistantId)
+    if (custom) {
+      entry = buildDisplayEntry({
+        id: custom.id,
+        label: inferAssistantNameFromPrompt(custom),
+        shortLabel: inferAssistantNameFromPrompt(custom),
+        icon: normalizeAssistantIcon(custom.icon),
+        defaultDisplayLocations: ['ribbon-more']
+      }, custom, 'custom')
+    }
   }
-  const custom = getCustomAssistantById(assistantId)
-  if (!custom) return null
-  return buildDisplayEntry({
-    id: custom.id,
-    label: inferAssistantNameFromPrompt(custom),
-    shortLabel: inferAssistantNameFromPrompt(custom),
-    icon: normalizeAssistantIcon(custom.icon),
-    defaultDisplayLocations: ['ribbon-more']
-  }, custom, 'custom')
+  _displayEntryCache.set(assistantId, entry)
+  return entry
 }
 
 export function isAssistantDisplayedInLocation(assistantId, location) {
@@ -464,7 +505,20 @@ export function isAssistantDisplayedInLocation(assistantId, location) {
   return entry.displayLocations.includes(location)
 }
 
+// 按 (location, settings version) 缓存。ribbon 动态菜单展开一次会对同一 location 重复
+// 查询 3+ 次(getRibbonOverflowAssistants / getRibbonExclusiveMoreAssistants / getRibbonMoreAssistants
+// 都走这条路径),缓存后只在 settings 改变后重新排序。
+const _displayLocationCache = new Map()  // key: location → list
+let _displayLocationCacheVersion = -1
+
 export function getAssistantsForDisplayLocation(location) {
+  const v = getGlobalSettingsVersion()
+  if (v !== _displayLocationCacheVersion) {
+    _displayLocationCache.clear()
+    _displayLocationCacheVersion = v
+  }
+  if (_displayLocationCache.has(location)) return _displayLocationCache.get(location)
+
   const builtinItems = getBuiltinAssistants()
     .map((item, index) => {
       const entry = getAssistantDisplayEntry(item.id)
@@ -481,7 +535,7 @@ export function getAssistantsForDisplayLocation(location) {
     .filter(Boolean)
     .filter(item => item.displayLocations.includes(location))
 
-  return [...builtinItems, ...customItems].sort((a, b) => {
+  const result = [...builtinItems, ...customItems].sort((a, b) => {
     const aPriority = a.displayOrder == null ? Number.POSITIVE_INFINITY : Number(a.displayOrder)
     const bPriority = b.displayOrder == null ? Number.POSITIVE_INFINITY : Number(b.displayOrder)
     if (aPriority !== bPriority) return aPriority - bPriority
@@ -493,4 +547,6 @@ export function getAssistantsForDisplayLocation(location) {
     if (aSort !== bSort) return aSort - bSort
     return Number(a._sourceIndex || 0) - Number(b._sourceIndex || 0)
   })
+  _displayLocationCache.set(location, result)
+  return result
 }
