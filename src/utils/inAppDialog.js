@@ -29,14 +29,19 @@ function ensureStyles() {
       position: fixed; inset: 0; pointer-events: none;
       z-index: 2147483600;
     }
+    /*
+     * Overlay 在 WPS WebView 里只做"截获背景点击"用,不再做大面积压暗。
+     * 之前 rgba(15,23,42,0.42)+blur 在 WPS 内嵌 WebView(尤其不支持 backdrop-filter
+     * 的旧版本)看起来像把整个设置窗口"隐藏"了。改成几乎透明的微暗,让用户
+     * 始终能看清下面那一层(设置面板),只有 card 自身用阴影强调"模态"语义。
+     */
     .in-app-dialog-overlay {
       position: fixed; inset: 0;
-      background: rgba(15, 23, 42, 0.42);
+      background: rgba(15, 23, 42, 0.10);
       display: flex; align-items: center; justify-content: center;
       pointer-events: auto;
       opacity: 0;
       transition: opacity 0.16s ease-out;
-      backdrop-filter: blur(2px);
     }
     .in-app-dialog-overlay.is-open { opacity: 1; }
     .in-app-dialog-card {
@@ -44,8 +49,10 @@ function ensureStyles() {
       max-width: min(520px, calc(100vw - 32px));
       background: #ffffff;
       border-radius: 10px;
-      box-shadow: 0 24px 60px -16px rgba(15, 23, 42, 0.45),
-                  0 8px 16px -8px rgba(15, 23, 42, 0.25);
+      /* card 加重阴影,即使 overlay 接近透明也能视觉上凸出 */
+      box-shadow: 0 28px 64px -18px rgba(15, 23, 42, 0.55),
+                  0 12px 24px -10px rgba(15, 23, 42, 0.35),
+                  0 0 0 1px rgba(15, 23, 42, 0.06);
       overflow: hidden;
       transform: translateY(8px) scale(0.98);
       opacity: 0;
