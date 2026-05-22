@@ -17,6 +17,7 @@ import { installGlobalErrorLogger } from './utils/globalErrorLogger.js'
 import { prepareDialogDisplayText } from './utils/dialogTextDisplay.js'
 import { installGlobalShortcut } from './utils/router/commandRegistry.js'
 import { applyStoredTheme } from './utils/router/themeToggle.js'
+import { initRuntimeSync } from './utils/runtimeSync.js'
 bootMark('main.js: 所有顶层 import + 顶层模块 evaluation 完成')
 
 const app = createApp(App)
@@ -45,4 +46,6 @@ router.isReady().then(() => {
   app.mount('#app')
   bootMark('app.mount(#app) 兜底分支完成')
 })
+
+try { initRuntimeSync() } catch { /* 静默 */ }
 
