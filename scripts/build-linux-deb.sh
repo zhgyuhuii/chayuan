@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 # Produces release/<package.json name>-<version>-linux-<arch>.deb（Debian/Ubuntu; requires dpkg-deb）。
 # arch 与构建机 uname -m 一致（x64/arm64）；包内仍为 Architecture: all（纯 JS 资源）。
+
+# 容错:有人会 `sh scripts/build-linux-deb.sh` 跑,绕过 shebang
+# 进入 dash/busybox-sh,而它们不支持 `set -o pipefail`。这里自动 re-exec 到 bash。
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    else
+        echo "本脚本需要 bash;请安装 bash 后重试(apt install bash / apk add bash)。" >&2
+        exit 1
+    fi
+fi
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
