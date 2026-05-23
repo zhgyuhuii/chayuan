@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Double-clickable installer: release/<package.json name>-<version>-macos-<arch>.pkg（仅能在 macOS 上构建）。
 # arch: arm64 (Apple Silicon) or x64 (Intel)，与当前构建机 uname -m 一致。
+
+# 容错:绕 shebang 用 sh 跑时回到 bash(pipefail / [[ ]] 都是 bash-only)
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    else
+        echo "本脚本需要 bash。" >&2
+        exit 1
+    fi
+fi
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
