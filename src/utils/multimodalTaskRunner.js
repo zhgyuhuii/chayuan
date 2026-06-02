@@ -1,4 +1,5 @@
 import { addTask, getTaskById, updateTask } from './taskListStore.js'
+import { yieldToUI } from './yieldToUI.js'
 import { generateImageAsset, generateSpeechAsset, generateVideoAsset } from './mediaApi.js'
 import { buildGeneratedArtifactDescriptor, mergeTaskOrchestrationData } from './taskOrchestrationMeta.js'
 import { bindArtifactsToOwner } from './artifactStore.js'
@@ -6,10 +7,6 @@ import { createRenderedArtifact } from './artifactRenderer.js'
 import { buildMultimodalGenerationPlan, summarizeMultimodalGenerationPlan } from './multimodalPlanning.js'
 
 const activeMultimodalRuns = new Map()
-
-function yieldToUI(delay = 0) {
-  return new Promise(resolve => setTimeout(resolve, delay))
-}
 
 function createCancelError() {
   const error = new Error('任务已停止')

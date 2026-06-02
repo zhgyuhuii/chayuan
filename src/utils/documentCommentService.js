@@ -1,6 +1,7 @@
 import { chatCompletion } from './chatApi.js'
+import { yieldToUI } from './yieldToUI.js'
 import { getApplication } from './documentActions.js'
-import { getDocumentChunksWithPositions, getSelectionChunksWithPositions } from './documentChunker.js'
+import { getDocumentChunksWithPositionsAsync, getSelectionChunksWithPositionsAsync } from './documentChunker.js'
 import { addTask, getTaskById, updateTask } from './taskListStore.js'
 import { addCommentAtText } from './spellCheckService.js'
 
@@ -20,10 +21,6 @@ function isTaskCancelledError(error) {
 
 function throwIfCancelled(runState) {
   if (runState?.cancelled) throw createCancelError()
-}
-
-function yieldToUI() {
-  return new Promise(resolve => window.setTimeout(resolve, 0))
 }
 
 function createDocumentCommentPlaceholderTask(taskTitle, requestText, scope = 'document') {
@@ -186,7 +183,7 @@ function buildUserPrompt(requestText, chunkText) {
   ].join('\n')
 }
 
-function resolveChunks(scope) {
+async function resolveChunks(scope) {
   const app = getApplication()
   const doc = app?.ActiveDocument
   const selection = app?.Selection
@@ -194,7 +191,7 @@ function resolveChunks(scope) {
     throw new Error('当前没有打开文档')
   }
   if (scope === 'selection') {
-    const chunks = getSelectionChunksWithPositions(doc, selection)
+    const chunks = await getSelectionChunksWithPositionsAsync(doc, selection, {}, { yieldEveryParagraphs: 5 })
     if (chunks.length === 0) {
       throw new Error('请先选中要处理的文本')
     }
@@ -204,11 +201,11 @@ function resolveChunks(scope) {
       inputSource: 'selection'
     }
   }
-  const chunks = getDocumentChunksWithPositions(doc, {
+  const chunks = await getDocumentChunksWithPositionsAsync(doc, {
     splitStrategy: 'paragraph',
     overlapLength: 0,
     chunkLength: 1200
-  })
+  }, { yieldEveryParagraphs: 5 })
   if (chunks.length === 0) {
     throw new Error('当前文档没有可处理的文本内容')
   }
@@ -229,7 +226,7 @@ async function executeDocumentCommentTask(options = {}) {
     throw new Error('未找到可用模型，请先在聊天面板中选择模型')
   }
   const scope = options.scope === 'selection' ? 'selection' : 'document'
-  const { doc, chunks, inputSource } = resolveChunks(scope)
+  const { doc, chunks, inputSource } = await resolveChunks(scope)
   const taskTitle = String(options.taskTitle || '智能批注').trim() || '智能批注'
   const systemPrompt = buildSystemPrompt()
   const taskId = String(options.placeholderTaskId || '').trim() || addTask({

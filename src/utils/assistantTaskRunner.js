@@ -1,4 +1,5 @@
 import { buildChatCompletionsRequestSnapshot, chatCompletion } from './chatApi.js'
+import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
 import { startTimer as startPerfTimer } from './perfTracker.js'
 import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSettings.js'
@@ -87,10 +88,6 @@ function probeWritableAnchor() {
     return { ok: false, reason: '当前无法读取写入位置坐标' }
   }
   return { ok: true, reason: '' }
-}
-
-function yieldToUI(delay = 0) {
-  return new Promise(resolve => setTimeout(resolve, delay))
 }
 
 function persistDocumentEvaluation(options = {}) {

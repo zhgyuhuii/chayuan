@@ -7,6 +7,7 @@
  */
 
 import { chatCompletion } from './chatApi.js'
+import { yieldToUI } from './yieldToUI.js'
 import { getFlatModelsFromSettings } from './modelSettings.js'
 import { getChunkSettings } from './chunkSettings.js'
 import { getAssistantSetting, getConfiguredAssistantModelId } from './assistantSettings.js'
@@ -21,7 +22,7 @@ import {
 function getApplication() {
   return window.Application || window.opener?.Application || window.parent?.Application
 }
-import { getDocumentChunksWithPositions, getSelectionChunksWithPositions } from './documentChunker.js'
+import { getDocumentChunksWithPositionsAsync, getSelectionChunksWithPositionsAsync } from './documentChunker.js'
 import { addTask, updateTask, getTaskById } from './taskListStore.js'
 
 const activeSpellCheckRuns = new Map()
@@ -1083,10 +1084,6 @@ function pLimit(fns, limit) {
   })
 }
 
-function yieldToUI(delay = 0) {
-  return new Promise(resolve => setTimeout(resolve, delay))
-}
-
 function createCancelError() {
   const err = new Error('任务已停止')
   err.name = 'TaskCancelledError'
@@ -1445,7 +1442,7 @@ function createSpellCheckPlaceholderTask(taskTitle, chunkSource = 'document') {
   })
 }
 
-function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, onTaskCreated } = {}) {
+async function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, onTaskCreated } = {}) {
   const app = getApplication()
   const doc = app?.ActiveDocument
   if (!doc) {
@@ -1461,7 +1458,7 @@ function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, onTaskC
     throw new Error('请先在设置中配置拼写与语法检查模型')
   }
 
-  const chunks = getDocumentChunksWithPositions(doc)
+  const chunks = await getDocumentChunksWithPositionsAsync(doc, {}, { yieldEveryParagraphs: 5 })
   const chunkSettings = getChunkSettings()
   if (chunks.filter(c => (c.text || '').trim().length > 0).length === 0) {
     console.warn('spellCheck: 文档分块为空或全部为空白')
@@ -1483,7 +1480,7 @@ function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, onTaskC
   }
 }
 
-function prepareSpellCheckSelectionArgs({ onProgress, onChunkContent, onError, onTaskCreated } = {}) {
+async function prepareSpellCheckSelectionArgs({ onProgress, onChunkContent, onError, onTaskCreated } = {}) {
   const app = getApplication()
   const doc = app?.ActiveDocument
   const selection = app?.Selection
@@ -1494,7 +1491,7 @@ function prepareSpellCheckSelectionArgs({ onProgress, onChunkContent, onError, o
     throw new Error(msg)
   }
 
-  const chunks = getSelectionChunksWithPositions(doc, selection)
+  const chunks = await getSelectionChunksWithPositionsAsync(doc, selection, {}, { yieldEveryParagraphs: 5 })
   const chunkSettings = getChunkSettings()
   if (chunks.filter(c => (c.text || '').trim().length > 0).length === 0) {
     onError?.('请先选中要检查的文本，选区内容不能为空')
@@ -1527,7 +1524,7 @@ export function startSpellCheckAllTask(options = {}) {
   const promise = (async () => {
     await yieldToUI()
     try {
-      const args = prepareSpellCheckAllArgs(options)
+      const args = await prepareSpellCheckAllArgs(options)
       return await processSpellCheckChunks({
         ...args,
         taskId
@@ -1556,7 +1553,7 @@ export function startSpellCheckSelectionTask(options = {}) {
   const promise = (async () => {
     await yieldToUI()
     try {
-      const args = prepareSpellCheckSelectionArgs(options)
+      const args = await prepareSpellCheckSelectionArgs(options)
       return await processSpellCheckChunks({
         ...args,
         taskId
