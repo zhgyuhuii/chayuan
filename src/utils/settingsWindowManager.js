@@ -99,15 +99,14 @@ export function openSettingsWindow(query = {}, options = {}) {
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
   const dpr = window.devicePixelRatio || 1
-  // 2026-06-02:统一所有入口(AI 助手设置图标 / 模型设置引导 / ribbon 顶部设置)
-  // 的设置窗口尺寸。此前用「availSize-200 且 MIN_H=720 再 *dpr」,在系统缩放(dpr>1)
-  // 下高度会超出物理屏,底部保存按钮被遮挡。改为「适中上限 + 保证不超屏」:
-  //   逻辑尺寸 = min(上限, avail - 80),再 *dpr —— 因 avail 为逻辑像素,
-  //   (avail-80)*dpr 必定 < 物理屏(avail*dpr),保存按钮始终可见。
+  // 2026-06-02:统一所有入口(AI 助手左下角设置 / 模型设置引导 / ribbon 顶部设置)
+  // 都走本方法,尺寸恢复为用户认可的「正合适」版 = 可用屏 - 200(上下左右各留 100)。
+  // 关键:不再设 MIN_H=720 这种下限(那是之前缩放下高度超屏、遮挡保存按钮的根因);
+  // 因 avail 为逻辑像素,(avail-200)*dpr < 物理屏(avail*dpr),始终留出余量、不遮挡。
   const availW = window.screen?.availWidth || DEFAULT_SETTINGS_WINDOW_WIDTH
   const availH = window.screen?.availHeight || DEFAULT_SETTINGS_WINDOW_HEIGHT
-  const width = Number(options?.width) || Math.min(1080, Math.max(640, availW - 80))
-  const height = Number(options?.height) || Math.min(720, Math.max(480, availH - 80))
+  const width = Number(options?.width) || Math.max(480, availW - 200)
+  const height = Number(options?.height) || Math.max(360, availH - 200)
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(
