@@ -151,6 +151,13 @@
       <div v-if="shouldShowBottomResult" class="preview-card details-card">
         <div class="preview-label">结果展示</div>
         <div class="preview-content details-content final-result-content">{{ bottomResultText }}</div>
+        <div class="result-actions">
+          <button type="button" class="btn-action-icon" title="替换文档内容" @click="applyResultAction('replace')">替换</button>
+          <button type="button" class="btn-action-icon" title="插入到光标处" @click="applyResultAction('insert')">插入</button>
+          <button type="button" class="btn-action-icon" title="插入到所在段落前" @click="applyResultAction('prepend')">段前</button>
+          <button type="button" class="btn-action-icon" title="插入到所在段落后" @click="applyResultAction('insert-after')">段尾</button>
+          <button type="button" class="btn-action-icon" title="作为批注插入" @click="applyResultAction('comment')">批注</button>
+        </div>
       </div>
       <div v-if="task?.data?.applyResult?.message" class="result-note">
         文档动作：{{ task.data.applyResult.message }}
@@ -183,6 +190,8 @@ import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { getSpellCheckTaskBridge } from '../utils/spellCheckTaskBridge.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { createTaskProgressWindowSession } from '../utils/taskProgressWindowManager.js'
+import { applyDocumentAction } from '../utils/documentActions.js'
+import { success as toastSuccess, error as toastError, warn as toastWarn } from '../utils/toastService.js'
 import { registerVisibilityAwareInterval } from '../utils/visibilityAwareInterval.js'
 
 function getActiveDocumentForRevisionMode() {
@@ -824,6 +833,20 @@ export default {
         this.stopPolling()
       }
     },
+    applyResultAction(action) {
+      const text = String(this.task?.data?.fullOutput || this.bottomResultText || '').trim()
+      if (!text) { toastWarn('没有可写入的结果内容'); return }
+      try {
+        const r = applyDocumentAction(action, text, { title: '【察元 AI 助手】' })
+        if (r && r.ok) {
+          toastSuccess(r.message || '已写入文档')
+        } else {
+          toastError((r && r.message) || '写入失败,请检查文档是否打开/可编辑')
+        }
+      } catch (e) {
+        toastError('写入失败:' + (e && e.message ? e.message : String(e)))
+      }
+    },
     toggleDetails() {
       if (!this.hasDetails) return
       this.showDetails = !this.showDetails
@@ -1292,5 +1315,24 @@ export default {
   .task-footer {
     align-items: stretch;
   }
+}
+.result-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.result-actions .btn-action-icon {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border, #e2e4e9);
+  border-radius: 6px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-secondary, #5a5f6b);
+  cursor: pointer;
+}
+.result-actions .btn-action-icon:hover {
+  border-color: var(--chy-violet-500, #7c6cdc);
+  color: var(--chy-violet-700, #5d4ec0);
 }
 </style>
