@@ -83,6 +83,22 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
+  build: {
+    target: 'es2018',
+    rollupOptions: {
+      output: {
+        // 仅拆 node_modules 供应商，不拆 src(拆 src 易因共享依赖反复打包而适得其反)。
+        // 目的:把体积大且仅在弹窗路由用的 @vue-flow 从首屏 vue 核心里分出，
+        // 让 vue 核心可长缓存、首屏入口 chunk 更小。src 由 rollup 自行决定。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@vue-flow')) return 'vendor-vueflow'
+          if (id.includes('/vue/') || id.includes('/@vue/') || id.includes('vue-router')) return 'vendor-vue'
+          return undefined
+        }
+      }
+    }
+  },
   server: {
     host: '0.0.0.0'
   }

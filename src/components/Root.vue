@@ -5,28 +5,17 @@
 </template>
 
 <script>
-import ribbon from './ribbon.js'
-
 export default {
   name: 'HelloWps',
   data() {
     return {
       msg: '欢迎来到wps加载项的世界!'
     }
-  },
-  mounted() {
-    if (!window.Application?.ShowDialog || typeof ribbon.showAIAssistantDialog !== 'function') {
-      return
-    }
-    // 等首页完成挂载后再自动拉起欢迎窗口，避免启动瞬间竞争导致弹窗丢失。
-    window.setTimeout(() => {
-      try {
-        ribbon.showAIAssistantDialog()
-      } catch (error) {
-        console.warn('自动打开察元 AI 助手失败:', error)
-      }
-    }, 180)
   }
+  // 说明(2026-06-02 性能优化):此前 mounted() 会在挂载后 180ms 自动
+  // window.Application.ShowDialog 拉起「察元 AI 助手」窗口，导致打开文档时
+  // 立即加载并挂载约 2 万行的 AIAssistantDialog，造成启动卡顿。
+  // 现已移除自动弹窗，AI 助手改由功能区按钮 / 右键菜单按需打开。
 }
 </script>
 
