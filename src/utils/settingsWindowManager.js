@@ -100,18 +100,13 @@ export function openSettingsWindow(query = {}, options = {}) {
   const title = String(options?.title || '设置').trim() || '设置'
   const dpr = window.devicePixelRatio || 1
   // 2026-06-02:设置窗口尺寸的【唯一真源】。全部 7 个入口(AI 助手左下角设置 /
-  // 顶部 ribbon 设置 / 助手设置 / 知识库设置 / 模型设置 / Popup 助手设置)都走本方法
-  // 且不传显式尺寸,故尺寸完全由这条规则统一决定。
-  // 规则:按屏自适应,上下左右各留 EDGE_GAP 空隙;并以 MIN_* 兜底「不能太小」,
-  // 以 (avail - 40) 封顶「永不超屏」(每边至少留 20px,保存按钮绝不被遮挡)。
-  // 因 avail 为逻辑像素,结果 *dpr 后仍 < 物理屏(avail*dpr),系统缩放下也不遮挡。
-  const EDGE_GAP = 80          // 每边留白(逻辑像素)
-  const MIN_W = 960, MIN_H = 640
-  const availW = window.screen?.availWidth || DEFAULT_SETTINGS_WINDOW_WIDTH
-  const availH = window.screen?.availHeight || DEFAULT_SETTINGS_WINDOW_HEIGHT
-  const clamp = (min, preferred, max) => Math.max(Math.min(preferred, max), Math.min(min, max))
-  const width = Number(options?.width) || clamp(MIN_W, availW - EDGE_GAP * 2, availW - 40)
-  const height = Number(options?.height) || clamp(MIN_H, availH - EDGE_GAP * 2, availH - 40)
+  // 顶部 ribbon 设置 / 助手设置 / 知识库设置 / 模型设置 / Popup 助手设置)都走本方法,
+  // 统一为固定 800×600。
+  // 之前用 window.screen.availWidth 自适应,但 ribbon 与对话框是不同 webview,
+  // window.screen 取值不一致 → 顶部算出超小、对话框算出大。改固定值彻底消除该差异。
+  // 保留 *dpr(与全 App 其它 ShowDialog 一致)。
+  const width = Number(options?.width) || 800
+  const height = Number(options?.height) || 600
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(
