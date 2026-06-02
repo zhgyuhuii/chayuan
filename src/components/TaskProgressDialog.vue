@@ -7,7 +7,11 @@
           <span class="status-badge" :class="status">{{ statusBadgeText }}</span>
         </div>
         <p class="header-subtitle">{{ headerSubtitle }}</p>
-        <p v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</p>
+        <div class="header-model-row">
+          <span v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</span>
+          <ModelSelector compact v-model:modelId="topModelId" @change="onTopModelChange" />
+          <button v-if="canRerun" type="button" class="detail-link-btn" @click="rerunWithModel">用新模型重跑</button>
+        </div>
       </div>
       <div class="header-actions">
         <button
@@ -182,7 +186,9 @@
 <script>
 import { initSync, subscribe, getTaskById, syncTasksFromStorage, updateTask } from '../utils/taskListStore.js'
 import { stopSpellCheckTask } from '../utils/spellCheckService.js'
-import { applyAssistantTaskPlan, stopAssistantTask } from '../utils/assistantTaskRunner.js'
+import { applyAssistantTaskPlan, startAssistantTask, stopAssistantTask } from '../utils/assistantTaskRunner.js'
+import ModelSelector from './common/ModelSelector.vue'
+import { setDefaultModelId, getDefaultModelId } from '../utils/modelSettings.js'
 import { stopAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
 import { stopFormAuditTask } from '../utils/formAuditService.js'
 import { stopDocumentCommentTask, undoDocumentCommentTask } from '../utils/documentCommentService.js'
@@ -237,6 +243,7 @@ function enableDocumentTrackRevisionsForDialog() {
 
 export default {
   name: 'TaskProgressDialog',
+  components: { ModelSelector },
   data() {
     return {
       currentTaskId: '',
@@ -250,7 +257,9 @@ export default {
       autoCloseSecondsLeft: 0,
       pendingRevisionModePrompt: null,
       revisionModePromptTimer: null,
-      revisionModePromptInterval: null
+      revisionModePromptInterval: null,
+      topModelId: '',
+      canRerun: false
     }
   },
   computed: {
@@ -586,6 +595,7 @@ export default {
       return
     }
     this.syncTask()
+    this.topModelId = String(this.task?.data?.modelId || getDefaultModelId() || '')
     this.startPolling()
   },
   beforeUnmount() {
@@ -849,6 +859,28 @@ export default {
         }
       } catch (e) {
         toastError('写入失败:' + (e && e.message ? e.message : String(e)))
+      }
+    },
+    onTopModelChange(id) {
+      const next = String(id || '').trim()
+      if (!next) return
+      try { setDefaultModelId(next) } catch (_) { /* 忽略持久化失败 */ }
+      this.canRerun = !!this.task?.data?.assistantId
+    },
+    rerunWithModel() {
+      const assistantId = String(this.task?.data?.assistantId || '').trim()
+      if (!assistantId) { toastWarn('该任务无法重跑(缺少助手信息)'); return }
+      try {
+        const result = startAssistantTask(assistantId, { conversationModelId: this.topModelId })
+        if (result && result.taskId) {
+          this.canRerun = false
+          this.currentTaskId = result.taskId
+          this.bindWindowSession(result.taskId)
+          this.syncTask()
+          toastSuccess('已用新模型重跑')
+        }
+      } catch (e) {
+        toastError('重跑失败:' + (e && e.message ? e.message : String(e)))
       }
     },
     toggleDetails() {
@@ -1320,6 +1352,7 @@ export default {
     align-items: stretch;
   }
 }
+.header-model-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .header-model-line {
   margin: 2px 0 0;
   font-size: 12px;
