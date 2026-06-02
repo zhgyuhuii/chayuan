@@ -387,6 +387,7 @@ import { loadRulesFromDoc } from '../utils/templateRules.js'
 import { DATA_TYPES } from '../utils/templateRules.js'
 import Util from './js/util.js'
 import { reportError } from '../utils/reportError.js'
+import { registerVisibilityAwareInterval } from '../utils/visibilityAwareInterval.js'
 
 export default {
   name: 'TaskPaneRight',
@@ -444,10 +445,9 @@ export default {
     console.log('TaskPaneRight mounted, 开始检查表单模式')
     // 立即检查表单模式状态
     this.checkFormMode()
-    // 定期检查表单模式状态（每500ms检查一次）
-    this.checkInterval = setInterval(() => {
-      this.checkFormMode()
-    }, 500)
+    // 表单模式状态:主要靠下方 WindowActivate 事件驱动;此处保留一个可见性感知的
+    // 安全网轮询(1500ms,页面隐藏时自动暂停),覆盖同窗口内保护类型/文档变量变化。
+    this._stopFormPoll = registerVisibilityAwareInterval(() => this.checkFormMode(), 1500, { runOnVisible: false })
     // 监听文档变化
     this.setupDocumentListener()
     // 监听窗口激活事件，确保表单模式状态同步
@@ -463,6 +463,10 @@ export default {
     }
   },
   beforeUnmount() {
+    if (this._stopFormPoll) {
+      this._stopFormPoll()
+      this._stopFormPoll = null
+    }
     if (this.checkInterval) {
       clearInterval(this.checkInterval)
     }
