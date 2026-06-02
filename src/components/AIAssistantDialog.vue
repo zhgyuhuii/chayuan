@@ -562,7 +562,7 @@
                   </div>
                 </template>
                 <template v-else>
-                  <span v-html="formatMessage(msg.content)"></span>
+                  <span v-html="getRenderedMessageHtml(msg)"></span>
                   <span v-if="isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
                     v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
@@ -3607,6 +3607,7 @@ export default {
       assistantItems: [],
       assistantGroupCollapsed: {},
       chatSearchText: '',
+      debouncedChatSearchText: '',
       assistantSearchText: '',
       assistantRunLoadingKey: '',
       userInput: '',
@@ -3768,7 +3769,8 @@ export default {
       }
     },
     filteredChatHistory() {
-      const search = String(this.chatSearchText || '').trim().toLowerCase()
+      // 用防抖后的搜索文本,避免每次按键都全量扫描会话内容
+      const search = String(this.debouncedChatSearchText || '').trim().toLowerCase()
       if (!search) return this.chatHistory
       return this.chatHistory.filter((chat) => {
         const title = String(chat?.title || '').toLowerCase()
@@ -3784,6 +3786,7 @@ export default {
     assistantGroups() {
       const search = String(this.assistantSearchText || '').trim().toLowerCase()
       const groups = []
+      const groupMap = new Map()
       this.assistantItems
         .filter(item => item?.type !== 'create-custom-assistant')
         .filter((item) => {
@@ -3801,13 +3804,14 @@ export default {
         })
         .forEach((item) => {
           const groupKey = item.group || 'custom'
-          let group = groups.find(entry => entry.key === groupKey)
+          let group = groupMap.get(groupKey)
           if (!group) {
             group = {
               key: groupKey,
               label: getAssistantGroupLabel(groupKey),
               items: []
             }
+            groupMap.set(groupKey, group)
             groups.push(group)
           }
           group.items.push(item)
@@ -3850,6 +3854,11 @@ export default {
   watch: {
     userInput() {
       this.$nextTick(() => this.adjustComposerHeight())
+    },
+    chatSearchText(val) {
+      // 防抖:输入停止 250ms 后才更新 debouncedChatSearchText,filteredChatHistory 据此重算
+      clearTimeout(this._chatSearchDebounceTimer)
+      this._chatSearchDebounceTimer = setTimeout(() => { this.debouncedChatSearchText = val }, 250)
     },
     selectedModelId(val) {
       if (!val) return
@@ -5370,14 +5379,25 @@ export default {
     },
     handleSidebarResize(event) {
       if (!this.isResizingSidebar) return
-      const rootRect = this.$el?.getBoundingClientRect?.()
-      if (!rootRect) return
-      const nextWidth = this.clampSidebarWidth(event.clientX - rootRect.left)
-      this.sidebarWidth = nextWidth
-      this.lastExpandedSidebarWidth = nextWidth
+      // rAF 合批:mousemove 每秒 60-120 次,合并到每帧一次,避免每次都 getBoundingClientRect + 改响应式
+      this.pendingSidebarResizeEvent = event
+      if (this.sidebarResizeRAFId) return
+      this.sidebarResizeRAFId = requestAnimationFrame(() => {
+        this.sidebarResizeRAFId = null
+        const ev = this.pendingSidebarResizeEvent
+        this.pendingSidebarResizeEvent = null
+        if (!this.isResizingSidebar || !ev) return
+        const rootRect = this.$el?.getBoundingClientRect?.()
+        if (!rootRect) return
+        const nextWidth = this.clampSidebarWidth(ev.clientX - rootRect.left)
+        this.sidebarWidth = nextWidth
+        this.lastExpandedSidebarWidth = nextWidth
+      })
     },
     stopSidebarResize() {
       if (!this.isResizingSidebar) return
+      if (this.sidebarResizeRAFId) { cancelAnimationFrame(this.sidebarResizeRAFId); this.sidebarResizeRAFId = null }
+      this.pendingSidebarResizeEvent = null
       this.isResizingSidebar = false
       this.saveSidebarLayout()
     },
@@ -6013,9 +6033,17 @@ export default {
     },
     buildHistorySavePayload(options = {}) {
       const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
+      // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent),避免污染持久化
+      const cleanHistory = this.chatHistory.map(chat => ({
+        ...chat,
+        messages: Array.isArray(chat?.messages)
+          // eslint-disable-next-line no-unused-vars
+          ? chat.messages.map(({ _renderedHtml, _renderedContent, ...m }) => m)
+          : chat?.messages
+      }))
       return {
         storageKeys,
-        historyJson: JSON.stringify(this.chatHistory),
+        historyJson: JSON.stringify(cleanHistory),
         currentChatId: this.currentChatId || ''
       }
     },
@@ -6110,6 +6138,18 @@ export default {
         this.currentChatId = remaining[targetIndex]?.id || remaining[targetIndex - 1]?.id || remaining[0]?.id || null
       }
       this.saveHistory()
+    },
+    getRenderedMessageHtml(msg) {
+      if (!msg) return ''
+      const content = String(msg.content || '')
+      if (msg._renderedContent === content && typeof msg._renderedHtml === 'string') {
+        return msg._renderedHtml
+      }
+      const html = this.formatMessage(content)
+      // 缓存到消息对象(普通字段,序列化时已在 buildHistorySavePayload 剔除)
+      msg._renderedContent = content
+      msg._renderedHtml = html
+      return html
     },
     formatMessage(text) {
       if (!text) return ''
