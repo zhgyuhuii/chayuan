@@ -70,7 +70,7 @@ if (typeof window !== 'undefined' && !window.__ndSpellCheckStopListenerBound) {
 
 // WPS/Office 宿主中的文档批注写入属于重操作，串行更稳定，也能避免长时间占用 UI 线程。
 const CONCURRENCY = 1
-const UI_YIELD_EVERY = 5
+const UI_YIELD_EVERY = 3
 const SPELL_CHECK_PROMPT = `你是一位专业的文字校对专家。请对以下文本进行拼写与语法检查。
 
 要求：

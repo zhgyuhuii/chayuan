@@ -364,7 +364,7 @@ async function executeDocumentCommentTask(options = {}) {
             commentText: String(issue.comment || '')
           })
         }
-        if ((issueIndex + 1) % 4 === 0) {
+        if ((issueIndex + 1) % 3 === 0) {
           await yieldToUI()
         }
       }
