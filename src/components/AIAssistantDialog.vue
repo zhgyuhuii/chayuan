@@ -481,8 +481,11 @@
           </div>
         </template>
         <template v-else>
+          <div v-if="currentMessages.length > visibleMessages.length" class="load-earlier-row">
+            <button type="button" class="load-earlier-btn" @click="showEarlierMessages">显示更早消息（还有 {{ currentMessages.length - visibleMessages.length }} 条）</button>
+          </div>
           <div
-            v-for="(msg, i) in currentMessages"
+            v-for="(msg, i) in visibleMessages"
             :key="msg.id"
             class="message-row"
             :class="[msg.role, getMessageEntryEffectClass(msg)]"
@@ -524,7 +527,7 @@
               <div
                 class="message-text"
                 :class="{
-                  'streaming-text': isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1,
+                  'streaming-text': isStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1,
                   'message-text-waiting': isAssistantMessagePending(msg, i) && !String(msg.content || '').trim(),
                   'has-user-context-meta': msg.role === 'user' && !!getUserMessageContextLabel(msg),
                   'message-text-error': msg.role === 'assistant' && isAssistantErrorMessage(msg)
@@ -563,7 +566,7 @@
                 </template>
                 <template v-else>
                   <span v-html="getRenderedMessageHtml(msg)"></span>
-                  <span v-if="isStreaming && msg.role === 'assistant' && i === currentMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
+                  <span v-if="isStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
                     v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
                     :sources="msg.messageMeta.kbSources"
@@ -3607,6 +3610,7 @@ export default {
       assistantItems: [],
       assistantGroupCollapsed: {},
       chatSearchText: '',
+      messageWindowSize: 50,
       debouncedChatSearchText: '',
       assistantSearchText: '',
       assistantRunLoadingKey: '',
@@ -3754,6 +3758,11 @@ export default {
     currentMessages() {
       return this.currentChat?.messages || []
     },
+    visibleMessages() {
+      const all = this.currentMessages
+      if (!Array.isArray(all) || all.length <= this.messageWindowSize) return all
+      return all.slice(all.length - this.messageWindowSize)
+    },
     currentChatKbBinding() {
       return normalizeKbBinding(this.currentChat?.kbBindings)
     },
@@ -3878,6 +3887,7 @@ export default {
       }
     },
     currentChatId() {
+      this.messageWindowSize = 50
       this.$nextTick(() => {
         this.refreshWelcomePrompt()
         if (this.currentMessages.length === 0) {
@@ -4000,6 +4010,9 @@ export default {
     this.flushHistorySave()
   },
   methods: {
+    showEarlierMessages() {
+      this.messageWindowSize += 50
+    },
     getModelLogoPath,
     publicAssetUrl,
     followDonationQrCode() {
@@ -4568,8 +4581,11 @@ export default {
         console.warn('打开任务详情失败:', error)
       }
     },
-    isAssistantMessagePending(msg, index) {
-      return msg?.role === 'assistant' && index === this.currentMessages.length - 1 && (this.isStreaming || msg?.isLoading)
+    isAssistantMessagePending(msg) {
+      // 用身份判断"是否最后一条",而非可见索引 —— 兼容消息列表窗口化(visibleMessages)
+      const list = this.currentMessages
+      const isLast = Array.isArray(list) && list.length > 0 && list[list.length - 1] === msg
+      return msg?.role === 'assistant' && isLast && (this.isStreaming || msg?.isLoading)
     },
     getAssistantLoadingPercent(msg) {
       const value = Number(msg?.loadingState?.percent)
@@ -6828,9 +6844,12 @@ export default {
         return cs.getCurrentConnection() || null
       } catch (e) { return null }
     },
-    getMessageUserQueryText(msg, idx) {
+    getMessageUserQueryText(msg) {
+      // 用消息在完整列表中的真实索引回溯,而非可见索引 —— 兼容窗口化(visibleMessages)
       if (!Array.isArray(this.currentMessages)) return ''
-      for (let k = idx - 1; k >= 0; k--) {
+      const realIdx = this.currentMessages.indexOf(msg)
+      if (realIdx < 0) return ''
+      for (let k = realIdx - 1; k >= 0; k--) {
         const m = this.currentMessages[k]
         if (m?.role === 'user') return String(m.content || '')
       }
@@ -15985,6 +16004,9 @@ export default {
 </script>
 
 <style scoped>
+.load-earlier-row { display: flex; justify-content: center; padding: 8px 0; }
+.load-earlier-btn { font-size: 12px; padding: 4px 14px; border: 1px solid var(--color-border, #e2e4e9); border-radius: 14px; background: var(--color-surface, #fff); color: var(--color-text-secondary, #5a5f6b); cursor: pointer; }
+.load-earlier-btn:hover { color: var(--chy-violet-700, #5d4ec0); border-color: var(--chy-violet-500, #7c6cdc); }
 .ai-assistant-dialog {
   --ai-bg: #f6f8ff;
   --ai-sidebar-bg: rgba(245, 247, 252, 0.86);
