@@ -32,7 +32,8 @@ import {
 import {
   getAssistantSetting,
   getConfiguredAssistantModelId,
-  getCustomAssistantById
+  getCustomAssistantById,
+  loadDefaultModelsByCategory
 } from './assistantSettings.js'
 import { classifyMultimodalError, generateMultimodalAsset } from './multimodalTaskRunner.js'
 import {
@@ -416,6 +417,31 @@ function resolveModel(config, definition, options = {}) {
     const configured = getModelByCompositeId(modelType, categoryDefaultId)
     if (configured) {
       return { model: configured, source: 'category-default' }
+    }
+  }
+  // #3(2026-06-02):文字(chat)类助手未显式配置 / 未匹配到模型时,健壮地跟随
+  // 「对话默认模型」(优先 conversationModelId,其次 defaultModelsByCategory.chat)。
+  // 若该 id 不在 flat 精确列表里,按 provider|model 直接构造 —— 与拼写检查的兜底
+  // 一致,绕开 getModelByCompositeId 的 modelType 推断校验,避免误落到 flat[0]
+  // (DEFAULT_ENABLED_PROVIDERS 第一个是未配 apiUrl 的 OPENAI)导致「未配置 API 地址」。
+  if (modelType === 'chat') {
+    const followId = conversationModelId || String(loadDefaultModelsByCategory()?.chat || '').trim()
+    if (followId) {
+      const inFlat = getFlatModelsFromSettings('chat').find(m => m.id === followId)
+      if (inFlat) {
+        return { model: inFlat, source: 'conversation-follow' }
+      }
+      const sep = followId.indexOf('|')
+      if (sep > 0) {
+        const followProviderId = followId.slice(0, sep)
+        const followModelId = followId.slice(sep + 1)
+        if (followProviderId && followModelId) {
+          return {
+            model: { id: followId, providerId: followProviderId, modelId: followModelId, name: followModelId, type: 'chat' },
+            source: 'conversation-follow-parsed'
+          }
+        }
+      }
     }
   }
   if (flat[0]) {
