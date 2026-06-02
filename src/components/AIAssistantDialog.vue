@@ -6139,6 +6139,34 @@ export default {
       }
       this.saveHistory()
     },
+    // 流式渲染合批:把每个 token/chunk 的「写 content + 滚动」合并到每帧一次。
+    // 用快照(_streamRenderText)而非实时 this.streamingContent,确保即使 onDone
+    // 已清空 streamingContent,待执行的那帧仍渲染出完整文本。
+    scheduleStreamRender(assistantMsg, text) {
+      this._streamRenderMsg = assistantMsg
+      this._streamRenderText = text
+      if (this._streamRenderRAFId) return
+      this._streamRenderRAFId = requestAnimationFrame(() => {
+        this._streamRenderRAFId = null
+        const m = this._streamRenderMsg
+        if (m) m.content = this._streamRenderText
+        this.$nextTick(() => this.scrollToBottom())
+      })
+    },
+    cancelStreamRender() {
+      if (this._streamRenderRAFId) {
+        cancelAnimationFrame(this._streamRenderRAFId)
+        this._streamRenderRAFId = null
+      }
+    },
+    // onDone 收尾:取消待执行帧并把最终快照同步写入 content,确保 onDone 内对
+    // assistantMsg.content 的读取(记忆/评测记录)拿到完整文本,而非落后一帧。
+    flushStreamRender(assistantMsg) {
+      this.cancelStreamRender()
+      if (assistantMsg && this._streamRenderText != null) {
+        assistantMsg.content = this._streamRenderText
+      }
+    },
     getRenderedMessageHtml(msg) {
       if (!msg) return ''
       const content = String(msg.content || '')
@@ -14828,10 +14856,10 @@ export default {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.streamingContent += chunk
-          assistantMsg.content = this.streamingContent
-          this.$nextTick(() => this.scrollToBottom())
+          this.scheduleStreamRender(assistantMsg, this.streamingContent)
         },
         onDone: () => {
+          this.flushStreamRender(assistantMsg)
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
@@ -14841,6 +14869,7 @@ export default {
           this.$nextTick(() => this.scrollToBottom())
         },
         onError: (err) => {
+          this.cancelStreamRender()
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
@@ -14936,10 +14965,10 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.streamingContent += chunk
-            assistantMsg.content = this.streamingContent
-            this.$nextTick(() => this.scrollToBottom())
+            this.scheduleStreamRender(assistantMsg, this.streamingContent)
           },
           onDone: () => {
+            this.flushStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -14950,6 +14979,7 @@ export default {
             this.$nextTick(() => this.scrollToBottom())
           },
           onError: (err) => {
+            this.cancelStreamRender()
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -15074,10 +15104,10 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.streamingContent += chunk
-            assistantMsg.content = this.streamingContent
-            this.$nextTick(() => this.scrollToBottom())
+            this.scheduleStreamRender(assistantMsg, this.streamingContent)
           },
           onDone: () => {
+            this.flushStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -15089,6 +15119,7 @@ export default {
             this.$nextTick(() => this.scrollToBottom())
           },
           onError: (err) => {
+            this.cancelStreamRender()
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -15778,10 +15809,10 @@ export default {
               ? this.normalizePlainTextIntroOutput(rawStreamText)
               : rawStreamText
             this.streamingContent = displayText
-            assistantMsg.content = displayText
-            this.$nextTick(() => this.scrollToBottom())
+            this.scheduleStreamRender(assistantMsg, displayText)
           },
           onDone: () => {
+            this.flushStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -15836,6 +15867,7 @@ export default {
             this.$nextTick(() => this.scrollToBottom())
           },
           onError: (err) => {
+            this.cancelStreamRender()
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
