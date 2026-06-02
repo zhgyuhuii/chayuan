@@ -17,9 +17,7 @@ import { installGlobalErrorLogger } from './utils/globalErrorLogger.js'
 import { prepareDialogDisplayText } from './utils/dialogTextDisplay.js'
 import { installGlobalShortcut } from './utils/router/commandRegistry.js'
 import { applyStoredTheme } from './utils/router/themeToggle.js'
-// 2026-06-02 性能优化:暂停服务端报活上报(避免任何主线程占用)。
-// 日后启用:解开下面这行 import 与文件末尾的 initRuntimeSync() 调用即可。
-// import { initRuntimeSync } from './utils/runtimeSync.js'
+import { initRuntimeSync } from './utils/runtimeSync.js'
 bootMark('main.js: 所有顶层 import + 顶层模块 evaluation 完成')
 
 const app = createApp(App)
@@ -49,6 +47,5 @@ router.isReady().then(() => {
   bootMark('app.mount(#app) 兜底分支完成')
 })
 
-// 2026-06-02 性能优化:报活上报已暂停;日后启用解开下面这行(及上方 import)。
-// try { initRuntimeSync() } catch { /* 静默 */ }
+try { initRuntimeSync() } catch { /* 静默 */ }
 
