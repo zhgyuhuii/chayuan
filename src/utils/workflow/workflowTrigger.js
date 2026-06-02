@@ -112,10 +112,8 @@ export function installTriggerEngine(options = {}) {
   }
   _onTrigger = options.onTrigger
 
-  // cron tick
-  if (!_tickTimer) {
-    _tickTimer = setInterval(() => { tickAll().catch(() => {}) }, TICK_INTERVAL)
-  }
+  // cron tick:仅当存在 enabled 的 cron 触发器时才启动定时器
+  startCronTickIfNeeded()
 
   // 文档事件
   rewireDocEventListeners()
@@ -127,6 +125,16 @@ export function installTriggerEngine(options = {}) {
     }
     _docEventListeners.clear()
     _onTrigger = null
+  }
+}
+
+// 无启用 cron 触发器时不起定时器;有则起、无则停(空闲时不空转)。
+function startCronTickIfNeeded() {
+  const hasCron = listTriggers().some(t => t.enabled && t.kind === 'cron')
+  if (hasCron && !_tickTimer) {
+    _tickTimer = setInterval(() => { tickAll().catch(() => {}) }, TICK_INTERVAL)
+  } else if (!hasCron && _tickTimer) {
+    clearInterval(_tickTimer); _tickTimer = null
   }
 }
 
@@ -174,6 +182,7 @@ function rewireDocEventListeners() {
  */
 export function refreshTriggers() {
   rewireDocEventListeners()
+  startCronTickIfNeeded()
 }
 
 /* ────────── 手动触发 ────────── */

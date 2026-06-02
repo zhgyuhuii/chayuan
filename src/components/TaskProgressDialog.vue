@@ -183,6 +183,7 @@ import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { getSpellCheckTaskBridge } from '../utils/spellCheckTaskBridge.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { createTaskProgressWindowSession } from '../utils/taskProgressWindowManager.js'
+import { registerVisibilityAwareInterval } from '../utils/visibilityAwareInterval.js'
 
 function getActiveDocumentForRevisionMode() {
   return window.Application?.ActiveDocument ||
@@ -584,11 +585,14 @@ export default {
   methods: {
     startPolling() {
       this.stopPolling()
-      this.pollTimer = window.setInterval(() => {
-        this.syncTask()
-      }, 400)
+      // 可见性感知:页面隐藏时暂停轮询,恢复时续跑(并立即同步一次)
+      this._stopPoll = registerVisibilityAwareInterval(() => this.syncTask(), 400, { runOnVisible: true })
     },
     stopPolling() {
+      if (this._stopPoll) {
+        this._stopPoll()
+        this._stopPoll = null
+      }
       if (this.pollTimer) {
         window.clearInterval(this.pollTimer)
         this.pollTimer = null
@@ -814,6 +818,10 @@ export default {
         this.scheduleAutoClose()
       } else {
         this.clearAutoCloseTimer()
+      }
+      // 任务进入终态后无需再轮询,停止以释放主线程
+      if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+        this.stopPolling()
       }
     },
     toggleDetails() {
