@@ -7,6 +7,7 @@
           <span class="status-badge" :class="status">{{ statusBadgeText }}</span>
         </div>
         <p class="header-subtitle">{{ headerSubtitle }}</p>
+        <p v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</p>
       </div>
       <div class="header-actions">
         <button
@@ -258,6 +259,9 @@ export default {
     },
     spellCheckMode() {
       return this.$route?.query?.mode === 'selection' ? 'selection' : 'all'
+    },
+    taskModelName() {
+      return String(this.task?.data?.modelDisplayName || this.task?.data?.modelId || '').trim()
     },
     shouldAutoStartSpellCheck() {
       return !String(this.$route?.query?.taskId || '') && this.$route?.path === '/spell-check-dialog'
@@ -1315,6 +1319,11 @@ export default {
   .task-footer {
     align-items: stretch;
   }
+}
+.header-model-line {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted, #8a8f99);
 }
 .result-actions {
   display: flex;
