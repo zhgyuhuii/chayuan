@@ -6,15 +6,9 @@
  * WPS webview 主线程被长循环占用时,在循环里 await yieldToUI() 可让 UI 有机会响应。
  */
 export function yieldToUI(delay = 0) {
-  return new Promise((resolve) => {
-    if (delay > 0) {
-      setTimeout(resolve, delay)
-    } else if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => resolve(), { timeout: 100 })
-    } else {
-      setTimeout(resolve, 0)
-    }
-  })
+  // 与各任务运行器原本的实现保持 100% 一致(纯 setTimeout 让出一个宏任务),
+  // 避免引入 requestIdleCallback 的时序差异。
+  return new Promise((resolve) => setTimeout(resolve, delay))
 }
 
 export default { yieldToUI }

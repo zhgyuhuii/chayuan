@@ -157,6 +157,21 @@ export function _invalidateGlobalSettingsCache() {
   _cacheVersion++
 }
 
+// 跨窗口同步:设置窗口保存后会写 localStorage(LOCAL_STORAGE_KEY)。其它 webview
+// (如 AI 助手窗口)此前缓存的 _cache 不会自动失效,导致读到旧配置(例如刚填的
+// API 地址读不到)。这里监听 storage 事件,别的窗口改了设置就失效本窗口缓存,
+// 下次 loadGlobalSettings() 自动重新读盘。(窗口管理器已依赖同源跨 webview 的
+// storage 事件,机制可用。)
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  try {
+    window.addEventListener('storage', (event) => {
+      if (event && event.key === LOCAL_STORAGE_KEY) {
+        _invalidateGlobalSettingsCache()
+      }
+    })
+  } catch (_) { /* 静默:监听失败不影响主流程 */ }
+}
+
 /**
  * 保存全局设置（合并到现有设置）
  * 同时写入文件和 localStorage，确保关闭 WPS 后数据不丢失
