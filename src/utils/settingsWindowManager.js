@@ -94,36 +94,20 @@ export function focusExistingSettingsWindow(query = {}) {
   return true
 }
 
-/*
- * 默认按显示器可用尺寸"上下左右各留 100px"打开 — 让窗口尽量铺满屏幕。
- * DEFAULT_SETTINGS_WINDOW_WIDTH/HEIGHT 不再作为目标值使用,只作为屏幕信息缺失时
- * 的兜底参考。下界(MIN_*)对应内容(架构图 + 左侧导航)的最小可读尺寸 — 在
- * 1366×768 这类小笔记本上,"avail - 200" 会得到 1166×528,显得过于压扁;
- * 提到 1080×720 后,小屏上让 WPS 自动 clamp 到屏幕(效果≈全屏),大屏继续走
- * "avail - 200"。
- */
-const SAFE_MARGIN_EACH_SIDE = 100   // 用户要求:上下左右各留 100px
-const MIN_SETTINGS_W = 1080
-const MIN_SETTINGS_H = 720
-
-function fillScreen(axis) {
-  const isW = axis === 'w'
-  const avail = isW
-    ? (window.screen?.availWidth || DEFAULT_SETTINGS_WINDOW_WIDTH)
-    : (window.screen?.availHeight || DEFAULT_SETTINGS_WINDOW_HEIGHT)
-  const min = isW ? MIN_SETTINGS_W : MIN_SETTINGS_H
-  return Math.max(min, avail - SAFE_MARGIN_EACH_SIDE * 2)
-}
-
 export function openSettingsWindow(query = {}, options = {}) {
   const normalizedQuery = normalizeQuery(query)
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
   const dpr = window.devicePixelRatio || 1
-  // 默认尺寸 = availSize - 200(100 左 + 100 右 / 100 上 + 100 下);
-  // 显式传 options.width / height 仍然优先,留给特殊场景。
-  const width = Number(options?.width) || fillScreen('w')
-  const height = Number(options?.height) || fillScreen('h')
+  // 2026-06-02:统一所有入口(AI 助手设置图标 / 模型设置引导 / ribbon 顶部设置)
+  // 的设置窗口尺寸。此前用「availSize-200 且 MIN_H=720 再 *dpr」,在系统缩放(dpr>1)
+  // 下高度会超出物理屏,底部保存按钮被遮挡。改为「适中上限 + 保证不超屏」:
+  //   逻辑尺寸 = min(上限, avail - 80),再 *dpr —— 因 avail 为逻辑像素,
+  //   (avail-80)*dpr 必定 < 物理屏(avail*dpr),保存按钮始终可见。
+  const availW = window.screen?.availWidth || DEFAULT_SETTINGS_WINDOW_WIDTH
+  const availH = window.screen?.availHeight || DEFAULT_SETTINGS_WINDOW_HEIGHT
+  const width = Number(options?.width) || Math.min(1080, Math.max(640, availW - 80))
+  const height = Number(options?.height) || Math.min(720, Math.max(480, availH - 80))
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(

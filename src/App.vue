@@ -1,5 +1,4 @@
 <template>
-  <WelcomeBanner v-if="!isDialog" />
   <RouterView :key="$route.fullPath" />
   <CommandPaletteHost v-if="!isDialog" />
   <ToastContainer />
@@ -19,7 +18,6 @@ import { syncAddonBaseUrlToPluginStorage } from './utils/publicAssetUrl.js'
 import { schedulePreloadAiAssistantRouteChunk } from './utils/preloadAiAssistantChunk.js'
 import { registerRibbonCommands } from './utils/router/ribbonCommands.js'
 import CommandPaletteHost from './components/common/CommandPaletteHost.vue'
-import WelcomeBanner from './components/common/WelcomeBanner.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
 import WorkflowResumeDialog from './components/common/WorkflowResumeDialog.vue'
 import TaskCelebration from './components/common/TaskCelebration.vue'
@@ -40,7 +38,7 @@ const DIALOG_ROUTES = ['/settings', '/dialog', '/ad-popup', '/manual-col-width',
   '/about-chayuan']
 
 export default {
-  components: { CommandPaletteHost, WelcomeBanner, ToastContainer, WorkflowResumeDialog, TaskCelebration },
+  components: { CommandPaletteHost, ToastContainer, WorkflowResumeDialog, TaskCelebration },
   setup() {
     const message = ref('你好，wps加载项')
     const route = useRoute()
