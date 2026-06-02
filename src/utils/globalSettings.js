@@ -169,6 +169,15 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
         _invalidateGlobalSettingsCache()
       }
     })
+    // 兜底(WPS dialog webview 的跨窗口 storage 事件未必可靠):窗口重新获得焦点
+    // 或变为可见时,失效缓存 —— 在设置窗口保存后切回 AI 助手/对话窗口即重读最新
+    // 配置,无需重启 WPS。focus/visibilitychange 在 WPS webview 中必然触发。
+    window.addEventListener('focus', () => { _invalidateGlobalSettingsCache() })
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') _invalidateGlobalSettingsCache()
+      })
+    }
   } catch (_) { /* 静默:监听失败不影响主流程 */ }
 }
 
