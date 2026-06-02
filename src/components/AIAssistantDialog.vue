@@ -16973,6 +16973,17 @@ export default {
   animation: welcome-floor-pulse 6.8s ease-in-out infinite;
 }
 
+/* 2026-06-02 性能优化:系统「减弱动态效果」时,停掉欢迎页的 infinite blur 动画
+   (大面积 filter: blur + 无限动画会持续占用合成线程,低配机尤其明显) */
+@media (prefers-reduced-motion: reduce) {
+  .welcome-support::before,
+  .welcome-support::after,
+  .welcome-support-floor {
+    animation: none !important;
+    filter: none !important;
+  }
+}
+
 .welcome-support-text {
   margin: 0 0 12px;
   color: rgba(226, 232, 240, 0.92);

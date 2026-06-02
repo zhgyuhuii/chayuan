@@ -1238,8 +1238,10 @@ async function exportAllTablesToExcel() {
                   console.error(`复制表格${i}第${row}行第${col}列失败:`, e)
                 }
               }
+              // 性能优化:每 10 行让出主线程,避免大表导出时 WPS UI 长时间冻结
+              if (row % 10 === 0) { await new Promise(resolve => setTimeout(resolve, 0)) }
             }
-            
+
             // 自动调整列宽
             try {
               const usedRange = ws.UsedRange
@@ -1326,6 +1328,8 @@ async function exportAllTablesToExcel() {
                 }
               }
               tableData.push(rowData)
+              // 性能优化:每 10 行让出主线程,避免大表读取时 WPS UI 长时间冻结
+              if (row % 10 === 0) { await new Promise(resolve => setTimeout(resolve, 0)) }
             }
             
             // 创建工作表
