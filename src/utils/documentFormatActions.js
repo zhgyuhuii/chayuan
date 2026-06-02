@@ -1,4 +1,5 @@
 import { getApplication } from './documentActions.js'
+import { yieldToUI } from './yieldToUI.js'
 
 const SCOPE_LABELS = {
   selection: '当前选择的文字',
@@ -817,7 +818,7 @@ export function executeDocumentFormatAction(intent) {
   const targets = buildResolvedTargetRanges(doc, range, normalizedIntent)
   if (targets.length === 0) {
     if (searchText) {
-      throw new Error(`在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}没有找到“${searchText}”`)
+      throw new Error(`在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}没有找到”${searchText}”`)
     }
     throw new Error(`在${label}${targetSelectorLabel ? `中没有找到${targetSelectorLabel}` : ''}可处理的内容`)
   }
@@ -841,7 +842,169 @@ export function executeDocumentFormatAction(intent) {
     scopeLabel: label,
     searchText,
     message: searchText
-      ? `已在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}处理 ${targets.length} 处“${searchText}”，并完成${changeSummary.join('、')}。`
+      ? `已在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}处理 ${targets.length} 处”${searchText}”，并完成${changeSummary.join('、')}。`
+      : `已对${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}完成${changeSummary.join('、')}。`
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Async variants — 逻辑与同步版完全一致，在循环中周期性 await yieldToUI() 让出主线程
+// 仅供对话框用户触发的调用点使用；wpsCapabilityExecutor / documentOperationLedger
+// 继续使用上方的同步版本。
+// ---------------------------------------------------------------------------
+
+async function collectTableCellRangesAsync(doc, scopeRange, yieldEveryRows = 5) {
+  const tables = doc?.Tables
+  const tableCount = Number(tables?.Count || 0)
+  if (!tables || tableCount <= 0) return []
+  const ranges = []
+  for (let i = 1; i <= tableCount; i++) {
+    try {
+      const table = tables.Item(i)
+      const rows = table?.Rows
+      const rowCount = Number(rows?.Count || 0)
+      for (let rowIndex = 1; rowIndex <= rowCount; rowIndex++) {
+        if (rowIndex % yieldEveryRows === 0) await yieldToUI()
+        const row = rows.Item(rowIndex)
+        const cells = row?.Cells
+        const cellCount = Number(cells?.Count || 0)
+        for (let cellIndex = 1; cellIndex <= cellCount; cellIndex++) {
+          const cell = cells.Item(cellIndex)
+          const cellRange = duplicateRange(cell?.Range)
+          if (!cellRange) continue
+          if (!rangeIntersects(cellRange, Number(scopeRange?.Start || 0), Number(scopeRange?.End || 0))) continue
+          ranges.push(cellRange)
+        }
+      }
+    } catch (_) {
+      continue
+    }
+  }
+  return ranges
+}
+
+async function collectParagraphRangesAsync(doc, scopeRange, predicate, yieldEveryParagraphs = 20) {
+  const paragraphs = doc?.Paragraphs
+  const total = Number(paragraphs?.Count || 0)
+  if (!paragraphs || total <= 0) return []
+  const ranges = []
+  for (let i = 1; i <= total; i++) {
+    if (i % yieldEveryParagraphs === 0) await yieldToUI()
+    try {
+      const paragraph = paragraphs.Item(i)
+      const range = duplicateRange(paragraph?.Range)
+      if (!range) continue
+      if (!rangeIntersects(range, Number(scopeRange?.Start || 0), Number(scopeRange?.End || 0))) continue
+      if (!predicate(paragraph, range)) continue
+      ranges.push(range)
+    } catch (_) {
+      continue
+    }
+  }
+  return ranges
+}
+
+async function buildTargetSelectorRangesAsync(doc, scopeRange, targetSelector) {
+  const selector = normalizeTargetSelector(targetSelector)
+  if (!selector) return []
+  if (selector.kind === 'heading') {
+    return collectParagraphRangesAsync(doc, scopeRange, (paragraph) => isHeadingParagraph(paragraph, selector.level))
+  }
+  if (selector.kind === 'body') {
+    return collectParagraphRangesAsync(doc, scopeRange, (paragraph, range) => {
+      const text = normalizeText(range?.Text || '').trim()
+      if (!text) return false
+      return !isHeadingParagraph(paragraph) && !isParagraphInTable(paragraph)
+    })
+  }
+  if (selector.kind === 'table-cell') {
+    return collectTableCellRangesAsync(doc, scopeRange)
+  }
+  if (selector.kind === 'table') {
+    const tables = doc?.Tables
+    const tableCount = Number(tables?.Count || 0)
+    const ranges = []
+    for (let i = 1; i <= tableCount; i++) {
+      try {
+        const tableRange = duplicateRange(tables.Item(i)?.Range)
+        if (!tableRange) continue
+        if (!rangeIntersects(tableRange, Number(scopeRange?.Start || 0), Number(scopeRange?.End || 0))) continue
+        ranges.push(tableRange)
+      } catch (_) {
+        continue
+      }
+    }
+    return ranges
+  }
+  if (selector.kind === 'style-name' && selector.styleName) {
+    const expected = selector.styleName.toLowerCase()
+    return collectParagraphRangesAsync(doc, scopeRange, (paragraph) => getParagraphStyleName(paragraph).toLowerCase().includes(expected))
+  }
+  return []
+}
+
+async function buildResolvedTargetRangesAsync(doc, scopeRange, intent) {
+  const structuralRanges = intent?.targetSelector
+    ? await buildTargetSelectorRangesAsync(doc, scopeRange, intent.targetSelector)
+    : []
+  if (intent?.searchText) {
+    const bases = structuralRanges.length > 0 ? structuralRanges : [scopeRange]
+    const matches = []
+    bases.forEach((baseRange) => {
+      matches.push(...buildMatchRanges(doc, baseRange, intent.searchText, intent))
+    })
+    return matches
+  }
+  if (structuralRanges.length > 0) return structuralRanges
+  return [scopeRange]
+}
+
+export async function executeDocumentFormatActionAsync(intent) {
+  const normalizedIntent = normalizeDocumentFormatIntent(intent)
+  if (!normalizedIntent) {
+    throw new Error('格式任务参数无效')
+  }
+  const { doc, label, range } = resolveScopeRange(normalizedIntent.scope, intent?.scopeRange)
+  const searchText = normalizedIntent.searchText
+  const targetSelectorLabel = getTargetSelectorLabel(normalizedIntent.targetSelector)
+  const targets = await buildResolvedTargetRangesAsync(doc, range, normalizedIntent)
+  if (targets.length === 0) {
+    if (searchText) {
+      throw new Error(`在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}没有找到”${searchText}”`)
+    }
+    throw new Error(`在${label}${targetSelectorLabel ? `中没有找到${targetSelectorLabel}` : ''}可处理的内容`)
+  }
+  let charCount = 0
+  for (const targetRange of targets) {
+    applyCharacterStyle(targetRange, normalizedIntent.styleChanges)
+    charCount++
+    if (charCount % 20 === 0) await yieldToUI()
+  }
+  const needsParagraphStyle = !!(
+    normalizedIntent.styleChanges.lineSpacing ||
+    normalizedIntent.styleChanges.alignment ||
+    safeNumber(normalizedIntent.styleChanges.firstLineIndent) != null ||
+    safeNumber(normalizedIntent.styleChanges.spaceBefore) != null ||
+    safeNumber(normalizedIntent.styleChanges.spaceAfter) != null
+  )
+  const paragraphTargets = needsParagraphStyle
+    ? uniqueParagraphRanges(targets)
+    : []
+  let paraCount = 0
+  for (const targetRange of paragraphTargets) {
+    applyParagraphStyle(targetRange, normalizedIntent.styleChanges)
+    paraCount++
+    if (paraCount % 20 === 0) await yieldToUI()
+  }
+  const changeSummary = describeDocumentFormatChanges(normalizedIntent.styleChanges)
+  return {
+    ok: true,
+    appliedCount: targets.length,
+    paragraphCount: paragraphTargets.length,
+    scopeLabel: label,
+    searchText,
+    message: searchText
+      ? `已在${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}处理 ${targets.length} 处”${searchText}”，并完成${changeSummary.join('、')}。`
       : `已对${label}${targetSelectorLabel ? `中的${targetSelectorLabel}` : ''}完成${changeSummary.join('、')}。`
   }
 }

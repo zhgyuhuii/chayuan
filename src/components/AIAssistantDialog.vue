@@ -2099,7 +2099,7 @@ import { resolveDocumentTaskInputScope } from '../utils/documentTaskScope.js'
 import {
   clearDocumentFormatPreview,
   createDocumentFormatPreview,
-  executeDocumentFormatAction,
+  executeDocumentFormatActionAsync,
   normalizeDocumentFormatIntent,
   previewDocumentFormatMatches
 } from '../utils/documentFormatActions.js'
@@ -8176,7 +8176,7 @@ export default {
         } catch (_) {
           // Ignore preview cleanup failures before final apply.
         }
-        const result = executeDocumentFormatAction(pending.intent)
+        const result = await executeDocumentFormatActionAsync(pending.intent)
         pending.status = 'applied'
         pending.statusMessage = result.message
         this.refreshSelectionContext()
