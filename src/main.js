@@ -18,7 +18,17 @@ import { prepareDialogDisplayText } from './utils/dialogTextDisplay.js'
 import { installGlobalShortcut } from './utils/router/commandRegistry.js'
 import { applyStoredTheme } from './utils/router/themeToggle.js'
 import { initRuntimeSync } from './utils/runtimeSync.js'
+import { activateHostWindow } from './utils/windowActivation.js'
 bootMark('main.js: 所有顶层 import + 顶层模块 evaluation 完成')
+
+// 全局兜底:任何 ShowDialog 子窗口(任务进度/设置/模板/脱密…)关闭时——无论点
+// 「关闭」按钮还是标题栏 X——都把 WPS 主窗口重新激活到前台,否则关窗后 OS 会把
+// 前台焦点交给后面的其它应用,表现为「WPS 主窗口跑到后台、被别的应用遮住」。
+try {
+  window.addEventListener('beforeunload', () => {
+    try { activateHostWindow() } catch (_) {}
+  })
+} catch (_) {}
 
 const app = createApp(App)
 bootMark('createApp 完成')

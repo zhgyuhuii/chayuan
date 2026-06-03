@@ -199,6 +199,7 @@ import { getSpellCheckTaskBridge } from '../utils/spellCheckTaskBridge.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { createTaskProgressWindowSession } from '../utils/taskProgressWindowManager.js'
 import { applyDocumentAction, getActiveDocument } from '../utils/documentActions.js'
+import { activateHostWindow } from '../utils/windowActivation.js'
 import { success as toastSuccess, error as toastError, warn as toastWarn } from '../utils/toastService.js'
 import { registerVisibilityAwareInterval } from '../utils/visibilityAwareInterval.js'
 
@@ -1040,6 +1041,7 @@ export default {
     },
     closeWindow() {
       this.clearAutoCloseTimer()
+      try { activateHostWindow() } catch (_) { /* 关窗前把 WPS 主窗带到前台 */ }
       try {
         if (window.close) window.close()
       } catch (_) {

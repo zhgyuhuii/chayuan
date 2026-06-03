@@ -2265,6 +2265,7 @@
 </template>
 
 <script>
+import { activateHostWindow } from '../utils/windowActivation.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
 import { loadGlobalSettings, saveGlobalSettings } from '../utils/globalSettings.js'
@@ -3487,6 +3488,7 @@ export default {
     getAssistantGroupLabel,
     getProviderApiKeyUrl,
     closeWindow() {
+      try { activateHostWindow() } catch (_) { /* 关窗前把 WPS 主窗带到前台 */ }
       try {
         if (window.close) window.close()
       } catch (_) {}
