@@ -1,4 +1,4 @@
-import { buildChatCompletionsRequestSnapshot, chatCompletion } from './chatApi.js'
+import { buildChatCompletionsRequestSnapshot, chatCompletion, getChatApiConfigByProvider } from './chatApi.js'
 import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
 import { startTimer as startPerfTimer } from './perfTracker.js'
@@ -395,59 +395,76 @@ function getModelByCompositeId(modelType, compositeId) {
   }
 }
 
+// 该 model 的 provider 是否真的配了可用 apiUrl(与 chatApi 实际请求时同一判定)。
+// flat 列表里的模型必然有 apiUrl;parse 出来的具名 id(如残留种子默认 OPENAI|gpt-4o)
+// 则可能没有 —— 这类「死候选」绝不能交给 chatApi,否则报「未配置该模型的 API 地址」。
+function modelHasUsableApiUrl(model) {
+  if (!model?.providerId || !model?.modelId) return false
+  try {
+    return !!getChatApiConfigByProvider(model.providerId, model.modelId)
+  } catch (_) {
+    return false
+  }
+}
+
 function resolveModel(config, definition, options = {}) {
   const modelType = config.modelType || definition?.modelType || 'chat'
   const flat = getFlatModelsFromSettings(modelType)
-  const explicitModelId = String(config.modelId || '').trim()
-  if (explicitModelId) {
-    const configured = getModelByCompositeId(modelType, explicitModelId)
-    if (configured) {
-      return { model: configured, source: 'explicit' }
-    }
+
+  // 按优先级收集候选:显式配置 > 对话框当前选中 > 助手分类默认 > 对话默认(跟随)。
+  // 不在这里直接 return —— 先收集,再逐个校验「provider 是否真有 apiUrl」。
+  // 根因(2026-06-03):助手默认不配模型;对话框 selectedModel 是 computed,
+  // selectedModelId=null 时自动回退 filteredModelList[0],所以对话能用但回写
+  // defaultModelsByCategory.chat 的 watcher 从不触发。ribbon 启动的助手不传
+  // conversationModelId,只能读 defaultModelsByCategory.chat,若其残留为种子默认
+  // OPENAI|...(无 apiUrl),getModelByCompositeId 的 parse 分支会返回该死 id,
+  // 最终在 chatApi 报「未配置该模型的 API 地址」。拼写检查走自己配置的模型故不受影响。
+  const candidates = []
+  const pushCandidate = (compositeId, source) => {
+    const id = String(compositeId || '').trim()
+    if (!id) return
+    const model = getModelByCompositeId(modelType, id)
+    if (model) candidates.push({ model, source })
   }
+
+  pushCandidate(config.modelId, 'explicit')
   const conversationModelId = String(options.conversationModelId || options.fallbackModelId || '').trim()
-  if (conversationModelId) {
-    const conversationModel = getModelByCompositeId(modelType, conversationModelId)
-    if (conversationModel) {
-      return { model: conversationModel, source: 'conversation-selected' }
-    }
-  }
-  const categoryDefaultId = getConfiguredAssistantModelId(definition?.id)
-  if (categoryDefaultId) {
-    const configured = getModelByCompositeId(modelType, categoryDefaultId)
-    if (configured) {
-      return { model: configured, source: 'category-default' }
-    }
-  }
-  // #3(2026-06-02):文字(chat)类助手未显式配置 / 未匹配到模型时,健壮地跟随
-  // 「对话默认模型」(优先 conversationModelId,其次 defaultModelsByCategory.chat)。
-  // 若该 id 不在 flat 精确列表里,按 provider|model 直接构造 —— 与拼写检查的兜底
-  // 一致,绕开 getModelByCompositeId 的 modelType 推断校验,避免误落到 flat[0]
-  // (DEFAULT_ENABLED_PROVIDERS 第一个是未配 apiUrl 的 OPENAI)导致「未配置 API 地址」。
+  pushCandidate(conversationModelId, 'conversation-selected')
+  pushCandidate(getConfiguredAssistantModelId(definition?.id), 'category-default')
   if (modelType === 'chat') {
     const followId = conversationModelId || String(loadDefaultModelsByCategory()?.chat || '').trim()
     if (followId) {
-      const inFlat = getFlatModelsFromSettings('chat').find(m => m.id === followId)
+      const inFlat = flat.find(m => m.id === followId)
       if (inFlat) {
-        return { model: inFlat, source: 'conversation-follow' }
-      }
-      const sep = followId.indexOf('|')
-      if (sep > 0) {
-        const followProviderId = followId.slice(0, sep)
-        const followModelId = followId.slice(sep + 1)
-        if (followProviderId && followModelId) {
-          return {
-            model: { id: followId, providerId: followProviderId, modelId: followModelId, name: followModelId, type: 'chat' },
-            source: 'conversation-follow-parsed'
+        candidates.push({ model: inFlat, source: 'conversation-follow' })
+      } else {
+        const sep = followId.indexOf('|')
+        if (sep > 0) {
+          const followProviderId = followId.slice(0, sep)
+          const followModelId = followId.slice(sep + 1)
+          if (followProviderId && followModelId) {
+            candidates.push({
+              model: { id: followId, providerId: followProviderId, modelId: followModelId, name: followModelId, type: 'chat' },
+              source: 'conversation-follow-parsed'
+            })
           }
         }
       }
     }
   }
+
+  // 返回第一个 provider 确实配了 apiUrl 的候选(尊重用户的显式/选中意图)。
+  for (const candidate of candidates) {
+    if (modelHasUsableApiUrl(candidate.model)) return candidate
+  }
+  // 具名候选全是死的(provider 没配 apiUrl)→ 落到第一个完整配置(含 apiUrl)的模型。
+  // flat 由 getModelGroupsFromSettings 产出,只含 apiUrl+apiKey+模型清单齐全的 provider,
+  // 即对话框实际在用的 filteredModelList[0] 同源,从而「助手跟随对话框模型」。
   if (flat[0]) {
     return { model: flat[0], source: 'fallback-first-available' }
   }
-  return null
+  // 一个可用模型都没有 → 交回第一个具名候选(让 chatApi 报精确错),否则 null。
+  return candidates[0] || null
 }
 
 function buildAssistantSystemPrompt(config, definition) {
