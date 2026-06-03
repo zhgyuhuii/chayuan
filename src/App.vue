@@ -35,7 +35,7 @@ const DIALOG_ROUTES = ['/settings', '/dialog', '/ad-popup', '/manual-col-width',
   '/template-export-dialog', '/template-download-dialog', '/document-template-import',
   '/template-field-extract-dialog', '/form-content-preview', '/form-audit-dialog',
   '/unused-styles-cleaner-dialog', '/style-statistics-dialog', '/ai-assistant', '/task-orchestration',
-  '/about-chayuan']
+  '/about-chayuan', '/task-progress-dialog', '/popup']
 
 export default {
   components: { CommandPaletteHost, ToastContainer, WorkflowResumeDialog, TaskCelebration },

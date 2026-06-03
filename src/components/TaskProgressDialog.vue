@@ -10,6 +10,7 @@
         <div class="header-model-row">
           <span v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</span>
           <ModelSelector compact v-model:modelId="topModelId" @change="onTopModelChange" />
+          <button v-if="hasNoChatModel" type="button" class="detail-link-btn settings-cta" @click="openModelSettings">⚙ 设置模型</button>
           <button v-if="canRerun" type="button" class="detail-link-btn" @click="retryTask">重试</button>
           <button v-if="canRerun" type="button" class="detail-link-btn" @click="rerunWithModel">用新模型重跑</button>
         </div>
@@ -189,7 +190,8 @@ import { initSync, subscribe, getTaskById, syncTasksFromStorage, updateTask } fr
 import { stopSpellCheckTask } from '../utils/spellCheckService.js'
 import { applyAssistantTaskPlan, startAssistantTask, stopAssistantTask } from '../utils/assistantTaskRunner.js'
 import ModelSelector from './common/ModelSelector.vue'
-import { setDefaultModelId, getDefaultModelId } from '../utils/modelSettings.js'
+import { setDefaultModelId, getDefaultModelId, getFlatModelsFromSettings } from '../utils/modelSettings.js'
+import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { stopAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
 import { stopFormAuditTask } from '../utils/formAuditService.js'
 import { stopDocumentCommentTask, undoDocumentCommentTask } from '../utils/documentCommentService.js'
@@ -273,6 +275,15 @@ export default {
     },
     taskModelName() {
       return String(this.task?.data?.modelDisplayName || this.task?.data?.modelId || '').trim()
+    },
+    // 没有任何已配置(含 apiUrl+apiKey+模型清单)的对话模型时为 true,
+    // 据此在任务窗口显示「设置模型」按钮,点击进入模型设置窗口。
+    hasNoChatModel() {
+      try {
+        return getFlatModelsFromSettings('chat').length === 0
+      } catch (_) {
+        return false
+      }
     },
     shouldAutoStartSpellCheck() {
       return !String(this.$route?.query?.taskId || '') && this.$route?.path === '/spell-check-dialog'
@@ -938,6 +949,13 @@ export default {
     rerunWithModel() {
       this.launchRerun(this.topModelId, '已用新模型重跑')
     },
+    openModelSettings() {
+      try {
+        openSettingsWindow({ menu: 'model-settings' }, { title: '模型设置' })
+      } catch (e) {
+        toastError('打开模型设置失败:' + (e && e.message ? e.message : String(e)))
+      }
+    },
     toggleDetails() {
       if (!this.hasDetails) return
       this.showDetails = !this.showDetails
@@ -1383,6 +1401,15 @@ export default {
 }
 .detail-link-btn:hover {
   background: #dbeafe;
+}
+.detail-link-btn.settings-cta {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+  font-weight: 600;
+}
+.detail-link-btn.settings-cta:hover {
+  background: #fef3c7;
 }
 .task-footer-main {
   display: flex;
