@@ -697,8 +697,8 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
   window.Application.ShowDialog(
     Util.GetUrlPath() + Util.GetRouterHash() + `/task-progress-dialog?taskId=${encodeURIComponent(taskId)}`,
     options.taskTitle || '任务进度',
-    520 * (window.devicePixelRatio || 1),
-    260 * (window.devicePixelRatio || 1),
+    560 * (window.devicePixelRatio || 1),
+    600 * (window.devicePixelRatio || 1),
     false
   )
   return promise

@@ -10,6 +10,7 @@
         <div class="header-model-row">
           <span v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</span>
           <ModelSelector compact v-model:modelId="topModelId" @change="onTopModelChange" />
+          <button v-if="canRerun" type="button" class="detail-link-btn" @click="retryTask">重试</button>
           <button v-if="canRerun" type="button" class="detail-link-btn" @click="rerunWithModel">用新模型重跑</button>
         </div>
       </div>
@@ -867,6 +868,25 @@ export default {
       try { setDefaultModelId(next) } catch (_) { /* 忽略持久化失败 */ }
       this.canRerun = !!this.task?.data?.assistantId
     },
+    // 重试:按原任务的模型(无则跟随当前默认)重新执行,等价于「再跑一次」。
+    retryTask() {
+      const assistantId = String(this.task?.data?.assistantId || '').trim()
+      if (!assistantId) { toastWarn('该任务无法重试(缺少助手信息)'); return }
+      const originModelId = String(this.task?.data?.modelId || '').trim()
+      try {
+        const options = originModelId ? { conversationModelId: originModelId } : {}
+        const result = startAssistantTask(assistantId, options)
+        if (result && result.taskId) {
+          this.canRerun = false
+          this.currentTaskId = result.taskId
+          this.bindWindowSession(result.taskId)
+          this.syncTask()
+          toastSuccess('已重新执行任务')
+        }
+      } catch (e) {
+        toastError('重试失败:' + (e && e.message ? e.message : String(e)))
+      }
+    },
     rerunWithModel() {
       const assistantId = String(this.task?.data?.assistantId || '').trim()
       if (!assistantId) { toastWarn('该任务无法重跑(缺少助手信息)'); return }
@@ -1003,6 +1023,13 @@ export default {
   min-width: 420px;
   color: #111827;
   background: #f6f8fb;
+  /* 填满 ShowDialog 窗口并让 body 独立滚动,避免窗口偏矮时 header 以下的
+     模型下拉/结果区/动作图标/重跑被窗口底边裁掉(2026-06-03)。 */
+  box-sizing: border-box;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .header {
   display: flex;
@@ -1015,6 +1042,10 @@ export default {
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+  /* 建立层叠上下文且不参与滚动,使模型下拉始终浮于 body 之上 */
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
 }
 .header-main {
   min-width: 0;
@@ -1135,6 +1166,10 @@ export default {
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  /* 占满剩余高度并独立滚动,保证结果区 / 动作图标 / footer 始终可达 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .progress-meta {
   display: flex;

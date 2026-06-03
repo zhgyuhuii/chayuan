@@ -83,7 +83,7 @@ export default {
 .model-select-wrap.compact .model-select-btn { padding: 2px 8px; font-size: 12px; }
 .model-select-arrow { color: var(--color-text-muted, #8a8f99); font-size: 10px; }
 .model-dropdown {
-  position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 50;
+  position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 1000;
   min-width: 220px; max-height: 320px; overflow: auto;
   background: var(--color-surface, #fff); border: 1px solid var(--color-border, #e2e4e9);
   border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 6px;

@@ -8951,7 +8951,7 @@ export default {
         total: 3
       }
       this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 WPS 操作“${taskTitle}”。`)
-      this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 520, 260)
+      this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600)
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('WPS capability task failed:', error)
@@ -9271,7 +9271,7 @@ export default {
         message.activeAssistantTaskRun,
         previousTaskId ? `已基于任务 ${previousTaskId} 的输入快照重新启动助手任务。` : '已按保存的参数重新启动助手任务。'
       )
-      this.openDialogRoute('/task-progress-dialog', { taskId }, overrides.taskTitle || '助手任务', 520, 260)
+      this.openDialogRoute('/task-progress-dialog', { taskId }, overrides.taskTitle || '助手任务', 560, 600)
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('聊天助手任务重试失败:', error)
@@ -9433,8 +9433,8 @@ export default {
           '/task-progress-dialog',
           { taskId },
           taskTitle,
-          520,
-          260
+          560,
+          600
         )
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = true
@@ -13472,8 +13472,8 @@ export default {
         '/task-progress-dialog',
         { taskId },
         taskTitle,
-        520,
-        260
+        560,
+        600
       )
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
@@ -13587,7 +13587,7 @@ export default {
             }
           })
           if (taskId) {
-            this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 520, 260)
+            this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600)
           }
           const result = await promise
           appliedConfig = result?.appliedConfig || {}
@@ -15258,8 +15258,8 @@ export default {
           '/task-progress-dialog',
           { taskId },
           taskTitle,
-          520,
-          260
+          560,
+          600
         )
         promise.catch((error) => {
           if (error?.code === 'TASK_CANCELLED') return
