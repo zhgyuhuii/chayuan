@@ -109,16 +109,27 @@ export function openSettingsWindow(query = {}, options = {}) {
   //   - 所以旧代码 `800 * dpr`:对话框 webview(dpr≈2)算出 1600 → 全屏遮挡保存;
   //     ribbon webview(dpr≈1)算出 800 → 超小。同源不同值,无法统一。
   //
-  // 【修法】唯一跨 webview 不变的量是物理屏幕尺寸 = availWidth(CSS) × devicePixelRatio。
-  //   用它 clamp 出窗口大小,且最终【不再乘 dpr】。两个入口算出的值完全相同,
-  //   且永远不会全屏(留边)、不会过小(下限兜底)。
+  // 【ShowDialog 真实行为(由实测三组现象反推)】
+  //   实际物理窗口 = 传入参数 × 调用方 webview 的 devicePixelRatio。
+  //     旧 `800×dpr`:对话框(dpr≈2)→1600 再被 ×2 → 全屏;ribbon(dpr≈1)→800 → 超小。
+  //     若传"物理值"不除 dpr:对话框又被 ×2 → 太高/太大;ribbon 正常。
+  //   (这也是 host/showAdaptiveDialog.js 传 availWidth(CSS)=物理/dpr 能跨 webview 一致的原因:
+  //    它传 CSS 像素,ShowDialog ×dpr 正好抵消。)
+  //
+  // 【修法】
+  //   1) 用唯一跨 webview 不变的【物理屏尺寸】= availWidth(CSS) × dpr 做 clamp,得到目标物理尺寸。
+  //   2) 参数 = 目标物理尺寸 ÷ dpr。ShowDialog 再 ×dpr 还原成同一物理窗口 → 两入口完全一致。
+  //   留边不全屏、有下限不过小。
   const dpr = window.devicePixelRatio || 1
   const physAvailW = (Number(window.screen?.availWidth) || 1600) * dpr
   const physAvailH = (Number(window.screen?.availHeight) || 900) * dpr
-  const MARGIN = 160 // 每边各留约 80px,保证四周有空隙、保存按钮可见
-  const clampSize = (avail, min, max) => Math.max(min, Math.min(avail - MARGIN, max))
-  const width = Number(options?.width) || clampSize(physAvailW, 900, 1280)
-  const height = Number(options?.height) || clampSize(physAvailH, 620, 860)
+  const MARGIN = 160 // 物理像素:每边各留约 80px,保证四周有空隙、保存按钮可见
+  const clampPhys = (avail, min, max) => Math.max(min, Math.min(avail - MARGIN, max))
+  const physW = clampPhys(physAvailW, 900, 1280)
+  const physH = clampPhys(physAvailH, 620, 860)
+  // 关键:÷ dpr,抵消 ShowDialog 内部的 ×dpr,使两个不同缩放的 webview 得到相同物理窗口。
+  const width = Number(options?.width) || physW / dpr
+  const height = Number(options?.height) || physH / dpr
   const url = buildSettingsWindowUrl(normalizedQuery)
   if (window.Application?.ShowDialog) {
     window.Application.ShowDialog(
