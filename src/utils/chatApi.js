@@ -9,9 +9,17 @@ import { getModelConfig, RIBBON_MODEL_TO_PROVIDER, parseModelCompositeId } from 
 
 const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api']
 const DEFAULT_CHAT_REQUEST_TIMEOUT_MS = 180000
+// 本地模型(Ollama 等)多为 CPU 推理,首次加载 + 结构化/长文本输出常远慢于云端,
+// 给更长的超时(10 分钟),避免本地慢但能跑完的任务被 180s 误杀。
+const LOCAL_REQUEST_TIMEOUT_MS = 600000
 
 function isOllamaLike(providerId) {
   return OLLAMA_LIKE.some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
+}
+
+// 按 provider 选默认超时:本地 Ollama 类用更长的超时。
+function defaultTimeoutForProvider(providerId) {
+  return isOllamaLike(providerId) ? LOCAL_REQUEST_TIMEOUT_MS : DEFAULT_CHAT_REQUEST_TIMEOUT_MS
 }
 
 function createRequestAbortSignal(signal, timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS) {
@@ -247,7 +255,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
-  const timeout = requestTimeoutMs ?? timeoutMs ?? DEFAULT_CHAT_REQUEST_TIMEOUT_MS
+  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultTimeoutForProvider(pid)
   const abort = createRequestAbortSignal(signal, timeout)
   try {
     const res = await fetch(cfg.apiUrl, {
@@ -432,7 +440,7 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
-  const timeout = requestTimeoutMs ?? timeoutMs ?? DEFAULT_CHAT_REQUEST_TIMEOUT_MS
+  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultTimeoutForProvider(pid)
   const abort = createRequestAbortSignal(signal, timeout)
   let res
   let text
