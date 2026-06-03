@@ -7,12 +7,8 @@
           <span class="status-badge" :class="status">{{ statusBadgeText }}</span>
         </div>
         <p class="header-subtitle">{{ headerSubtitle }}</p>
-        <div class="header-model-row">
-          <span v-if="taskModelName" class="header-model-line">模型:{{ taskModelName }}</span>
-          <ModelSelector compact v-model:modelId="topModelId" @change="onTopModelChange" />
-          <button v-if="hasNoChatModel" type="button" class="detail-link-btn settings-cta" @click="openModelSettings">⚙ 设置模型</button>
-          <button v-if="canRerun" type="button" class="detail-link-btn" @click="retryTask">重试</button>
-          <button v-if="canRerun" type="button" class="detail-link-btn" @click="rerunWithModel">用新模型重跑</button>
+        <div v-if="taskModelName" class="header-model-row">
+          <span class="header-model-line">模型:{{ taskModelName }}</span>
         </div>
       </div>
       <div class="header-actions">
@@ -60,6 +56,10 @@
         <button type="button" class="icon-btn subtle" title="关闭窗口" aria-label="关闭窗口" @click="closeWindow">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M18.3 5.71L12 12l6.3 6.29l-1.41 1.42L10.59 13.4L4.29 19.71L2.88 18.3L9.17 12L2.88 5.71L4.29 4.29l6.3 6.3l6.29-6.3z"/></svg>
         </button>
+        <ModelSelector compact v-model:modelId="topModelId" @change="onTopModelChange" />
+        <button v-if="hasNoChatModel" type="button" class="detail-link-btn settings-cta" @click="openModelSettings">⚙ 设置模型</button>
+        <button v-if="canRerun" type="button" class="detail-link-btn" @click="retryTask">重试</button>
+        <button v-if="canRerun" type="button" class="detail-link-btn" @click="rerunWithModel">用新模型重跑</button>
       </div>
     </div>
     <div class="body">
