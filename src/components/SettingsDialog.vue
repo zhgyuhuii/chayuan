@@ -7060,10 +7060,13 @@ export default {
   justify-content: space-between;
   gap: 12px;
   padding: 0 16px 8px;
+  flex-wrap: wrap;
 }
 
 .assistant-settings-toolbar-title {
   margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .assistant-import-btn {
