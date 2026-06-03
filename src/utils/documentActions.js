@@ -52,12 +52,33 @@ export function resolveDocumentInput(sourceMode = 'selection-preferred') {
   const documentText = getDocumentText().trim()
   const hasMeaningfulSelection = hasMeaningfulSelectionText(selectionText, 2)
 
+  // 在读取输入文本的【同一时刻、同一处】快照选区的 start/end 偏移。
+  // 这样保证:只要输入文本有效(模型拿到了正确选区文本),这对偏移就同样有效。
+  // 写回时(可能在数秒后、任务进度窗口已抢焦点导致实时选区丢失)改用
+  // doc.Range(selectionStart, selectionEnd) 定位,而不是再读实时 Selection —— 否则
+  // replace/insert 会落到光标点或空范围,表现为「有译文结果但文档没变」(2026-06-03)。
+  let selectionStart = null
+  let selectionEnd = null
+  try {
+    const r = getSelectionRange()
+    if (r) {
+      const s = Number(r.Start)
+      const e = Number(r.End)
+      if (Number.isFinite(s) && Number.isFinite(e) && e > s) {
+        selectionStart = s
+        selectionEnd = e
+      }
+    }
+  } catch (_) { /* 取选区偏移失败则退回实时选区写回 */ }
+
   if (sourceMode === 'selection-only') {
     return {
       text: selectionText,
       source: 'selection',
       hasSelection: selectionText.length > 0,
-      hasDocument: documentText.length > 0
+      hasDocument: documentText.length > 0,
+      selectionStart,
+      selectionEnd
     }
   }
 
@@ -75,7 +96,9 @@ export function resolveDocumentInput(sourceMode = 'selection-preferred') {
       text: selectionText,
       source: 'selection',
       hasSelection: true,
-      hasDocument: documentText.length > 0
+      hasDocument: documentText.length > 0,
+      selectionStart,
+      selectionEnd
     }
   }
 

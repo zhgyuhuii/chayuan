@@ -198,7 +198,7 @@ import { stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { getSpellCheckTaskBridge } from '../utils/spellCheckTaskBridge.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { createTaskProgressWindowSession } from '../utils/taskProgressWindowManager.js'
-import { applyDocumentAction } from '../utils/documentActions.js'
+import { applyDocumentAction, getActiveDocument } from '../utils/documentActions.js'
 import { success as toastSuccess, error as toastError, warn as toastWarn } from '../utils/toastService.js'
 import { registerVisibilityAwareInterval } from '../utils/visibilityAwareInterval.js'
 
@@ -848,11 +848,31 @@ export default {
         this.stopPolling()
       }
     },
+    // 用原任务快照的选区偏移构建写回 targetRange —— 任务窗口已抢焦点、实时选区丢失,
+    // 必须按偏移 doc.Range(start,end) 定位,否则手动「替换/插入/段前/段尾」点了也写不回。
+    buildResultTargetRange(action) {
+      const d = this.task?.data || {}
+      if (d.inputSource !== 'selection') return null
+      const selectionActions = ['replace', 'insert', 'prepend', 'insert-after', 'comment', 'comment-replace', 'link-comment']
+      if (!selectionActions.includes(String(action || '').trim())) return null
+      const s = Number(d.selectionStart)
+      const e = Number(d.selectionEnd)
+      if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null
+      try {
+        const doc = getActiveDocument()
+        if (doc && typeof doc.Range === 'function') return doc.Range(s, e)
+      } catch (_) { /* 退回实时选区 */ }
+      return null
+    },
     applyResultAction(action) {
       const text = String(this.task?.data?.fullOutput || this.bottomResultText || '').trim()
       if (!text) { toastWarn('没有可写入的结果内容'); return }
       try {
-        const r = applyDocumentAction(action, text, { title: '【察元 AI 助手】' })
+        const r = applyDocumentAction(action, text, {
+          title: '【察元 AI 助手】',
+          inputSource: this.task?.data?.inputSource,
+          targetRange: this.buildResultTargetRange(action)
+        })
         if (r && r.ok) {
           toastSuccess(r.message || '已写入文档')
         } else {
@@ -881,6 +901,11 @@ export default {
         documentAction: String(d.documentAction || '').trim(),
         targetLanguage: String(d.targetLanguage || '').trim(),
         launchSource: String(d.launchSource || 'dialog').trim()
+      }
+      // 带上原任务的选区偏移,让重跑写回仍定位到原区间(此刻实时选区多已丢失)。
+      if (Number.isFinite(Number(d.selectionStart)) && Number.isFinite(Number(d.selectionEnd))) {
+        overrides.selectionStart = Number(d.selectionStart)
+        overrides.selectionEnd = Number(d.selectionEnd)
       }
       const mid = String(conversationModelId || '').trim()
       if (mid) overrides.conversationModelId = mid

@@ -467,6 +467,24 @@ function resolveModel(config, definition, options = {}) {
   return candidates[0] || null
 }
 
+// 用启动时快照的选区偏移构建写回 targetRange,避免写回时实时选区已丢。
+// 仅对「以选区为目标」的动作生效;append(追加到文末)/document 源不使用,避免误定位。
+const SELECTION_TARGET_ACTIONS = new Set([
+  'replace', 'insert', 'prepend', 'insert-after', 'comment', 'comment-replace', 'link-comment'
+])
+function buildSelectionTargetRange(inputInfo, action) {
+  if (!inputInfo || inputInfo.source !== 'selection') return null
+  if (!SELECTION_TARGET_ACTIONS.has(String(action || '').trim())) return null
+  const s = Number(inputInfo.selectionStart)
+  const e = Number(inputInfo.selectionEnd)
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null
+  try {
+    const doc = getActiveDocument()
+    if (doc && typeof doc.Range === 'function') return doc.Range(s, e)
+  } catch (_) { /* 还原 Range 失败则退回实时选区 */ }
+  return null
+}
+
 function buildAssistantSystemPrompt(config, definition) {
   const sections = []
   if (config.persona) {
@@ -1128,7 +1146,8 @@ async function runPlainDocumentAssistantExecution(ctx) {
     title: displayTitle,
     commentText,
     strictTargetAction: strictAssistantDefaults === true,
-    inputSource: inputInfo.source
+    inputSource: inputInfo.source,
+    targetRange: buildSelectionTargetRange(inputInfo, runtimeDocumentAction)
   })
   const resultSummary = buildAssistantResultSummaryData(assistantId, inputText, output, applyResult, null)
   updateTask(taskId, {
@@ -1401,7 +1420,8 @@ async function runChunkedPlainDocumentExecution(ctx) {
     title: displayTitle,
     commentText,
     strictTargetAction: strictAssistantDefaults === true,
-    inputSource: inputInfo.source
+    inputSource: inputInfo.source,
+    targetRange: buildSelectionTargetRange(inputInfo, runtimeDocumentAction)
   })
   const resultSummary = buildAssistantResultSummaryData(assistantId, inputText, output, applyResult, null)
   updateTask(taskId, {
@@ -1574,6 +1594,15 @@ function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
     ? (runtimeConfig.documentAction || 'insert')
     : (overrides.documentAction || runtimeConfig.documentAction)
   const inputInfo = resolveDocumentInput(effectiveInputSource)
+  // 重跑/重试:原任务把选区偏移随 overrides 带回,此时实时选区可能已丢,
+  // 用原偏移覆盖并锁定 source='selection',保证写回仍定位到原区间,而非退化成整文替换。
+  const ovSelStart = Number(overrides.selectionStart)
+  const ovSelEnd = Number(overrides.selectionEnd)
+  if (Number.isFinite(ovSelStart) && Number.isFinite(ovSelEnd) && ovSelEnd > ovSelStart) {
+    inputInfo.source = 'selection'
+    inputInfo.selectionStart = ovSelStart
+    inputInfo.selectionEnd = ovSelEnd
+  }
   const inputText = String(overrides.inputText || inputInfo.text || '').trim()
   // inputOptional:助手定义里可声明"无需文档/选区也能运行"(如出题、空白起草、写邮件等),
   // 此时空 inputText 不再抛错,而是以空串继续 — userPromptTemplate 里的 {{input}} 会被替换为空,
@@ -1746,6 +1775,10 @@ async function executeAssistantTask(assistantId, overrides = {}) {
     chunkSource: inputInfo.source,
     fullInput: inputText,
     inputPreview: getSelectionPreview(inputText),
+    // 启动时快照的选区偏移 —— 供「确认写回」/任务窗口手动图标写回时按偏移定位,
+    // 不再依赖实时选区(避免任务窗口抢焦点后选区丢失导致写不回)。
+    selectionStart: inputInfo.selectionStart ?? null,
+    selectionEnd: inputInfo.selectionEnd ?? null,
     requirementText,
     renderedSystemPrompt: structuredSystemPrompt,
     renderedUserPrompt: userPrompt,
@@ -2446,7 +2479,11 @@ export async function applyAssistantTaskPlan(taskId) {
         commentText: String(task?.data?.commentPreview || '').trim(),
         strictTargetAction: task?.data?.strictAssistantDefaults === true,
         inputSource: task?.data?.inputSource,
-        preventWholeDocumentComment: docAct === 'comment' || docAct === 'link-comment'
+        preventWholeDocumentComment: docAct === 'comment' || docAct === 'link-comment',
+        targetRange: buildSelectionTargetRange(
+          { source: task?.data?.inputSource, selectionStart: task?.data?.selectionStart, selectionEnd: task?.data?.selectionEnd },
+          docAct
+        )
       })
       const inputText = String(task?.data?.fullInput || '').trim()
       const resultSummary = buildAssistantResultSummaryData(assistantId, inputText, outputText, applyResult, null)
