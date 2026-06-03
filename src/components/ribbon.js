@@ -697,8 +697,10 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
   window.Application.ShowDialog(
     Util.GetUrlPath() + Util.GetRouterHash() + `/task-progress-dialog?taskId=${encodeURIComponent(taskId)}`,
     options.taskTitle || '任务进度',
-    560 * (window.devicePixelRatio || 1),
-    600 * (window.devicePixelRatio || 1),
+    // 真常量,不乘 dpr —— 与 AI 对话框入口(openDialogRoute rawPixels)传相同的数,
+    // 保证从顶部 ribbon 和从对话框打开的任务进度窗口尺寸一致(不同 webview 的 dpr 不同)。
+    560,
+    600,
     false
   )
   return promise

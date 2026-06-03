@@ -6749,14 +6749,18 @@ export default {
       }
       return `${clean}/#${routeWithQuery}`
     },
-    openDialogRoute(routePath, query, title, width, height) {
+    openDialogRoute(routePath, query, title, width, height, rawPixels = false) {
       const url = this.buildDialogUrl(routePath, query)
       if (window.Application?.ShowDialog) {
+        // rawPixels=true:传真常量,不乘本 webview 的 dpr。用于「同一窗口可能从对话框 /
+        // 顶部 ribbon 两个不同 webview 打开」的场景(如任务进度窗口),确保两边传给
+        // ShowDialog 的数字完全相同 → 窗口尺寸一致(不同 webview 的 dpr 不一样,乘了就不一致)。
+        const dpr = rawPixels ? 1 : (window.devicePixelRatio || 1)
         window.Application.ShowDialog(
           url,
           title,
-          width * (window.devicePixelRatio || 1),
-          height * (window.devicePixelRatio || 1),
+          width * dpr,
+          height * dpr,
           false
         )
         return
@@ -8951,7 +8955,7 @@ export default {
         total: 3
       }
       this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 WPS 操作“${taskTitle}”。`)
-      this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600)
+      this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('WPS capability task failed:', error)
@@ -9271,7 +9275,7 @@ export default {
         message.activeAssistantTaskRun,
         previousTaskId ? `已基于任务 ${previousTaskId} 的输入快照重新启动助手任务。` : '已按保存的参数重新启动助手任务。'
       )
-      this.openDialogRoute('/task-progress-dialog', { taskId }, overrides.taskTitle || '助手任务', 560, 600)
+      this.openDialogRoute('/task-progress-dialog', { taskId }, overrides.taskTitle || '助手任务', 560, 600, true)
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('聊天助手任务重试失败:', error)
@@ -9434,7 +9438,8 @@ export default {
           { taskId },
           taskTitle,
           560,
-          600
+          600,
+          true
         )
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = true
@@ -13473,7 +13478,8 @@ export default {
         { taskId },
         taskTitle,
         560,
-        600
+        600,
+        true
       )
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
@@ -13587,7 +13593,7 @@ export default {
             }
           })
           if (taskId) {
-            this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600)
+            this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
           }
           const result = await promise
           appliedConfig = result?.appliedConfig || {}
@@ -15259,7 +15265,8 @@ export default {
           { taskId },
           taskTitle,
           560,
-          600
+          600,
+          true
         )
         promise.catch((error) => {
           if (error?.code === 'TASK_CANCELLED') return
