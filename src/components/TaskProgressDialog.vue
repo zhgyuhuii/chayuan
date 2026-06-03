@@ -868,40 +868,49 @@ export default {
       try { setDefaultModelId(next) } catch (_) { /* 忽略持久化失败 */ }
       this.canRerun = !!this.task?.data?.assistantId
     },
-    // 重试:按原任务的模型(无则跟随当前默认)重新执行,等价于「再跑一次」。
-    retryTask() {
-      const assistantId = String(this.task?.data?.assistantId || '').trim()
-      if (!assistantId) { toastWarn('该任务无法重试(缺少助手信息)'); return }
-      const originModelId = String(this.task?.data?.modelId || '').trim()
-      try {
-        const options = originModelId ? { conversationModelId: originModelId } : {}
-        const result = startAssistantTask(assistantId, options)
-        if (result && result.taskId) {
-          this.canRerun = false
-          this.currentTaskId = result.taskId
-          this.bindWindowSession(result.taskId)
-          this.syncTask()
-          toastSuccess('已重新执行任务')
-        }
-      } catch (e) {
-        toastError('重试失败:' + (e && e.message ? e.message : String(e)))
+    // 从原任务 data 重建完整 overrides —— 关键:必须带上 documentAction(replace/
+    // insert-after 等)、原始输入 fullInput、inputSource、targetLanguage、launchSource,
+    // 否则新任务会落到助手默认配置(documentAction 可能为 none),导致「重跑了但没写回 /
+    // 没替换原文」(2026-06-03)。conversationModelId 决定用哪个模型。
+    buildRerunOverrides(conversationModelId) {
+      const d = this.task?.data || {}
+      const overrides = {
+        taskTitle: String(this.task?.title || '助手任务').trim(),
+        inputText: String(d.fullInput || '').trim(),
+        inputSource: String(d.inputSource || d.configuredInputSource || '').trim(),
+        documentAction: String(d.documentAction || '').trim(),
+        targetLanguage: String(d.targetLanguage || '').trim(),
+        launchSource: String(d.launchSource || 'dialog').trim()
       }
+      const mid = String(conversationModelId || '').trim()
+      if (mid) overrides.conversationModelId = mid
+      if (d.reportSettings && typeof d.reportSettings === 'object') {
+        overrides.reportSettings = JSON.parse(JSON.stringify(d.reportSettings))
+      }
+      return overrides
     },
-    rerunWithModel() {
+    launchRerun(conversationModelId, okText) {
       const assistantId = String(this.task?.data?.assistantId || '').trim()
       if (!assistantId) { toastWarn('该任务无法重跑(缺少助手信息)'); return }
       try {
-        const result = startAssistantTask(assistantId, { conversationModelId: this.topModelId })
+        const result = startAssistantTask(assistantId, this.buildRerunOverrides(conversationModelId))
         if (result && result.taskId) {
           this.canRerun = false
           this.currentTaskId = result.taskId
           this.bindWindowSession(result.taskId)
           this.syncTask()
-          toastSuccess('已用新模型重跑')
+          toastSuccess(okText)
         }
       } catch (e) {
         toastError('重跑失败:' + (e && e.message ? e.message : String(e)))
       }
+    },
+    // 重试:按原任务的模型(无则跟随当前默认)重新执行,等价于「再跑一次」。
+    retryTask() {
+      this.launchRerun(String(this.task?.data?.modelId || '').trim(), '已重新执行任务')
+    },
+    rerunWithModel() {
+      this.launchRerun(this.topModelId, '已用新模型重跑')
     },
     toggleDetails() {
       if (!this.hasDetails) return
