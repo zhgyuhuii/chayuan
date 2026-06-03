@@ -57,9 +57,15 @@ function createRequestAbortSignal(signal, timeoutMs = DEFAULT_CHAT_REQUEST_TIMEO
   }
 }
 
-function formatRequestTimeoutMessage(timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS) {
+function formatRequestTimeoutMessage(timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS, info = null) {
   const seconds = Math.max(1, Math.round((Number(timeoutMs) || DEFAULT_CHAT_REQUEST_TIMEOUT_MS) / 1000))
-  return `模型请求超时（${seconds} 秒未返回），请稍后重试或调小分段长度。`
+  let target = ''
+  if (info?.endpoint || info?.model) {
+    let host = String(info?.endpoint || '')
+    try { host = new URL(String(info.endpoint || '')).host || host } catch (_) { /* 非法 URL 时保留原始字符串 */ }
+    target = `\n（请求目标：${host || '未知'} · 模型：${info?.model || '未知'}；秒级即超时通常是本机网络/防火墙无法访问该地址，或 API 地址配置有误，而非模型慢。请确认这台机器能访问该 host，或改用本机可达的模型服务。）`
+  }
+  return `模型请求超时（${seconds} 秒未返回），请稍后重试或调小分段长度。${target}`
 }
 
 function parseErrorPayload(rawText) {
@@ -299,7 +305,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     onDone?.()
   } catch (e) {
     if (abort.isTimeout()) {
-      onError?.(formatRequestTimeoutMessage(timeout))
+      onError?.(formatRequestTimeoutMessage(timeout, { endpoint: cfg.apiUrl, model: cfg.model }))
       return
     }
     if (e?.name === 'AbortError') {
@@ -440,7 +446,7 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
     text = await res.text()
   } catch (e) {
     if (abort.isTimeout()) {
-      throw new Error(formatRequestTimeoutMessage(timeout))
+      throw new Error(formatRequestTimeoutMessage(timeout, { endpoint: cfg.apiUrl, model: cfg.model }))
     }
     throw e
   } finally {
