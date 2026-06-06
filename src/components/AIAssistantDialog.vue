@@ -434,38 +434,36 @@
                   </div>
                   <span class="welcome-support-label">关注我们的微信公众号</span>
                 </div>
-                <div v-if="showWechatDonationQrCode" class="welcome-support-card">
+                <div class="welcome-support-card">
                   <div class="welcome-support-qr-wrap">
                     <img
-                      :src="wechatDonationQrCode()"
-                      alt="微信支持"
+                      v-if="purchaseQrDataUrl"
+                      :src="purchaseQrDataUrl"
+                      alt="扫码购买"
                       class="welcome-support-qr"
-                      loading="lazy"
                       decoding="async"
-                      @error="handleDonationQrCodeError('wechat')"
                     />
-                    
+                    <div v-else class="welcome-support-qr welcome-support-qr--placeholder">加载中…</div>
                   </div>
-                  <span class="welcome-support-label">微信支持</span>
-                </div>
-                <div v-if="showAlipayDonationQrCode" class="welcome-support-card">
-                  <div class="welcome-support-qr-wrap">
-                    <img
-                      :src="alipayDonationQrCode()"
-                      alt="支付宝支持"
-                      class="welcome-support-qr"
-                      loading="lazy"
-                      decoding="async"
-                      @error="handleDonationQrCodeError('alipay')"
-                    />
-                   
-                  </div>
-                  <span class="welcome-support-label">支付宝支持</span>
+                  <span class="welcome-support-label">扫码购买（解除次数限制）</span>
                 </div>
               </div>
               <p v-else class="welcome-support-hint">
-                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
+                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与购买二维码在可用时将显示在上方。
               </p>
+              <div class="welcome-entitlement">
+                <template v-if="entitlementSummary.licensed">
+                  <span class="welcome-entitlement-badge">已购买</span>
+                  <span v-if="entitlementSummary.kind === 'count'" class="welcome-entitlement-item">购买次数剩余 {{ entitlementSummary.value }} 次</span>
+                  <span v-else-if="entitlementSummary.expireAt" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.expireAt) }}</span>
+                  <span v-else class="welcome-entitlement-item">已激活 · 不限次</span>
+                  <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
+                </template>
+                <template v-else>
+                  <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
+                  <span class="welcome-entitlement-item">助手今日剩余 {{ entitlementSummary.assistant.remaining }} / {{ entitlementSummary.assistant.limit }} 次</span>
+                </template>
+              </div>
               <p class="welcome-support-copyright">
                 版权所有 北京智灵鸟科技中心
                 <a
@@ -2197,6 +2195,9 @@ import KbSourceStrip from './KbSourceStrip.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
+import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan } from '../utils/licenseStore.js'
+import { toDataUrl as buildPurchaseQrDataUrl } from '../utils/qrcode.js'
+import { getFingerprint as getPurchaseFingerprint } from '../utils/license/fingerprint.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -3647,6 +3648,8 @@ export default {
       showFollowDonationQrCode: true,
       showWechatDonationQrCode: true,
       showAlipayDonationQrCode: true,
+      purchaseQrDataUrl: '',
+      purchaseFingerprint: '',
       sidebarFooterSupportDialogMode: '',
       showAssistantRecommendModal: false,
       assistantRecommendModalItems: [],
@@ -3746,6 +3749,24 @@ export default {
     },
     hasDonationQrCode() {
       return this.showFollowDonationQrCode || this.showWechatDonationQrCode || this.showAlipayDonationQrCode
+    },
+    // 权益汇总:免费态显示对话/助手今日剩余;已购买显示到期日(时间授权)或剩余次数(次数授权)。
+    entitlementSummary() {
+      let lic = { plan: 'free' }
+      let paid = false
+      try { lic = getLicense() } catch (_) { lic = { plan: 'free' } }
+      try { paid = isPaidPlan() } catch (_) { paid = false }
+      const quota = (pool) => {
+        try { return { remaining: getQuotaRemaining(pool), limit: getQuotaLimit(pool) } } catch (_) { return { remaining: 0, limit: 0 } }
+      }
+      return {
+        licensed: paid,
+        kind: String(lic.kind || ''),
+        value: typeof lic.value === 'number' ? lic.value : null,
+        expireAt: String(lic.expireAt || ''),
+        chat: quota('chat'),
+        assistant: quota('assistant')
+      }
     },
     sidebarFooterSupportDialogVisible() {
       return this.sidebarFooterSupportDialogMode === 'follow' || this.sidebarFooterSupportDialogMode === 'support'
@@ -3910,6 +3931,7 @@ export default {
   },
   mounted() {
     bootMark('AIAssistantDialog mounted 进入')
+    this.loadPurchaseQr()
     this.aiAssistantWindowSession = createAIAssistantWindowSession((request) => {
       this.handleAIAssistantWindowRequest(request)
     })
@@ -4024,6 +4046,33 @@ export default {
     },
     alipayDonationQrCode() {
       return publicAssetUrl(DONATION_ALIPAY_QR_CODE)
+    },
+    // 生成购买二维码(含本机指纹,离线本地生成);供欢迎区「扫码购买」展示。
+    async loadPurchaseQr() {
+      try {
+        this.purchaseFingerprint = await getPurchaseFingerprint()
+      } catch (_) {
+        this.purchaseFingerprint = ''
+      }
+      const url = this.purchaseFingerprint
+        ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.purchaseFingerprint)}`
+        : 'https://aidooo.com/buy?app=wps'
+      try {
+        this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
+      } catch (_) {
+        this.purchaseQrDataUrl = ''
+      }
+    },
+    formatEntitlementDate(iso) {
+      const s = String(iso || '').trim()
+      if (!s) return ''
+      try {
+        const d = new Date(s)
+        if (Number.isNaN(d.getTime())) return s
+        return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+      } catch (_) {
+        return s
+      }
     },
     handleStorageEvent(event) {
       if (event?.key !== 'NdDocumentBackupRestoreSignal' || !event?.newValue) return
@@ -17244,6 +17293,36 @@ export default {
   line-height: 1.7;
   white-space: pre-wrap;
   text-align: center;
+}
+
+.welcome-support-qr--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(226, 232, 240, 0.6);
+  font-size: 12px;
+}
+
+.welcome-entitlement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  margin-top: 10px;
+}
+.welcome-entitlement-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  font-size: 12px;
+  font-weight: 600;
+}
+.welcome-entitlement-item {
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .welcome-support-copyright {
