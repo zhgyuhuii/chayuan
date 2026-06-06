@@ -443,6 +443,7 @@ export async function extractFormFieldsFromDocument() {
 
 export function startFormFieldExtractTask(overrides = {}) {
   const { taskId, promise } = startAssistantTask(FORM_FIELD_EXTRACT_ASSISTANT_ID, {
+    skipGate: true,
     inputSource: 'document',
     documentAction: 'none',
     taskTitle: '表单智能提取',

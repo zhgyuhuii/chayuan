@@ -916,6 +916,7 @@ export async function startWorkflowRun(workflowInput, options = {}) {
       } else {
         const { promise } = startAssistantTask(assistantId, {
           ...deepClone(node.data?.configOverrides || {}),
+          skipGate: true,
           taskTitle: title,
           inputSource: 'document',
           ...(resolvedInput.text ? { inputText: resolvedInput.text } : {}),

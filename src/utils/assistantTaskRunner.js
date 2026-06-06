@@ -65,6 +65,7 @@ import { appendEvaluationRecord, buildDocumentTaskEvaluationRecord } from './eva
 import { showSafeErrorDetail } from './safeErrorDialog.js'
 // P1 接入:把 task 完成事件转写成 SignalStore 的 'task' 信号,供 RACE 评估器消费。
 import { appendSignal } from './assistant/evolution/signalStore.js'
+import { ensureCapability } from './license/capabilityGate.js'
 
 const BUILTIN_RIBBON_ASSISTANT_SET = new Set(getBuiltinRibbonAssistantIds())
 const activeAssistantRuns = new Map()
@@ -2647,6 +2648,10 @@ export async function applyAssistantTaskPlan(taskId) {
 }
 
 export function startAssistantTask(assistantId, overrides = {}) {
+  // ── 统一能力门控（程序化子调用传 overrides.skipGate=true 跳过）──
+  if (!overrides.skipGate && !ensureCapability(assistantId)) {
+    return { taskId: null, gated: true, promise: Promise.resolve({ gated: true }) }
+  }
   const taskId = createAssistantPlaceholderTask(assistantId, overrides)
   overrides.onTaskCreated?.(taskId)
   const promise = (async () => {
