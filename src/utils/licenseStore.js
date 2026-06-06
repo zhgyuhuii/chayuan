@@ -37,13 +37,10 @@ const KEY = 'chayuanLicense'
 // 命名额度池（按日重置，各自独立）；key: cy_quota_<pool>_<YYYY-MM-DD>
 const QUOTAS = { chat: 30, assistant: 5 }
 
-// 付费专属能力：key -> 弹窗 reason（零免费，未购买直接拦截）
-const PAID_ONLY = {
-  'document-declassify': 'declassify',
-  'document-declassify-restore': 'declassify_restore',
-  'analysis.security-check': 'security_check',
-  'analysis.secret-keyword-extract': 'secret_keyword',
-}
+// 付费专属能力：key -> 弹窗 reason（零免费，未购买直接拦截）。
+// 按用户要求，涉密类（脱密/脱密还原/保密检查/涉密关键词提取）已改为并入 assistant 池
+// （每天 5 次免费，与执行助手统一计数），故此处清空——当前无零免费的付费专属能力。
+const PAID_ONLY = {}
 
 const FREE_FEATURES = new Set([
   'spell-check', 'translate', 'summary',
