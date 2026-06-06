@@ -45,7 +45,7 @@ export function decode(str) {
 
 // Crockford mod-37 校验符:把全部数据字节当大整数取模 37。
 export function checkChar(buf) {
-  let n = 0n
-  for (const b of buf) n = (n * 256n + BigInt(b)) % 37n
+  let n = BigInt(0)
+  for (const b of buf) n = (n * BigInt(256) + BigInt(b)) % BigInt(37)
   return CHECK[Number(n)]
 }

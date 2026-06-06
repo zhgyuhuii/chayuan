@@ -28,6 +28,7 @@
 
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
 import { getFingerprint } from './license/fingerprint.js'
+import { verifySerial, hasModule, MODULE_BIT_WPS } from './license/index.js'
 
 // ── 常量 ────────────────────────────────────────────────────────────
 
@@ -42,19 +43,6 @@ const PAID_ONLY = {
   'document-declassify-restore': 'declassify_restore',
   'analysis.security-check': 'security_check',
   'analysis.secret-keyword-extract': 'secret_keyword',
-}
-
-// verify 接口地址(server 端验签,不含 HMAC key)
-// 'aidooo.com' 经 XOR 0x5a + base64 混淆,运行时还原。
-// 说明:客户端必须连接该域名,此处仅做源码混淆,抓包仍可见。
-const _H = 'OzM+NTU1dDk1Nw=='
-function _getVerifyEndpoint() {
-  const raw = atob(_H)
-  let h = ''
-  for (let i = 0; i < raw.length; i++) {
-    h += String.fromCharCode(raw.charCodeAt(i) ^ 0x5a)
-  }
-  return 'https://' + h + '/api/license/verify'
 }
 
 const FREE_FEATURES = new Set([
@@ -141,8 +129,23 @@ export function isFeatureAllowed(feature) {
 
 // ── 激活 ────────────────────────────────────────────────────────────
 
+/** 本地验签失败原因 → 中文文案。 */
+function _reasonText(reason) {
+  switch (reason) {
+    case 'empty-serial': return '序列号不能为空'
+    case 'empty-fingerprint': return '设备指纹缺失'
+    case 'length': return '序列号长度不正确，请检查是否完整'
+    case 'decode': return '序列号格式错误，请检查输入'
+    case 'checksum': return '序列号校验失败，请核对每一位'
+    case 'unknown-key': return '序列号密钥版本不匹配，请更新到最新版本'
+    case 'signature': return '序列号与本机不匹配，请核对购买时填写的本机指纹是否正确'
+    default: return '序列号无效，请检查后重试'
+  }
+}
+
 /**
- * 激活序列号:调用 website server 验签 → 存储激活态。
+ * 激活序列号:本地验签(离线,不联网) → 存储激活态。
+ * HMAC key 由构建注入 VITE_LICENSE_HMAC_KEY（见 license/index.js）。
  * @param {string} serial - 序列号(带或不带横杠)
  * @returns {Promise<{ok:boolean, plan?:string, modules?:string[], kind?:string, value?:number, expireAt?:string, error?:string}>}
  */
@@ -160,31 +163,32 @@ export async function activate(serial) {
     return { ok: false, error: '设备指纹格式异常' }
   }
 
-  let resp, data
+  // 本地验签（离线，不联网）。失败返回原因，不抛网络错误。
+  let result
   try {
-    resp = await fetch(_getVerifyEndpoint(), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ serial: k, mid }),
-    })
-    data = await resp.json()
+    result = await verifySerial(k, mid)
   } catch (e) {
-    return { ok: false, error: '网络错误: ' + e.message }
+    return { ok: false, error: '验签失败: ' + (e?.message || e) }
+  }
+  if (!result.valid) {
+    return { ok: false, error: _reasonText(result.reason) }
+  }
+  // 本产品只认含 wps 模块位的授权
+  if (!hasModule(result.modules, MODULE_BIT_WPS)) {
+    return { ok: false, error: '该序列号不包含「察元 AI 文档助手」授权' }
   }
 
-  if (!data.valid) {
-    return { ok: false, error: data.reason || 'invalid' }
-  }
-
-  // 验签通过,持久化激活态
+  // 规范化为 licenseStore 存储格式（kind 数字→字符串，modules→数组，expireAt→ISO）
+  const kindStr = result.kind === 0 ? 'time' : 'count'
+  const expireAtIso = result.expireAt ? new Date(result.expireAt).toISOString() : undefined
   const rec = {
     plan: 'active',
     serial: k,
-    modules: data.modules || [],
-    kind: data.kind,
-    value: data.value,
+    modules: ['wps'],
+    kind: kindStr,
+    value: result.value,
     activatedAt: Date.now(),
-    ...(data.expireAt ? { expireAt: data.expireAt } : {}),
+    ...(expireAtIso ? { expireAt: expireAtIso } : {}),
   }
   save(rec)
 

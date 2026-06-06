@@ -8,7 +8,7 @@ const WIDTHS = { ver: 4, kind: 1, modules: 8, value: 14, issueDate: 13, nonce: 8
 const ORDER = ['ver', 'kind', 'modules', 'value', 'issueDate', 'nonce']
 
 export function pack(fields) {
-  let v = 0n
+  let v = BigInt(0)
   for (const k of ORDER) {
     const w = WIDTHS[k]
     const val = fields[k]
@@ -18,18 +18,18 @@ export function pack(fields) {
     v = (v << BigInt(w)) | BigInt(val)
   }
   const buf = new Uint8Array(6)
-  for (let i = 5; i >= 0; i--) { buf[i] = Number(v & 0xffn); v >>= 8n }
+  for (let i = 5; i >= 0; i--) { buf[i] = Number(v & BigInt(255)); v >>= BigInt(8) }
   return buf
 }
 
 export function unpack(buf) {
-  let v = 0n
-  for (const b of buf) v = (v << 8n) | BigInt(b)
+  let v = BigInt(0)
+  for (const b of buf) v = (v << BigInt(8)) | BigInt(b)
   const out = {}
   for (let i = ORDER.length - 1; i >= 0; i--) {
     const k = ORDER[i]
     const w = BigInt(WIDTHS[k])
-    out[k] = Number(v & ((1n << w) - 1n))
+    out[k] = Number(v & ((BigInt(1) << w) - BigInt(1)))
     v >>= w
   }
   return out
