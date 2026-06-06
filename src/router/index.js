@@ -96,6 +96,11 @@ const router = createRouter({
       component: () => import('../components/DocumentDeclassifyDialog.vue')
     },
     {
+      path: '/purchase-guide-dialog',
+      name: '购买授权',
+      component: () => import('../components/PurchaseGuideDialogPage.vue')
+    },
+    {
       path: '/document-declassify-restore-dialog',
       name: '密码复原',
       component: () => import('../components/DocumentDeclassifyRestoreDialog.vue')
