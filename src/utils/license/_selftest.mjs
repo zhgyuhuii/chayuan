@@ -84,8 +84,8 @@ const fields = {
 async function run() {
   console.log('=== WPS license 验签自测 ===\n')
 
-  // 1. 用 Node 原版 sign 生成序列号
-  const serial = signNode(fields, FINGERPRINT, HMAC_KEY)
+  // 1. 用 Node 原版 sign 生成序列号（fp 按 website issueLicense 真路径 hex 解码为 8 字节）
+  const serial = signNode(fields, Buffer.from(FINGERPRINT, 'hex'), HMAC_KEY)
   console.log('Node sign 生成序列号:', serial)
 
   // 2. 用移植的 browser verify 验签
@@ -132,7 +132,7 @@ async function run() {
 
   // 6. 测试次数授权（kind=1）
   const fieldsCount = { ...fields, kind: 1, value: 100, ver: 1 }
-  const serialCount = signNode(fieldsCount, FINGERPRINT, HMAC_KEY)
+  const serialCount = signNode(fieldsCount, Buffer.from(FINGERPRINT, 'hex'), HMAC_KEY)
   const countResult = await verify(serialCount, FINGERPRINT, keysById)
   if (!countResult.valid || countResult.fields.kind !== 1 || countResult.fields.value !== 100) {
     console.error('\n[FAIL] 次数授权验签失败:', countResult)
