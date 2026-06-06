@@ -61,7 +61,9 @@
             :href="buyUrl"
             target="_blank"
             rel="noopener noreferrer"
+            @click.prevent="openInBrowser(buyUrl)"
           >在电脑浏览器中打开</a>
+          <p class="purchase-guide-url">{{ buyUrl }}</p>
         </div>
 
         <!-- 分享二维码:分享给好友,双方各得次数 -->
@@ -277,6 +279,18 @@ export default {
     onClose() {
       this.$emit('close')
     },
+    // 在系统浏览器打开指定地址。WPS ShowDialog 里 <a target=_blank>/window.open 常被拦截,
+    // 需走 WPS 的 OAAssist.ShellExecute / FollowHyperlink,失败再回退 window.open。
+    openInBrowser(url) {
+      const target = String(url || '').trim()
+      if (!target) return
+      const app = window.Application || window.opener?.Application || window.parent?.Application
+      try {
+        if (app?.OAAssist?.ShellExecute) { app.OAAssist.ShellExecute(target); return }
+        if (app?.FollowHyperlink) { app.FollowHyperlink(target, '', true); return }
+      } catch (e) { /* 回退 window.open */ }
+      try { window.open(target, '_blank', 'noopener,noreferrer') } catch (e) { /* 静默 */ }
+    },
     async copyFingerprint() {
       if (!this.fingerprint) return
       try {
@@ -475,6 +489,14 @@ export default {
   text-decoration: none;
 }
 .purchase-guide-link:hover { text-decoration: underline; }
+.purchase-guide-url {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+  word-break: break-all;
+  text-align: center;
+  line-height: 1.5;
+}
 
 .purchase-guide-activate-section {
   border-top: 1px solid #f1f5f9;
