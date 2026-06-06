@@ -81,12 +81,7 @@
 <script>
 import { activate, getDailyFreeRemaining } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
-
-// 通过 qrserver.com 生成二维码图片 URL（img src 不跨域）
-function buildQrImgUrl(text, size = 160) {
-  const encoded = encodeURIComponent(String(text || ''))
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encoded}`
-}
+import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
 
 export default {
   name: 'PurchaseGuideDialog',
@@ -161,8 +156,12 @@ export default {
       } catch (e) {
         this.fingerprint = ''
       }
-      // 使用 buyUrl（含 mid 参数）生成二维码
-      this.qrDataUrl = buildQrImgUrl(this.buyUrl, 160)
+      // 使用 buyUrl（含 mid 参数）本地生成二维码
+      try {
+        this.qrDataUrl = await buildQrDataUrl(this.buyUrl, 160)
+      } catch (e) {
+        this.qrDataUrl = ''
+      }
     },
     async doActivate() {
       const serial = this.serialInput.trim()

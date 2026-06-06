@@ -58,6 +58,7 @@
 		"jszip": "^3.10.1",
 		"mammoth": "^1.12.0",
 		"pdfjs-dist": "^5.5.207",
+		"qrcode": "^1.5.4",
 		"vue": "^3.4.29",
 		"vue-router": "^4.3.3",
 		"vue3-json-viewer": "^2.4.1",

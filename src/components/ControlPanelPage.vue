@@ -89,21 +89,61 @@
 
       <!-- 3. License -->
       <section v-show="activeTab === 'license'" class="cp-section">
+        <!-- 授权态卡片 -->
         <div class="cp-license-card" :class="`plan-${license.plan}`">
-          <div class="cp-license-plan">
-            {{ planLabel(license.plan) }}
-          </div>
-          <div v-if="license.expiresAt" class="cp-license-expire">
-            到期:{{ formatDate(license.expiresAt) }}
+          <div class="cp-license-plan">{{ planLabel(license.plan) }}</div>
+          <div v-if="licenseDetail" class="cp-license-expire">{{ licenseDetail }}</div>
+        </div>
+
+        <!-- 今日免费次数 -->
+        <div class="cp-stat-row" v-if="!isPaid">
+          <div class="cp-stat-card">
+            <div class="cp-stat-num">{{ freeRemaining }} / 5</div>
+            <div class="cp-stat-label">今日剩余免费次数(执行助手)</div>
           </div>
         </div>
-        <p class="cp-hint">License 是产品化骨架(已就绪,等真正的 license server 接入)。</p>
+        <p class="cp-hint" v-if="isPaid">
+          已购买授权,执行助手不限次数,脱密/脱密还原等高级功能已解锁。
+        </p>
+        <p class="cp-hint" v-else>
+          免费版每日可用 5 次执行助手。购买授权后不限次数,并解锁脱密/脱密还原。
+        </p>
+
+        <!-- 购买入口:二维码 + 链接 -->
+        <div v-if="!isPaid" class="cp-buy-section">
+          <h3 class="cp-sub-h">扫码购买</h3>
+          <div class="cp-buy-row">
+            <div class="cp-buy-qr">
+              <img v-if="buyQrDataUrl" :src="buyQrDataUrl" alt="扫码购买" width="148" height="148" />
+              <div v-else class="cp-buy-qr-ph">生成中…</div>
+            </div>
+            <div class="cp-buy-info">
+              <p class="cp-buy-fp">
+                本机指纹:<code>{{ fingerprint || '获取中…' }}</code>
+              </p>
+              <p class="cp-buy-hint">用手机扫码购买,或</p>
+              <a class="cp-buy-link" :href="buyUrl" target="_blank" rel="noopener noreferrer">在浏览器中打开购买页</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- 序列号激活 -->
+        <h3 class="cp-sub-h">{{ isPaid ? '授权管理' : '已购买?输入序列号激活' }}</h3>
         <div class="cp-actions">
-          <button class="cp-btn" @click="onStartTrial" :disabled="license.trialUsed">开始 7 天试用</button>
-          <input v-model="activationKey" class="cp-input" placeholder="激活 key…" style="flex:1" />
-          <button class="cp-btn primary" :disabled="!activationKey" @click="onActivate">激活</button>
+          <input
+            v-model="activationKey"
+            class="cp-input"
+            style="flex:1"
+            placeholder="XXXXX-XXXXX-XXXXX-XXXXX-X"
+            :disabled="activating"
+            @keydown.enter="onActivate"
+          />
+          <button class="cp-btn primary" :disabled="!activationKey.trim() || activating" @click="onActivate">
+            {{ activating ? '验证中…' : '激活' }}
+          </button>
           <button v-if="license.plan !== 'free'" class="cp-btn warn" @click="onDeactivate">取消激活</button>
         </div>
+        <p v-if="activateMsg" class="cp-activate-msg" :class="activateOk ? 'is-ok' : 'is-err'">{{ activateMsg }}</p>
       </section>
 
       <!-- 4. 个性化记忆 -->
@@ -194,8 +234,10 @@ import {
   NEW_ASSISTANT_COUNT
 } from '../utils/assistant/runtimeAssistantsInstaller.js'
 import {
-  getLicense, isPaidPlan, activate, startTrial, deactivate
+  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining
 } from '../utils/licenseStore.js'
+import { getFingerprint } from '../utils/license/fingerprint.js'
+import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
 import {
   getPreference, setPreference,
   setGlossaryTerm, removeGlossaryTerm, listGlossary,
@@ -229,6 +271,12 @@ export default {
       NEW_ASSISTANT_COUNT,
       license: { plan: 'free' },
       activationKey: '',
+      activating: false,
+      activateMsg: '',
+      activateOk: false,
+      fingerprint: '',
+      buyQrDataUrl: '',
+      freeRemaining: 5,
       pref: { tone: '', lengthBias: 0, avoidJargon: false, customNotes: '' },
       glossary: {},
       newTerm: '',
@@ -242,11 +290,34 @@ export default {
   async mounted() {
     this.refreshAll()
   },
+  computed: {
+    isPaid() {
+      try { return isPaidPlan() } catch (_) { return false }
+    },
+    buyUrl() {
+      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
+      return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
+    },
+    licenseDetail() {
+      const rec = this.license || {}
+      if (rec.plan !== 'active') {
+        if (rec.plan === 'expired') return '授权已过期或次数已耗尽'
+        return ''
+      }
+      const parts = []
+      if (Array.isArray(rec.modules) && rec.modules.length) parts.push('模块:' + rec.modules.join(', '))
+      if (rec.kind === 'time' && rec.expireAt) parts.push('到期:' + this.formatDate(rec.expireAt))
+      if (rec.kind === 'count' && typeof rec.value === 'number') parts.push('剩余次数:' + rec.value)
+      return parts.join(' · ')
+    }
+  },
   methods: {
     async refreshAll() {
       try { this.flagsList = listFlags() } catch (_) {}
       try { this.autoInstalled = await listAutoInstalled() } catch (_) {}
       try { this.license = getLicense() } catch (_) {}
+      try { this.freeRemaining = getDailyFreeRemaining() } catch (_) {}
+      this.loadPurchaseInfo()
       try { this.pref = { ...this.pref, ...getPreference() } } catch (_) {}
       try { this.glossary = listGlossary() || {} } catch (_) {}
       try { this.contextPrompt = buildPersonalContextPrompt() } catch (_) {}
@@ -284,20 +355,50 @@ export default {
       else toast.warn(r.error || '试用启动失败')
       this.license = getLicense()
     },
-    onActivate() {
-      const r = activate(this.activationKey)
-      if (r.ok) {
-        toast.success('已激活')
-        this.activationKey = ''
-      } else {
-        toast.error(r.error || '激活失败')
+    async loadPurchaseInfo() {
+      try {
+        this.fingerprint = await getFingerprint()
+      } catch (_) {
+        this.fingerprint = ''
       }
-      this.license = getLicense()
+      try {
+        this.buyQrDataUrl = await buildQrDataUrl(this.buyUrl, 148)
+      } catch (_) {
+        this.buyQrDataUrl = ''
+      }
+    },
+    async onActivate() {
+      const serial = this.activationKey.trim()
+      if (!serial || this.activating) return
+      this.activating = true
+      this.activateMsg = ''
+      this.activateOk = false
+      try {
+        const r = await activate(serial)
+        if (r.ok) {
+          this.activateOk = true
+          this.activateMsg = '激活成功!授权已生效。'
+          this.activationKey = ''
+          toast.success('已激活')
+        } else {
+          this.activateOk = false
+          this.activateMsg = r.error || '序列号无效,请检查后重试。'
+          toast.error(r.error || '激活失败')
+        }
+      } catch (e) {
+        this.activateOk = false
+        this.activateMsg = e?.message || '激活失败,请稍后重试。'
+        toast.error('激活失败')
+      } finally {
+        this.activating = false
+        this.refreshAll()
+      }
     },
     onDeactivate() {
       deactivate()
+      this.activateMsg = ''
       toast.info('已取消激活')
-      this.license = getLicense()
+      this.refreshAll()
     },
     planLabel(p) {
       return ({ free: '免费版', trial: '试用版(7 天)', active: '已激活', expired: '已过期' })[p] || p
@@ -574,6 +675,27 @@ export default {
 .cp-license-card.plan-trial  { border-color: var(--chy-amber-400, #ecb84e); background: rgba(212, 160, 23, 0.05); }
 .cp-license-plan { font-size: 16px; font-weight: 700; }
 .cp-license-expire { font-size: 11px; color: var(--color-text-muted); margin-top: 4px; font-family: var(--font-mono); }
+
+.cp-buy-section { display: flex; flex-direction: column; gap: 6px; }
+.cp-buy-row { display: flex; gap: 16px; align-items: center; }
+.cp-buy-qr {
+  width: 148px; height: 148px; flex-shrink: 0;
+  border: 1px solid var(--chy-ink-200, #e6e8ec);
+  border-radius: 8px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff;
+}
+.cp-buy-qr img { display: block; width: 148px; height: 148px; object-fit: contain; }
+.cp-buy-qr-ph { font-size: 12px; color: var(--color-text-muted); }
+.cp-buy-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cp-buy-fp { margin: 0; font-size: 12px; color: var(--color-text-secondary); word-break: break-all; }
+.cp-buy-fp code { font-family: var(--font-mono); font-size: 12px; color: var(--chy-violet-600, #6f5fd0); }
+.cp-buy-hint { margin: 0; font-size: 12px; color: var(--color-text-muted); }
+.cp-buy-link { font-size: 13px; color: var(--chy-violet-600, #6f5fd0); text-decoration: none; }
+.cp-buy-link:hover { text-decoration: underline; }
+.cp-activate-msg { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
+.cp-activate-msg.is-ok { color: var(--chy-celadon-600, #16a34a); }
+.cp-activate-msg.is-err { color: var(--chy-rouge-600, #dc2626); }
 
 .cp-form {
   display: grid;
