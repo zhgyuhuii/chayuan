@@ -174,6 +174,13 @@ export default {
       }
     }
   },
+  mounted() {
+    // 独立路由窗（PurchaseGuideDialogPage）里 visible 恒为 true，
+    // watch 不会在初始 true 时触发，故 mounted 时若已可见则主动加载指纹+二维码。
+    if (this.visible) {
+      this.loadFingerprintAndQr()
+    }
+  },
   methods: {
     onClose() {
       this.$emit('close')
