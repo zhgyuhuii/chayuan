@@ -82,14 +82,12 @@ export async function verifySerial(serial, fingerprint, hmacKeysOverride) {
 
 /**
  * 检查某 module bit 是否被授权（modules 是 8 位掩码）。
- * 模块位定义（与 website/server/payment/modules.js 对齐）：
- *   bit 0 = wps（察元AI文档助手）
- *   bit 1 = desktop（察元桌面版）
- *   ... 后续扩展
+ * 模块位定义（与 website/server/payment/modules.js 对齐，bit 为真源）：
+ *   0=video 1=chat 2=kb 3=avatar 4=ocr 5=asr 6=note 7=wps(察元AI文档助手)
  */
 export function hasModule(modules, bit) {
   return (modules & (1 << bit)) !== 0
 }
 
-export const MODULE_BIT_WPS = 0
-export const MODULE_BIT_DESKTOP = 1
+// 察元 AI 文档助手 = bit 7（与 website modules.js 的 wps 商品一致；旧值 0 是错的）
+export const MODULE_BIT_WPS = 7

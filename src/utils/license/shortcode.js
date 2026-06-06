@@ -27,17 +27,27 @@ async function importHmacKey(keyMaterial) {
   )
 }
 
+/** hex 字符串 → Uint8Array（机器指纹 16 hex → 8 字节）。 */
+function hexToBytes(hex) {
+  const clean = String(hex || '').trim()
+  const out = new Uint8Array(Math.floor(clean.length / 2))
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16)
+  return out
+}
+
 /**
- * 计算 HMAC-SHA256(header || fingerprint) 并取前 8 字节。
+ * 计算 HMAC-SHA256(header || fingerprintBytes) 并取前 8 字节。
  * @param {Uint8Array} header - 6 字节头部
- * @param {Uint8Array|string} fp - 机器指纹（8字节hex字符串或 Uint8Array）
+ * @param {Uint8Array|string} fp - 机器指纹：16 hex 字符串(→hex解码为8字节) 或 Uint8Array
  * @param {string|Uint8Array} key - HMAC key
  * @returns {Promise<Uint8Array>} 8 字节 tag
  */
 async function tag8(header, fp, key) {
   const cryptoKey = await importHmacKey(key)
-  // 拼接 header + fp（字节级）
-  const fpBytes = typeof fp === 'string' ? new TextEncoder().encode(fp) : fp
+  // 关键：fp 是 16 hex 字符的机器指纹，必须 hex 解码为 8 字节，与 website server 的
+  // Buffer.from(mid,'hex')（payment/issue.js、license-routes.js）一致。旧实现误用
+  // TextEncoder（把 hex 当 UTF-8 文本→16字节），导致所有序列号验签 signature 失败。
+  const fpBytes = typeof fp === 'string' ? hexToBytes(fp) : fp
   const msg = new Uint8Array(header.length + fpBytes.length)
   msg.set(header, 0)
   msg.set(fpBytes, header.length)
