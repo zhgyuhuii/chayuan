@@ -15307,13 +15307,15 @@ export default {
           600,
           true
         )
+        // 任务已在独立任务窗口启动并异步执行,立即解锁——否则要等这个任务整体跑完
+        // 才能点下一个助手,表现为「执行一个后下一个无法执行」;被挡掉的点击也到不了
+        // startAssistantTask 的门控,导致免费次数不累计、永远弹不出购买界面。
+        if (this.assistantRunLoadingKey === item.key) {
+          this.assistantRunLoadingKey = ''
+        }
         promise.catch((error) => {
           if (error?.code === 'TASK_CANCELLED') return
           inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
-        }).finally(() => {
-          if (this.assistantRunLoadingKey === item.key) {
-            this.assistantRunLoadingKey = ''
-          }
         })
       } catch (error) {
         this.assistantRunLoadingKey = ''
