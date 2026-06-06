@@ -243,9 +243,10 @@ export default {
       return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
     },
     shareUrl() {
-      // 分享裂变链接：ref=本机指纹（分享者归因），好友安装/购买后双方各得次数
-      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
-      return `https://aidooo.com/buy?app=wps&ref=${encodeURIComponent(this.fingerprint)}`
+      // 分享裂变链接：mid=本机指纹(与购买码一致,确保扫码后能带上分享者指纹),
+      // ref=1 标识这是分享链接;好友安装/购买后双方各得次数。
+      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps&ref=1'
+      return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}&ref=1`
     }
   },
   watch: {
