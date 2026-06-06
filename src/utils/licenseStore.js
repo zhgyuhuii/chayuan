@@ -32,7 +32,18 @@ import { getFingerprint } from './license/fingerprint.js'
 // ── 常量 ────────────────────────────────────────────────────────────
 
 const KEY = 'chayuanLicense'
-const FREE_DAILY = 5   // 每日免费次数上限
+const FREE_DAILY = 5   // 每日免费次数上限（保留，兼容旧引用）
+
+// 命名额度池（按日重置，各自独立）；key: cy_quota_<pool>_<YYYY-MM-DD>
+const QUOTAS = { chat: 30, assistant: 5 }
+
+// 付费专属能力：key -> 弹窗 reason（零免费，未购买直接拦截）
+const PAID_ONLY = {
+  'document-declassify': 'declassify',
+  'document-declassify-restore': 'declassify_restore',
+  'analysis.security-check': 'security_check',
+  'analysis.secret-keyword-extract': 'secret_keyword',
+}
 
 // verify 接口地址(server 端验签,不含 HMAC key)
 // 'aidooo.com' 经 XOR 0x5a + base64 混淆,运行时还原。
@@ -196,49 +207,42 @@ export function deactivate() {
   return { ok: true }
 }
 
-// ── 免费次数(本地按日计数) ──────────────────────────────────────────
-
-function todayKey() {
+// ── 命名额度池（按日计数） ──────────────────────────────────────────
+function quotaKey(pool) {
   const d = new Date()
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `cy_assistant_count_${y}-${m}-${day}`
+  return `cy_quota_${pool}_${y}-${m}-${day}`
 }
 
-/**
- * 读取今日已用免费次数。
- * @returns {number}
- */
-export function getDailyFreeUsed() {
+export function getQuotaLimit(pool) {
+  return QUOTAS[pool] || 0
+}
+
+export function getQuotaUsed(pool) {
   try {
     if (typeof localStorage === 'undefined') return 0
-    const v = localStorage.getItem(todayKey())
-    const n = parseInt(v, 10)
+    const n = parseInt(localStorage.getItem(quotaKey(pool)), 10)
     return isNaN(n) || n < 0 ? 0 : n
   } catch {
     return 0
   }
 }
 
-/**
- * 今日免费次数是否还有剩余。
- */
-export function canUseFree() {
-  return getDailyFreeUsed() < FREE_DAILY
+export function getQuotaRemaining(pool) {
+  return Math.max(0, getQuotaLimit(pool) - getQuotaUsed(pool))
 }
 
-/**
- * 免费次数 +1。
- * @returns {number} 更新后的今日已用次数
- */
-export function incDailyFreeUsed() {
+export function canUseQuota(pool) {
+  return getQuotaUsed(pool) < getQuotaLimit(pool)
+}
+
+export function incQuota(pool) {
   try {
     if (typeof localStorage === 'undefined') return 0
-    const key = todayKey()
-    const used = getDailyFreeUsed()
-    const next = used + 1
-    localStorage.setItem(key, String(next))
+    const next = getQuotaUsed(pool) + 1
+    localStorage.setItem(quotaKey(pool), String(next))
     return next
   } catch {
     return 0
@@ -246,11 +250,32 @@ export function incDailyFreeUsed() {
 }
 
 /**
- * 今日剩余免费次数。
+ * 统一能力门控。
+ * @param {string} cap - 'chat' | 'assistant' | 助手 key（含付费专属 4 个 key）
+ * @param {boolean} [isPaid] - 是否已购买（默认 isPaidPlan()；测试可注入）
+ * @returns {{allowed:boolean, reason?:string, pool?:string, remaining?:number, paidOnly?:boolean}}
  */
-export function getDailyFreeRemaining() {
-  return Math.max(0, FREE_DAILY - getDailyFreeUsed())
+export function checkCapability(cap, isPaid = isPaidPlan()) {
+  if (isPaid) return { allowed: true }
+
+  // 付费专属：零免费，直接拦截
+  if (PAID_ONLY[cap]) {
+    return { allowed: false, reason: PAID_ONLY[cap], paidOnly: true }
+  }
+
+  // 额度类：chat 独立池；其余（含未知普通助手）落 assistant 池
+  const pool = cap === 'chat' ? 'chat' : 'assistant'
+  if (canUseQuota(pool)) {
+    return { allowed: true, pool, remaining: getQuotaRemaining(pool) }
+  }
+  return { allowed: false, reason: `${pool}_quota`, pool, remaining: 0 }
 }
+
+// ── 兼容别名：旧「执行助手免费次数」= assistant 池 ────────────────────
+export function getDailyFreeUsed() { return getQuotaUsed('assistant') }
+export function canUseFree() { return canUseQuota('assistant') }
+export function incDailyFreeUsed() { return incQuota('assistant') }
+export function getDailyFreeRemaining() { return getQuotaRemaining('assistant') }
 
 // ── 兼容:保留原有试用接口骨架 ─────────────────────────────────────
 
@@ -289,4 +314,10 @@ export default {
   getDailyFreeRemaining,
   canUseFree,
   incDailyFreeUsed,
+  getQuotaLimit,
+  getQuotaUsed,
+  getQuotaRemaining,
+  canUseQuota,
+  incQuota,
+  checkCapability,
 }
