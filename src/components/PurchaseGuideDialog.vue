@@ -245,8 +245,10 @@ export default {
     shareUrl() {
       // 分享裂变链接：mid=本机指纹(与购买码一致,确保扫码后能带上分享者指纹),
       // ref=1 标识这是分享链接;好友安装/购买后双方各得次数。
-      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps&ref=1'
-      return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}&ref=1`
+      // 与 chayuan-desktop 一致:分享链接形如 /buy?app=&ref=<指纹>。ref 让 /buy 进入
+      // 「分享/受邀」模式并归因给邀请人;用 mid 会被当成普通购买、显示购买页。
+      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
+      return `https://aidooo.com/buy?app=wps&ref=${encodeURIComponent(this.fingerprint)}`
     }
   },
   watch: {
