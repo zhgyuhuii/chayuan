@@ -41,6 +41,7 @@ import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusE
 import { focusExistingTaskOrchestrationWindow } from '../utils/taskOrchestrationWindowManager.js'
 import { showSafeErrorDetail } from '../utils/safeErrorDialog.js'
 import { reportError } from '../utils/reportError.js'
+import { ensureCapability } from '../utils/license/capabilityGate.js'
 
 /**
  * Ribbon getImage 返回值（见 WPS 自定义功能区示例）：直接返回相对路径如 images/1.svg，
@@ -690,7 +691,9 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
       return { cancelled: true }
     }
   }
-  const { taskId, promise } = startAssistantTask(assistantId, ribbonOptions)
+  const ret = startAssistantTask(assistantId, ribbonOptions)
+  if (ret.gated) return { gated: true }
+  const { taskId, promise } = ret
   if (!taskId) {
     throw new Error('任务启动失败，未能创建任务')
   }
@@ -3368,6 +3371,7 @@ function OnAction(control) {
       })
       break
     case 'btnDocumentDeclassify':
+      if (!ensureCapability('document-declassify')) break
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/document-declassify-dialog',
         '文档脱密',
@@ -3377,6 +3381,7 @@ function OnAction(control) {
       )
       break
     case 'btnDocumentDeclassifyRestore':
+      if (!ensureCapability('document-declassify-restore')) break
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/document-declassify-restore-dialog',
         '密码复原',

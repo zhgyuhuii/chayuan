@@ -931,6 +931,7 @@ export default {
       if (!assistantId) { toastWarn('该任务无法重跑(缺少助手信息)'); return }
       try {
         const result = startAssistantTask(assistantId, this.buildRerunOverrides(conversationModelId))
+        if (result.gated) return
         if (result && result.taskId) {
           this.canRerun = false
           this.currentTaskId = result.taskId

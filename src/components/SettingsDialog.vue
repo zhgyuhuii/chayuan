@@ -6514,7 +6514,9 @@ export default {
             replaySourceBackupId: String(this.selectedBackupRecord?.id || '').trim()
           }
         }
-        const { taskId } = startAssistantTask(assistantId, overrides)
+        const r = startAssistantTask(assistantId, overrides)
+        if (r.gated) return
+        const { taskId } = r
         if (!taskId) {
           throw new Error('未能创建新的重放任务')
         }

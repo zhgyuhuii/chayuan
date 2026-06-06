@@ -1953,13 +1953,6 @@
       @goto-settings="onKbGotoSettings"
     />
 
-    <PurchaseGuideDialog
-      :visible="purchaseGuideDialogVisible"
-      :reason="purchaseGuideDialogReason"
-      @close="purchaseGuideDialogVisible = false"
-      @activated="purchaseGuideDialogVisible = false"
-    />
-
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
         <div class="assistant-recommend-modal-header">
@@ -2201,14 +2194,9 @@ import { resolveExactToolRequest } from '../services/documentIntelligence/exactT
 import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
-import PurchaseGuideDialog from './PurchaseGuideDialog.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import services from '../services/index.js'
-import {
-  isFeatureAllowed as licenseIsFeatureAllowed,
-  checkCapability as licenseCheckCapability,
-  incQuota as licenseIncQuota
-} from '../utils/licenseStore.js'
+import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -3608,8 +3596,7 @@ export default {
   components: {
     LongTaskRunCard,
     KbSelectorDialog,
-    KbSourceStrip,
-    PurchaseGuideDialog
+    KbSourceStrip
   },
   data() {
     return {
@@ -3661,8 +3648,6 @@ export default {
       showWechatDonationQrCode: true,
       showAlipayDonationQrCode: true,
       sidebarFooterSupportDialogMode: '',
-      purchaseGuideDialogVisible: false,
-      purchaseGuideDialogReason: 'quota_exceeded',
       showAssistantRecommendModal: false,
       assistantRecommendModalItems: [],
       assistantRecommendModalContext: '根据当前输入和最近对话，为你推荐可直接执行的助手。',
@@ -9247,7 +9232,6 @@ export default {
         inAppAlert('未找到可重试的助手任务参数')
         return
       }
-      if (!this.gateCapability(assistantId)) return
       const overrides = {
         taskTitle: String(retryPayload?.taskTitle || previousTask?.title || '助手任务').trim(),
         ...this.getConversationModelTaskOverrides(),
@@ -9273,7 +9257,9 @@ export default {
           retrySourceTaskId: previousTaskId
         }
       }
-      const { taskId, promise } = startAssistantTask(assistantId, overrides)
+      const ret = startAssistantTask(assistantId, overrides)
+      if (ret.gated) return
+      const { taskId, promise } = ret
       if (!taskId) {
         inAppAlert('助手任务重试失败，未能创建任务')
         return
@@ -11035,12 +11021,10 @@ export default {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           // ── 付费门控：脱密需授权 ──────────────────────────────────
-          if (!licenseIsFeatureAllowed('wps')) {
+          if (!licenseEnsureCapability('document-declassify')) {
             assistantMsg.content = '文档脱密功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottom())
-            this.purchaseGuideDialogReason = 'declassify'
-            this.purchaseGuideDialogVisible = true
             return true
           }
           assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
@@ -13450,8 +13434,6 @@ export default {
       this.saveHistory()
     },
     async runAssistantTaskFromMessage(message, assistantId, options = {}) {
-      // ── 能力门控：消息路由触发的助手任务统一收口 ──
-      if (!this.gateCapability(assistantId)) return
       const assistantItem = this.getAssistantItemByKey(assistantId) || {
         key: assistantId,
         label: getCustomAssistantById(assistantId)?.name || '智能助手',
@@ -13486,7 +13468,9 @@ export default {
           ...options.mediaOptions
         }
       }
-      const { taskId, promise } = startAssistantTask(assistantId, overrides)
+      const ret = startAssistantTask(assistantId, overrides)
+      if (ret.gated) return
+      const { taskId, promise } = ret
       if (!taskId) {
         throw new Error('助手任务启动失败，未能创建任务')
       }
@@ -13871,12 +13855,10 @@ export default {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         // ── 付费门控：脱密需授权 ──────────────────────────────────────
-        if (!licenseIsFeatureAllowed('wps')) {
+        if (!licenseEnsureCapability('document-declassify')) {
           assistantMsg.content = '文档脱密功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
-          this.purchaseGuideDialogReason = 'declassify'
-          this.purchaseGuideDialogVisible = true
           return true
         }
         assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
@@ -13891,12 +13873,10 @@ export default {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         // ── 付费门控：脱密还原需授权 ─────────────────────────────────
-        if (!licenseIsFeatureAllowed('wps')) {
+        if (!licenseEnsureCapability('document-declassify-restore')) {
           assistantMsg.content = '脱密复原功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
-          this.purchaseGuideDialogReason = 'declassify_restore'
-          this.purchaseGuideDialogVisible = true
           return true
         }
         assistantMsg.content = '已为你打开「密码复原」对话框，验证密码后可恢复脱密前的原文。'
@@ -15288,21 +15268,8 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
       return true
     },
-    // 统一能力门控收口：被拦截则弹购买引导并返回 false；放行且属额度池则计数。
-    gateCapability(cap) {
-      const r = licenseCheckCapability(cap)
-      if (!r.allowed) {
-        this.purchaseGuideDialogReason = r.reason
-        this.purchaseGuideDialogVisible = true
-        return false
-      }
-      if (r.pool) licenseIncQuota(r.pool)
-      return true
-    },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
-      // ── 能力门控：付费专属(涉密类)直接拦截；普通助手走 assistant 池(5次/天) ──
-      if (!this.gateCapability(item.key)) return
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!(await this.confirmAssistantRun(launchInfo))) return
@@ -15312,10 +15279,12 @@ export default {
         }
         this.assistantRunLoadingKey = item.key
         const taskTitle = item.shortLabel || item.label || '任务进度'
-        const { taskId, promise } = startAssistantTask(item.key, {
+        const ret = startAssistantTask(item.key, {
           taskTitle,
           ...this.getConversationModelTaskOverrides()
         })
+        if (ret.gated) return
+        const { taskId, promise } = ret
         if (!taskId) {
           throw new Error('任务启动失败，未能创建任务')
         }
@@ -15698,7 +15667,7 @@ export default {
         }
 
         // ── 能力门控：纯对话 30 次/天（已排除文档操作/助手/涉密路由） ──
-        if (!this.gateCapability('chat')) {
+        if (!licenseEnsureCapability('chat')) {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
