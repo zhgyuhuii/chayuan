@@ -98,7 +98,7 @@
 </template>
 
 <script>
-import { activate, getQuotaRemaining } from '../utils/licenseStore.js'
+import { activate, getQuotaRemaining, getQuotaLimit } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
 
@@ -134,17 +134,17 @@ export default {
       const M = {
         chat_quota: {
           pool: 'chat',
-          title: `今日对话次数已用完（剩余 ${getQuotaRemaining('chat')} / 30 次）`,
+          title: `今日对话次数已用完（剩余 ${getQuotaRemaining('chat')} / ${getQuotaLimit('chat')} 次）`,
           desc: '免费版每日可对话 30 次。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
         },
         assistant_quota: {
           pool: 'assistant',
-          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / 5 次）`,
+          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / ${getQuotaLimit('assistant')} 次）`,
           desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
         },
         quota_exceeded: {
           pool: 'assistant',
-          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / 5 次）`,
+          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / ${getQuotaLimit('assistant')} 次）`,
           desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
         },
         declassify: { pool: null, title: '文档脱密需购买后使用', desc: '文档脱密（涉密关键词提取 + 占位符替换 + 加密）属于付费功能，购买授权后即可使用。' },
