@@ -15697,7 +15697,12 @@ export default {
         }
 
         // ── 能力门控：纯对话 30 次/天（已排除文档操作/助手/涉密路由） ──
-        if (!this.gateCapability('chat')) { this.isStreaming = false; return }
+        if (!this.gateCapability('chat')) {
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          this.isStreaming = false
+          return
+        }
         this.isStreaming = true
         this.streamingContent = ''
         this.updateAssistantLoadingProgress(assistantMsg, {
