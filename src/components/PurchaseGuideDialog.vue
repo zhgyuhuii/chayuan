@@ -116,6 +116,23 @@
             {{ activateMsg }}
           </p>
         </div>
+
+        <!-- 用户协议小字（参考 chayuan-desktop LicenseDialog） -->
+        <p class="purchase-guide-agreement-tip">
+          购买即视为同意
+          <button type="button" class="purchase-guide-agreement-link" @click="agreeOpen = true">《{{ AGREEMENT_TITLE }}》</button>
+        </p>
+      </div>
+    </div>
+
+    <!-- 本地用户协议弹窗 -->
+    <div v-if="agreeOpen" class="purchase-agreement-overlay" @click.self="agreeOpen = false">
+      <div class="purchase-agreement-modal" role="dialog" aria-modal="true">
+        <div class="purchase-guide-header">
+          <h4 class="purchase-guide-title">{{ AGREEMENT_TITLE }}</h4>
+          <button type="button" class="btn-close-modal" @click="agreeOpen = false">×</button>
+        </div>
+        <div class="purchase-agreement-body">{{ AGREEMENT_BODY }}</div>
       </div>
     </div>
   </div>
@@ -125,6 +142,17 @@
 import { activate, getQuotaRemaining, getQuotaLimit } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
+
+// 用户协议文案：与 chayuan-desktop 的 features/license/userAgreement.ts 保持一致
+const USER_AGREEMENT_TITLE = '察元 AI 购买与使用协议'
+const USER_AGREEMENT_BODY = `完成付款即视为您已阅读、理解并同意本协议全部条款。
+
+1. 商品性质：本产品为数字软件授权（序列号/授权码），非实物商品。
+2. 不退款：序列号一经签发并发送至您的设备指纹即视为交付完成；鉴于数字商品特殊性，序列号一经发出或激活，概不退款，请购买前确认商品、档位、本机指纹无误。
+3. 授权范围：序列号与设备指纹绑定，仅限本机使用，不得转售/共享/在其他设备激活。
+4. 序列号保管：请购买后及时记录妥善保管；如未记录，可关注「智灵鸟科技」公众号凭指纹查询。
+5. 使用规范：不得利用本产品从事违法违规活动。
+6. 协议变更：我们可能不时更新本协议，更新后自公布之日起生效。`
 
 /** 按池剩余次数生成标题：有剩余=提醒「还可用 X 次」，耗尽=「已用完」。 */
 function _poolTitle(pool, label) {
@@ -159,10 +187,13 @@ export default {
       activateMsg: '',
       activateOk: false,
       fpCopied: false,
-      followOpen: false
+      followOpen: false,
+      agreeOpen: false
     }
   },
   computed: {
+    AGREEMENT_TITLE() { return USER_AGREEMENT_TITLE },
+    AGREEMENT_BODY() { return USER_AGREEMENT_BODY },
     meta() {
       // reason -> { title, desc, pool }；pool 有值则显示剩余次数
       const M = {
@@ -209,6 +240,7 @@ export default {
         this.activating = false
         this.fpCopied = false
         this.followOpen = false
+        this.agreeOpen = false
         this.loadFingerprintAndQr()
       }
     }
@@ -468,4 +500,49 @@ export default {
 .purchase-guide-follow-body { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 12px; }
 .purchase-guide-follow-body img { border-radius: 6px; background: #fff; padding: 4px; }
 .purchase-guide-follow-body p { margin: 0; font-size: 11px; color: #94a3b8; text-align: center; }
+
+.purchase-guide-agreement-tip {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+.purchase-guide-agreement-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: #3b82f6;
+  cursor: pointer;
+}
+.purchase-guide-agreement-link:hover { text-decoration: underline; }
+
+.purchase-agreement-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+}
+.purchase-agreement-modal {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.purchase-agreement-body {
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #334155;
+}
 </style>
