@@ -14936,9 +14936,20 @@ export default {
       this.scrollToBottom()
     },
     async sendDocumentAwareMessage(userContent, model, prepared = null) {
-      const { documentText, snapshot, documentCharCount } = this.getCurrentDocumentPayload()
+      const payload = this.getCurrentDocumentPayload()
+      // 尊重「扩写选中的文字」这类选区指向:话里点名选中/选区/这段且当前确有选区时,
+      // 只处理选区文本,不再把整篇文档当材料切段(否则会退化成「整篇文档改写共 N 段」)。
+      const scopeDecision = this.resolveUserTaskInputScope(userContent, { routeKind: 'document-operation' })
+      const selectionScopeText = scopeDecision?.resolvedScope === 'selection'
+        ? String(this.resolveBestSelectionContext()?.text || '').trim()
+        : ''
+      const isSelectionScope = !!selectionScopeText
+      const scopeLabel = isSelectionScope ? '选中内容' : '整篇文档'
+      const documentText = isSelectionScope ? selectionScopeText : payload.documentText
+      const snapshot = payload.snapshot
+      const documentCharCount = isSelectionScope ? selectionScopeText.length : payload.documentCharCount
       if (!documentText) {
-        inAppAlert('当前文档为空，暂时没有可提交的正文内容')
+        inAppAlert(isSelectionScope ? '当前没有可处理的选中内容' : '当前文档为空，暂时没有可提交的正文内容')
         return
       }
 
@@ -14972,8 +14983,8 @@ export default {
         assistantMsg = this.appendChatTurn(chatObj, visibleUserContent, userMessageMeta)
       }
       const summaryText = strategy === 'transform'
-        ? `正在处理整篇文档改写（共 ${chunks.length} 段）...`
-        : `正在处理整篇文档分析（共 ${chunks.length} 段）...`
+        ? `正在处理${scopeLabel}改写（共 ${chunks.length} 段）...`
+        : `正在处理${scopeLabel}分析（共 ${chunks.length} 段）...`
       const runContext = this.startActiveDocumentAwareRun(assistantMsg, summaryText)
       const abortSignal = runContext.abortController?.signal || null
       assistantMsg.content = ''
@@ -14984,8 +14995,8 @@ export default {
         percent: 14
       })
       this.appendPrimaryRouteDetail(assistantMsg.activeDocumentAwareRun, assistantMsg)
-      this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, `已识别为整篇文档任务，处理策略：${strategy === 'transform' ? '分段改写/翻译' : '分段阅读后汇总'}。`)
-      this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, `当前文档约 ${documentCharCount} 字，将按 ${chunks.length} 段处理。`)
+      this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, `已识别为${isSelectionScope ? '选中内容' : '整篇文档'}任务，处理策略：${strategy === 'transform' ? '分段改写/翻译' : '分段阅读后汇总'}。`)
+      this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, `当前${scopeLabel}约 ${documentCharCount} 字，将按 ${chunks.length} 段处理。`)
 
       if (!prepared) {
         this.userInput = ''
