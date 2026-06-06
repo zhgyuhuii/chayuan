@@ -21,34 +21,23 @@ function getApplication() {
   )
 }
 
-/**
- * 从 WPS Env 获取 ~/.chayuan/machine.id 的平台路径。
- * Windows: %APPDATA%\chayuan\machine.id
- * macOS:   ~/Library/Application Support/chayuan/machine.id
- * Linux:   ~/.config/chayuan/machine.id
- */
-function getMachineIdPath() {
+/** 探测 OS 类型 + 用户主目录 + 路径分隔符（WPS Env，FileSystem 路径拼接用）。 */
+function _resolveHomeOs() {
   try {
     const app = getApplication()
     if (!app?.Env) return null
 
-    // 检测 OS
-    let osType = 'unix'
+    let osType = 'linux'
     if (typeof ActiveXObject !== 'undefined') {
       osType = 'windows'
     } else {
       const ua = navigator?.userAgent || ''
       const platform = navigator?.platform || ''
-      if (/Mac|iPod|iPhone|iPad/.test(platform) || /Macintosh/.test(ua)) {
-        osType = 'mac'
-      } else if (/Linux/.test(platform)) {
-        osType = 'linux'
-      }
+      if (/Mac|iPod|iPhone|iPad/.test(platform) || /Macintosh/.test(ua)) osType = 'mac'
+      else if (/Linux/.test(platform)) osType = 'linux'
     }
-
     const sep = osType === 'windows' ? '\\' : '/'
 
-    // 获取用户主目录
     let userHome = null
     if (typeof app.Env.GetHomePath === 'function') {
       const hp = String(app.Env.GetHomePath() || '').replace(/^file:\/\//i, '').trim()
@@ -57,28 +46,49 @@ function getMachineIdPath() {
     if (!userHome && typeof app.Env.GetDownloadPath === 'function') {
       const dl = String(app.Env.GetDownloadPath() || '').replace(/^file:\/\//i, '')
       const parts = dl.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean)
-      if (osType === 'windows' && parts.length >= 3) {
-        userHome = parts.slice(0, 3).join('\\')
-      } else if (parts.length >= 2) {
-        userHome = '/' + parts.slice(0, -1).join('/')
-      }
+      if (osType === 'windows' && parts.length >= 3) userHome = parts.slice(0, 3).join('\\')
+      else if (parts.length >= 2) userHome = '/' + parts.slice(0, -1).join('/')
     }
     if (!userHome) return null
 
-    // 拼 chayuan config 目录
-    let configDir
-    if (osType === 'windows') {
-      configDir = userHome + sep + 'AppData' + sep + 'Roaming' + sep + 'chayuan'
-    } else if (osType === 'mac') {
-      configDir = userHome + sep + 'Library' + sep + 'Application Support' + sep + 'chayuan'
-    } else {
-      configDir = userHome + sep + '.config' + sep + 'chayuan'
-    }
-
-    return configDir + sep + FILE_NAME
+    return { osType, sep, userHome }
   } catch (e) {
     return null
   }
+}
+
+/**
+ * WPS 自身 machine.id 路径：
+ * Windows %APPDATA%\chayuan\machine.id；macOS ~/Library/Application Support/chayuan/machine.id；
+ * Linux ~/.config/chayuan/machine.id
+ */
+function getMachineIdPath() {
+  const r = _resolveHomeOs()
+  if (!r) return null
+  const { osType, sep, userHome } = r
+  let configDir
+  if (osType === 'windows') configDir = userHome + sep + 'AppData' + sep + 'Roaming' + sep + 'chayuan'
+  else if (osType === 'mac') configDir = userHome + sep + 'Library' + sep + 'Application Support' + sep + 'chayuan'
+  else configDir = userHome + sep + '.config' + sep + 'chayuan'
+  return configDir + sep + FILE_NAME
+}
+
+/**
+ * chayuan-desktop 的 machine.id 路径（其数据目录 <dataDir>/license/machine.id）。
+ * 数据目录对齐 desktop chayuan/paths.py：
+ *   Windows %APPDATA%\chayuan（=~\AppData\Roaming\chayuan）；
+ *   macOS ~/Library/Application Support/chayuan；Linux ~/.local/share/chayuan
+ * 文件内容是原始系统标识（machine-id/MachineGuid/uuid），desktop 指纹 = SHA-256(内容)[前8字节hex]。
+ */
+function getDesktopMachineIdPath() {
+  const r = _resolveHomeOs()
+  if (!r) return null
+  const { osType, sep, userHome } = r
+  let dataDir
+  if (osType === 'windows') dataDir = userHome + sep + 'AppData' + sep + 'Roaming' + sep + 'chayuan'
+  else if (osType === 'mac') dataDir = userHome + sep + 'Library' + sep + 'Application Support' + sep + 'chayuan'
+  else dataDir = userHome + sep + '.local' + sep + 'share' + sep + 'chayuan'
+  return dataDir + sep + 'license' + sep + FILE_NAME
 }
 
 /**
@@ -111,6 +121,30 @@ function readFromFileSystem() {
     if (!path) return null
     const content = (fs.readFileString ? fs.readFileString(path) : fs.ReadFile?.(path)) || ''
     const hex = String(content).trim().toLowerCase()
+    return isValid16Hex(hex) ? hex : null
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * 读 chayuan-desktop 的 machine.id 并算出其指纹（若本机装了 desktop）。
+ * desktop 文件内容是原始系统标识；指纹 = SHA-256(utf8(内容)) 前 8 字节 hex（对齐 fingerprint.py）。
+ * @returns {Promise<string|null>} 16 hex 或 null（未装 desktop / 读不到）
+ */
+async function readDesktopFingerprint() {
+  try {
+    const app = getApplication()
+    const fs = app?.FileSystem
+    if (!fs) return null
+    const path = getDesktopMachineIdPath()
+    if (!path) return null
+    const content = (fs.readFileString ? fs.readFileString(path) : fs.ReadFile?.(path)) || ''
+    const raw = String(content).trim()
+    if (!raw) return null
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
+    const bytes = new Uint8Array(buf).subarray(0, 8)
+    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
     return isValid16Hex(hex) ? hex : null
   } catch (e) {
     return null
@@ -202,13 +236,13 @@ function writeToLocalStorage(hex) {
 
 /** 内存缓存（同次 WPS 会话内不重复生成） */
 let _cached = null
+let _cachedMain = null
 
 /**
- * 获取本机指纹（16 字符 hex，8 字节）。
- * 幂等：已持久化则直接返回；首次生成后自动持久化。
+ * WPS 自身指纹（三层持久化：FileSystem 文件 → OPFS → localStorage，随机生成兜底）。
  * @returns {Promise<string>} 16 字符小写 hex
  */
-export async function getFingerprint() {
+async function getWpsOwnFingerprint() {
   if (_cached) return _cached
 
   // 1. 尝试从 FileSystem 读
@@ -250,8 +284,39 @@ export async function getFingerprint() {
 }
 
 /**
+ * 获取本机指纹（购买/显示用）。优先 chayuan-desktop 指纹（若本机装了 desktop，与其共用同一指纹），
+ * 否则用 WPS 自身指纹。
+ * @returns {Promise<string>} 16 字符小写 hex
+ */
+export async function getFingerprint() {
+  if (_cachedMain) return _cachedMain
+  const dfp = await readDesktopFingerprint()
+  _cachedMain = isValid16Hex(dfp) ? dfp.toLowerCase() : await getWpsOwnFingerprint()
+  return _cachedMain
+}
+
+/**
+ * 返回所有候选指纹（激活时多指纹验证用）：desktop 指纹（若有）在前、WPS 自身指纹在后，去重去空。
+ * 让「用 desktop 指纹购买」与「用 WPS 指纹购买」的序列号都能在本机激活。
+ * @returns {Promise<string[]>}
+ */
+export async function getCandidateFingerprints() {
+  const list = []
+  try {
+    const dfp = await readDesktopFingerprint()
+    if (isValid16Hex(dfp)) list.push(dfp.toLowerCase())
+  } catch (e) { /* ignore */ }
+  try {
+    const wfp = await getWpsOwnFingerprint()
+    if (isValid16Hex(wfp) && !list.includes(wfp.toLowerCase())) list.push(wfp.toLowerCase())
+  } catch (e) { /* ignore */ }
+  return list
+}
+
+/**
  * 仅用于测试：清除内存缓存（不影响持久化）。
  */
 export function _resetFingerprintCache() {
   _cached = null
+  _cachedMain = null
 }

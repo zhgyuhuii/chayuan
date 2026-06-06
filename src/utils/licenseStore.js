@@ -27,7 +27,7 @@
  */
 
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
-import { getFingerprint } from './license/fingerprint.js'
+import { getFingerprint, getCandidateFingerprints } from './license/fingerprint.js'
 import { verifySerial, hasModule, MODULE_BIT_WPS } from './license/index.js'
 
 // ── 常量 ────────────────────────────────────────────────────────────
@@ -150,25 +150,36 @@ export async function activate(serial) {
   const k = String(serial || '').trim()
   if (!k) return { ok: false, error: '序列号不能为空' }
 
-  let mid
+  // 候选指纹：desktop 指纹（若装了 desktop）+ WPS 自身指纹，激活时逐个尝试，
+  // 任一验签通过即激活——兼容「用 desktop 指纹购买」与「用 WPS 指纹购买」两种序列号。
+  let candidates = []
   try {
-    mid = await getFingerprint()
-  } catch (e) {
-    return { ok: false, error: '获取设备指纹失败: ' + e.message }
+    candidates = await getCandidateFingerprints()
+  } catch (e) { /* 下面兜底 */ }
+  if (!candidates.length) {
+    try { const fp = await getFingerprint(); if (fp) candidates = [fp] } catch (e) { /* */ }
   }
-  if (!mid || !/^[0-9a-f]{16}$/i.test(mid)) {
-    return { ok: false, error: '设备指纹格式异常' }
+  candidates = candidates.filter((m) => /^[0-9a-f]{16}$/i.test(m))
+  if (!candidates.length) {
+    return { ok: false, error: '获取设备指纹失败，无法激活' }
   }
 
-  // 本地验签（离线，不联网）。失败返回原因，不抛网络错误。
-  let result
-  try {
-    result = await verifySerial(k, mid)
-  } catch (e) {
-    return { ok: false, error: '验签失败: ' + (e?.message || e) }
+  // 本地验签（离线，不联网）：逐个候选指纹尝试，任一通过即采用。
+  let result = null
+  let lastReason = 'signature'
+  for (const mid of candidates) {
+    let r
+    try {
+      r = await verifySerial(k, mid)
+    } catch (e) {
+      lastReason = 'verify-error'
+      continue
+    }
+    if (r.valid) { result = r; break }
+    lastReason = r.reason
   }
-  if (!result.valid) {
-    return { ok: false, error: _reasonText(result.reason) }
+  if (!result) {
+    return { ok: false, error: _reasonText(lastReason) }
   }
   // 本产品只认含 wps 模块位的授权
   if (!hasModule(result.modules, MODULE_BIT_WPS)) {
