@@ -18,8 +18,24 @@
         <!-- 说明文案 -->
         <p class="purchase-guide-desc">{{ desc }}</p>
 
-        <!-- 二维码区域 -->
-        <div class="purchase-guide-qr-section">
+        <!-- 二维码 tab:默认「扫码购买」,另一个「分享」,只显示一个(参考 chayuan-desktop) -->
+        <div class="purchase-guide-qr-tabs">
+          <button
+            type="button"
+            class="purchase-guide-qr-tab"
+            :class="{ active: qrTab === 'buy' }"
+            @click="qrTab = 'buy'"
+          >扫码购买</button>
+          <button
+            type="button"
+            class="purchase-guide-qr-tab"
+            :class="{ active: qrTab === 'share' }"
+            @click="qrTab = 'share'"
+          >分享获取次数</button>
+        </div>
+
+        <!-- 购买二维码 -->
+        <div v-if="qrTab === 'buy'" class="purchase-guide-qr-section">
           <div class="purchase-guide-qr-wrap">
             <img
               v-if="qrDataUrl"
@@ -48,8 +64,8 @@
           >在电脑浏览器中打开</a>
         </div>
 
-        <!-- 分享二维码区：分享给好友，双方各得次数 -->
-        <div class="purchase-guide-qr-section">
+        <!-- 分享二维码:分享给好友,双方各得次数 -->
+        <div v-else class="purchase-guide-qr-section">
           <div class="purchase-guide-qr-wrap">
             <img
               v-if="shareQrDataUrl"
@@ -188,7 +204,8 @@ export default {
       activateOk: false,
       fpCopied: false,
       followOpen: false,
-      agreeOpen: false
+      agreeOpen: false,
+      qrTab: 'buy'
     }
   },
   computed: {
@@ -241,6 +258,7 @@ export default {
         this.fpCopied = false
         this.followOpen = false
         this.agreeOpen = false
+        this.qrTab = 'buy'
         this.loadFingerprintAndQr()
       }
     }
@@ -380,6 +398,31 @@ export default {
   font-size: 13px;
   color: #475569;
   line-height: 1.6;
+}
+
+.purchase-guide-qr-tabs {
+  display: flex;
+  gap: 6px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 4px;
+}
+.purchase-guide-qr-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.purchase-guide-qr-tab.active {
+  background: #fff;
+  color: #2563eb;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
 }
 
 .purchase-guide-qr-section {
