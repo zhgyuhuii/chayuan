@@ -9247,6 +9247,7 @@ export default {
         inAppAlert('未找到可重试的助手任务参数')
         return
       }
+      if (!this.gateCapability(assistantId)) return
       const overrides = {
         taskTitle: String(retryPayload?.taskTitle || previousTask?.title || '助手任务').trim(),
         ...this.getConversationModelTaskOverrides(),

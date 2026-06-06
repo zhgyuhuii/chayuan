@@ -98,6 +98,10 @@
         <!-- 今日免费次数 -->
         <div class="cp-stat-row" v-if="!isPaid">
           <div class="cp-stat-card">
+            <div class="cp-stat-num">{{ chatRemaining }} / {{ chatLimit }}</div>
+            <div class="cp-stat-label">今日剩余对话次数</div>
+          </div>
+          <div class="cp-stat-card">
             <div class="cp-stat-num">{{ freeRemaining }} / {{ freeLimit }}</div>
             <div class="cp-stat-label">今日剩余免费次数(执行助手)</div>
           </div>
@@ -106,7 +110,7 @@
           已购买授权,执行助手不限次数,脱密/脱密还原等高级功能已解锁。
         </p>
         <p class="cp-hint" v-else>
-          免费版每日可用 5 次执行助手。购买授权后不限次数,并解锁脱密/脱密还原。
+          免费版每日可对话 {{ chatLimit }} 次、使用 {{ freeLimit }} 次执行助手。购买授权后不限次数,并解锁脱密/脱密还原。
         </p>
 
         <!-- 购买入口:二维码 + 链接 -->
@@ -234,7 +238,7 @@ import {
   NEW_ASSISTANT_COUNT
 } from '../utils/assistant/runtimeAssistantsInstaller.js'
 import {
-  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining, getQuotaLimit
+  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining, getQuotaLimit, getQuotaRemaining
 } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
@@ -276,6 +280,8 @@ export default {
       activateOk: false,
       fingerprint: '',
       buyQrDataUrl: '',
+      chatRemaining: 30,
+      chatLimit: 30,
       freeRemaining: 5,
       freeLimit: 5,
       pref: { tone: '', lengthBias: 0, avoidJargon: false, customNotes: '' },
@@ -317,6 +323,8 @@ export default {
       try { this.flagsList = listFlags() } catch (_) {}
       try { this.autoInstalled = await listAutoInstalled() } catch (_) {}
       try { this.license = getLicense() } catch (_) {}
+      try { this.chatRemaining = getQuotaRemaining('chat') } catch (_) {}
+      try { this.chatLimit = getQuotaLimit('chat') } catch (_) {}
       try { this.freeRemaining = getDailyFreeRemaining() } catch (_) {}
       try { this.freeLimit = getQuotaLimit('assistant') } catch (_) {}
       this.loadPurchaseInfo()
