@@ -2207,7 +2207,9 @@ import services from '../services/index.js'
 import {
   isFeatureAllowed as licenseIsFeatureAllowed,
   canUseFree as licenseCanUseFree,
-  incDailyFreeUsed as licenseIncDailyFreeUsed
+  incDailyFreeUsed as licenseIncDailyFreeUsed,
+  checkCapability as licenseCheckCapability,
+  incQuota as licenseIncQuota
 } from '../utils/licenseStore.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
@@ -13449,6 +13451,8 @@ export default {
       this.saveHistory()
     },
     async runAssistantTaskFromMessage(message, assistantId, options = {}) {
+      // ── 能力门控：消息路由触发的助手任务统一收口 ──
+      if (!this.gateCapability(assistantId)) return
       const assistantItem = this.getAssistantItemByKey(assistantId) || {
         key: assistantId,
         label: getCustomAssistantById(assistantId)?.name || '智能助手',
@@ -15285,20 +15289,21 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
       return true
     },
+    // 统一能力门控收口：被拦截则弹购买引导并返回 false；放行且属额度池则计数。
+    gateCapability(cap) {
+      const r = licenseCheckCapability(cap)
+      if (!r.allowed) {
+        this.purchaseGuideDialogReason = r.reason
+        this.purchaseGuideDialogVisible = true
+        return false
+      }
+      if (r.pool) licenseIncQuota(r.pool)
+      return true
+    },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
-      // ── 付费门控 ──────────────────────────────────────────────────────
-      if (!licenseIsFeatureAllowed('wps')) {
-        if (!licenseCanUseFree()) {
-          // 当日免费次数已用完，弹购买引导
-          this.purchaseGuideDialogReason = 'quota_exceeded'
-          this.purchaseGuideDialogVisible = true
-          return
-        }
-        // 有剩余免费次数，放行并计数
-        licenseIncDailyFreeUsed()
-      }
-      // ─────────────────────────────────────────────────────────────────
+      // ── 能力门控：付费专属(涉密类)直接拦截；普通助手走 assistant 池(5次/天) ──
+      if (!this.gateCapability(item.key)) return
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!(await this.confirmAssistantRun(launchInfo))) return
@@ -15693,6 +15698,8 @@ export default {
           }
         }
 
+        // ── 能力门控：纯对话 30 次/天（已排除文档操作/助手/涉密路由） ──
+        if (!this.gateCapability('chat')) { this.isStreaming = false; return }
         this.isStreaming = true
         this.streamingContent = ''
         this.updateAssistantLoadingProgress(assistantMsg, {

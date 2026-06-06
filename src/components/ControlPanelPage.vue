@@ -98,7 +98,7 @@
         <!-- 今日免费次数 -->
         <div class="cp-stat-row" v-if="!isPaid">
           <div class="cp-stat-card">
-            <div class="cp-stat-num">{{ freeRemaining }} / 5</div>
+            <div class="cp-stat-num">{{ freeRemaining }} / {{ freeLimit }}</div>
             <div class="cp-stat-label">今日剩余免费次数(执行助手)</div>
           </div>
         </div>
@@ -234,7 +234,7 @@ import {
   NEW_ASSISTANT_COUNT
 } from '../utils/assistant/runtimeAssistantsInstaller.js'
 import {
-  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining
+  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining, getQuotaLimit
 } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
@@ -277,6 +277,7 @@ export default {
       fingerprint: '',
       buyQrDataUrl: '',
       freeRemaining: 5,
+      freeLimit: 5,
       pref: { tone: '', lengthBias: 0, avoidJargon: false, customNotes: '' },
       glossary: {},
       newTerm: '',
@@ -317,6 +318,7 @@ export default {
       try { this.autoInstalled = await listAutoInstalled() } catch (_) {}
       try { this.license = getLicense() } catch (_) {}
       try { this.freeRemaining = getDailyFreeRemaining() } catch (_) {}
+      try { this.freeLimit = getQuotaLimit('assistant') } catch (_) {}
       this.loadPurchaseInfo()
       try { this.pref = { ...this.pref, ...getPreference() } } catch (_) {}
       try { this.glossary = listGlossary() || {} } catch (_) {}
