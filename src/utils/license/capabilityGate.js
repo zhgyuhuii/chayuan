@@ -23,9 +23,25 @@ function openPurchaseGuide(reason) {
   }
 }
 
+/** 「每天首次提醒」标记（localStorage，按日）。 */
+function _reminderKey() {
+  const d = new Date()
+  return `cy_usage_reminder_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function _reminderShownToday() {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(_reminderKey()) === '1' } catch (e) { return false }
+}
+function _markReminderShown() {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(_reminderKey(), '1') } catch (e) { /* 静默 */ }
+}
+
 /**
  * 统一门控。
- * @param {string} cap - 'chat' | 'document-declassify' | 'document-declassify-restore' | 助手 key
+ * - 未购买且超额 → 弹购买引导，返回 false（调用方中止）。
+ * - 未购买但有剩余 → 计数放行；并在「每天首次」弹一次提醒窗
+ *   （剩余次数 + 购买码 + 分享码 + 公众号，对齐 desktop，不阻断执行）。
+ * - 已购买 → 直接放行，不弹、不计数。
+ * @param {string} cap - 'chat' | 助手 key（含涉密类）
  * @param {boolean} [isPaid] - 默认 isPaidPlan()，测试可注入
  * @returns {boolean} 放行=true；false=已弹购买引导，调用方应中止
  */
@@ -35,7 +51,14 @@ export function ensureCapability(cap, isPaid = isPaidPlan()) {
     openPurchaseGuide(r.reason)
     return false
   }
-  if (r.pool) incQuota(r.pool)
+  if (r.pool) {
+    incQuota(r.pool)
+    // 每天首次免费使用 → 弹提醒窗（不阻断执行），同 desktop 的「每天一次」体验
+    if (!_reminderShownToday()) {
+      _markReminderShown()
+      openPurchaseGuide(`${r.pool}_quota`)
+    }
+  }
   return true
 }
 

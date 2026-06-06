@@ -39,13 +39,37 @@
               <span>加载中...</span>
             </div>
           </div>
-          <p class="purchase-guide-qr-hint">用手机扫码购买，或</p>
+          <p class="purchase-guide-qr-hint">扫码购买（解除次数限制），或</p>
           <a
             class="purchase-guide-link"
             :href="buyUrl"
             target="_blank"
             rel="noopener noreferrer"
           >在电脑浏览器中打开</a>
+        </div>
+
+        <!-- 分享二维码区：分享给好友，双方各得次数 -->
+        <div class="purchase-guide-qr-section">
+          <div class="purchase-guide-qr-wrap">
+            <img
+              v-if="shareQrDataUrl"
+              :src="shareQrDataUrl"
+              alt="分享二维码"
+              class="purchase-guide-qr-img"
+              width="160"
+              height="160"
+            />
+            <div v-else class="purchase-guide-qr-placeholder">
+              <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#94a3b8" stroke-width="1.5">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <circle cx="17.5" cy="17.5" r="2.5"/>
+              </svg>
+              <span>加载中...</span>
+            </div>
+          </div>
+          <p class="purchase-guide-qr-hint">分享给好友，对方安装后你和好友各得使用次数</p>
         </div>
 
         <!-- 本机指纹条 -->
@@ -102,6 +126,15 @@ import { activate, getQuotaRemaining, getQuotaLimit } from '../utils/licenseStor
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
 
+/** 按池剩余次数生成标题：有剩余=提醒「还可用 X 次」，耗尽=「已用完」。 */
+function _poolTitle(pool, label) {
+  const rem = getQuotaRemaining(pool)
+  const lim = getQuotaLimit(pool)
+  return rem > 0
+    ? `今日还可免费使用 ${rem} / ${lim} 次（${label}）`
+    : `今日免费次数已用完（0 / ${lim}）`
+}
+
 export default {
   name: 'PurchaseGuideDialog',
   props: {
@@ -120,6 +153,7 @@ export default {
     return {
       fingerprint: '',
       qrDataUrl: '',
+      shareQrDataUrl: '',
       serialInput: '',
       activating: false,
       activateMsg: '',
@@ -134,18 +168,18 @@ export default {
       const M = {
         chat_quota: {
           pool: 'chat',
-          title: `今日对话次数已用完（剩余 ${getQuotaRemaining('chat')} / ${getQuotaLimit('chat')} 次）`,
-          desc: '免费版每日可对话 30 次。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+          title: _poolTitle('chat', '对话'),
+          desc: '免费版每日可对话 30 次。购买授权后不限次数；也可分享给好友，双方各得次数。',
         },
         assistant_quota: {
           pool: 'assistant',
-          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / ${getQuotaLimit('assistant')} 次）`,
-          desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+          title: _poolTitle('assistant', '执行助手/脱密/涉密检查'),
+          desc: '免费版每日 5 次（执行助手、脱密、脱密还原、涉密检查、涉密关键词提取共用）。购买后不限次数；也可分享给好友，双方各得次数。',
         },
         quota_exceeded: {
           pool: 'assistant',
-          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / ${getQuotaLimit('assistant')} 次）`,
-          desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+          title: _poolTitle('assistant', '执行助手/脱密/涉密检查'),
+          desc: '免费版每日 5 次（执行助手、脱密、脱密还原、涉密检查、涉密关键词提取共用）。购买后不限次数；也可分享给好友，双方各得次数。',
         },
         declassify: { pool: null, title: '文档脱密需购买后使用', desc: '文档脱密（涉密关键词提取 + 占位符替换 + 加密）属于付费功能，购买授权后即可使用。' },
         declassify_restore: { pool: null, title: '脱密复原需购买后使用', desc: '脱密复原功能属于付费功能，购买授权后即可使用。' },
@@ -159,6 +193,11 @@ export default {
     buyUrl() {
       if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
       return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
+    },
+    shareUrl() {
+      // 分享裂变链接：ref=本机指纹（分享者归因），好友安装/购买后双方各得次数
+      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
+      return `https://aidooo.com/buy?app=wps&ref=${encodeURIComponent(this.fingerprint)}`
     }
   },
   watch: {
@@ -202,11 +241,16 @@ export default {
       } catch (e) {
         this.fingerprint = ''
       }
-      // 使用 buyUrl（含 mid 参数）本地生成二维码
+      // 购买二维码（含 mid）+ 分享二维码（含 ref），均本地生成、离线可用
       try {
         this.qrDataUrl = await buildQrDataUrl(this.buyUrl, 160)
       } catch (e) {
         this.qrDataUrl = ''
+      }
+      try {
+        this.shareQrDataUrl = await buildQrDataUrl(this.shareUrl, 160)
+      } catch (e) {
+        this.shareQrDataUrl = ''
       }
     },
     async doActivate() {
@@ -252,6 +296,7 @@ export default {
 
 .purchase-guide-modal {
   width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px);
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
@@ -295,6 +340,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 
 .purchase-guide-desc {
