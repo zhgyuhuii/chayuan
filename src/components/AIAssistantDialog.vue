@@ -1953,6 +1953,13 @@
       @goto-settings="onKbGotoSettings"
     />
 
+    <PurchaseGuideDialog
+      :visible="purchaseGuideDialogVisible"
+      :reason="purchaseGuideDialogReason"
+      @close="purchaseGuideDialogVisible = false"
+      @activated="purchaseGuideDialogVisible = false"
+    />
+
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
         <div class="assistant-recommend-modal-header">
@@ -2194,8 +2201,14 @@ import { resolveExactToolRequest } from '../services/documentIntelligence/exactT
 import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
+import PurchaseGuideDialog from './PurchaseGuideDialog.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import services from '../services/index.js'
+import {
+  isFeatureAllowed as licenseIsFeatureAllowed,
+  canUseFree as licenseCanUseFree,
+  incDailyFreeUsed as licenseIncDailyFreeUsed
+} from '../utils/licenseStore.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
@@ -3595,7 +3608,8 @@ export default {
   components: {
     LongTaskRunCard,
     KbSelectorDialog,
-    KbSourceStrip
+    KbSourceStrip,
+    PurchaseGuideDialog
   },
   data() {
     return {
@@ -3647,6 +3661,8 @@ export default {
       showWechatDonationQrCode: true,
       showAlipayDonationQrCode: true,
       sidebarFooterSupportDialogMode: '',
+      purchaseGuideDialogVisible: false,
+      purchaseGuideDialogReason: 'quota_exceeded',
       showAssistantRecommendModal: false,
       assistantRecommendModalItems: [],
       assistantRecommendModalContext: '根据当前输入和最近对话，为你推荐可直接执行的助手。',
@@ -11017,6 +11033,15 @@ export default {
         if (topId === 'analysis.secret-keyword-extract' && this.shouldOpenDocumentDeclassifyDialogForText(text)) {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
+          // ── 付费门控：脱密需授权 ──────────────────────────────────
+          if (!licenseIsFeatureAllowed('wps')) {
+            assistantMsg.content = '文档脱密功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
+            this.saveHistory()
+            this.$nextTick(() => this.scrollToBottom())
+            this.purchaseGuideDialogReason = 'declassify'
+            this.purchaseGuideDialogVisible = true
+            return true
+          }
           assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
           this.openDialogRoute('/document-declassify-dialog', {}, '文档脱密', 860, 720)
           this.saveHistory()
@@ -13842,6 +13867,15 @@ export default {
         if (!assistantMsg) return false
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
+        // ── 付费门控：脱密需授权 ──────────────────────────────────────
+        if (!licenseIsFeatureAllowed('wps')) {
+          assistantMsg.content = '文档脱密功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
+          this.saveHistory()
+          this.$nextTick(() => this.scrollToBottom())
+          this.purchaseGuideDialogReason = 'declassify'
+          this.purchaseGuideDialogVisible = true
+          return true
+        }
         assistantMsg.content = '已为你打开「文档脱密」对话框，可在其中完成涉密关键词提取与占位符替换。'
         this.openDialogRoute('/document-declassify-dialog', {}, '文档脱密', 860, 720)
         this.saveHistory()
@@ -13853,6 +13887,15 @@ export default {
         if (!assistantMsg) return false
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
+        // ── 付费门控：脱密还原需授权 ─────────────────────────────────
+        if (!licenseIsFeatureAllowed('wps')) {
+          assistantMsg.content = '脱密复原功能需购买授权后使用，请在弹出的引导窗口中购买或激活。'
+          this.saveHistory()
+          this.$nextTick(() => this.scrollToBottom())
+          this.purchaseGuideDialogReason = 'declassify_restore'
+          this.purchaseGuideDialogVisible = true
+          return true
+        }
         assistantMsg.content = '已为你打开「密码复原」对话框，验证密码后可恢复脱密前的原文。'
         this.openDialogRoute('/document-declassify-restore-dialog', {}, '密码复原', 420, 320)
         this.saveHistory()
@@ -15244,6 +15287,18 @@ export default {
     },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
+      // ── 付费门控 ──────────────────────────────────────────────────────
+      if (!licenseIsFeatureAllowed('wps')) {
+        if (!licenseCanUseFree()) {
+          // 当日免费次数已用完，弹购买引导
+          this.purchaseGuideDialogReason = 'quota_exceeded'
+          this.purchaseGuideDialogVisible = true
+          return
+        }
+        // 有剩余免费次数，放行并计数
+        licenseIncDailyFreeUsed()
+      }
+      // ─────────────────────────────────────────────────────────────────
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!(await this.confirmAssistantRun(launchInfo))) return
