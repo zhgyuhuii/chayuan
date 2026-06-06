@@ -2206,8 +2206,6 @@ import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import services from '../services/index.js'
 import {
   isFeatureAllowed as licenseIsFeatureAllowed,
-  canUseFree as licenseCanUseFree,
-  incDailyFreeUsed as licenseIncDailyFreeUsed,
   checkCapability as licenseCheckCapability,
   incQuota as licenseIncQuota
 } from '../utils/licenseStore.js'
