@@ -48,6 +48,25 @@
           >在电脑浏览器中打开</a>
         </div>
 
+        <!-- 本机指纹条 -->
+        <div v-if="fingerprint" class="purchase-guide-fp">
+          <span class="purchase-guide-fp-label">本机指纹</span>
+          <code class="purchase-guide-fp-code">{{ fingerprint }}</code>
+          <button type="button" class="purchase-guide-fp-copy" @click="copyFingerprint">{{ fpCopied ? '已复制' : '复制' }}</button>
+        </div>
+
+        <!-- 公众号关注折叠 -->
+        <div class="purchase-guide-follow">
+          <button type="button" class="purchase-guide-follow-head" @click="followOpen = !followOpen">
+            <span>关注「智灵鸟科技」公众号查询序列号</span>
+            <span>{{ followOpen ? '▲' : '▼' }}</span>
+          </button>
+          <div v-if="followOpen" class="purchase-guide-follow-body">
+            <img src="/images/pay/follow.png" alt="智灵鸟科技公众号" width="96" height="96" />
+            <p>购买后如未记录序列号，可凭本机指纹查询。</p>
+          </div>
+        </div>
+
         <!-- 序列号激活 -->
         <div class="purchase-guide-activate-section">
           <p class="purchase-guide-activate-label">已购买？输入序列号激活：</p>
@@ -79,7 +98,7 @@
 </template>
 
 <script>
-import { activate, getDailyFreeRemaining } from '../utils/licenseStore.js'
+import { activate, getQuotaRemaining } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
 
@@ -91,7 +110,7 @@ export default {
       default: false
     },
     reason: {
-      // 'quota_exceeded' | 'declassify' | 'declassify_restore'
+      // 'chat_quota' | 'assistant_quota' | 'quota_exceeded' | 'declassify' | 'declassify_restore' | 'security_check' | 'secret_keyword'
       type: String,
       default: 'quota_exceeded'
     }
@@ -104,31 +123,39 @@ export default {
       serialInput: '',
       activating: false,
       activateMsg: '',
-      activateOk: false
+      activateOk: false,
+      fpCopied: false,
+      followOpen: false
     }
   },
   computed: {
-    title() {
-      if (this.reason === 'quota_exceeded') {
-        const rem = getDailyFreeRemaining()
-        return `今日免费次数已用完（剩余 ${rem} / 5 次）`
+    meta() {
+      // reason -> { title, desc, pool }；pool 有值则显示剩余次数
+      const M = {
+        chat_quota: {
+          pool: 'chat',
+          title: `今日对话次数已用完（剩余 ${getQuotaRemaining('chat')} / 30 次）`,
+          desc: '免费版每日可对话 30 次。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+        },
+        assistant_quota: {
+          pool: 'assistant',
+          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / 5 次）`,
+          desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+        },
+        quota_exceeded: {
+          pool: 'assistant',
+          title: `今日执行助手次数已用完（剩余 ${getQuotaRemaining('assistant')} / 5 次）`,
+          desc: '免费版每日可使用 5 次执行助手。购买授权后不限次数，并解锁脱密、涉密检查等高级功能。',
+        },
+        declassify: { pool: null, title: '文档脱密需购买后使用', desc: '文档脱密（涉密关键词提取 + 占位符替换 + 加密）属于付费功能，购买授权后即可使用。' },
+        declassify_restore: { pool: null, title: '脱密复原需购买后使用', desc: '脱密复原功能属于付费功能，购买授权后即可使用。' },
+        security_check: { pool: null, title: '涉密检查需购买后使用', desc: '涉密/保密风险检查属于付费功能，购买授权后即可使用。' },
+        secret_keyword: { pool: null, title: '涉密关键词提取需购买后使用', desc: '涉密关键词提取属于付费功能，购买授权后即可使用。' },
       }
-      if (this.reason === 'declassify') return '脱密功能需购买后使用'
-      if (this.reason === 'declassify_restore') return '脱密复原功能需购买后使用'
-      return '购买察元 AI 文档助手'
+      return M[this.reason] || { pool: null, title: '购买察元 AI 文档助手', desc: '购买授权后可无限次使用执行助手及全部高级功能。' }
     },
-    desc() {
-      if (this.reason === 'quota_exceeded') {
-        return '免费版每日可使用 5 次执行助手。购买授权后不限次数，同时解锁脱密/脱密还原等高级功能。'
-      }
-      if (this.reason === 'declassify') {
-        return '文档脱密功能（占位符替换+密码加密）属于付费功能，购买授权后即可使用。'
-      }
-      if (this.reason === 'declassify_restore') {
-        return '脱密复原功能属于付费功能，购买授权后即可使用。'
-      }
-      return '购买授权后可无限次使用执行助手及全部高级功能。'
-    },
+    title() { return this.meta.title },
+    desc() { return this.meta.desc },
     buyUrl() {
       if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
       return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
@@ -141,6 +168,8 @@ export default {
         this.activateMsg = ''
         this.activateOk = false
         this.activating = false
+        this.fpCopied = false
+        this.followOpen = false
         this.loadFingerprintAndQr()
       }
     }
@@ -148,6 +177,16 @@ export default {
   methods: {
     onClose() {
       this.$emit('close')
+    },
+    async copyFingerprint() {
+      if (!this.fingerprint) return
+      try {
+        await navigator.clipboard.writeText(this.fingerprint)
+        this.fpCopied = true
+        setTimeout(() => { this.fpCopied = false }, 2000)
+      } catch (e) {
+        // 剪贴板不可用时静默
+      }
     },
     async loadFingerprintAndQr() {
       this.qrDataUrl = ''
@@ -362,4 +401,18 @@ export default {
 }
 .purchase-guide-activate-msg.is-ok { color: #16a34a; }
 .purchase-guide-activate-msg.is-err { color: #dc2626; }
+
+.purchase-guide-fp {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;
+  font-size: 12px;
+}
+.purchase-guide-fp-label { color: #64748b; flex-shrink: 0; }
+.purchase-guide-fp-code { flex: 1; min-width: 0; font-family: 'Courier New', monospace; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.purchase-guide-fp-copy { flex-shrink: 0; border: none; background: transparent; color: #3b82f6; cursor: pointer; font-size: 12px; }
+.purchase-guide-follow { border: 1px solid #f1f5f9; border-radius: 8px; }
+.purchase-guide-follow-head { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: none; background: transparent; cursor: pointer; font-size: 12px; color: #64748b; }
+.purchase-guide-follow-body { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 12px; }
+.purchase-guide-follow-body img { border-radius: 6px; background: #fff; padding: 4px; }
+.purchase-guide-follow-body p { margin: 0; font-size: 11px; color: #94a3b8; text-align: center; }
 </style>
