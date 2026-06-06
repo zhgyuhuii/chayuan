@@ -267,7 +267,26 @@ export function incQuota(pool) {
  * @returns {{allowed:boolean, reason?:string, pool?:string, remaining?:number, paidOnly?:boolean}}
  */
 export function checkCapability(cap, isPaid = isPaidPlan()) {
-  if (isPaid) return { allowed: true }
+  const rec = getLicense()
+  const isCountLicense = rec.plan === 'active' && rec.kind === 'count' && typeof rec.value === 'number'
+
+  if (isPaid) {
+    if (isCountLicense) {
+      // 次数授权：对话仍走免费日额度（不耗购买次数）；助手/付费功能按购买次数扣减。
+      // 调用方(ensureCapability)见 licenseCount=true 时调 consumeLicenseCount() 扣 1 次。
+      if (cap !== 'chat') {
+        if (rec.value > 0) {
+          return { allowed: true, licenseCount: true, remaining: rec.value }
+        }
+        // 购买次数已用尽 → 不再当付费，落到下方免费门控
+        // （value<=0 时 getLicense 通常已置 expired，此处为保险回退）
+      }
+      // cap === 'chat' → 继续走下方免费 chat 池
+    } else {
+      // 时间/订阅类有效授权：全部不限次
+      return { allowed: true }
+    }
+  }
 
   // 付费专属：零免费，直接拦截
   if (PAID_ONLY[cap]) {
@@ -280,6 +299,23 @@ export function checkCapability(cap, isPaid = isPaidPlan()) {
     return { allowed: true, pool, remaining: getQuotaRemaining(pool) }
   }
   return { allowed: false, reason: `${pool}_quota`, pool, remaining: 0 }
+}
+
+/**
+ * 扣减一次「次数授权」的剩余次数（本地离线扣减；WPS 加载项无服务端实时扣次）。
+ * 仅对 plan=active 且 kind=count 生效；扣到 0 时置为 expired，门控自动回落免费额度。
+ * @returns {number} 扣减后的剩余次数
+ */
+export function consumeLicenseCount() {
+  const rec = load()
+  if (rec.plan !== 'active' || rec.kind !== 'count' || typeof rec.value !== 'number') {
+    return typeof rec.value === 'number' ? rec.value : 0
+  }
+  const next = rec.value - 1
+  const updated = { ...rec, value: Math.max(0, next) }
+  if (next <= 0) updated.plan = 'expired'
+  save(updated)
+  return updated.value
 }
 
 // ── 兼容别名：旧「执行助手免费次数」= assistant 池 ────────────────────
@@ -331,4 +367,5 @@ export default {
   canUseQuota,
   incQuota,
   checkCapability,
+  consumeLicenseCount,
 }

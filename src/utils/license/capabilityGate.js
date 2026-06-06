@@ -2,7 +2,7 @@
  * capabilityGate — 统一能力门控收口。
  * 全项目唯一「检查能力 → 未通过弹独立购买引导窗 → 通过则计数」入口。
  */
-import { checkCapability, incQuota, isPaidPlan } from '../licenseStore.js'
+import { checkCapability, incQuota, isPaidPlan, consumeLicenseCount } from '../licenseStore.js'
 
 /**
  * 打开独立购买引导窗（任何上下文通用，不依赖 Vue 实例）。
@@ -50,6 +50,11 @@ export function ensureCapability(cap, isPaid = isPaidPlan()) {
   if (!r.allowed) {
     openPurchaseGuide(r.reason)
     return false
+  }
+  // 次数授权:助手/付费功能每次扣 1 次购买次数(扣到 0 自动过期,后续回落免费门控)
+  if (r.licenseCount) {
+    consumeLicenseCount()
+    return true
   }
   if (r.pool) {
     incQuota(r.pool)
