@@ -6515,7 +6515,7 @@ export default {
           }
         }
         const r = startAssistantTask(assistantId, overrides)
-        if (r.gated) return
+        if (r.gated) { this.isReplayingBackupRecord = false; return }
         const { taskId } = r
         if (!taskId) {
           throw new Error('未能创建新的重放任务')

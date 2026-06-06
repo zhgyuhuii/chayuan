@@ -427,6 +427,7 @@ function applyBookmarkOperations(doc, operations) {
 
 export async function extractFormFieldsFromDocument() {
   const result = await runAssistantTask(FORM_FIELD_EXTRACT_ASSISTANT_ID, {
+    skipGate: true,
     inputSource: 'document',
     documentAction: 'none',
     taskTitle: '表单智能提取'

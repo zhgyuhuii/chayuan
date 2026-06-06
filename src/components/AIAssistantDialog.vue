@@ -15283,7 +15283,7 @@ export default {
           taskTitle,
           ...this.getConversationModelTaskOverrides()
         })
-        if (ret.gated) return
+        if (ret.gated) { this.assistantRunLoadingKey = ''; return }
         const { taskId, promise } = ret
         if (!taskId) {
           throw new Error('任务启动失败，未能创建任务')
