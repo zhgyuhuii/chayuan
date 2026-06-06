@@ -10,7 +10,7 @@ globalThis.localStorage = {
 }
 
 const {
-  checkCapability, incQuota, getQuotaRemaining, canUseQuota, getQuotaLimit,
+  checkCapability, incQuota, getQuotaRemaining, canUseQuota, getQuotaLimit, getQuotaUsed,
 } = await import('../licenseStore.js')
 
 // 1) 已购买：任何能力放行
@@ -29,6 +29,8 @@ assert.equal(r.reason, 'declassify_restore')
 
 // 3) chat 池：30 次后超额
 assert.equal(getQuotaLimit('chat'), 30)
+// remaining 是「本次消耗前」剩余（调用方放行后才 incQuota）
+assert.equal(checkCapability('chat', false).remaining, 30)
 for (let i = 0; i < 30; i++) { assert.equal(checkCapability('chat', false).allowed, true); incQuota('chat') }
 r = checkCapability('chat', false)
 assert.equal(r.allowed, false); assert.equal(r.reason, 'chat_quota'); assert.equal(r.remaining, 0)
@@ -38,5 +40,12 @@ assert.equal(getQuotaLimit('assistant'), 5)
 for (let i = 0; i < 5; i++) { assert.equal(checkCapability('some-normal-assistant', false).allowed, true); incQuota('assistant') }
 r = checkCapability('assistant', false)
 assert.equal(r.allowed, false); assert.equal(r.reason, 'assistant_quota')
+
+// localStorage 不可用时安全降级
+const saved = globalThis.localStorage
+delete globalThis.localStorage
+assert.equal(getQuotaUsed('chat'), 0)
+assert.equal(canUseQuota('chat'), true)
+globalThis.localStorage = saved
 
 console.log('OK _quota_selftest 全部通过')

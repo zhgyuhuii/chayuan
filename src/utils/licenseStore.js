@@ -11,9 +11,9 @@
  *   - 激活·有效:有记录且(time: expireAt 未过期 / count: value > 0)
  *   - 激活·过期/耗尽:有记录但已无效
  *
- * 免费次数(本地按日计数):
- *   - 每日最多 FREE_DAILY 次(默认 5)
- *   - key: cy_assistant_count_<YYYY-MM-DD>
+ * 命名额度池(本地按日计数,各池独立重置):
+ *   - chat 池: 30 次/天；key: cy_quota_chat_<YYYY-MM-DD>
+ *   - assistant 池: 5 次/天；key: cy_quota_assistant_<YYYY-MM-DD>
  *   - 不做 server 计数,MVP 阶段本地计数
  *
  * 用法:
@@ -22,8 +22,8 @@
  *   const r = await licenseStore.activate('XXXXX-XXXXX-XXXXX-XXXXX-X')
  *   // 检查是否有付费权限
  *   if (licenseStore.isFeatureAllowed('wps')) { ... }
- *   // 免费次数
- *   if (licenseStore.canUseFree()) licenseStore.incDailyFreeUsed()
+ *   // 能力门控（含额度检查）
+ *   const { allowed, reason, remaining } = licenseStore.checkCapability('chat')
  */
 
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
@@ -32,7 +32,6 @@ import { getFingerprint } from './license/fingerprint.js'
 // ── 常量 ────────────────────────────────────────────────────────────
 
 const KEY = 'chayuanLicense'
-const FREE_DAILY = 5   // 每日免费次数上限（保留，兼容旧引用）
 
 // 命名额度池（按日重置，各自独立）；key: cy_quota_<pool>_<YYYY-MM-DD>
 const QUOTAS = { chat: 30, assistant: 5 }
