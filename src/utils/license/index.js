@@ -16,23 +16,33 @@
 import { verify } from './shortcode.js'
 export { getFingerprint } from './fingerprint.js'
 
-// ── HMAC Key 占位 ──────────────────────────────────────────────────────────────
-// TODO: 真实 key 待接入。
-//   - 接入方案 A：import.meta.env.VITE_LICENSE_HMAC_KEY（打包时注入，需在 .env 配置）
-//   - 接入方案 B：运行时从 server 拉取并缓存（防硬编码）
-// 当前占位 key 仅用于本地开发调试，与 server 端不匹配，生产环境验签必然失败。
-const PLACEHOLDER_HMAC_KEY_TODO = 'placeholder-hmac-key-todo'
+// ── HMAC Key（内置，与 website 签发端 hmac_key_v1 同一把）────────────────────────
+// chayuan-wps 离线运行，本地验签需打包 HMAC key。HMAC 为对称密钥，打包后理论上
+// 可被逆向提取以伪造序列号——这是离线本地验签的固有取舍（与 desktop 内嵌一致）。
+// 优先级：构建注入 VITE_LICENSE_HMAC_KEY（hex）> 内置默认。
+const BUILTIN_HMAC_KEY_V1_HEX = 'c639c67cfbc8ceef0efbae305db1ab62d06aecacdc9956a55aa5ab4971b8c471'
+
+// 服务端 Ed25519 公钥（token 验签用）。当前 WPS 走短码 HMAC 验签，暂未使用，保留备用。
+export const ED25519_PUBLIC_KEY_HEX = 'c8366a17bc0aa51e4aedc45b61ba213324b821c1580d0139dc74377f01df2715'
+
+/** hex 字符串 → Uint8Array（与 website 的 Buffer.from(hex,'hex') 字节一致）。 */
+function hexToBytes(hex) {
+  const clean = String(hex || '').trim()
+  const out = new Uint8Array(Math.floor(clean.length / 2))
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16)
+  return out
+}
 
 /**
- * 从环境变量或占位 key 构建 hmacKeysById 映射。
- * ver(0..15) → hmac key string
- * 真实部署时 key 来自 import.meta.env.VITE_LICENSE_HMAC_KEY。
+ * 构建 hmacKeysById 映射：ver(0..15) → HMAC key 字节(Uint8Array)。
+ * 关键：必须 hex 解码为字节后传给 verify，否则 shortcode.importHmacKey 会把 hex 字符串
+ * 当 UTF-8 文本编码，与 website 签发端字节不一致导致验签失败。
  */
 function buildHmacKeysById() {
   const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LICENSE_HMAC_KEY) || ''
-  const effectiveKey = envKey || PLACEHOLDER_HMAC_KEY_TODO
+  const hex = envKey || BUILTIN_HMAC_KEY_V1_HEX
   // 当前只有 ver=1 的 key；未来多版本时扩展此映射
-  return { 1: effectiveKey }
+  return { 1: hexToBytes(hex) }
 }
 
 /**
