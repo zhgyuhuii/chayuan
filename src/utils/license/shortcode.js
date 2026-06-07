@@ -108,14 +108,18 @@ export async function sign(fields, machineFp, hmacKey) {
  */
 export async function verify(serial, machineFp, hmacKeysById) {
   const norm = serial.replace(/-/g, '').toUpperCase()
-  if (norm.length !== 24) return { valid: false, reason: 'length' }
+  // v1: 24 chars (6-byte header + 8-byte tag = 14 bytes → 23 base32 + 1 check)
+  // v2: 25 chars (7-byte header + 8-byte tag = 15 bytes → 24 base32 + 1 check)
+  const headerLen = norm.length === 24 ? 6 : norm.length === 25 ? 7 : 0
+  if (!headerLen) return { valid: false, reason: 'length' }
+  const bodyLen = headerLen + 8
   let body
-  try { body = decode(norm.slice(0, 23)) } catch { return { valid: false, reason: 'decode' } }
-  if (body.length !== 14) return { valid: false, reason: 'decode' }
-  if (checkChar(body) !== norm[23]) return { valid: false, reason: 'checksum' }
+  try { body = decode(norm.slice(0, norm.length - 1)) } catch { return { valid: false, reason: 'decode' } }
+  if (body.length !== bodyLen) return { valid: false, reason: 'decode' }
+  if (checkChar(body) !== norm[norm.length - 1]) return { valid: false, reason: 'checksum' }
 
-  const header = body.subarray(0, 6)
-  const givenTag = body.subarray(6, 14)
+  const header = body.subarray(0, headerLen)
+  const givenTag = body.subarray(headerLen, bodyLen)
   const fields = unpack(header)
 
   const key = hmacKeysById[fields.ver]
@@ -128,7 +132,7 @@ export async function verify(serial, machineFp, hmacKeysById) {
     const expireAt = new Date(issueToDate(fields.issueDate).getTime() + fields.value * DAY_MS)
     return { valid: true, fields, expireAt }
   }
-  // kind=1 次数型授权：自签发日起 COUNT_VALID_DAYS 天后失效（三端一致）
+  // kind=1 次数型授权：自签发日起 COUNT_VALID_DAYS 天后失效（三端一致，P3 合并保留）
   const expireAt = new Date(issueToDate(fields.issueDate).getTime() + COUNT_VALID_DAYS * DAY_MS)
   return { valid: true, fields, expireAt }
 }

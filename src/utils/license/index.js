@@ -92,5 +92,8 @@ export function hasModule(modules, bit) {
 // 察元 AI 文档助手 = bit 7（与 website modules.js 的 wps 商品一致；旧值 0 是错的）
 export const MODULE_BIT_WPS = 7
 
+// 视频编辑 = bit 8（与 website modules.js 的 video_edit 一致;v2 短码才出现）
+export const MODULE_BIT_VIDEO_EDIT = 8
+
 // 次数型授权自签发日起有效天数（三端一致：website/desktop/wps 同值）
 export const COUNT_VALID_DAYS = 30
