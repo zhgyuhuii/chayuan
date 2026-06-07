@@ -17,12 +17,15 @@ const {
 assert.equal(checkCapability('chat', true).allowed, true)
 assert.equal(checkCapability('analysis.security-check', true).allowed, true)
 
-// 2) 涉密类已并入 assistant 池（不再付费专属）：未购买时落 assistant 池、有剩余即放行
+// 2) 涉密类现为付费专属：未购买时直接拦截（paidOnly=true，不走 assistant 池）
 let r = checkCapability('analysis.security-check', false)
-assert.equal(r.allowed, true); assert.equal(r.pool, 'assistant')
-assert.equal(checkCapability('analysis.secret-keyword-extract', false).pool, 'assistant')
-assert.equal(checkCapability('document-declassify', false).pool, 'assistant')
-assert.equal(checkCapability('document-declassify-restore', false).pool, 'assistant')
+assert.equal(r.allowed, false); assert.equal(r.paidOnly, true); assert.equal(r.reason, 'security_check')
+r = checkCapability('analysis.secret-keyword-extract', false)
+assert.equal(r.allowed, false); assert.equal(r.paidOnly, true); assert.equal(r.reason, 'secret_keyword')
+r = checkCapability('document-declassify', false)
+assert.equal(r.allowed, false); assert.equal(r.paidOnly, true); assert.equal(r.reason, 'declassify')
+r = checkCapability('document-declassify-restore', false)
+assert.equal(r.allowed, false); assert.equal(r.paidOnly, true); assert.equal(r.reason, 'declassify_restore')
 
 // 3) chat 池：30 次后超额
 assert.equal(getQuotaLimit('chat'), 30)

@@ -38,9 +38,14 @@ const KEY = 'chayuanLicense'
 const QUOTAS = { chat: 30, assistant: 5 }
 
 // 付费专属能力：key -> 弹窗 reason（零免费，未购买直接拦截）。
-// 按用户要求，涉密类（脱密/脱密还原/保密检查/涉密关键词提取）已改为并入 assistant 池
-// （每天 5 次免费，与执行助手统一计数），故此处清空——当前无零免费的付费专属能力。
-const PAID_ONLY = {}
+// 涉密类（脱密/脱密还原/保密检查/涉密关键词提取）现为付费专属，不再走免费池。
+// 免费用户触碰任一涉密能力 → 弹购买引导；持任意 wps 付费授权放行。
+const PAID_ONLY = {
+  'document-declassify': 'declassify',
+  'document-declassify-restore': 'declassify_restore',
+  'analysis.security-check': 'security_check',
+  'analysis.secret-keyword-extract': 'secret_keyword',
+}
 
 const FREE_FEATURES = new Set([
   'spell-check', 'translate', 'summary',
