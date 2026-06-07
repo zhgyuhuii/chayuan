@@ -235,6 +235,7 @@ export default {
         declassify_restore: { pool: null, title: '脱密复原需购买后使用', desc: '脱密复原功能属于付费功能，购买授权后即可使用。' },
         security_check: { pool: null, title: '涉密检查需购买后使用', desc: '涉密/保密风险检查属于付费功能，购买授权后即可使用。' },
         secret_keyword: { pool: null, title: '涉密关键词提取需购买后使用', desc: '涉密关键词提取属于付费功能，购买授权后即可使用。' },
+        activate: { pool: null, title: '激活授权 · 输入授权码', desc: '已购买？扫描下方购买二维码下单，或在最下方「输入序列号激活」框填入授权码核验；也可分享给好友，双方各得次数。' },
       }
       return M[this.reason] || { pool: null, title: '购买察元 AI 文档助手', desc: '购买授权后可无限次使用执行助手及全部高级功能。' }
     },

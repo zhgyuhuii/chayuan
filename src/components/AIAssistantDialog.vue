@@ -464,6 +464,9 @@
                   <span class="welcome-entitlement-item">助手今日剩余 {{ entitlementSummary.assistant.remaining }} / {{ entitlementSummary.assistant.limit }} 次</span>
                 </template>
               </div>
+              <button type="button" class="welcome-entitlement-activate" @click="openActivateDialog">
+                已购买？点此<span class="welcome-entitlement-activate-key">输入授权码</span>激活
+              </button>
               <p class="welcome-support-copyright">
                 版权所有 北京智灵鸟科技中心
                 <a
@@ -6840,6 +6843,10 @@ export default {
         console.warn('系统浏览器打开链接失败:', e)
       }
       window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
+    },
+    // 已购买 → 打开购买引导窗（含购买/分享二维码 + 公众号 + 下方授权码输入），输入授权码激活
+    openActivateDialog() {
+      this.openDialogRoute('/purchase-guide-dialog', { reason: 'activate' }, '激活授权', 460, 660, true)
     },
     openSidebarFooterSupportDialog(mode = 'follow') {
       this.sidebarFooterSupportDialogMode = mode === 'support' ? 'support' : 'follow'
@@ -17323,6 +17330,33 @@ export default {
   color: rgba(226, 232, 240, 0.85);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.welcome-entitlement-activate {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 10px;
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid rgba(124, 108, 220, 0.55);
+  border-radius: 8px;
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.welcome-entitlement-activate:hover {
+  background: rgba(124, 108, 220, 0.16);
+  border-color: rgba(124, 108, 220, 0.85);
+}
+.welcome-entitlement-activate-key {
+  margin: 0 3px;
+  color: #facc15;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .welcome-support-copyright {
