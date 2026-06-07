@@ -87,7 +87,7 @@
               <span>加载中...</span>
             </div>
           </div>
-          <p class="purchase-guide-qr-hint">分享给好友，对方安装后你和好友各得使用次数</p>
+          <p class="purchase-guide-qr-hint">好友扫码安装并首次使用后，你和好友各得该功能使用次数</p>
         </div>
 
         <!-- 本机指纹条 -->
