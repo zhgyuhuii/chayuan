@@ -87,11 +87,15 @@ export function getLicense() {
       return expired
     }
   }
-  // count 授权:次数耗尽检查
-  if (rec.kind === 'count' && typeof rec.value === 'number' && rec.value <= 0) {
-    const exhausted = { ...rec, plan: 'expired' }
-    save(exhausted)
-    return exhausted
+  // count 授权:次数耗尽检查 + 有效期检查
+  if (rec.kind === 'count') {
+    const countExhausted = typeof rec.value === 'number' && rec.value <= 0
+    const countExpired = rec.expireAt && Date.now() >= new Date(rec.expireAt).getTime()
+    if (countExhausted || countExpired) {
+      const expired = { ...rec, plan: 'expired' }
+      save(expired)
+      return expired
+    }
   }
   return rec
 }
@@ -275,11 +279,12 @@ export function checkCapability(cap, isPaid = isPaidPlan()) {
       // 次数授权：对话仍走免费日额度（不耗购买次数）；助手/付费功能按购买次数扣减。
       // 调用方(ensureCapability)见 licenseCount=true 时调 consumeLicenseCount() 扣 1 次。
       if (cap !== 'chat') {
-        if (rec.value > 0) {
+        const notExpired = !rec.expireAt || new Date(rec.expireAt).getTime() > Date.now()
+        if (rec.value > 0 && notExpired) {
           return { allowed: true, licenseCount: true, remaining: rec.value }
         }
-        // 购买次数已用尽 → 不再当付费，落到下方免费门控
-        // （value<=0 时 getLicense 通常已置 expired，此处为保险回退）
+        // 购买次数已用尽或已过期 → 不再当付费，落到下方免费门控
+        // （value<=0 或过期时 getLicense 通常已置 expired，此处为保险回退）
       }
       // cap === 'chat' → 继续走下方免费 chat 池
     } else {

@@ -7,6 +7,8 @@ import { encode, decode, checkChar } from './base32.js'
 import { pack, unpack, issueToDate } from './codec.js'
 
 const DAY_MS = 86400000
+// 与 index.js 的 COUNT_VALID_DAYS 一致，避免循环依赖
+const COUNT_VALID_DAYS = 30
 
 /**
  * 将原始 key bytes（Uint8Array）或 string 导入为 HMAC-SHA256 CryptoKey。
@@ -126,5 +128,7 @@ export async function verify(serial, machineFp, hmacKeysById) {
     const expireAt = new Date(issueToDate(fields.issueDate).getTime() + fields.value * DAY_MS)
     return { valid: true, fields, expireAt }
   }
-  return { valid: true, fields }   // kind=1 次数:无 expireAt
+  // kind=1 次数型授权：自签发日起 COUNT_VALID_DAYS 天后失效（三端一致）
+  const expireAt = new Date(issueToDate(fields.issueDate).getTime() + COUNT_VALID_DAYS * DAY_MS)
+  return { valid: true, fields, expireAt }
 }
