@@ -301,18 +301,24 @@ function writeFixedRawId(raw) {
 }
 
 // 对齐 fingerprint.py 的 _stable_machine_id:共享文件 → OS 标识 → 随机,并落盘共享文件
+const RAW_LS_KEY = 'cy_machine_raw'
+function readRawFromBrowser() {
+  try { const v = (typeof localStorage !== 'undefined' && localStorage.getItem(RAW_LS_KEY)) || ''; return String(v).trim() } catch (e) { return '' }
+}
+function writeRawToBrowser(raw) {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(RAW_LS_KEY, raw) } catch (e) { /* ignore */ }
+}
+// 持久化原始标识:固定文件(跨 WPS 上下文 + 与桌面一致,尽力) + localStorage(保证同一 WPS 稳定,即使 FS 不可用)
+function persistRaw(raw) { writeFixedRawId(raw); writeRawToBrowser(raw) }
+
 async function getRawMachineId() {
-  // 1) 固定共享文件(与 CHAYUAN_ROOT 无关,desktop 同读)——最高优先,保证两端一致
-  let raw = readFixedRawId()
-  if (raw) return raw
-  // 2) 兼容:老桌面 OS 默认 <dataDir>/license/machine.id
-  raw = readSharedRawId()
-  // 3) OS 硬件标识(machine-id / MachineGuid)
-  if (!raw) raw = readOsRawId()
-  // 4) 兜底随机
-  if (!raw) raw = await randomUuidHex()
-  // 落盘固定共享文件,让 desktop 也读到同一值
-  writeFixedRawId(raw)
+  let raw = readFixedRawId()                 // 1 固定共享文件(最稳,跨端一致)
+  if (raw) { persistRaw(raw); return raw }
+  raw = readSharedRawId()                     // 2 老桌面默认路径(兼容)
+  if (!raw) raw = readOsRawId()               // 3 OS 硬件标识(确定性,与桌面一致)
+  if (!raw) raw = readRawFromBrowser()        // 4 上次持久化的 raw —— 关键:保证不再每次随机
+  if (!raw) raw = await randomUuidHex()       // 5 兜底:仅全无时生成一次
+  persistRaw(raw)
   return raw
 }
 
