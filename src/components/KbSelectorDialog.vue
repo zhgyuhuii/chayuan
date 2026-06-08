@@ -157,8 +157,8 @@ export default {
       const s = this.desktopState || {}
       if (!s.checkedAt) return null
       if (!s.online) return { tone: 'off', text: '未检测到察元桌面版' }
-      if (!s.modelsReady) return { tone: 'warn', text: '桌面版在线 · 本地模型未就绪' }
-      return { tone: 'ok', text: `已连接察元桌面版 · 本地模型 ${s.localModels.length} 个` }
+      if (!s.modelsReady) return { tone: 'warn', text: '桌面版在线 · 模型未就绪' }
+      return { tone: 'ok', text: `已连接察元桌面版 · 模型 ${(s.models || []).length} 个` }
     },
     selectedNames() {
       return Array.from(this.selected)

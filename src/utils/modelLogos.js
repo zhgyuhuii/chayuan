@@ -137,6 +137,13 @@ const EXT_ORDER = ['png', 'webp', 'svg']
 export function getModelLogoPath(modelId) {
   if (!modelId) return ''
   const normalized = String(modelId).trim().toLowerCase().replace(/_/g, '-')
+  // 察元桌面版镜像组(providerId 形如 CHAYUAN_DESKTOP::<group>)：本地组用本系统 logo(不在 logos 目录,直接返回)；
+  // 云端平台组按平台名复用现有 logo 映射。
+  if (normalized.startsWith('chayuan-desktop::')) {
+    const platform = normalized.slice('chayuan-desktop::'.length)
+    if (!platform || platform.startsWith('local')) return 'images/logo-avatar.png'
+    return getModelLogoPath(platform)
+  }
   let basename = MODEL_ID_TO_LOGO_BASENAME[modelId] ?? MODEL_ID_TO_LOGO_BASENAME[normalized]
   if (!basename) basename = normalized
   const ext = BASENAME_EXT[basename] || 'png'

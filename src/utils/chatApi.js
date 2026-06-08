@@ -6,9 +6,9 @@
  */
 
 import { getModelConfig, RIBBON_MODEL_TO_PROVIDER, parseModelCompositeId } from './modelSettings.js'
-import { getBaseUrl as getDesktopBaseUrl, DESKTOP_LOCAL_PROVIDER_ID } from '../services/desktop/desktopStore.js'
+import { getBaseUrl as getDesktopBaseUrl, isDesktopProviderId } from '../services/desktop/desktopStore.js'
 
-const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api', DESKTOP_LOCAL_PROVIDER_ID]
+const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api']
 // 空闲超时：从"请求开始的固定总超时"改为"连续多久没有收到新数据才中断"。
 // 只要流式还在持续吐字就不断；真正卡住(无新数据)超过阈值才中断。
 const DEFAULT_IDLE_TIMEOUT_MS = 180000      // 云端默认空闲阈值
@@ -19,9 +19,14 @@ function isOllamaLike(providerId) {
   return OLLAMA_LIKE.some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
 }
 
-// 按 provider 选空闲超时阈值:本地 Ollama / 桌面版本地模型用更长阈值。
+// 本地类 provider：Ollama 类自托管，或察元桌面版镜像组(经 62581 转发，WPS 端免 key)。
+function isLocalLikeProvider(providerId) {
+  return isOllamaLike(providerId) || isDesktopProviderId(providerId)
+}
+
+// 按 provider 选空闲超时阈值:本地类(含桌面版镜像)用更长阈值(可能跑本地慢推理)。
 function defaultIdleTimeoutForProvider(providerId) {
-  return isOllamaLike(providerId) ? LOCAL_IDLE_TIMEOUT_MS : DEFAULT_IDLE_TIMEOUT_MS
+  return isLocalLikeProvider(providerId) ? LOCAL_IDLE_TIMEOUT_MS : DEFAULT_IDLE_TIMEOUT_MS
 }
 
 export function createRequestAbortSignal(signal, idleMs = DEFAULT_IDLE_TIMEOUT_MS, maxMs = HARD_TOTAL_TIMEOUT_MS) {
@@ -174,7 +179,8 @@ function normalizeChatApiErrorMessage(status, rawText, fallbackText = '') {
  */
 export function getChatApiConfigByProvider(providerId, modelId) {
   if (!providerId || !modelId) return null
-  if (providerId === DESKTOP_LOCAL_PROVIDER_ID) {
+  if (isDesktopProviderId(providerId)) {
+    // 察元桌面版镜像组：聊天统一打到 62581，由 desktop 转发到对应平台(本地或云端，key 在 desktop 侧)。
     const base = String(getDesktopBaseUrl() || '').replace(/\/+$/, '')
     if (!base) return null
     return { apiKey: '', apiUrl: `${base}/v1/chat/completions`, model: modelId }
@@ -247,7 +253,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     return
   }
   const pid = providerId || parseModelCompositeId(ribbonModelId)?.providerId
-  if (isOllamaLike(pid) && !cfg.apiKey) {
+  if (isLocalLikeProvider(pid) && !cfg.apiKey) {
     // Ollama 类通常不需要 apiKey
   } else if (!cfg.apiKey) {
     onError?.('未配置 API 密钥，请在设置中配置')
@@ -438,7 +444,7 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
     throw new Error('未配置该模型的 API 地址，请在设置中配置')
   }
   const pid = providerId || parseModelCompositeId(ribbonModelId)?.providerId
-  if (!isOllamaLike(pid) && !cfg.apiKey) {
+  if (!isLocalLikeProvider(pid) && !cfg.apiKey) {
     throw new Error('未配置 API 密钥，请在设置中配置')
   }
 

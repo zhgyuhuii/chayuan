@@ -41,50 +41,66 @@ async function main() {
   const modelSettings = await import(repoRoot + 'src/utils/modelSettings.js')
   const connStore = await import(repoRoot + 'src/services/kb/connectionStore.js')
 
-  // 1) parseLocalChatModels：runtime 与 platform_name 两种形态 + 过滤云端/不可用
-  const parsed = probe.parseLocalChatModels({ data: [
+  const PREFIX = store.DESKTOP_PROVIDER_PREFIX
+
+  // 1) parseDesktopChatModels：取全部对话模型(云端+本地)；本地归入 group='local'，云端用平台名；过滤不可用
+  const parsed = probe.parseDesktopChatModels({ data: [
     { id: 'qwen-7b', name: 'Qwen 7B', runtime: 'llamacpp', category: 'llm', available: true },
     { id: 'local-x', display_name: 'Local X', platform_name: 'local-chat', model_type: 'llm' },
-    { id: 'gpt-4o', name: 'GPT-4o', runtime: 'openai', category: 'llm', available: true },
+    { id: 'deepseek-chat', name: 'DeepSeek', platform_name: 'deepseek', model_type: 'llm', available: true },
     { id: 'broke', name: 'B', runtime: 'llamacpp', category: 'llm', status: 'broken' },
     { id: 'embed', name: 'E', runtime: 'llamacpp', category: 'embed' }
   ] })
-  assert('parseLocalChatModels 只取本地对话且可用', parsed.length === 2, JSON.stringify(parsed))
-  assert('parseLocalChatModels 取 display_name 优先', parsed.find(m => m.id === 'local-x')?.name === 'Local X')
+  assert('parseDesktopChatModels 取全部可用对话(含云端)', parsed.length === 3, JSON.stringify(parsed))
+  assert('本地模型归入 group=local', parsed.filter(m => m.group === 'local').length === 2)
+  assert('云端模型 group=平台名', parsed.find(m => m.id === 'deepseek-chat')?.group === 'deepseek')
+  assert('parseDesktopChatModels 取 display_name 优先', parsed.find(m => m.id === 'local-x')?.name === 'Local X')
+  assert('parseDesktopChatModels 过滤掉云端? 不,云端要保留', parsed.some(m => m.id === 'deepseek-chat'))
 
-  // 2) detect 在线：写 store + 建连接
+  // 2) detect 在线：写 store(全部模型) + 建连接
   connStore._resetForTest()
   store._resetForTest()
   setFetchHandler(async (url) => {
     if (url.endsWith('/healthz')) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
     if (url.endsWith('/v1/models')) return new Response(JSON.stringify({ data: [
-      { id: 'qwen-7b', name: 'Qwen 7B', runtime: 'llamacpp', category: 'llm', available: true }
+      { id: 'qwen-7b', name: 'Qwen 7B', runtime: 'llamacpp', category: 'llm', available: true },
+      { id: 'deepseek-chat', name: 'DeepSeek Chat', platform_name: 'deepseek', model_type: 'llm', available: true }
     ] }), { status: 200 })
     return new Response('{}', { status: 404 })
   })
   const st = await probe.detect({ timeoutMs: 1000 })
   assert('detect 在线 online=true', st.online === true)
-  assert('detect 解析出 1 个本地模型', st.localModels.length === 1, JSON.stringify(st.localModels))
+  assert('detect 解析出 2 个模型(本地+云端)', st.models.length === 2, JSON.stringify(st.models))
   assert('detect 建了桌面版 KB 连接', connStore.listConnections().some(c => c.id === 'kb-conn-desktop-local' && c.authMode === 'none'))
   assert('detect 当前连接=桌面版', connStore.getCurrentConnection()?.id === 'kb-conn-desktop-local')
 
-  // 3) 本地组注入到对话分组
+  // 3) 注入按平台分组：本地一组 + deepseek 一组
   const groups = modelSettings.getModelGroupsFromSettings('chat')
-  const localGroup = groups.find(g => g.providerId === store.DESKTOP_LOCAL_PROVIDER_ID)
+  const localGroup = groups.find(g => g.providerId === `${PREFIX}local`)
+  const deepseekGroup = groups.find(g => g.providerId === `${PREFIX}deepseek`)
   assert('对话分组含本地模型组', !!localGroup)
-  assert('本地组 compositeId 形态正确', localGroup?.models?.[0]?.id === `${store.DESKTOP_LOCAL_PROVIDER_ID}|qwen-7b`)
+  assert('对话分组含 deepseek 镜像组', !!deepseekGroup)
+  assert('本地组标签为 本地模型', localGroup?.label === '察元桌面版 · 本地模型', localGroup?.label)
+  assert('本地组 compositeId 形态正确', localGroup?.models?.[0]?.id === `${PREFIX}local|qwen-7b`)
+  assert('deepseek 组 compositeId 形态正确', deepseekGroup?.models?.[0]?.id === `${PREFIX}deepseek|deepseek-chat`)
+  const modelLogos = await import(repoRoot + 'src/utils/modelLogos.js')
+  assert('本地组图标=系统 logo', modelLogos.getModelLogoPath(`${PREFIX}local`) === 'images/logo-avatar.png', modelLogos.getModelLogoPath(`${PREFIX}local`))
+  assert('deepseek 组图标=deepseek 平台 logo', modelLogos.getModelLogoPath(`${PREFIX}deepseek`) === modelLogos.getModelLogoPath('deepseek'), modelLogos.getModelLogoPath(`${PREFIX}deepseek`))
 
-  // 4) 本地模型聊天路由
-  const cfg = chatApi.getChatApiConfigByProvider(store.DESKTOP_LOCAL_PROVIDER_ID, 'qwen-7b')
-  assert('本地路由到 62581/v1/chat/completions', cfg?.apiUrl === 'http://127.0.0.1:62581/v1/chat/completions', cfg?.apiUrl)
-  assert('本地路由 model 原样', cfg?.model === 'qwen-7b')
+  // 4) 任意 desktop 模型聊天都路由到 62581(本地 + 云端镜像)
+  const cfgLocal = chatApi.getChatApiConfigByProvider(`${PREFIX}local`, 'qwen-7b')
+  assert('本地路由到 62581/v1/chat/completions', cfgLocal?.apiUrl === 'http://127.0.0.1:62581/v1/chat/completions', cfgLocal?.apiUrl)
+  assert('本地路由 model 原样', cfgLocal?.model === 'qwen-7b')
+  const cfgCloud = chatApi.getChatApiConfigByProvider(`${PREFIX}deepseek`, 'deepseek-chat')
+  assert('云端镜像也路由到 62581(免 WPS 端 key)', cfgCloud?.apiUrl === 'http://127.0.0.1:62581/v1/chat/completions' && cfgCloud?.apiKey === '', JSON.stringify(cfgCloud))
+  assert('云端镜像 model 原样', cfgCloud?.model === 'deepseek-chat')
 
-  // 5) detect 离线：清空本地模型，组消失
+  // 5) detect 离线：清空模型，所有 desktop 组消失
   setFetchHandler(async () => { throw new Error('offline') })
   const off = await probe.detect({ timeoutMs: 500 })
   assert('detect 离线 online=false', off.online === false)
-  assert('离线时本地模型为空', store.getLocalModels().length === 0)
-  assert('离线时对话分组无本地组', !modelSettings.getModelGroupsFromSettings('chat').some(g => g.providerId === store.DESKTOP_LOCAL_PROVIDER_ID))
+  assert('离线时模型清单为空', store.getDesktopModels().length === 0)
+  assert('离线时对话分组无任何 desktop 组', !modelSettings.getModelGroupsFromSettings('chat').some(g => store.isDesktopProviderId(g.providerId)))
 
   // 6) 空闲超时：持续 notifyActivity 不超时；停止后超时
   const ab = chatApi.createRequestAbortSignal(null, 60, 5000) // idle=60ms, hard=5s

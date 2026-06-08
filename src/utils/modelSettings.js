@@ -6,7 +6,7 @@
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
 import { getModelLogoPath } from './modelLogos.js'
 import { inferModelRecordType, inferModelType, matchesModelType } from './modelTypeUtils.js'
-import { getLocalModels, DESKTOP_LOCAL_PROVIDER_ID } from '../services/desktop/desktopStore.js'
+import { getDesktopModels, DESKTOP_PROVIDER_PREFIX } from '../services/desktop/desktopStore.js'
 
 const STORAGE_KEY = 'modelConfigs'
 const CUSTOM_PROVIDERS_KEY = 'customModelProviders'
@@ -328,21 +328,32 @@ export function getModelGroupsFromSettings(modelType) {
       models
     })
   }
-  // 注入「本地模型 · 察元桌面版」组：仅对话类、仅桌面版在线时有内容。
-  const localModels = getLocalModels()
-  if (localModels.length && (!modelType || matchesModelType('chat', modelType))) {
-    groups.push({
-      label: '本地模型 · 察元桌面版',
-      icon: getModelLogoPath('OLLAMA') || 'images/ai-assistant.svg',
-      providerId: DESKTOP_LOCAL_PROVIDER_ID,
-      models: localModels.map(m => ({
-        id: `${DESKTOP_LOCAL_PROVIDER_ID}|${m.id}`,
-        providerId: DESKTOP_LOCAL_PROVIDER_ID,
-        modelId: m.id,
-        name: m.name,
-        type: 'chat'
-      }))
-    })
+  // 注入察元桌面版镜像组：镜像 desktop 已配置的全部对话模型，按平台分组（本地统一一组）。
+  // 仅对话类、仅桌面版在线时有内容；选任意模型聊天都经 62581 转发（chatApi 识别 provider 前缀）。
+  const desktopModels = getDesktopModels()
+  if (desktopModels.length && (!modelType || matchesModelType('chat', modelType))) {
+    const byGroup = new Map()
+    for (const m of desktopModels) {
+      const key = m.group || 'desktop'
+      if (!byGroup.has(key)) byGroup.set(key, [])
+      byGroup.get(key).push(m)
+    }
+    for (const [groupKey, models] of byGroup) {
+      const providerId = `${DESKTOP_PROVIDER_PREFIX}${groupKey}`
+      const groupLabel = groupKey === 'local' ? '本地模型' : (getProviderDisplayName(groupKey) || groupKey)
+      groups.push({
+        label: `察元桌面版 · ${groupLabel}`,
+        icon: getModelLogoPath(providerId) || 'images/logo-avatar.png',
+        providerId,
+        models: models.map(m => ({
+          id: `${providerId}|${m.id}`,
+          providerId,
+          modelId: m.id,
+          name: m.name,
+          type: 'chat'
+        }))
+      })
+    }
   }
   return groups
 }
