@@ -378,12 +378,47 @@ async function getWpsOwnFingerprint() {
  * 否则用 WPS 自身指纹。
  * @returns {Promise<string>} 16 字符小写 hex
  */
+// fangfa A: wen desktop sidecar
+async function _desktopBases() {
+  const bases = ['http://127.0.0.1:62581']
+  try {
+    const mod = await import('../../services/desktop/desktopStore.js')
+    const b = mod && mod.getBaseUrl && mod.getBaseUrl()
+    if (b) { const n = String(b).replace(/\/+$/, ''); if (!bases.includes(n)) bases.unshift(n) }
+  } catch (_) { /* default port */ }
+  return bases
+}
+async function fetchDesktopSidecarFingerprint() {
+  if (typeof fetch !== 'function') return ''
+  for (const base of await _desktopBases()) {
+    try {
+      let signal
+      try { const ac = new AbortController(); setTimeout(() => ac.abort(), 1200); signal = ac.signal } catch (_) { /* no AbortController */ }
+      const resp = await fetch(`${base}/api/v1/license/fingerprint`, signal ? { signal } : {})
+      if (resp && resp.ok) {
+        const j = await resp.json()
+        const fp = String((j && j.fingerprint) || '').trim().toLowerCase()
+        if (isValid16Hex(fp)) return fp
+      }
+    } catch (_) { /* next */ }
+  }
+  return ''
+}
+
 export async function getFingerprint() {
   if (_cachedMain) return _cachedMain
   try {
+    const fp = await fetchDesktopSidecarFingerprint()
+    if (isValid16Hex(fp)) {
+      _cachedMain = fp
+      writeToLocalStorage(fp)
+      return _cachedMain
+    }
+  } catch (e) { /* sidecar unreachable */ }
+  try {
     const raw = await getRawMachineId()
     if (raw) { _cachedMain = await sha256First8Hex(raw); return _cachedMain }
-  } catch (e) { /* 退到旧 WPS 自身指纹 */ }
+  } catch (e) { /* fallback */ }
   _cachedMain = await getWpsOwnFingerprint()
   return _cachedMain
 }
