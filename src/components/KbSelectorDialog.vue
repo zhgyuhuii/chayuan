@@ -6,6 +6,25 @@
         <button type="button" class="btn-close" @click="close" aria-label="关闭">×</button>
       </header>
 
+      <div v-if="showDesktopGuide" class="kb-desktop-guide">
+        <div class="kb-desktop-guide-head">
+          <span class="kb-desktop-guide-icon">💻</span>
+          <div class="kb-desktop-guide-headtext">
+            <p class="kb-desktop-guide-title">未检测到本机「察元桌面版」</p>
+            <p class="kb-desktop-guide-sub">装上它，即可在 WPS 内直连本地知识库与本地模型，全程本机运行、数据不出域。</p>
+          </div>
+        </div>
+        <ul class="kb-desktop-guide-points">
+          <li>📚 连接本地知识库，文档全程不出本机</li>
+          <li>🔒 数据不出域，离线可跑，隐私自主可控</li>
+          <li>⚡ 一键安装，内置本地模型，开箱即用</li>
+        </ul>
+        <div class="kb-desktop-guide-actions">
+          <button type="button" class="btn-primary" @click="openDesktopDownload">前往官网下载桌面版</button>
+          <button type="button" class="btn-link" :disabled="loading" @click="refresh">{{ loading ? '检测中…' : '已安装？重新检测' }}</button>
+        </div>
+      </div>
+
       <div v-if="!hasConnection" class="kb-sel-empty">
         <p>尚未配置知识库连接。</p>
         <button class="btn-primary" @click="goToSettings">前往设置</button>
@@ -159,6 +178,11 @@ export default {
       if (!s.online) return { tone: 'off', text: '未检测到察元桌面版' }
       if (!s.modelsReady) return { tone: 'warn', text: '桌面版在线 · 模型未就绪' }
       return { tone: 'ok', text: `已连接察元桌面版 · 模型 ${(s.models || []).length} 个` }
+    },
+    showDesktopGuide() {
+      // 桌面版在线时不打扰；已探测确认离线、或根本没有任何 KB 连接时，引导用户安装桌面版。
+      if (this.desktopState && this.desktopState.online) return false
+      return this.desktopBadge?.tone === 'off' || !this.hasConnection
     },
     selectedNames() {
       return Array.from(this.selected)
@@ -319,6 +343,10 @@ export default {
     goToSettings() {
       this.$emit('goto-settings')
       this.close()
+    },
+    openDesktopDownload() {
+      // 官方站（含桌面版下载入口），与"关于"页同源
+      window.open('https://aidooo.com', '_blank', 'noopener,noreferrer')
     }
   }
 }
@@ -464,4 +492,23 @@ export default {
 .kb-desktop-badge[data-tone='ok']   { background: #d8f0d8; color: #2aa353; }
 .kb-desktop-badge[data-tone='warn'] { background: #fcefd6; color: #b76e00; }
 .kb-desktop-badge[data-tone='off']  { background: #eef0f3; color: #888; }
+
+.kb-desktop-guide {
+  margin: 12px 18px 4px;
+  padding: 14px 16px;
+  border: 1px solid #d6e3f8;
+  background: linear-gradient(165deg, #f5f9ff 0%, #eef4ff 100%);
+  border-radius: 10px;
+}
+.kb-desktop-guide-head { display: flex; gap: 10px; align-items: flex-start; }
+.kb-desktop-guide-icon { font-size: 22px; line-height: 1.2; }
+.kb-desktop-guide-headtext { flex: 1; }
+.kb-desktop-guide-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: #1d3a6b; }
+.kb-desktop-guide-sub { margin: 0; font-size: 12px; color: #5a6b85; line-height: 1.5; }
+.kb-desktop-guide-points {
+  list-style: none; margin: 10px 0 12px; padding: 0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.kb-desktop-guide-points li { font-size: 12px; color: #3a4a63; }
+.kb-desktop-guide-actions { display: flex; align-items: center; gap: 12px; }
 </style>
