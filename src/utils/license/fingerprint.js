@@ -9,6 +9,7 @@
 //
 // 同一台机器多次调用返回相同值（只要文件/OPFS/localStorage 未被删除）。
 
+/* global ActiveXObject */
 const LS_KEY = 'cy_machine_id'
 const FILE_NAME = 'machine.id'
 
@@ -127,30 +128,6 @@ function readFromFileSystem() {
   }
 }
 
-/**
- * 读 chayuan-desktop 的 machine.id 并算出其指纹（若本机装了 desktop）。
- * desktop 文件内容是原始系统标识；指纹 = SHA-256(utf8(内容)) 前 8 字节 hex（对齐 fingerprint.py）。
- * @returns {Promise<string|null>} 16 hex 或 null（未装 desktop / 读不到）
- */
-async function readDesktopFingerprint() {
-  try {
-    const app = getApplication()
-    const fs = app?.FileSystem
-    if (!fs) return null
-    const path = getDesktopMachineIdPath()
-    if (!path) return null
-    const content = (fs.readFileString ? fs.readFileString(path) : fs.ReadFile?.(path)) || ''
-    const raw = String(content).trim()
-    if (!raw) return null
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
-    const bytes = new Uint8Array(buf).subarray(0, 8)
-    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
-    return isValid16Hex(hex) ? hex : null
-  } catch (e) {
-    return null
-  }
-}
-
 function writeToFileSystem(hex) {
   try {
     const app = getApplication()
@@ -232,6 +209,91 @@ function writeToLocalStorage(hex) {
   }
 }
 
+// ──────────── 与 desktop fingerprint.py 对齐:同一原始系统标识派生 ────────────
+
+async function sha256First8Hex(raw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(raw)))
+  const bytes = new Uint8Array(buf).subarray(0, 8)
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 读共享 machine.id(原始标识,desktop 与 WPS 共用同一文件)
+function readSharedRawId() {
+  try {
+    const fs = getApplication()?.FileSystem
+    if (!fs) return ''
+    const path = getDesktopMachineIdPath()
+    if (!path) return ''
+    const content = (fs.readFileString ? fs.readFileString(path) : fs.ReadFile?.(path)) || ''
+    return String(content).trim()
+  } catch (e) { return '' }
+}
+
+// 读 OS 原始机器标识:Linux /etc/machine-id;Windows 注册表 MachineGuid(与 fingerprint.py 同源)
+function readOsRawId() {
+  const r = _resolveHomeOs()
+  const osType = r?.osType
+  const fs = getApplication()?.FileSystem
+  if (osType === 'linux' && fs) {
+    for (const p of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
+      try {
+        const c = (fs.readFileString ? fs.readFileString(p) : fs.ReadFile?.(p)) || ''
+        const v = String(c).trim()
+        if (v) return v
+      } catch (_) { /* next */ }
+    }
+  }
+  if (osType === 'windows') {
+    try {
+      if (typeof ActiveXObject !== 'undefined') {
+        const sh = new ActiveXObject('WScript.Shell')
+        const v = String(sh.RegRead('HKLM\\SOFTWARE\\Microsoft\\Cryptography\\MachineGuid') || '').trim()
+        if (v) return v
+      }
+    } catch (_) { /* ignore */ }
+  }
+  return ''
+}
+
+// 把原始标识写进共享 machine.id(让 desktop 也读到同一值)
+function writeSharedRawId(raw) {
+  try {
+    const fs = getApplication()?.FileSystem
+    if (!fs) return false
+    const path = getDesktopMachineIdPath()
+    if (!path) return false
+    const sep = path.includes('\\') ? '\\' : '/'
+    const dir = path.substring(0, path.lastIndexOf(sep))
+    if (dir && fs.Mkdir) {
+      try { fs.Mkdir(dir) } catch (_) {
+        const parts = dir.split(/[/\\]/).filter(Boolean)
+        let current = path.includes('\\') ? (parts[0] + ':') : ('/' + parts[0])
+        for (let i = 1; i < parts.length; i++) { current = current + sep + parts[i]; try { fs.Mkdir(current) } catch (_2) { /* exists */ } }
+      }
+    }
+    if (fs.writeFileString) fs.writeFileString(path, raw)
+    else if (fs.WriteFile) fs.WriteFile(path, raw)
+    else return false
+    return true
+  } catch (e) { return false }
+}
+
+async function randomUuidHex() {
+  const rand = new Uint8Array(16)
+  crypto.getRandomValues(rand)
+  return Array.from(rand).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 对齐 fingerprint.py 的 _stable_machine_id:共享文件 → OS 标识 → 随机,并落盘共享文件
+async function getRawMachineId() {
+  let raw = readSharedRawId()
+  if (raw) return raw
+  raw = readOsRawId()
+  if (!raw) raw = await randomUuidHex()
+  writeSharedRawId(raw)
+  return raw
+}
+
 // ──────────── 主入口 ────────────
 
 /** 内存缓存（同次 WPS 会话内不重复生成） */
@@ -290,8 +352,11 @@ async function getWpsOwnFingerprint() {
  */
 export async function getFingerprint() {
   if (_cachedMain) return _cachedMain
-  const dfp = await readDesktopFingerprint()
-  _cachedMain = isValid16Hex(dfp) ? dfp.toLowerCase() : await getWpsOwnFingerprint()
+  try {
+    const raw = await getRawMachineId()
+    if (raw) { _cachedMain = await sha256First8Hex(raw); return _cachedMain }
+  } catch (e) { /* 退到旧 WPS 自身指纹 */ }
+  _cachedMain = await getWpsOwnFingerprint()
   return _cachedMain
 }
 
@@ -303,12 +368,13 @@ export async function getFingerprint() {
 export async function getCandidateFingerprints() {
   const list = []
   try {
-    const dfp = await readDesktopFingerprint()
-    if (isValid16Hex(dfp)) list.push(dfp.toLowerCase())
+    const main = await getFingerprint()
+    if (isValid16Hex(main)) list.push(main.toLowerCase())
   } catch (e) { /* ignore */ }
+  // 兼容老安装:旧 WPS 自身随机指纹(只读,不新生成)
   try {
-    const wfp = await getWpsOwnFingerprint()
-    if (isValid16Hex(wfp) && !list.includes(wfp.toLowerCase())) list.push(wfp.toLowerCase())
+    const legacy = readFromFileSystem() || (await readFromOPFS()) || readFromLocalStorage()
+    if (isValid16Hex(legacy) && !list.includes(String(legacy).toLowerCase())) list.push(String(legacy).toLowerCase())
   } catch (e) { /* ignore */ }
   return list
 }
