@@ -255,12 +255,34 @@ function readOsRawId() {
   return ''
 }
 
-// 把原始标识写进共享 machine.id(让 desktop 也读到同一值)
-function writeSharedRawId(raw) {
+async function randomUuidHex() {
+  const rand = new Uint8Array(16)
+  crypto.getRandomValues(rand)
+  return Array.from(rand).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 固定共享 machine.id(与 CHAYUAN_ROOT 无关;desktop fingerprint.py 同读写,保证两端一致)
+function getFixedMachineIdPath() {
+  const r = _resolveHomeOs()
+  if (!r) return null
+  const { sep, userHome } = r
+  return userHome + sep + '.chayuan' + sep + FILE_NAME
+}
+function readFixedRawId() {
+  try {
+    const fs = getApplication()?.FileSystem
+    if (!fs) return ''
+    const path = getFixedMachineIdPath()
+    if (!path) return ''
+    const content = (fs.readFileString ? fs.readFileString(path) : fs.ReadFile?.(path)) || ''
+    return String(content).trim()
+  } catch (e) { return '' }
+}
+function writeFixedRawId(raw) {
   try {
     const fs = getApplication()?.FileSystem
     if (!fs) return false
-    const path = getDesktopMachineIdPath()
+    const path = getFixedMachineIdPath()
     if (!path) return false
     const sep = path.includes('\\') ? '\\' : '/'
     const dir = path.substring(0, path.lastIndexOf(sep))
@@ -278,19 +300,19 @@ function writeSharedRawId(raw) {
   } catch (e) { return false }
 }
 
-async function randomUuidHex() {
-  const rand = new Uint8Array(16)
-  crypto.getRandomValues(rand)
-  return Array.from(rand).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
 // 对齐 fingerprint.py 的 _stable_machine_id:共享文件 → OS 标识 → 随机,并落盘共享文件
 async function getRawMachineId() {
-  let raw = readSharedRawId()
+  // 1) 固定共享文件(与 CHAYUAN_ROOT 无关,desktop 同读)——最高优先,保证两端一致
+  let raw = readFixedRawId()
   if (raw) return raw
-  raw = readOsRawId()
+  // 2) 兼容:老桌面 OS 默认 <dataDir>/license/machine.id
+  raw = readSharedRawId()
+  // 3) OS 硬件标识(machine-id / MachineGuid)
+  if (!raw) raw = readOsRawId()
+  // 4) 兜底随机
   if (!raw) raw = await randomUuidHex()
-  writeSharedRawId(raw)
+  // 落盘固定共享文件,让 desktop 也读到同一值
+  writeFixedRawId(raw)
   return raw
 }
 
