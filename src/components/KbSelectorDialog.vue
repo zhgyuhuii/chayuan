@@ -26,8 +26,13 @@
       </div>
 
       <div v-if="!hasConnection" class="kb-sel-empty">
-        <p>尚未配置知识库连接。</p>
-        <button class="btn-primary" @click="goToSettings">前往设置</button>
+        <template v-if="showDesktopGuide">
+          <button type="button" class="btn-link" @click="goToSettings">或前往设置手动配置远程连接</button>
+        </template>
+        <template v-else>
+          <p>尚未配置知识库连接。</p>
+          <button type="button" class="btn-primary" @click="goToSettings">前往设置</button>
+        </template>
       </div>
 
       <template v-else>
@@ -208,7 +213,18 @@ export default {
   },
   mounted() {
     if (this.visible) this.init()
-    this.desktopUnsub = desktopStore.subscribe((s) => { this.desktopState = s })
+    this.desktopUnsub = desktopStore.subscribe((s) => {
+      this.desktopState = s
+      // 后台/刷新探测可能刚新建了桌面版连接：开着对话框时同步 hasConnection，避免漏显 KB 树
+      if (!this.hasConnection) {
+        const conn = connectionStore.getCurrentConnection()
+        if (conn) {
+          this.hasConnection = true
+          this.currentConnectionId = conn.id || ''
+          this.loadTree(conn)
+        }
+      }
+    })
   },
   beforeUnmount() {
     if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
