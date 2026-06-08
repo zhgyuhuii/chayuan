@@ -23,6 +23,11 @@
           <button type="button" class="btn-primary" @click="openDesktopDownload">前往官网下载桌面版</button>
           <button type="button" class="btn-link" :disabled="loading" @click="refresh">{{ loading ? '检测中…' : '已安装？重新检测' }}</button>
         </div>
+        <div class="kb-desktop-guide-url">
+          <span class="kb-desktop-guide-url-label">官网：</span>
+          <span class="kb-desktop-guide-url-text" @click="openDesktopDownload">{{ desktopDownloadUrl }}</span>
+          <button type="button" class="btn-link kb-desktop-guide-copy" @click="copyDesktopUrl">{{ desktopUrlCopied ? '已复制' : '复制' }}</button>
+        </div>
       </div>
 
       <div v-if="!hasConnection" class="kb-sel-empty">
@@ -173,7 +178,9 @@ export default {
       },
       hasConnection: true,
       desktopState: desktopStore.getState(),
-      desktopUnsub: null
+      desktopUnsub: null,
+      desktopDownloadUrl: 'https://aidooo.com',
+      desktopUrlCopied: false
     }
   },
   computed: {
@@ -361,8 +368,42 @@ export default {
       this.close()
     },
     openDesktopDownload() {
-      // 官方站（含桌面版下载入口），与"关于"页同源
-      window.open('https://aidooo.com', '_blank', 'noopener,noreferrer')
+      // WPS 内 window.open 常被拦截：优先走 WPS 宿主的系统浏览器打开，再回退 window.open。
+      const url = this.desktopDownloadUrl
+      const app = window.Application || window.opener?.Application || window.parent?.Application
+      try {
+        if (app?.OAAssist?.ShellExecute) { app.OAAssist.ShellExecute(url); return }
+        if (app?.FollowHyperlink) { app.FollowHyperlink(url, '', true); return }
+      } catch (e) {
+        console.warn('系统浏览器打开链接失败:', e)
+      }
+      try { window.open(url, '_blank', 'noopener,noreferrer') } catch (e2) {
+        console.warn('打开链接失败:', e2)
+      }
+    },
+    async copyDesktopUrl() {
+      const url = this.desktopDownloadUrl
+      let ok = false
+      try {
+        if (navigator?.clipboard?.writeText) { await navigator.clipboard.writeText(url); ok = true }
+      } catch (_) { /* 降级到 execCommand */ }
+      if (!ok) {
+        try {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          ta.style.position = 'fixed'
+          ta.style.opacity = '0'
+          document.body.appendChild(ta)
+          ta.select()
+          ok = document.execCommand('copy')
+          document.body.removeChild(ta)
+        } catch (_) { ok = false }
+      }
+      if (ok) {
+        this.desktopUrlCopied = true
+        services.toast?.success?.('网址已复制')
+        setTimeout(() => { this.desktopUrlCopied = false }, 2000)
+      }
     }
   }
 }
@@ -527,4 +568,14 @@ export default {
 }
 .kb-desktop-guide-points li { font-size: 12px; color: #3a4a63; }
 .kb-desktop-guide-actions { display: flex; align-items: center; gap: 12px; }
+.kb-desktop-guide-url {
+  margin-top: 10px; display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #5a6b85;
+}
+.kb-desktop-guide-url-label { color: #8a93a5; }
+.kb-desktop-guide-url-text {
+  color: #1856b2; cursor: pointer; user-select: all; word-break: break-all;
+}
+.kb-desktop-guide-url-text:hover { text-decoration: underline; }
+.kb-desktop-guide-copy { margin-left: 2px; }
 </style>
