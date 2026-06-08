@@ -59,3 +59,8 @@ router.isReady().then(() => {
 
 try { initRuntimeSync() } catch { /* 静默 */ }
 
+// 启动时后台探测一次本机察元桌面版（fire-and-forget）；失败静默，用户点知识库刷新会再探。
+import('./services/desktop/index.js')
+  .then(({ desktopProbe }) => desktopProbe.detect())
+  .catch(() => { /* 探测失败静默 */ })
+

@@ -6,6 +6,7 @@
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
 import { getModelLogoPath } from './modelLogos.js'
 import { inferModelRecordType, inferModelType, matchesModelType } from './modelTypeUtils.js'
+import { getLocalModels, DESKTOP_LOCAL_PROVIDER_ID } from '../services/desktop/desktopStore.js'
 
 const STORAGE_KEY = 'modelConfigs'
 const CUSTOM_PROVIDERS_KEY = 'customModelProviders'
@@ -240,6 +241,7 @@ const EXTRA_PROVIDERS = [
   { id: 'openrouter', name: 'OpenRouter' }, { id: 'new-api', name: 'New API' }, { id: 'lm-studio', name: 'LM Studio' }
 ]
 
+// eslint-disable-next-line no-unused-vars -- 预存在的内部工具函数，暂未被引用，保留待用
 function getProviderList() {
   const seen = new Set()
   const list = []
@@ -324,6 +326,22 @@ export function getModelGroupsFromSettings(modelType) {
       icon: getModelLogoPath(configKey) || 'images/ai-assistant.svg',
       providerId: configKey,
       models
+    })
+  }
+  // 注入「本地模型 · 察元桌面版」组：仅对话类、仅桌面版在线时有内容。
+  const localModels = getLocalModels()
+  if (localModels.length && (!modelType || matchesModelType('chat', modelType))) {
+    groups.push({
+      label: '本地模型 · 察元桌面版',
+      icon: getModelLogoPath('OLLAMA') || 'images/ai-assistant.svg',
+      providerId: DESKTOP_LOCAL_PROVIDER_ID,
+      models: localModels.map(m => ({
+        id: `${DESKTOP_LOCAL_PROVIDER_ID}|${m.id}`,
+        providerId: DESKTOP_LOCAL_PROVIDER_ID,
+        modelId: m.id,
+        name: m.name,
+        type: 'chat'
+      }))
     })
   }
   return groups

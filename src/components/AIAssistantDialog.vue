@@ -2074,6 +2074,7 @@
 import JSZip from 'jszip'
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
+import { desktopStore } from '../services/desktop/index.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { reportError } from '../utils/reportError.js'
@@ -3695,7 +3696,8 @@ export default {
       reportGenerationAutoTimers: {},
       assistantSelfIntroTimer: null,
       assistantHighlightedKey: '',
-      assistantHighlightTimer: null
+      assistantHighlightTimer: null,
+      desktopUnsub: null
     }
   },
   computed: {
@@ -3987,6 +3989,7 @@ export default {
     window.addEventListener('mousemove', this.handleSidebarResize)
     window.addEventListener('mouseup', this.stopSidebarResize)
     bootMark('AIAssistantDialog mounted 同步部分结束')
+    this.desktopUnsub = desktopStore.subscribe(() => { this.modelGroupsVersion += 1 })
   },
   beforeUnmount() {
     window.removeEventListener('focus', this.handleWindowFocus)
@@ -4035,6 +4038,7 @@ export default {
     this.aiAssistantWindowSession?.releaseOwnership?.()
     this.aiAssistantWindowSession = null
     this.flushHistorySave()
+    if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
   methods: {
     showEarlierMessages() {

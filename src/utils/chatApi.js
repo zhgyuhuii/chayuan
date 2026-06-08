@@ -6,74 +6,82 @@
  */
 
 import { getModelConfig, RIBBON_MODEL_TO_PROVIDER, parseModelCompositeId } from './modelSettings.js'
+import { getBaseUrl as getDesktopBaseUrl, DESKTOP_LOCAL_PROVIDER_ID } from '../services/desktop/desktopStore.js'
 
-const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api']
-const DEFAULT_CHAT_REQUEST_TIMEOUT_MS = 180000
-// 本地模型(Ollama 等)多为 CPU 推理,首次加载 + 结构化/长文本输出常远慢于云端,
-// 给更长的超时(10 分钟),避免本地慢但能跑完的任务被 180s 误杀。
-const LOCAL_REQUEST_TIMEOUT_MS = 600000
+const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api', DESKTOP_LOCAL_PROVIDER_ID]
+// 空闲超时：从"请求开始的固定总超时"改为"连续多久没有收到新数据才中断"。
+// 只要流式还在持续吐字就不断；真正卡住(无新数据)超过阈值才中断。
+const DEFAULT_IDLE_TIMEOUT_MS = 180000      // 云端默认空闲阈值
+const LOCAL_IDLE_TIMEOUT_MS = 600000        // 本地模型(CPU 慢)空闲阈值
+const HARD_TOTAL_TIMEOUT_MS = 30 * 60 * 1000 // 总兜底，防连接泄漏永不返回
 
 function isOllamaLike(providerId) {
   return OLLAMA_LIKE.some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
 }
 
-// 按 provider 选默认超时:本地 Ollama 类用更长的超时。
-function defaultTimeoutForProvider(providerId) {
-  return isOllamaLike(providerId) ? LOCAL_REQUEST_TIMEOUT_MS : DEFAULT_CHAT_REQUEST_TIMEOUT_MS
+// 按 provider 选空闲超时阈值:本地 Ollama / 桌面版本地模型用更长阈值。
+function defaultIdleTimeoutForProvider(providerId) {
+  return isOllamaLike(providerId) ? LOCAL_IDLE_TIMEOUT_MS : DEFAULT_IDLE_TIMEOUT_MS
 }
 
-function createRequestAbortSignal(signal, timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS) {
-  const ms = Math.max(0, Number(timeoutMs) || DEFAULT_CHAT_REQUEST_TIMEOUT_MS)
+export function createRequestAbortSignal(signal, idleMs = DEFAULT_IDLE_TIMEOUT_MS, maxMs = HARD_TOTAL_TIMEOUT_MS) {
+  const idle = Math.max(0, Number(idleMs) || DEFAULT_IDLE_TIMEOUT_MS)
+  const hard = Math.max(0, Number(maxMs) || HARD_TOTAL_TIMEOUT_MS)
   if (typeof AbortController === 'undefined') {
-    return {
-      signal,
-      cleanup() {},
-      isTimeout() { return false }
-    }
+    return { signal, cleanup() {}, isTimeout() { return false }, notifyActivity() {} }
   }
 
   const ctrl = new AbortController()
   let timedOut = false
-  let timer = null
+  let idleTimer = null
+  let hardTimer = null
 
   const abortFromParent = () => {
     if (!ctrl.signal.aborted) ctrl.abort(signal?.reason || 'parent-abort')
   }
   if (signal) {
-    if (signal.aborted) {
-      abortFromParent()
-    } else {
-      signal.addEventListener('abort', abortFromParent, { once: true })
-    }
+    if (signal.aborted) abortFromParent()
+    else signal.addEventListener('abort', abortFromParent, { once: true })
   }
-  if (ms > 0) {
-    timer = setTimeout(() => {
+
+  const armIdle = () => {
+    if (idle <= 0) return
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
       timedOut = true
       if (!ctrl.signal.aborted) ctrl.abort('request-timeout')
-    }, ms)
+    }, idle)
   }
+  if (hard > 0) {
+    hardTimer = setTimeout(() => {
+      timedOut = true
+      if (!ctrl.signal.aborted) ctrl.abort('request-timeout')
+    }, hard)
+  }
+  armIdle()
 
   return {
     signal: ctrl.signal,
     cleanup() {
-      if (timer) clearTimeout(timer)
+      if (idleTimer) clearTimeout(idleTimer)
+      if (hardTimer) clearTimeout(hardTimer)
       if (signal) signal.removeEventListener?.('abort', abortFromParent)
     },
-    isTimeout() {
-      return timedOut
-    }
+    isTimeout() { return timedOut },
+    // 每收到新数据调用一次：重置空闲计时器，流不断就永不空闲超时。
+    notifyActivity() { if (!ctrl.signal.aborted) armIdle() }
   }
 }
 
-function formatRequestTimeoutMessage(timeoutMs = DEFAULT_CHAT_REQUEST_TIMEOUT_MS, info = null) {
-  const seconds = Math.max(1, Math.round((Number(timeoutMs) || DEFAULT_CHAT_REQUEST_TIMEOUT_MS) / 1000))
+function formatRequestTimeoutMessage(idleMs = DEFAULT_IDLE_TIMEOUT_MS, info = null) {
+  const seconds = Math.max(1, Math.round((Number(idleMs) || DEFAULT_IDLE_TIMEOUT_MS) / 1000))
   let target = ''
   if (info?.endpoint || info?.model) {
     let host = String(info?.endpoint || '')
     try { host = new URL(String(info.endpoint || '')).host || host } catch (_) { /* 非法 URL 时保留原始字符串 */ }
-    target = `\n（请求目标：${host || '未知'} · 模型：${info?.model || '未知'}；秒级即超时通常是本机网络/防火墙无法访问该地址，或 API 地址配置有误，而非模型慢。请确认这台机器能访问该 host，或改用本机可达的模型服务。）`
+    target = `\n（请求目标：${host || '未知'} · 模型：${info?.model || '未知'}）`
   }
-  return `模型请求超时（${seconds} 秒未返回），请稍后重试或调小分段长度。${target}`
+  return `模型长时间无响应（连续 ${seconds} 秒未收到新内容），可能是网络中断或服务异常，请重试。${target}`
 }
 
 function parseErrorPayload(rawText) {
@@ -166,6 +174,11 @@ function normalizeChatApiErrorMessage(status, rawText, fallbackText = '') {
  */
 export function getChatApiConfigByProvider(providerId, modelId) {
   if (!providerId || !modelId) return null
+  if (providerId === DESKTOP_LOCAL_PROVIDER_ID) {
+    const base = String(getDesktopBaseUrl() || '').replace(/\/+$/, '')
+    if (!base) return null
+    return { apiKey: '', apiUrl: `${base}/v1/chat/completions`, model: modelId }
+  }
   const config = getModelConfig(providerId)
   if (!config || !config.apiUrl?.trim()) return null
   const apiUrl = config.apiUrl.trim().replace(/\/+$/, '')
@@ -255,7 +268,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
-  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultTimeoutForProvider(pid)
+  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultIdleTimeoutForProvider(pid)
   const abort = createRequestAbortSignal(signal, timeout)
   try {
     const res = await fetch(cfg.apiUrl, {
@@ -279,6 +292,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
+      abort.notifyActivity()
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split(/\r?\n/)
       buffer = lines.pop() || ''
@@ -440,7 +454,7 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
     headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
   }
 
-  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultTimeoutForProvider(pid)
+  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultIdleTimeoutForProvider(pid)
   const abort = createRequestAbortSignal(signal, timeout)
   let res
   let text
@@ -451,6 +465,9 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
       body: JSON.stringify(body),
       signal: abort.signal
     })
+    // 非流式：只有响应头到达时续期一次空闲计时器；body 读取阶段无逐块通知，
+    // 故此路径的空闲超时近似为"headers 到达后重新计时的总超时"，与流式逐块续期不同。
+    abort.notifyActivity()
     text = await res.text()
   } catch (e) {
     if (abort.isTimeout()) {

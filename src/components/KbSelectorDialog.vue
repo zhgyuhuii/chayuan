@@ -21,6 +21,9 @@
           <button class="btn-link" @click="refresh" :disabled="loading">
             {{ loading ? '加载中…' : '刷新' }}
           </button>
+          <span v-if="desktopBadge" class="kb-desktop-badge" :data-tone="desktopBadge.tone" :title="desktopBadge.text">
+            {{ desktopBadge.text }}
+          </span>
         </div>
 
         <div v-if="error" class="kb-sel-error">{{ error }}</div>
@@ -121,6 +124,7 @@
 import services from '../services/index.js'
 
 const { connectionStore, kbCatalog } = services.kb
+const { desktopProbe, desktopStore } = services.desktop
 
 export default {
   name: 'KbSelectorDialog',
@@ -143,10 +147,19 @@ export default {
         hybrid: true,
         rerank: false
       },
-      hasConnection: true
+      hasConnection: true,
+      desktopState: desktopStore.getState(),
+      desktopUnsub: null
     }
   },
   computed: {
+    desktopBadge() {
+      const s = this.desktopState || {}
+      if (!s.checkedAt) return null
+      if (!s.online) return { tone: 'off', text: '未检测到察元桌面版' }
+      if (!s.modelsReady) return { tone: 'warn', text: '桌面版在线 · 本地模型未就绪' }
+      return { tone: 'ok', text: `已连接察元桌面版 · 本地模型 ${s.localModels.length} 个` }
+    },
     selectedNames() {
       return Array.from(this.selected)
     },
@@ -171,6 +184,10 @@ export default {
   },
   mounted() {
     if (this.visible) this.init()
+    this.desktopUnsub = desktopStore.subscribe((s) => { this.desktopState = s })
+  },
+  beforeUnmount() {
+    if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
   methods: {
     async init() {
@@ -196,8 +213,13 @@ export default {
       await this.loadTree(conn)
     },
     async refresh() {
+      this.loading = true
+      try { await desktopProbe.detect() } catch (_) { /* 探测失败不阻断 KB 刷新 */ }
+      // detect 可能新建/切到了桌面版连接
       const conn = await connectionStore.getCurrentConnection()
-      if (!conn) return
+      this.hasConnection = !!conn
+      if (!conn) { this.loading = false; return }
+      this.currentConnectionId = conn.id || ''
       await this.loadTree(conn, /*force*/ true)
     },
     async loadTree(conn, force = false) {
@@ -435,4 +457,11 @@ export default {
 }
 .btn-link:hover { text-decoration: underline; }
 .btn-link:disabled { color: #999; cursor: not-allowed; }
+.kb-desktop-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 8px; white-space: nowrap;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+}
+.kb-desktop-badge[data-tone='ok']   { background: #d8f0d8; color: #2aa353; }
+.kb-desktop-badge[data-tone='warn'] { background: #fcefd6; color: #b76e00; }
+.kb-desktop-badge[data-tone='off']  { background: #eef0f3; color: #888; }
 </style>

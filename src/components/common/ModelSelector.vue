@@ -29,6 +29,7 @@
 <script>
 import { getModelGroupsFromSettings } from '../../utils/modelSettings.js'
 import { MODEL_TYPE_CHAT } from '../../utils/modelTypeUtils.js'
+import { desktopStore } from '../../services/desktop/index.js'
 
 export default {
   name: 'ModelSelector',
@@ -38,7 +39,13 @@ export default {
   },
   emits: ['update:modelId', 'change'],
   data() {
-    return { open: false, collapsed: {}, version: 0 }
+    return { open: false, collapsed: {}, version: 0, desktopUnsub: null }
+  },
+  mounted() {
+    this.desktopUnsub = desktopStore.subscribe(() => { this.version += 1 })
+  },
+  beforeUnmount() {
+    if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
   computed: {
     groups() {

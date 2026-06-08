@@ -260,8 +260,10 @@ const ribbonHelpers = {
 // named exports (connectionStore/connectionCipher/healthProbe/kbCatalog 等),
 // 保证 services.kb.connectionCipher 等子模块对外可见。
 import * as kbNs from './kb/index.js'
+import * as desktopNs from './desktop/index.js'
 
 const kb = { ...kbNs.default, ...kbNs }
+const desktop = { ...desktopNs.default, ...desktopNs }
 
 /* ────────── 默认导出 ────────── */
 
@@ -283,7 +285,8 @@ export default {
   schema,
   ui,
   ribbonHelpers,
-  kb
+  kb,
+  desktop
 }
 
 export {
@@ -291,5 +294,5 @@ export {
   host, router, workflow, ribbonHelpers, evolutionExtras,
   documentIntelligence, toolRegistry, workflowOrchestration,
   assistantEvolution, schema, ui, sendPipeline,
-  kb
+  kb, desktop
 }
