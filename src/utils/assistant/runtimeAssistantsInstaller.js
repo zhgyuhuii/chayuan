@@ -14,6 +14,7 @@ import { EXTRA_BUILTIN_ASSISTANTS } from './builtinAssistantsExtra.js'
 import { P5_BUILTIN_ASSISTANTS } from './builtinAssistantsP5.js'
 import { P5_PLUS_BUILTIN_ASSISTANTS } from './builtinAssistantsP5Plus.js'
 import { LEGAL_BUILTIN_ASSISTANTS } from './builtinAssistantsLegal.js'
+import { AUDIT_BUILTIN_ASSISTANTS } from './builtinAssistantsAudit.js'
 import { loadGlobalSettings, saveGlobalSettings } from '../globalSettings.js'
 
 let _settingsModule = null
@@ -54,7 +55,8 @@ const ALL_NEW_ASSISTANTS = [
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
   ...P5_PLUS_BUILTIN_ASSISTANTS,
-  ...LEGAL_BUILTIN_ASSISTANTS
+  ...LEGAL_BUILTIN_ASSISTANTS,
+  ...AUDIT_BUILTIN_ASSISTANTS
 ]
 
 /**

@@ -4,6 +4,7 @@ import { EXTRA_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsExtra.js'
 import { P5_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5.js'
 import { P5_PLUS_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5Plus.js'
 import { LEGAL_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsLegal.js'
+import { AUDIT_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsAudit.js'
 
 const INPUT_SOURCE_SELECTION_PREFERRED = 'selection-preferred'
 const INPUT_SOURCE_SELECTION_ONLY = 'selection-only'
@@ -1263,7 +1264,8 @@ const BUILTIN_ASSISTANTS = [
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
   ...P5_PLUS_BUILTIN_ASSISTANTS,
-  ...LEGAL_BUILTIN_ASSISTANTS
+  ...LEGAL_BUILTIN_ASSISTANTS,
+  ...AUDIT_BUILTIN_ASSISTANTS
 ].filter(item => item.id !== 'analysis.correct-spell')
 
 function deepClone(value) {
