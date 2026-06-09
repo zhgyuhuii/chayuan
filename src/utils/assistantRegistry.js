@@ -1324,7 +1324,15 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsMaternal.js').then(m => m.MATERNAL_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsSports.js').then(m => m.SPORTS_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsNonprofit.js').then(m => m.NONPROFIT_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsFashion.js').then(m => m.FASHION_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsFashion.js').then(m => m.FASHION_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsPet.js').then(m => m.PET_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsHomeService.js').then(m => m.HOMESERVICE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsPrinting.js').then(m => m.PRINTING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsPsychology.js').then(m => m.PSYCHOLOGY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsWedding.js').then(m => m.WEDDING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsWellness.js').then(m => m.WELLNESS_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsAesthetic.js').then(m => m.AESTHETIC_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCrossborder.js').then(m => m.CROSSBORDER_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */

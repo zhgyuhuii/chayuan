@@ -7596,7 +7596,15 @@ export default {
         maternal: '母婴 / 育儿',
         sports: '体育 / 健身',
         nonprofit: '公益 / 社工',
-        fashion: '服装 / 时尚'
+        fashion: '服装 / 时尚',
+        pet: '宠物',
+        homeservice: '家政 / 生活服务',
+        printing: '印刷 / 包装',
+        psychology: '心理咨询',
+        wedding: '婚庆 / 活动',
+        wellness: '健康养生',
+        aesthetic: '美业 / 医美',
+        crossborder: '跨境电商'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
