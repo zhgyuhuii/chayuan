@@ -1368,7 +1368,25 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsMusic.js').then(m => m.MUSIC_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsEldercare.js').then(m => m.ELDERCARE_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsParenting.js').then(m => m.PARENTING_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsAntique.js').then(m => m.ANTIQUE_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsAntique.js').then(m => m.ANTIQUE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsPharmacy.js').then(m => m.PHARMACY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsOptical.js').then(m => m.OPTICAL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsApplianceRepair.js').then(m => m.APPLIANCEREPAIR_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsGreenPlant.js').then(m => m.GREENPLANT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsMoving.js').then(m => m.MOVING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsRecycling.js').then(m => m.RECYCLING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsTea.js').then(m => m.TEA_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsLiquor.js').then(m => m.LIQUOR_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsFigurine.js').then(m => m.FIGURINE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsHanfu.js').then(m => m.HANFU_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsScriptMurder.js').then(m => m.SCRIPTMURDER_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsEscapeRoom.js').then(m => m.ESCAPEROOM_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsPottery.js').then(m => m.POTTERY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCalligraphy.js').then(m => m.CALLIGRAPHY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsInstrumentEdu.js').then(m => m.INSTRUMENTEDU_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsAquatic.js').then(m => m.AQUATIC_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsBallSport.js').then(m => m.BALLSPORT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCarWash.js').then(m => m.CARWASH_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */

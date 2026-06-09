@@ -7640,7 +7640,25 @@ export default {
         music: '音乐 / 词曲',
         eldercare: '养老 / 老年服务',
         parenting: '家庭教育',
-        antique: '古玩 / 收藏'
+        antique: '古玩 / 收藏',
+        pharmacy: '药店 / 药房',
+        optical: '眼镜 / 视光',
+        appliancerepair: '家电维修',
+        greenplant: '绿植 / 园艺',
+        moving: '搬家 / 货运',
+        recycling: '二手回收',
+        tea: '茶叶',
+        liquor: '酒水',
+        figurine: '手办 / 潮玩',
+        hanfu: '汉服 / 古风',
+        scriptmurder: '剧本杀',
+        escaperoom: '密室逃脱',
+        pottery: '陶艺 / 手作',
+        calligraphy: '书法 / 国画',
+        instrumentedu: '乐器教育',
+        aquatic: '游泳 / 水上',
+        ballsport: '球类运动馆',
+        carwash: '洗车 / 美容'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
