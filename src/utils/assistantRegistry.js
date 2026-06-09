@@ -1428,7 +1428,16 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsDefMob.js').then(m => m.DEFMOB_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsVeteran.js').then(m => m.VETERAN_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsPolice.js').then(m => m.POLICE_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsCourt.js').then(m => m.COURT_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsCourt.js').then(m => m.COURT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsProcurator.js').then(m => m.PROCURATOR_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsJustice.js').then(m => m.JUSTICE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsEduAdmin.js').then(m => m.EDUADMIN_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSchool.js').then(m => m.SCHOOL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsForeign.js').then(m => m.FOREIGN_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCustoms.js').then(m => m.CUSTOMS_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsDocUtil.js').then(m => m.DOCUTIL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsAuditExt.js').then(m => m.AUDIT_EXT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsKbVerifyExt.js').then(m => m.KBVERIFY_EXT_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 // 单个领域包加载封顶时间(ms):WPS 独立子窗口里某些 chunk 的 import() 可能既不 resolve
