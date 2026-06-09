@@ -18,7 +18,8 @@ import { getChunkSettings } from './chunkSettings.js'
 import {
   getBuiltinAssistantDefinition,
   getBuiltinRibbonAssistantIds,
-  mergeDefinitionRuntimeCapabilities
+  mergeDefinitionRuntimeCapabilities,
+  ensureDomainPacksLoaded
 } from './assistantRegistry.js'
 import {
   ANALYSIS_AI_TRACE_CHECK_ID,
@@ -1682,6 +1683,9 @@ export function getTranslateLanguageByControlId(controlId) {
 }
 
 async function executeAssistantTask(assistantId, overrides = {}) {
+  // 领域助手包是懒加载的;在独立 WPS 子窗口(如任务进度窗「用新模型重跑」)里其上下文
+  // 可能尚未注册领域包,会导致按 id 解析不到定义。执行前先确保已加载,覆盖所有入口。
+  try { await ensureDomainPacksLoaded() } catch (_) { /* 加载失败仍尝试解析(基础包可用) */ }
   const launchInfo = getAssistantLaunchInfoInternal(assistantId, overrides)
   const {
     definition,
