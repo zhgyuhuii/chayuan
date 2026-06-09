@@ -457,7 +457,9 @@
                   <span v-if="entitlementSummary.kind === 'count'" class="welcome-entitlement-item">购买次数剩余 {{ entitlementSummary.value }} 次</span>
                   <span v-else-if="entitlementSummary.expireAt" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.expireAt) }}</span>
                   <span v-else class="welcome-entitlement-item">已激活 · 不限次</span>
-                  <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
+                  <!-- 仅次数档的对话仍走每日免费池;时间档对话不限次,不显示「今日剩余」避免误导 -->
+                  <span v-if="entitlementSummary.kind === 'count'" class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
+                  <span v-else class="welcome-entitlement-item">对话不限次</span>
                 </template>
                 <template v-else>
                   <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
