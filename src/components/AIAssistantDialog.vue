@@ -7577,7 +7577,10 @@ export default {
         service: '客服 / 沟通',
         data: '数据 / 报表',
         personal: '个人 / 生活',
-        travel: '旅游 / 酒店'
+        travel: '旅游 / 酒店',
+        realestate: '房产 / 物业',
+        insurance: '保险',
+        energy: '能源 / 环保'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
