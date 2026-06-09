@@ -1467,7 +1467,8 @@ export function applyStructuredExecutionPlan(plan, options = {}) {
     // 仅「锚点专用」助手(保密检查 / AI痕迹检查)在锚定失败时跳过、不做整篇兜底批注;
     // 其它核对/审查类助手(前后一致性核对、数字核对、各行业核查等)锚不到时,回落成一条
     // 含完整分析的整篇批注,避免直接报错跳过、让用户拿不到任何结果。
-    if (planAssistantId === ANALYSIS_SECURITY_CHECK_ID || planAssistantId === ANALYSIS_AI_TRACE_CHECK_ID) {
+    const anchorOnlyAssistantId = String(plan?.assistantId || options?.assistantId || '').trim()
+    if (anchorOnlyAssistantId === ANALYSIS_SECURITY_CHECK_ID || anchorOnlyAssistantId === ANALYSIS_AI_TRACE_CHECK_ID) {
       return buildAnchorOnlyStructuredCommentSkipApplyResult()
     }
     // 否则继续往下:用聚合分析文本做整篇批注(applyDocumentAction 支持 comment / link-comment)
