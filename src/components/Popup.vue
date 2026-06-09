@@ -1294,7 +1294,7 @@
 <script>
 import { JsonViewer } from 'vue3-json-viewer'
 import 'vue3-json-viewer/dist/vue3-json-viewer.css'
-import { subscribe, getTasks, clearCompletedTasks, initSync, getTaskById, removeTask, syncTasksFromStorage, updateTask } from '../utils/taskListStore.js'
+import { subscribe, getTasks, clearCompletedTasks, initSync, getTaskById, removeTask, syncTasksFromStorage, updateTask, reconcileStaleRunningTasks } from '../utils/taskListStore.js'
 import { retrySpellCheckChunk, stopSpellCheckTask, applySpellCheckIssueComment, applySkippedSpellCheckComments } from '../utils/spellCheckService.js'
 import { stopAssistantTask } from '../utils/assistantTaskRunner.js'
 import { stopAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
@@ -1524,6 +1524,12 @@ export default {
       }
       this.scheduleDetailViewportUpdate()
     })
+    // 每 10s 复检一次,清理上次会话遗留、心跳已停的「执行中」僵尸任务(重启后快速重开也能兜住)
+    this._reconcileTimer = window.setInterval(() => {
+      try {
+        if (reconcileStaleRunningTasks() > 0) this.tasks = getTasks()
+      } catch (_) { /* noop */ }
+    }, 10000)
   },
   beforeUnmount() {
     this.persistCurrentDetailScroll(true)
@@ -1543,6 +1549,7 @@ export default {
       window.removeEventListener('resize', this.handleViewportResize)
       this.handleViewportResize = null
     }
+    if (this._reconcileTimer) { window.clearInterval(this._reconcileTimer); this._reconcileTimer = null }
     this.unsub?.()
     this.taskListWindowSession?.releaseOwnership?.()
     this.taskListWindowSession = null

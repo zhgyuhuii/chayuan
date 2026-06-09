@@ -254,8 +254,9 @@ export function clearCompletedTasks() {
  */
 // 执行中的任务由运行窗口每隔数秒写一次 updatedAt 心跳(见 assistantTaskRunner 的 heartbeat)。
 // WPS 关闭/重启后心跳停止,updatedAt 冻结;超过该阈值即判定为「上次会话遗留、已中断」。
-// 阈值取 60s:覆盖后台节流(隐藏 webview 的 setInterval 会被钳到秒级/分级),又能在重启后较快清理。
-const STALE_RUNNING_DEFAULT_MS = 60 * 1000
+// 阈值取 20s:执行中任务每 4s 写心跳,存活时 updatedAt 一直 <8s;WPS 重启的关-开间隔通常 >20s,
+// 因此一打开任务清单就能把上次会话遗留的「执行中」全部判为中断,又不会误杀本会话仍在跑的任务。
+const STALE_RUNNING_DEFAULT_MS = 20 * 1000
 export function reconcileStaleRunningTasks(options = {}) {
   syncTasksFromStorage()
   const maxAgeMs = Number(options.maxAgeMs) > 0 ? Number(options.maxAgeMs) : STALE_RUNNING_DEFAULT_MS
