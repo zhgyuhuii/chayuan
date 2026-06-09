@@ -2201,6 +2201,7 @@ import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
+import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
 import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan } from '../utils/licenseStore.js'
@@ -3958,6 +3959,8 @@ export default {
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
     // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
+    // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索
+    setAssistantKbBindingGetter(() => this.currentChatKbBinding)
     bootMeasure('requestAssistantEvolutionSuggestionCheck', () => this.requestAssistantEvolutionSuggestionCheck())
     bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''

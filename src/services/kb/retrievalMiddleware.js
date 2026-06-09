@@ -177,6 +177,36 @@ export async function applyKbRetrievalIfBound(ctx) {
   return ctx
 }
 
+/**
+ * 给「助手执行器」用:对绑定 KB 检索,返回可注入提示词的**上下文字符串**(不改 messages)。
+ * 与 applyKbRetrievalIfBound 共用 connection 解析 / catalog 预过滤 / runSearch,行为一致。
+ * @returns {Promise<{context:string, notice:string, sources:any[]}>}
+ *   context 非空 → 命中片段拼接;为空时 notice 给出原因(未绑定/未连接/未命中/失败)。
+ */
+export async function retrieveKbContextForAssistant(rawBinding, queryText, { signal, chatCompletion } = {}) {
+  try { if (!_isFlagEnabled('kbRemoteIntegration')) return { context: '', notice: '', sources: [] } } catch (e) { /* 缺 flag 默认放行 */ }
+  const binding0 = _normalizeBinding(rawBinding)
+  if (!binding0?.kbNames?.length) return { context: '', notice: '未绑定知识库,无法对比;请先在对话侧栏选择知识库后重试。', sources: [] }
+  const connection = (binding0.connectionId ? getConnection(binding0.connectionId) : null) || getCurrentConnection()
+  if (!connection) return { context: '', notice: '知识库未连接。', sources: [] }
+  const q = String(queryText || '').trim()
+  if (!q) return { context: '', notice: '', sources: [] }
+  let binding = await _filterBindingByCatalog(connection, binding0, { signal })
+  if (!binding.kbNames?.length) return { context: '', notice: STALE_KB_NOTICE, sources: [] }
+  let result
+  try {
+    result = await runSearch({ connection, query: q.slice(0, 12000), kbBindings: binding, mode: 'verify', signal, chatCompletion })
+  } catch (e) {
+    return { context: '', notice: '知识库检索失败:' + (e?.message || String(e)), sources: [] }
+  }
+  const sources = result?.chunks || []
+  if (!sources.length) return { context: '', notice: NO_KB_NOTICE, sources: [] }
+  const context = sources.slice(0, 24)
+    .map((c, i) => `【片段${i + 1}·${c.file_name || c.kb_name || 'KB'}】\n${String(c.text || '').trim()}`)
+    .join('\n\n')
+  return { context, notice: '', sources }
+}
+
 function _normalizeBinding(raw) {
   const cfg = raw?.config && typeof raw.config === 'object' ? raw.config : {}
   const sourceRefs = Array.from(new Map(

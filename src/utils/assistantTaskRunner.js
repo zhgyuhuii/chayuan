@@ -1680,6 +1680,24 @@ async function executeAssistantTask(assistantId, overrides = {}) {
   } = launchInfo
 
   const runCaps = mergeDefinitionRuntimeCapabilities(definition)
+  // KB 对比/核查类(useKnowledgeBase=true):执行前检索绑定知识库,命中注入 {{kbContext}}。
+  // 动态 import,使普通助手零开销、KB 检索图不进本 runner chunk;未绑定/失败时给出可读提示。
+  let kbContext = ''
+  if (runCaps.useKnowledgeBase) {
+    try {
+      const [{ retrieveKbContextForAssistant }, { getAssistantKbBinding }] = await Promise.all([
+        import('../services/kb/retrievalMiddleware.js'),
+        import('./assistant/kbAssistantBinding.js')
+      ])
+      const { context, notice } = await retrieveKbContextForAssistant(getAssistantKbBinding(), inputText, {
+        signal: overrides.signal,
+        chatCompletion
+      })
+      kbContext = context || `【知识库检索】${notice || '未获取到知识库内容'}`
+    } catch (e) {
+      kbContext = `【知识库检索】检索异常:${e?.message || e}`
+    }
+  }
   const resolvedModel = resolveModel(config, definition, {
     conversationModelId: overrides.conversationModelId
   })
@@ -1706,6 +1724,7 @@ async function executeAssistantTask(assistantId, overrides = {}) {
   }
   const variables = {
     input: inputText,
+    kbContext,
     targetLanguage,
     assistantName: definition.shortLabel || definition.label || '',
     source: inputInfo.source,

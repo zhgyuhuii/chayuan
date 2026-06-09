@@ -51,7 +51,9 @@ export const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   /** 非空时强制使用该文档写回动作（如拼写检查固定批注） */
   forceDocumentAction: null,
   /** image | audio | video：走多模态生成与错误分类 */
-  mediaKind: null
+  mediaKind: null,
+  /** true 时执行前检索绑定知识库,把命中注入 {{kbContext}} 变量(KB 对比/核查类助手) */
+  useKnowledgeBase: false
 })
 
 export function mergeDefinitionRuntimeCapabilities(definition) {
@@ -1283,7 +1285,8 @@ export function registerLazyBuiltinAssistants(list) {
 // 领域包清单:新增领域包只需在此加一行 loader。
 const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsLegal.js').then(m => m.LEGAL_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsAudit.js').then(m => m.AUDIT_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsAudit.js').then(m => m.AUDIT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsKbVerify.js').then(m => m.KB_VERIFY_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */
