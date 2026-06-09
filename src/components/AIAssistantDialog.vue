@@ -7622,7 +7622,25 @@ export default {
         salon: '美容美发',
         veterinary: '宠物医疗',
         cbexpress: '跨境物流',
-        cultural: '文创 / 非遗'
+        cultural: '文创 / 非遗',
+        matchmaking: '婚恋 / 相亲',
+        confinement: '月子 / 母婴护理',
+        bakery: '烘焙 / 甜品',
+        floral: '花艺 / 鲜花',
+        photography: '摄影 / 写真',
+        drivingschool: '驾校 / 驾培',
+        studyabroad: '留学 / 移民',
+        examprep: '考公考研培训',
+        franchise: '招商加盟',
+        ticketing: '票务 / 演出',
+        webnovel: '网文 / 小说',
+        podcast: '播客 / 音频',
+        shortdrama: '短剧 / 微短剧',
+        illustration: '插画 / 设计',
+        music: '音乐 / 词曲',
+        eldercare: '养老 / 老年服务',
+        parenting: '家庭教育',
+        antique: '古玩 / 收藏'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
