@@ -866,14 +866,16 @@ const SAFE_STRUCTURED_REPLACE_REASON_CODES = new Set([
 function buildStructuredOperationCommentText(operation, fallbackCommentText = '') {
   const fb = String(fallbackCommentText || '').trim()
   const safeFb = textLooksLikePlanStatsJson(fb) ? '' : fb
-  const lines = [
+  const ownLines = [
     String(operation?.commentText || '').trim(),
     String(operation?.reason || '').trim(),
     String(operation?.suggestion || '').trim() && String(operation?.replacementText || '').trim()
       ? `建议改为：${String(operation.replacementText).trim()}`
-      : '',
-    safeFb
+      : ''
   ].filter(Boolean)
+  // 关键:全局兜底文案(options.commentText,可能是「未添加批注」之类的整体提示)只在本条
+  // operation 自身没有任何正文时才使用;否则会把误导性的整体提示拼进每条已成功锚定的批注。
+  const lines = ownLines.length > 0 ? ownLines : (safeFb ? [safeFb] : [])
   return Array.from(new Set(lines)).join('\n')
 }
 
