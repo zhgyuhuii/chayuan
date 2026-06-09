@@ -3874,7 +3874,28 @@ export default {
         }
         group.items.push(item)
       })
-      return groups
+      // 领域排序优先级:通用类(核对/知识库对比等适用任何行业的)在前 → 合同 → 政务 → 军工
+      //  → 政法/警察 → 其它行业(保持插入序)→ 自定义最后。收藏分组始终置顶。
+      const ORDER = [
+        'core', 'analysis', 'verify', 'kb-verify',
+        'legal',
+        'gov', 'govdoc', 'govpolicy', 'govservice', 'govpetition', 'govsupervise',
+        'govemergency', 'govpersonnel', 'govmeeting', 'goveconomy', 'govgrassroots',
+        'govpeople', 'govparty',
+        'mildoc', 'milpolitical', 'miltraining', 'millogistics', 'milequip',
+        'milsafety', 'milparty', 'milpersonnel',
+        'judicial'
+      ]
+      const rank = (k) => {
+        const i = ORDER.indexOf(k)
+        if (i >= 0) return i
+        if (k === 'custom') return 100000 // 自定义置于最后
+        return 10000 // 其它行业:排在指定类之后、自定义之前(同级保持插入序)
+      }
+      const favGroups = groups.filter(g => g.key === '__fav__')
+      const restGroups = groups.filter(g => g.key !== '__fav__')
+      restGroups.sort((a, b) => rank(a.key) - rank(b.key)) // Array.sort 稳定,同级保留原序
+      return [...favGroups, ...restGroups]
     },
     lastAssistantMessage() {
       const msgs = this.currentMessages
