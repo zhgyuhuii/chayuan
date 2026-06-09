@@ -1290,7 +1290,10 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsKbVerify.js').then(m => m.KB_VERIFY_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsFinance.js').then(m => m.FINANCE_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsMarketing.js').then(m => m.MARKETING_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsGov.js').then(m => m.GOV_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsGov.js').then(m => m.GOV_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsHr.js').then(m => m.HR_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsEcommerce.js').then(m => m.ECOMMERCE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsTech.js').then(m => m.TECH_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */
