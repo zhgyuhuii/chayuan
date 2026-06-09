@@ -6010,7 +6010,10 @@ export default {
     },
     isAssistantGroupCollapsed(groupKey) {
       if (this.assistantSearchText) return false
-      return !!this.assistantGroupCollapsed[groupKey]
+      const s = this.assistantGroupCollapsed[groupKey]
+      if (s !== undefined) return !!s
+      // 默认:收藏 / 系统功能 / 文本分析 / 自定义 展开;其余行业领域组默认折叠
+      return !['__fav__', 'core', 'analysis', 'custom'].includes(groupKey)
     },
     toggleAssistantGroup(groupKey) {
       this.assistantGroupCollapsed = {
@@ -16689,6 +16692,7 @@ export default {
 }
 
 .assistant-item {
+  position: relative;
   padding: 10px 12px;
   border: 1px solid var(--ai-border);
   border-radius: 10px;
@@ -16759,13 +16763,14 @@ export default {
   color: var(--ai-text);
   line-height: 1.4;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .assistant-item-kind {
-  flex-shrink: 0;
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
   padding: 1px 6px;
   border-radius: 999px;
   background: rgba(14, 165, 233, 0.1);
