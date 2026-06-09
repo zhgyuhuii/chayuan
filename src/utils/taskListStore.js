@@ -250,15 +250,20 @@ export function clearCompletedTasks() {
 
 /**
  * 将长时间未更新的 running 任务标记为异常结束（例如进程崩溃、未正确写回状态）。
- * @param {{ maxAgeMs?: number }} options 默认 24 小时无更新则视为异常
+ * @param {{ maxAgeMs?: number }} options 默认 60 秒无心跳则视为中断
  */
+// 执行中的任务由运行窗口每隔数秒写一次 updatedAt 心跳(见 assistantTaskRunner 的 heartbeat)。
+// WPS 关闭/重启后心跳停止,updatedAt 冻结;超过该阈值即判定为「上次会话遗留、已中断」。
+// 阈值取 60s:覆盖后台节流(隐藏 webview 的 setInterval 会被钳到秒级/分级),又能在重启后较快清理。
+const STALE_RUNNING_DEFAULT_MS = 60 * 1000
 export function reconcileStaleRunningTasks(options = {}) {
   syncTasksFromStorage()
-  const maxAgeMs = Number(options.maxAgeMs) > 0 ? Number(options.maxAgeMs) : 24 * 60 * 60 * 1000
+  const maxAgeMs = Number(options.maxAgeMs) > 0 ? Number(options.maxAgeMs) : STALE_RUNNING_DEFAULT_MS
   const now = Date.now()
   const staleIds = tasks
     .filter((task) => {
-      if (task.status !== 'running') return false
+      // running 与卡在 pending/preparing 的占位任务都要回收
+      if (task.status !== 'running' && task.status !== 'pending') return false
       const updated = new Date(task.updatedAt || task.startedAt || task.createdAt || 0).getTime()
       return Number.isFinite(updated) && now - updated > maxAgeMs
     })
@@ -266,10 +271,25 @@ export function reconcileStaleRunningTasks(options = {}) {
   staleIds.forEach((id) => {
     updateTask(id, {
       status: 'abnormal',
-      error: '长时间未更新，已标记为异常结束'
+      error: '应用已退出或重启，任务执行中断'
     })
   })
   return staleIds.length
+}
+
+/**
+ * 心跳:运行窗口定期调用,刷新执行中任务的 updatedAt,证明执行上下文仍存活。
+ * 先同步再写,避免覆盖其它窗口的更新;不 notify(轮询窗口会自行读取),减少重渲染。
+ * @param {string} id
+ */
+export function markTaskHeartbeat(id) {
+  syncTasksFromStorage()
+  const idx = tasks.findIndex(t => t.id === id)
+  if (idx < 0) return
+  const t = tasks[idx]
+  if (isTerminalTaskStatus(t.status)) return
+  t.updatedAt = new Date().toISOString()
+  saveToStorage()
 }
 
 /**

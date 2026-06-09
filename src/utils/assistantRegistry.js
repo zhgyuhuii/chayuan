@@ -1427,15 +1427,26 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsMilPersonnel.js').then(m => m.MILPERSONNEL_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
-/** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */
+// 单个领域包加载封顶时间(ms):WPS 独立子窗口里某些 chunk 的 import() 可能既不 resolve
+// 也不 reject(永久 pending),会让 Promise.all 卡死、进而把执行任务永远停在「准备中」。
+// 这里给每个 loader 套超时:超时按 0 计、不阻塞;真包就算晚到也会在后台继续注册。
+const DOMAIN_PACK_LOAD_TIMEOUT_MS = 8000
+function loadDomainPackWithTimeout(load) {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (n) => { if (!settled) { settled = true; resolve(Number(n) || 0) } }
+    const timer = setTimeout(() => done(0), DOMAIN_PACK_LOAD_TIMEOUT_MS)
+    load()
+      .then(registerLazyBuiltinAssistants)
+      .then((n) => { clearTimeout(timer); done(n) })
+      .catch((e) => { clearTimeout(timer); try { console.warn('[assistant] 领域包加载失败', e) } catch (_) { /* noop */ } done(0) })
+  })
+}
+/** 幂等加载全部领域包(并发共享同一 Promise);单个包失败/超时跳过不阻断其它。返回累计新增数。 */
 export function ensureDomainPacksLoaded() {
   if (!_domainPacksPromise) {
     _domainPacksPromise = Promise.all(
-      DOMAIN_PACK_LOADERS.map(load =>
-        load()
-          .then(registerLazyBuiltinAssistants)
-          .catch(e => { try { console.warn('[assistant] 领域包加载失败', e) } catch (_) {} return 0 })
-      )
+      DOMAIN_PACK_LOADERS.map(loadDomainPackWithTimeout)
     ).then(counts => counts.reduce((a, b) => a + b, 0))
   }
   return _domainPacksPromise

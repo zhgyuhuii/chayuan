@@ -3,7 +3,7 @@ import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
 import { startTimer as startPerfTimer } from './perfTracker.js'
 import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSettings.js'
-import { addTask, updateTask, getTaskById } from './taskListStore.js'
+import { addTask, updateTask, getTaskById, markTaskHeartbeat } from './taskListStore.js'
 import {
   applyDocumentAction,
   applyMediaDocumentAction,
@@ -70,6 +70,36 @@ import { ensureCapability } from './license/capabilityGate.js'
 
 const BUILTIN_RIBBON_ASSISTANT_SET = new Set(getBuiltinRibbonAssistantIds())
 const activeAssistantRuns = new Map()
+// 执行中任务的心跳间隔:运行窗口每隔该时长刷新 updatedAt,证明执行上下文存活。
+// WPS 关闭/重启或侧栏 webview 被销毁后心跳停止,任务清单按超时把遗留 running 判为「已中断」。
+const ASSISTANT_TASK_HEARTBEAT_MS = 4000
+function startAssistantTaskHeartbeat(taskId, runState) {
+  if (typeof window === 'undefined' || !window.setInterval) return
+  try { markTaskHeartbeat(taskId) } catch (_) { /* noop */ }
+  runState.heartbeatTimer = window.setInterval(() => {
+    try { markTaskHeartbeat(taskId) } catch (_) { /* noop */ }
+  }, ASSISTANT_TASK_HEARTBEAT_MS)
+}
+function stopAssistantTaskHeartbeat(runState) {
+  if (runState?.heartbeatTimer) {
+    try { window.clearInterval(runState.heartbeatTimer) } catch (_) { /* noop */ }
+    runState.heartbeatTimer = null
+  }
+}
+// 优雅退出(关闭侧栏/WPS 文档)时,把本上下文仍在跑的任务即时标记为中断,
+// 这样重启后任务清单不会再显示成「执行中」;硬杀进程没有 beforeunload,则由心跳超时兜底。
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('beforeunload', () => {
+    activeAssistantRuns.forEach((runState, taskId) => {
+      try {
+        const task = getTaskById(taskId)
+        if (task && (task.status === 'running' || task.status === 'pending')) {
+          updateTask(taskId, { status: 'abnormal', error: '窗口已关闭，任务执行中断' })
+        }
+      } catch (_) { /* noop */ }
+    })
+  })
+}
 
 function probeWritableAnchor() {
   const doc = getActiveDocument()
@@ -284,6 +314,19 @@ function showAssistantTaskErrorDialog(assistantId, err) {
 
 function throwIfCancelled(runState) {
   if (runState?.cancelled) throw createCancelError()
+  // 跨窗口停止:任务清单/其它 WPS 子窗口把持久状态置为 cancelled 时,拥有该 run 的窗口
+  // 也要在下一个检查点中止(activeAssistantRuns 是窗口内存级,跨不过去;getTaskById 会即时
+  // 从 localStorage/PluginStorage 同步最新状态)。
+  const tid = runState?.taskId
+  if (tid) {
+    let persisted = null
+    try { persisted = getTaskById(tid) } catch (_) { persisted = null }
+    if (persisted && persisted.status === 'cancelled') {
+      runState.cancelled = true
+      try { runState.abortController?.abort() } catch (_) { /* noop */ }
+      throw createCancelError()
+    }
+  }
 }
 
 function interpolateTemplate(template, variables) {
@@ -1899,9 +1942,11 @@ async function executeAssistantTask(assistantId, overrides = {}) {
   const runState = {
     taskId,
     cancelled: false,
+    heartbeatTimer: null,
     abortController: typeof AbortController !== 'undefined' ? new AbortController() : null
   }
   activeAssistantRuns.set(taskId, runState)
+  startAssistantTaskHeartbeat(taskId, runState)
 
   try {
     updateTask(taskId, {
@@ -2471,6 +2516,7 @@ async function executeAssistantTask(assistantId, overrides = {}) {
     })
     throw error
   } finally {
+    stopAssistantTaskHeartbeat(runState)
     activeAssistantRuns.delete(taskId)
   }
 }
@@ -2764,12 +2810,22 @@ export async function runAssistantTask(assistantId, overrides = {}) {
 
 export function stopAssistantTask(taskId) {
   const runState = activeAssistantRuns.get(taskId)
-  if (!runState) return false
-  runState.cancelled = true
-  try {
-    runState.abortController?.abort()
-  } catch (_) {
-    // Ignore abort errors so task state can still transition to cancelled.
+  if (runState) {
+    runState.cancelled = true
+    try {
+      runState.abortController?.abort()
+    } catch (_) {
+      // Ignore abort errors so task state can still transition to cancelled.
+    }
+  }
+  // 即使本窗口没有该 run(任务在另一个 WPS 子窗口执行),也要把持久状态置为 cancelled——
+  // 执行窗口会在下一个 throwIfCancelled 检查点读到并中止。getTaskById 先同步,保证
+  // 随后的 updateTask findIndex 跨窗口命中。
+  const persisted = getTaskById(taskId)
+  if (!persisted) return !!runState
+  const st = String(persisted.status || '')
+  if (['completed', 'done', 'failed', 'cancelled', 'abnormal'].includes(st)) {
+    return !!runState // 已是终态,不改写状态
   }
   updateTask(taskId, {
     status: 'cancelled',

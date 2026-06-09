@@ -100,7 +100,7 @@ import TaskListVirtual from './common/TaskListVirtual.vue'
 import TaskDetailCard from './common/TaskDetailCard.vue'
 import TaskBatchActions from './common/TaskBatchActions.vue'
 
-import { getTasks, subscribe, removeTask, updateTask } from '../utils/taskListStore.js'
+import { getTasks, subscribe, removeTask, updateTask, reconcileStaleRunningTasks } from '../utils/taskListStore.js'
 import { adaptTask } from '../utils/task/taskKernel.js'
 import { onEvent, emit } from '../utils/task/taskEventBus.js'
 import { archiveMany } from '../utils/task/taskTieredStorage.js'
@@ -177,6 +177,9 @@ export default {
     }
   },
   mounted() {
+    // 打开任务清单时先回收上次会话遗留的「执行中」僵尸任务(心跳超时判定),
+    // 并每 10s 复检一次:用户重启后短时间内打开,也能在阈值到期后自动清理。
+    try { reconcileStaleRunningTasks() } catch (_) { /* noop */ }
     this.refresh()
     this._unsubStore = subscribe(() => this.refresh())
     this._unsubBus = onEvent(msg => {
@@ -184,10 +187,14 @@ export default {
       if (msg.eventType === 'task:progress') this.refresh()
       if (msg.eventType === 'task:completed' || msg.eventType === 'task:failed' || msg.eventType === 'task:cancelled') this.refresh()
     })
+    this._reconcileTimer = window.setInterval(() => {
+      try { reconcileStaleRunningTasks() } catch (_) { /* noop */ }
+    }, 10000)
   },
   beforeUnmount() {
     this._unsubStore?.()
     this._unsubBus?.()
+    if (this._reconcileTimer) { window.clearInterval(this._reconcileTimer); this._reconcileTimer = null }
   },
   methods: {
     refresh() {
