@@ -7571,7 +7571,10 @@ export default {
         bidding: '招投标',
         manufacturing: '制造 / 工程',
         judicial: '法律 / 司法',
-        publishing: '出版 / 校对'
+        publishing: '出版 / 校对',
+        media: '媒体 / 新闻',
+        logistics: '物流 / 供应链',
+        service: '客服 / 沟通'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
