@@ -7568,7 +7568,10 @@ export default {
         medical: '医疗 / 医学',
         education: '教育 / 教学',
         academic: '高校 / 科研',
-        bidding: '招投标'
+        bidding: '招投标',
+        manufacturing: '制造 / 工程',
+        judicial: '法律 / 司法',
+        publishing: '出版 / 校对'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
