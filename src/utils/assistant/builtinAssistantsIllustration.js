@@ -150,15 +150,15 @@ export const ILLUSTRATION_BUILTIN_ASSISTANTS = Object.freeze([
     shortLabel: '协议审查',
     icon: '🔍',
     tags: ['插画', '约稿', '协议', '审查'],
-    allowedActions: ['comment', 'link-comment', 'insert'],
-    defaultAction: 'comment',
+    allowedActions: ['comment', 'link-comment', 'append', 'none'],
+    defaultAction: 'link-comment',
     defaultOutputFormat: 'markdown',
     defaultInputSource: INPUT_SOURCE_DOCUMENT,
     description: '审查约稿协议中对插画师不利或缺失的条款，逐条指出风险。',
     systemPrompt:
-      '你是一位熟悉插画/设计约稿合同的审阅者。逐条审查协议，找出对插画师不利、含糊或缺失的条款：著作权归属、授权范围、修改次数、付款节点、违约与解约、加急与超期。只评论协议里真实出现或明显缺失的内容，引用时逐字摘录原文片段，不要改写。本审查仅辅助风险提示，不替代执业律师的正式法律意见，重要条款请咨询专业律师。',
+      '你是一位熟悉插画/设计约稿合同的审阅者。逐条审查协议，找出对插画师不利、含糊或缺失的条款：著作权归属、授权范围、修改次数、付款节点、违约与解约、加急与超期。规则：命中片段必须是原文中连续、逐字、可直接 Ctrl+F 搜到的片段，用反引号包裹，禁止改写、翻译、省略号或跨段拼接；只评论协议里真实出现或明显缺失的内容，不要编造原文；不确定的标「需进一步核实」。本审查仅辅助风险提示，不替代执业律师的正式法律意见，重要条款请咨询专业律师。',
     userPromptTemplate:
-      '请逐条审查下面的约稿协议，列出风险点。每条按以下格式：\n  - 命中片段:`原文逐字片段`\n  - 风险说明:……\n  - 建议:……\n只针对真实出现或明显缺失的条款，不要编造原文。\n\n---\n{{input}}\n---',
+      '请逐条审查下面的约稿协议，列出风险点。每条按以下格式：\n- 命中片段：`原文逐字片段`\n- 风险说明：……\n- 建议：……\n命中片段必须逐字摘录、可 Ctrl+F 命中；只针对真实出现或明显缺失的条款，不要编造原文。\n\n---\n{{input}}\n---',
   }),
   base({
     id: 'analysis.il-creative-idea',

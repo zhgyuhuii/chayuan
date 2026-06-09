@@ -911,10 +911,12 @@ function getStructuredChunks(inputInfo, assistantId, action) {
     ...chunkSettings,
     splitStrategy
   }
-  // 全文单遍:放大块长使整篇落入一块,避免跨块漏检(超长文档仍受模型上下文上限约束)
+  // 核对/KB 类尽量全文单遍以避免跨块漏检,但块长封顶 16000(项目 MAX_CHUNK_LENGTH):
+  // 典型文档(≤16000 字)仍落入一块单遍;超长文档分成大块而非拼成一个不可控的超大 prompt
+  // (此前用 1000000 会把整篇塞进单次请求,大文档下模型处理极慢、看起来"卡在调用模型")。
   if (isSinglePassAssistant(assistantId)) {
-    overrides.chunkLength = 1000000
-    overrides.overlapLength = 0
+    overrides.chunkLength = Math.max(Number(overrides.chunkLength) || 0, 16000)
+    overrides.overlapLength = 400
   }
   if (String(inputInfo?.source || '').trim() === 'selection') {
     return getSelectionChunksWithPositions(doc, getSelection(), overrides)
