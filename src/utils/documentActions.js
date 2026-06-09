@@ -879,6 +879,58 @@ function buildStructuredOperationCommentText(operation, fallbackCommentText = ''
   return Array.from(new Set(lines)).join('\n')
 }
 
+// Word/WPS 的 Find 按原文精确定位,返回真实 Range 坐标。用于规避「字符串下标 ≠ Word Range
+// 坐标」的漂移(文档含表格  单元标记/域时尤甚)。找不到或出错返回 null(宁可跳过也不错放)。
+function findRangeByTextInDoc(doc, expectedText, hintStart = 0) {
+  const needle = String(expectedText || '').trim()
+  if (!doc || needle.length < 2) return null
+  try {
+    const docEnd = Number(doc?.Content?.End || 0)
+    if (!(docEnd > 0)) return null
+    const want = normalizeComparableWritableText(needle)
+    const matches = []
+    let cursor = 0
+    let guard = 0
+    while (cursor < docEnd && guard < 300) {
+      guard += 1
+      let r
+      try { r = doc.Range(cursor, docEnd) } catch (_) { break }
+      const find = r?.Find
+      if (!find) break
+      try { find.ClearFormatting && find.ClearFormatting() } catch (_) {}
+      try {
+        find.Text = needle
+        find.Forward = true
+        find.MatchWildcards = false
+      } catch (_) {}
+      let ok = false
+      try { ok = !!find.Execute() } catch (_) { ok = false }
+      if (!ok) break
+      const mStart = Number(r.Start)
+      const mEnd = Number(r.End)
+      if (!(mEnd > mStart)) break
+      let live = ''
+      try { live = String(doc.Range(mStart, mEnd).Text || '') } catch (_) {}
+      if (normalizeComparableWritableText(live) === want) matches.push({ start: mStart, end: mEnd })
+      cursor = mEnd > cursor ? mEnd : cursor + 1
+    }
+    if (!matches.length) return null
+    const hint = Number(hintStart) || 0
+    matches.sort((a, b) => Math.abs(a.start - hint) - Math.abs(b.start - hint))
+    return {
+      start: matches[0].start,
+      end: matches[0].end,
+      paragraphIndex: null,
+      matchedBy: 'word-find',
+      reasonCode: 'word_find_relocated',
+      reasonLabel: 'Word查找重定位(规避表格坐标漂移)',
+      safeForReplace: false
+    }
+  } catch (_) {
+    return null
+  }
+}
+
 function resolveStructuredOperationRange(doc, operation) {
   const start = Number(operation?.start)
   const end = Number(operation?.end)
@@ -926,19 +978,28 @@ function resolveStructuredOperationRange(doc, operation) {
         sentence: String(operation?.sentence || '')
       })
       if (match?.ok && match.range) {
-        return {
-          start: chunkStart + Number(match.range.start || 0),
-          end: chunkStart + Number(match.range.end || 0),
-          paragraphIndex: Number.isFinite(Number(operation?.paragraphIndex)) ? Number(operation.paragraphIndex) : null,
-          matchedBy: 'text-anchor',
-          reasonCode: String(match.reasonCode || ''),
-          reasonLabel: String(match.reasonLabel || ''),
-          safeForReplace: SAFE_STRUCTURED_REPLACE_REASON_CODES.has(String(match.reasonCode || ''))
+        const candStart = chunkStart + Number(match.range.start || 0)
+        const candEnd = chunkStart + Number(match.range.end || 0)
+        // 复核:算出的 Word Range 实际文本必须等于锚点原文;否则视为坐标漂移(表格等),
+        // 不采用,交由下方 Word Find 兜底重定位。
+        let liveCand = ''
+        try { liveCand = normalizeComparableWritableText(doc.Range(candStart, candEnd)?.Text || '') } catch (_) {}
+        if (liveCand && liveCand === normalizeComparableWritableText(expectedText)) {
+          return {
+            start: candStart,
+            end: candEnd,
+            paragraphIndex: Number.isFinite(Number(operation?.paragraphIndex)) ? Number(operation.paragraphIndex) : null,
+            matchedBy: 'text-anchor',
+            reasonCode: String(match.reasonCode || ''),
+            reasonLabel: String(match.reasonLabel || ''),
+            safeForReplace: SAFE_STRUCTURED_REPLACE_REASON_CODES.has(String(match.reasonCode || ''))
+          }
         }
       }
     } catch (_) {}
   }
-  return null
+  // 以上(绝对坐标 / 文本锚点)都未通过复核:用 Word Find 按原文重定位兜底,拿真实 Range。
+  return findRangeByTextInDoc(doc, expectedText, Number(operation?.start) || Number(operation?.chunkStart) || 0)
 }
 
 function canSafelyApplyStructuredReplacement(operation, resolvedRange) {
