@@ -7565,7 +7565,10 @@ export default {
         tech: 'IT / 技术',
         trade: '外贸 / 跨境',
         banking: '金融 / 投融资',
-        medical: '医疗 / 医学'
+        medical: '医疗 / 医学',
+        education: '教育 / 教学',
+        academic: '高校 / 科研',
+        bidding: '招投标'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
