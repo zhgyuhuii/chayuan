@@ -346,13 +346,13 @@ function getTaskBestPracticeInstruction(assistantId) {
     return '检查段落序号时，优先识别层级一致性、编号连续性和标点统一性；不要把风格差异误判为错误。'
   }
   if (assistantId === 'analysis.security-check') {
-    return '保密检查时，关键词命中必须结合上下文分级判断；避免武断下结论，并明确哪些内容需要人工复核。'
+    return '保密检查：关键词只是线索，是否涉密由语义+实体+上下文决定。按密标/涉军/单位/人员/时间地点/内部编号/商业敏感/数值型涉密(坐标·频率·口径·员额·金额)/隐晦指代 逐类走查，确保不漏；高/中风险依证据分级，拿不准归「待人工复核」不静默丢弃；对公开、教材、泛指语境适度降噪。每条「命中片段」必须是原文中逐字、可 Ctrl+F 命中的连续片段，禁止改写或省略。'
   }
   if (assistantId === ANALYSIS_AI_TRACE_CHECK_ID) {
     return 'AI 痕迹检查须保守、可复核：只标出可指向具体原文的句式或结构特征，避免把正当公文套话或个人写作习惯一律判为 AI；每条必须能在 ChunkText 中逐字命中。'
   }
   if (assistantId === 'analysis.secret-keyword-extract') {
-    return '提取涉密关键词时，term 必须是原文中的连续片段，输出必须是合法 JSON，且 replacementToken 需要短、唯一、便于程序替换。'
+    return '提取涉密关键词时，term 必须是原文中逐字连续的片段(不改写)；识别范围含数值型涉密(坐标·经纬度·频率·口径·射程·员额·编制·金额)与隐晦指代；每个 term 的 replacementToken 必须短且全局唯一(避免还原歧义)；含包含关系时，子串若有独立脱密价值须单列(防残留)；输出必须是合法 JSON。'
   }
   if (assistantId === 'analysis.form-field-extract') {
     return '提取表单字段时，应优先输出结构化字段定义和实例列表；相同语义字段要合并，输出必须是合法 JSON。'
@@ -885,6 +885,19 @@ function getTaskType(assistantId) {
   return 'assistant'
 }
 
+// 核对/知识库对比类:相互矛盾/对照的两处可能落在不同块,逐块跑会漏检 → 强制全文单遍。
+function isSinglePassAssistant(assistantId) {
+  try {
+    const def = getBuiltinAssistantDefinition(assistantId)
+    const domain = String(def?.domain || '').trim()
+    if (domain === 'verify' || domain === 'kb-verify') return true
+    const caps = def?.runtimeCapabilities
+    return !!(caps && (caps.singlePassDocument || caps.useKnowledgeBase))
+  } catch (_) {
+    return false
+  }
+}
+
 function getStructuredChunks(inputInfo, assistantId, action) {
   const doc = getActiveDocument()
   if (!doc) return []
@@ -896,6 +909,11 @@ function getStructuredChunks(inputInfo, assistantId, action) {
   const overrides = {
     ...chunkSettings,
     splitStrategy
+  }
+  // 全文单遍:放大块长使整篇落入一块,避免跨块漏检(超长文档仍受模型上下文上限约束)
+  if (isSinglePassAssistant(assistantId)) {
+    overrides.chunkLength = 1000000
+    overrides.overlapLength = 0
   }
   if (String(inputInfo?.source || '').trim() === 'selection') {
     return getSelectionChunksWithPositions(doc, getSelection(), overrides)
