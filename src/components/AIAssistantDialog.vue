@@ -7562,7 +7562,10 @@ export default {
         gov: '政务 / 公文',
         hr: '人力资源',
         ecommerce: '电商 / 零售',
-        tech: 'IT / 技术'
+        tech: 'IT / 技术',
+        trade: '外贸 / 跨境',
+        banking: '金融 / 投融资',
+        medical: '医疗 / 医学'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
