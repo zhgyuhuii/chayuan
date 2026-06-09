@@ -1373,7 +1373,9 @@ export function getAssistantSettingItems(customAssistants = [], assistantSetting
     group: item.group,
     type: 'system-assistant',
     modelType: item.modelType,
-    description: item.description
+    description: item.description,
+    domain: item.domain || '',
+    tags: Array.isArray(item.tags) ? item.tags : []
   }))
   const customItems = (customAssistants || []).map(item => ({
     key: item.id,
@@ -1384,7 +1386,9 @@ export function getAssistantSettingItems(customAssistants = [], assistantSetting
     type: 'custom-assistant',
     modelType: item.modelType || 'chat',
     description: item.description || '',
-    createdAt: item.createdAt || ''
+    createdAt: item.createdAt || '',
+    domain: String(item.domain || '').trim(),
+    tags: Array.isArray(item.tags) ? item.tags : []
   }))
   return [
     ...builtinItems,

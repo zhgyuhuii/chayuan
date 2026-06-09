@@ -121,6 +121,16 @@
                   <div class="assistant-item-actions">
                     <button
                       type="button"
+                      class="icon-action-btn"
+                      :class="{ active: isAssistantFavorite(item.key) }"
+                      :title="isAssistantFavorite(item.key) ? '取消收藏' : '收藏到顶部'"
+                      @click="toggleAssistantFavorite(item.key)"
+                    >
+                      <svg v-if="isAssistantFavorite(item.key)" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="m12 17.27l6.18 3.73l-1.64-7.03L22 9.24l-7.19-.61L12 2L9.19 8.63L2 9.24l5.46 4.73L5.82 21z"/></svg>
+                      <svg v-else viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="m22 9.24l-7.19-.62L12 2L9.19 8.63L2 9.24l5.46 4.73L5.82 21L12 17.27L18.18 21l-1.63-7.03zM12 15.4l-3.76 2.27l1-4.28l-3.32-2.88l4.38-.38L12 6.1l1.71 4.04l4.38.38l-3.32 2.88l1 4.28z"/></svg>
+                    </button>
+                    <button
+                      type="button"
                       class="icon-action-btn primary"
                       :disabled="assistantRunLoadingKey === item.key"
                       @click="runAssistant(item)"
@@ -3624,6 +3634,7 @@ export default {
       messageWindowSize: 50,
       debouncedChatSearchText: '',
       assistantSearchText: '',
+      assistantFavorites: [],
       assistantRunLoadingKey: '',
       userInput: '',
       attachments: [],
@@ -3826,9 +3837,8 @@ export default {
     },
     assistantGroups() {
       const search = String(this.assistantSearchText || '').trim().toLowerCase()
-      const groups = []
-      const groupMap = new Map()
-      this.assistantItems
+      const favSet = new Set(this.assistantFavorites || [])
+      const visible = this.assistantItems
         .filter(item => item?.type !== 'create-custom-assistant')
         .filter((item) => {
           if (!search) return true
@@ -3836,27 +3846,34 @@ export default {
             item.shortLabel,
             item.label,
             item.description,
-            getAssistantGroupLabel(item.group || 'custom')
+            this.resolveAssistantCategoryLabel(item),
+            ...(Array.isArray(item.tags) ? item.tags : [])
           ]
             .filter(Boolean)
             .join(' ')
             .toLowerCase()
           return text.includes(search)
         })
-        .forEach((item) => {
-          const groupKey = item.group || 'custom'
-          let group = groupMap.get(groupKey)
-          if (!group) {
-            group = {
-              key: groupKey,
-              label: getAssistantGroupLabel(groupKey),
-              items: []
-            }
-            groupMap.set(groupKey, group)
-            groups.push(group)
+      const groups = []
+      // ⭐ 收藏置顶(同时仍保留在各自领域分组内,作为快捷入口)
+      const favItems = visible.filter(item => favSet.has(item.key))
+      if (favItems.length) groups.push({ key: '__fav__', label: '⭐ 收藏', items: favItems })
+      // 其余按「领域 domain」分组(无 domain 回退原 group),领域用中文标签
+      const groupMap = new Map()
+      visible.forEach((item) => {
+        const groupKey = item.domain || item.group || 'custom'
+        let group = groupMap.get(groupKey)
+        if (!group) {
+          group = {
+            key: groupKey,
+            label: this.resolveAssistantCategoryLabel(item),
+            items: []
           }
-          group.items.push(item)
-        })
+          groupMap.set(groupKey, group)
+          groups.push(group)
+        }
+        group.items.push(item)
+      })
       return groups
     },
     lastAssistantMessage() {
@@ -3961,6 +3978,7 @@ export default {
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
     // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索
     setAssistantKbBindingGetter(() => this.currentChatKbBinding)
+    this.loadAssistantFavorites()
     bootMeasure('requestAssistantEvolutionSuggestionCheck', () => this.requestAssistantEvolutionSuggestionCheck())
     bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''
@@ -7532,6 +7550,37 @@ export default {
         this.assistantRecommendModalEmptyTyping = false
       }
       this.showAssistantRecommendModal = true
+    },
+    // 领域中文标签:有 domain 用领域名,否则回退到原 group 标签
+    resolveAssistantCategoryLabel(item) {
+      const LABELS = {
+        legal: '合同 / 法务',
+        verify: '文档核对',
+        'kb-verify': '知识库对比'
+      }
+      const domain = String(item?.domain || '').trim()
+      if (domain) return LABELS[domain] || domain
+      return getAssistantGroupLabel(item?.group || 'custom')
+    },
+    isAssistantFavorite(key) {
+      return (this.assistantFavorites || []).includes(key)
+    },
+    toggleAssistantFavorite(key) {
+      if (!key) return
+      const set = new Set(this.assistantFavorites || [])
+      if (set.has(key)) set.delete(key)
+      else set.add(key)
+      this.assistantFavorites = Array.from(set)
+      try { localStorage.setItem('cy_assistant_favorites', JSON.stringify(this.assistantFavorites)) } catch (_) { /* 持久化失败不影响本次会话 */ }
+    },
+    loadAssistantFavorites() {
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cy_assistant_favorites') : null
+        const list = JSON.parse(raw || '[]')
+        this.assistantFavorites = Array.isArray(list) ? list.filter(k => typeof k === 'string') : []
+      } catch (_) {
+        this.assistantFavorites = []
+      }
     },
     getAssistantItemByKey(key) {
       return this.assistantItems.find(item => item.key === key) || null
@@ -16731,6 +16780,10 @@ export default {
 
 .icon-action-btn.primary {
   color: #0284c7;
+}
+
+.icon-action-btn.active {
+  color: #f5a623;
 }
 
 .icon-action-btn.danger {
