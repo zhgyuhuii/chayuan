@@ -1332,7 +1332,25 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsWedding.js').then(m => m.WEDDING_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsWellness.js').then(m => m.WELLNESS_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsAesthetic.js').then(m => m.AESTHETIC_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsCrossborder.js').then(m => m.CROSSBORDER_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsCrossborder.js').then(m => m.CROSSBORDER_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsIp.js').then(m => m.IP_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsTranslation.js').then(m => m.TRANSLATION_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSurvey.js').then(m => m.SURVEY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsWater.js').then(m => m.WATER_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsLandscape.js').then(m => m.LANDSCAPE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsRecruit.js').then(m => m.RECRUIT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsElearning.js').then(m => m.ELEARNING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsMcn.js').then(m => m.MCN_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCommunity.js').then(m => m.COMMUNITY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsFuneral.js').then(m => m.FUNERAL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSecurity.js').then(m => m.SECURITY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsJewelry.js').then(m => m.JEWELRY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsHomeDecor.js').then(m => m.HOMEDECOR_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsBeverage.js').then(m => m.BEVERAGE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSalon.js').then(m => m.SALON_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsVeterinary.js').then(m => m.VETERINARY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCbExpress.js').then(m => m.CBEXPRESS_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsCultural.js').then(m => m.CULTURAL_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */

@@ -7604,7 +7604,25 @@ export default {
         wedding: '婚庆 / 活动',
         wellness: '健康养生',
         aesthetic: '美业 / 医美',
-        crossborder: '跨境电商'
+        crossborder: '跨境电商',
+        ip: '知识产权',
+        translation: '翻译 / 本地化',
+        survey: '测绘 / 地理',
+        water: '水利 / 水电',
+        landscape: '园林 / 景观',
+        recruit: '招聘 / 猎头',
+        elearning: '在线教育',
+        mcn: 'MCN / 直播',
+        community: '社区 / 社工',
+        funeral: '殡葬服务',
+        security: '安防 / 安保',
+        jewelry: '珠宝 / 钟表',
+        homedecor: '家居 / 建材',
+        beverage: '茶饮 / 咖啡',
+        salon: '美容美发',
+        veterinary: '宠物医疗',
+        cbexpress: '跨境物流',
+        cultural: '文创 / 非遗'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
