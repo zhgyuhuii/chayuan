@@ -17,6 +17,7 @@ import ribbon from './components/ribbon.js'
 import { syncAddonBaseUrlToPluginStorage } from './utils/publicAssetUrl.js'
 import { schedulePreloadAiAssistantRouteChunk } from './utils/preloadAiAssistantChunk.js'
 import { registerRibbonCommands } from './utils/router/ribbonCommands.js'
+import { ensureDomainPacksLoaded } from './utils/assistantRegistry.js'
 import CommandPaletteHost from './components/common/CommandPaletteHost.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
 import WorkflowResumeDialog from './components/common/WorkflowResumeDialog.vue'
@@ -78,6 +79,7 @@ export default {
         safeImport(() => import('./utils/workflow/workflowTelemetryBridge.js'), m => m.installTelemetryBridge())
         safeImport(() => import('./utils/task/taskAchievement.js'), m => m.installAchievementListener())
         safeImport(() => import('./utils/assistant/runtimeAssistantsInstaller.js'), m => m.installRuntimeAssistants())
+        try { ensureDomainPacksLoaded() } catch (_) { /* 领域包加载失败不影响其余 idle 任务 */ }
         safeImport(() => import('./utils/spellCheckPerfWrapper.js'), m => m.ensureSpellCheckPerfWrapper())
       }
       if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {

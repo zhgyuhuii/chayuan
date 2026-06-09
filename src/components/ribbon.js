@@ -18,7 +18,8 @@ import {
   GROUP_CONTROL_ASSISTANT_MAP,
   getAssistantResolvedIcon,
   MAIN_CONTROL_ASSISTANT_MAP,
-  RIBBON_DYNAMIC_SLOT_COUNT
+  RIBBON_DYNAMIC_SLOT_COUNT,
+  ensureDomainPacksLoaded
 } from '../utils/assistantRegistry.js'
 // assistantTaskRunner 把整个任务运行子图(chatApi / multimodalTaskRunner / artifactRenderer /
 // evolution / taskListStore...)都拉进了主 bundle,但 ribbon 真正用它的 3 个函数都是按钮点击
@@ -684,6 +685,8 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
     launchSource: 'ribbon-direct'
   }
   const { startAssistantTask, getAssistantLaunchInfo } = await _loadAssistantTaskRunner()
+  // 领域助手可能尚未懒加载到注册表,执行前确保已加载,避免按 id 解析不到定义
+  try { await ensureDomainPacksLoaded() } catch (_) { /* 加载失败则按现有定义继续 */ }
   const launchInfo = getAssistantLaunchInfo(assistantId, ribbonOptions)
   if (launchInfo.requiresFullDocumentConfirm) {
     const confirmed = confirmFullDocumentSubmit(launchInfo.title, launchInfo.inputLength)

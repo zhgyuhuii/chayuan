@@ -3,8 +3,6 @@ import { createDefaultReportSettings } from './reportSettings.js'
 import { EXTRA_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsExtra.js'
 import { P5_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5.js'
 import { P5_PLUS_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5Plus.js'
-import { LEGAL_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsLegal.js'
-import { AUDIT_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsAudit.js'
 
 const INPUT_SOURCE_SELECTION_PREFERRED = 'selection-preferred'
 const INPUT_SOURCE_SELECTION_ONLY = 'selection-only'
@@ -1263,10 +1261,44 @@ const BUILTIN_ASSISTANTS = [
   ...CORE_BUILTIN_ASSISTANTS,
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
-  ...P5_PLUS_BUILTIN_ASSISTANTS,
-  ...LEGAL_BUILTIN_ASSISTANTS,
-  ...AUDIT_BUILTIN_ASSISTANTS
+  ...P5_PLUS_BUILTIN_ASSISTANTS
 ].filter(item => item.id !== 'analysis.correct-spell')
+
+// ── 领域助手包:懒加载(动态 import → Vite 拆独立 chunk,不打进主包) ──
+// 基础包(CORE/EXTRA/P5/P5PLUS)保持静态、随主包加载;领域包(legal/audit/未来几百个)
+// 走动态 import,在 App 启动空闲期 / 助手面板打开 / ribbon 直达执行前按需加载。
+const _builtinAssistantIds = new Set(BUILTIN_ASSISTANTS.map(a => a && a.id))
+/** 把懒加载到的领域包助手登记进 BUILTIN_ASSISTANTS(按 id 去重)。返回新增数。 */
+export function registerLazyBuiltinAssistants(list) {
+  let added = 0
+  for (const a of (Array.isArray(list) ? list : [])) {
+    if (a && a.id && !_builtinAssistantIds.has(a.id)) {
+      BUILTIN_ASSISTANTS.push(a)
+      _builtinAssistantIds.add(a.id)
+      added += 1
+    }
+  }
+  return added
+}
+// 领域包清单:新增领域包只需在此加一行 loader。
+const DOMAIN_PACK_LOADERS = [
+  () => import('./assistant/builtinAssistantsLegal.js').then(m => m.LEGAL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsAudit.js').then(m => m.AUDIT_BUILTIN_ASSISTANTS)
+]
+let _domainPacksPromise = null
+/** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */
+export function ensureDomainPacksLoaded() {
+  if (!_domainPacksPromise) {
+    _domainPacksPromise = Promise.all(
+      DOMAIN_PACK_LOADERS.map(load =>
+        load()
+          .then(registerLazyBuiltinAssistants)
+          .catch(e => { try { console.warn('[assistant] 领域包加载失败', e) } catch (_) {} return 0 })
+      )
+    ).then(counts => counts.reduce((a, b) => a + b, 0))
+  }
+  return _domainPacksPromise
+}
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value))

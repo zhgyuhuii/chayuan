@@ -2129,6 +2129,7 @@ import {
 import { buildSelectionContextPrompt, getSelectionContextSnapshot } from '../utils/documentContext.js'
 import {
   getAssistantSettingItems,
+  ensureDomainPacksLoaded,
   getAssistantGroupLabel,
   getBuiltinAssistantDefinition,
   getDocumentActionOptions,
@@ -3955,6 +3956,8 @@ export default {
     bootMeasure('loadHistory', () => this.loadHistory())
     bootMeasure('loadSidebarLayout', () => this.loadSidebarLayout())
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
+    // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
+    ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
     bootMeasure('requestAssistantEvolutionSuggestionCheck', () => this.requestAssistantEvolutionSuggestionCheck())
     bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''
