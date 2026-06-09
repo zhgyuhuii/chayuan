@@ -929,6 +929,9 @@ export default {
     launchRerun(conversationModelId, okText) {
       const assistantId = String(this.task?.data?.assistantId || '').trim()
       if (!assistantId) { toastWarn('该任务无法重跑(缺少助手信息)'); return }
+      // 先停掉上一个任务,避免「切模型重跑后旧任务还在跑」(旧请求未取消会继续占用模型/连接)
+      const prevTaskId = String(this.currentTaskId || this.task?.id || '').trim()
+      if (prevTaskId) { try { stopAssistantTask(prevTaskId) } catch (_) { /* 旧任务已结束则忽略 */ } }
       try {
         const result = startAssistantTask(assistantId, this.buildRerunOverrides(conversationModelId))
         if (result.gated) return

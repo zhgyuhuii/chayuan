@@ -886,12 +886,18 @@ function getTaskType(assistantId) {
   return 'assistant'
 }
 
-// 核对/知识库对比类:相互矛盾/对照的两处可能落在不同块,逐块跑会漏检 → 强制全文单遍。
+// 需全文单遍(不分块)的助手:
+//  - 核对/知识库对比类(verify/kb-verify):相互矛盾/对照的两处可能落在不同块,逐块跑会漏检;
+//  - 抽取类(json 输出 + 仅生成结果 none):要的是整篇一个自定义 JSON 对象,逐块会被套进
+//    结构化批处理信封({schemaVersion,operations})并产生多份无法合并的 JSON,故须单遍直出。
+// 块长仍封顶 16000(见 getStructuredChunks),超长文档退化为分块。
 function isSinglePassAssistant(assistantId) {
   try {
     const def = getBuiltinAssistantDefinition(assistantId)
     const domain = String(def?.domain || '').trim()
     if (domain === 'verify' || domain === 'kb-verify') return true
+    // 仅领域包(有 domain)的抽取助手单遍直出;核心 json 助手(如表单提取)保持原行为
+    if (domain && String(def?.defaultOutputFormat || '') === 'json' && String(def?.defaultAction || '') === 'none') return true
     const caps = def?.runtimeCapabilities
     return !!(caps && (caps.singlePassDocument || caps.useKnowledgeBase))
   } catch (_) {
