@@ -175,7 +175,7 @@ export const INSTRUMENTEDU_BUILTIN_ASSISTANTS = Object.freeze([
     label: '续费要点抽取',
     shortLabel: '续费抽取',
     icon: '📋',
-    tags: ['续费', '抽取', '核查'],
+    tags: ['续费', '抽取', '信息提取'],
     allowedActions: ['none', 'copy', 'insert'],
     defaultAction: 'none',
     defaultOutputFormat: 'json',

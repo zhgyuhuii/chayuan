@@ -164,22 +164,45 @@ export const CALLIGRAPHY_BUILTIN_ASSISTANTS = Object.freeze([
       '请把下面要传达给家长的内容，改写成一段得体清楚的沟通话术：事实如实表达，措辞照顾家长感受，需要家长配合的地方说清楚。不要添加原文没有的承诺或表现。\n---\n{{input}}\n---',
   }),
   base({
-    id: 'analysis.cal-contest-notice',
-    label: '比赛通知',
-    shortLabel: '比赛通知',
+    id: 'analysis.cal-contest-extract',
+    label: '比赛信息抽取',
+    shortLabel: '比赛抽取',
     icon: '🏆',
-    tags: ['比赛', '通知'],
-    allowedActions: ['insert', 'replace', 'none'],
-    defaultAction: 'insert',
-    defaultOutputFormat: 'markdown',
+    tags: ['比赛', '抽取', '征稿'],
+    allowedActions: ['none'],
+    defaultAction: 'none',
+    defaultOutputFormat: 'json',
+    temperature: 0.1,
     defaultInputSource: INPUT_SOURCE_DOCUMENT,
-    description: '把比赛信息整理成要素齐全、表述清楚的参赛通知。',
+    description: '从书画比赛/征稿启事中抽取名称、主办、组别、作品要求、截止时间等字段，输出严格JSON。',
     systemPrompt:
-      '你是一位书画机构的教务，负责发书法/国画比赛的参赛通知。' +
-      '严格按用户给的信息整理：比赛名称、主办方、组别、作品要求、尺寸、提交方式、截止时间、评审与奖项等。' +
-      '所有日期、规格、费用一律以原文为准，缺失的要素明确标「待补充」，绝不编造截止日期或奖项。表述清楚、便于家长照做。',
+      '你是一位书画机构教务岗位的资深人员，负责从比赛章程/征稿启事原文中抽取结构化的参赛要素。\n' +
+      '抽取要求：\n' +
+      '1. 只输出严格合法的 JSON，不要任何解释文字、不要 Markdown 代码块包裹。\n' +
+      '2. 只抽取原文明确出现的信息，找不到的字段留空字符串或空数组，绝不编造主办方、截止日期、奖项或报名费。\n' +
+      '3. 日期、尺寸、费用等数字必须原样照抄原文，不换算、不推断格式。\n' +
+      '4. JSON 结构示例：\n' +
+      '{\n' +
+      '  "contest_name": "",\n' +
+      '  "organizer": "",\n' +
+      '  "categories": [],\n' +
+      '  "eligibility": "",\n' +
+      '  "work_requirements": {\n' +
+      '    "scripts_or_themes": "",\n' +
+      '    "size": "",\n' +
+      '    "material": "",\n' +
+      '    "quantity": ""\n' +
+      '  },\n' +
+      '  "submission_method": "",\n' +
+      '  "fee": "",\n' +
+      '  "deadline": "",\n' +
+      '  "review_and_awards": "",\n' +
+      '  "contact": "",\n' +
+      '  "missing_fields": []\n' +
+      '}\n' +
+      '原文没出现的字段名放进 missing_fields 数组，方便老师补全。',
     userPromptTemplate:
-      '请根据下面的比赛信息整理成一份参赛通知，按要素分条列清：比赛名称与主办、参赛组别与资格、作品要求（书体/题材/尺寸/材料）、提交方式与截止时间、评审与奖项、咨询方式。原文缺的要素标「待补充」，不要编。\n---\n{{input}}\n---',
+      '从下面的书画比赛/征稿原文中抽取结构化要素，输出严格 JSON（按 system 给的结构）。只抽原文明确出现的内容，日期和尺寸照抄，找不到的字段留空并记入 missing_fields，不要编造。\n---\n{{input}}\n---',
   }),
   base({
     id: 'analysis.cal-exhibition-copy',
