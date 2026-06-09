@@ -1314,7 +1314,17 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsEnergy.js').then(m => m.ENERGY_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsCatering.js').then(m => m.CATERING_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsAutomotive.js').then(m => m.AUTOMOTIVE_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsAdvertising.js').then(m => m.ADVERTISING_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsAdvertising.js').then(m => m.ADVERTISING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsAgriculture.js').then(m => m.AGRICULTURE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsFilm.js').then(m => m.FILM_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsGaming.js').then(m => m.GAMING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsChemical.js').then(m => m.CHEMICAL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsTelecom.js').then(m => m.TELECOM_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsBeauty.js').then(m => m.BEAUTY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsMaternal.js').then(m => m.MATERNAL_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSports.js').then(m => m.SPORTS_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsNonprofit.js').then(m => m.NONPROFIT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsFashion.js').then(m => m.FASHION_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */

@@ -7583,7 +7583,17 @@ export default {
         energy: '能源 / 环保',
         catering: '餐饮 / 食品',
         automotive: '汽车 / 交通',
-        advertising: '广告 / 公关会展'
+        advertising: '广告 / 公关会展',
+        agriculture: '农林牧渔',
+        film: '影视 / 编剧',
+        gaming: '游戏',
+        chemical: '化工 / 材料',
+        telecom: '电信 / 通信',
+        beauty: '美妆 / 日化',
+        maternal: '母婴 / 育儿',
+        sports: '体育 / 健身',
+        nonprofit: '公益 / 社工',
+        fashion: '服装 / 时尚'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
