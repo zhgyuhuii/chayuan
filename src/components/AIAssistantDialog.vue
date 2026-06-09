@@ -7580,7 +7580,10 @@ export default {
         travel: '旅游 / 酒店',
         realestate: '房产 / 物业',
         insurance: '保险',
-        energy: '能源 / 环保'
+        energy: '能源 / 环保',
+        catering: '餐饮 / 食品',
+        automotive: '汽车 / 交通',
+        advertising: '广告 / 公关会展'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
