@@ -7556,7 +7556,10 @@ export default {
       const LABELS = {
         legal: '合同 / 法务',
         verify: '文档核对',
-        'kb-verify': '知识库对比'
+        'kb-verify': '知识库对比',
+        finance: '财务 / 会计',
+        marketing: '市场营销',
+        gov: '政务 / 公文'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain

@@ -1287,7 +1287,10 @@ export function registerLazyBuiltinAssistants(list) {
 const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsLegal.js').then(m => m.LEGAL_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsAudit.js').then(m => m.AUDIT_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsKbVerify.js').then(m => m.KB_VERIFY_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsKbVerify.js').then(m => m.KB_VERIFY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsFinance.js').then(m => m.FINANCE_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsMarketing.js').then(m => m.MARKETING_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsGov.js').then(m => m.GOV_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 /** 幂等加载全部领域包(并发共享同一 Promise);单个包失败跳过不阻断其它。返回累计新增数。 */
