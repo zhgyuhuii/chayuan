@@ -7574,7 +7574,10 @@ export default {
         publishing: '出版 / 校对',
         media: '媒体 / 新闻',
         logistics: '物流 / 供应链',
-        service: '客服 / 沟通'
+        service: '客服 / 沟通',
+        data: '数据 / 报表',
+        personal: '个人 / 生活',
+        travel: '旅游 / 酒店'
       }
       const domain = String(item?.domain || '').trim()
       if (domain) return LABELS[domain] || domain
