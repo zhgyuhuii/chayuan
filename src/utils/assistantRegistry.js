@@ -3,6 +3,7 @@ import { createDefaultReportSettings } from './reportSettings.js'
 import { EXTRA_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsExtra.js'
 import { P5_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5.js'
 import { P5_PLUS_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsP5Plus.js'
+import { LEGAL_BUILTIN_ASSISTANTS } from './assistant/builtinAssistantsLegal.js'
 
 const INPUT_SOURCE_SELECTION_PREFERRED = 'selection-preferred'
 const INPUT_SOURCE_SELECTION_ONLY = 'selection-only'
@@ -1261,7 +1262,8 @@ const BUILTIN_ASSISTANTS = [
   ...CORE_BUILTIN_ASSISTANTS,
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
-  ...P5_PLUS_BUILTIN_ASSISTANTS
+  ...P5_PLUS_BUILTIN_ASSISTANTS,
+  ...LEGAL_BUILTIN_ASSISTANTS
 ].filter(item => item.id !== 'analysis.correct-spell')
 
 function deepClone(value) {
