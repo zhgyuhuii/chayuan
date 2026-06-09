@@ -261,10 +261,12 @@ export function reconcileStaleRunningTasks(options = {}) {
   syncTasksFromStorage()
   const maxAgeMs = Number(options.maxAgeMs) > 0 ? Number(options.maxAgeMs) : STALE_RUNNING_DEFAULT_MS
   const now = Date.now()
+  // 终态:已结束的任务不回收;其余一切「非终态」(running/pending/queued/starting/paused/...)
+  // 只要心跳超时都判为中断,避免漏掉某个会被清单显示成「执行中」的中间态。
+  const TERMINAL = new Set(['completed', 'done', 'finished', 'failed', 'error', 'cancelled', 'canceled', 'abnormal', 'archived'])
   const staleIds = tasks
     .filter((task) => {
-      // running 与卡在 pending/preparing 的占位任务都要回收
-      if (task.status !== 'running' && task.status !== 'pending') return false
+      if (TERMINAL.has(String(task.status || '').toLowerCase())) return false
       const updated = new Date(task.updatedAt || task.startedAt || task.createdAt || 0).getTime()
       return Number.isFinite(updated) && now - updated > maxAgeMs
     })

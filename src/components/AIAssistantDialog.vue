@@ -3877,14 +3877,17 @@ export default {
       // 领域排序优先级:通用类(核对/知识库对比等适用任何行业的)在前 → 合同 → 政务 → 军工
       //  → 政法/警察 → 其它行业(保持插入序)→ 自定义最后。收藏分组始终置顶。
       const ORDER = [
-        'core', 'analysis', 'verify', 'kb-verify',
+        'core', 'analysis', 'docutil', 'verify', 'kb-verify',
         'legal',
         'gov', 'govdoc', 'govpolicy', 'govservice', 'govpetition', 'govsupervise',
         'govemergency', 'govpersonnel', 'govmeeting', 'goveconomy', 'govgrassroots',
         'govpeople', 'govparty',
         'mildoc', 'milpolitical', 'miltraining', 'millogistics', 'milequip',
         'milsafety', 'milparty', 'milpersonnel',
-        'judicial'
+        'defmob', 'veteran',
+        'judicial', 'police', 'court', 'procurator', 'justice',
+        'eduadmin', 'school',
+        'foreign', 'customs'
       ]
       const rank = (k) => {
         const i = ORDER.indexOf(k)
@@ -7594,7 +7597,18 @@ export default {
         academic: '高校 / 科研',
         bidding: '招投标',
         manufacturing: '制造 / 工程',
+        docutil: '通用文档工具',
         judicial: '法律 / 司法',
+        defmob: '国防动员 / 人防',
+        veteran: '退役军人事务',
+        police: '公安 / 治安',
+        court: '法院 / 审判',
+        procurator: '检察',
+        justice: '司法行政',
+        eduadmin: '教育行政',
+        school: '学校管理',
+        foreign: '外事 / 外交',
+        customs: '海关 / 口岸',
         publishing: '出版 / 校对',
         media: '媒体 / 新闻',
         logistics: '物流 / 供应链',
