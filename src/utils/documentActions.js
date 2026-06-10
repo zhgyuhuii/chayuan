@@ -1,4 +1,5 @@
 import { ensureDir, getEffectiveDataDir, pathJoin, pathSep } from './dataPathSettings.js'
+import { parseMarkdownBlocks, markdownHasRichContent, renderMarkdownBlocksToDocument } from './markdownDocumentRenderer.js'
 import { findIssueRangeDetailed } from './spellCheckService.js'
 import {
   ANALYSIS_SECRET_KEYWORD_EXTRACT_ID,
@@ -1639,6 +1640,21 @@ function insertAtRange(text, options = {}) {
   }
   const hasSelection = hasMeaningfulSelectionText(range?.Text, 1)
   const insertAt = hasSelection ? Number(range.End || 0) : Number(range.Start || range.End || 0)
+  // 富 Markdown(表格/标题/加粗/列表):渲染成真实格式,而非把 | # ** 等原样插入。
+  // 渲染器逐块兜底;若整体起步即失败(未写入任何内容)则退回下方纯文本插入。
+  if (options.outputFormat === 'markdown' || markdownHasRichContent(text)) {
+    try {
+      let startPos = insertAt
+      if (hasSelection) {
+        doc.Range(insertAt, insertAt).InsertAfter('\r')
+        startPos = insertAt + 1
+      }
+      renderMarkdownBlocksToDocument(doc, startPos, parseMarkdownBlocks(text))
+      return { range, insertedAt: insertAt, anchoredToSelection: hasSelection, rendered: 'markdown' }
+    } catch (e) {
+      console.warn('markdown 渲染失败,退回纯文本插入:', e)
+    }
+  }
   const insertRange = doc.Range(insertAt, insertAt)
   const payload = hasSelection ? `\r${stripParagraphEndMark(text)}` : text
   insertRange.InsertAfter(toDocumentText(payload))
