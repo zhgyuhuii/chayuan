@@ -1639,6 +1639,31 @@ async function runStructuredBatchChat({
   }
 }
 
+// Phase1 附件文本注入:把已解析的附件文本(overrides.attachments=[{name,role,kind,text}])
+// 按角色并入输入,模板无关(全部并进 {{input}},兼容全部现有助手):
+//  - object(对象):无主文本时作主体;有主文本时附加为「附件内容」。
+//  - sample(样例):附「参考样例,请仿照其结构与风格」。
+//  - reference(参考):附「参考资料,结合作答、不臆造」。
+function composeInputWithAttachments(baseInput, attachments) {
+  const list = Array.isArray(attachments) ? attachments.filter(a => a && String(a.text || '').trim()) : []
+  if (!list.length) return baseInput
+  const roleOf = (a) => String(a.role || 'object')
+  const join = (arr) => arr.map(a => `《${a.name || '附件'}》\n${String(a.text).trim()}`).join('\n\n')
+  const objects = list.filter(a => roleOf(a) === 'object')
+  const samples = list.filter(a => roleOf(a) === 'sample')
+  const refs = list.filter(a => roleOf(a) === 'reference')
+  let primary = String(baseInput || '').trim()
+  const tail = []
+  if (objects.length) {
+    const objText = join(objects)
+    if (!primary) primary = objText
+    else tail.push(`【附件内容】\n${objText}`)
+  }
+  if (samples.length) tail.push(`【参考样例(请仿照其结构与风格,内容以实际为准)】\n${join(samples)}`)
+  if (refs.length) tail.push(`【参考资料(结合以下内容作答,不臆造未提供的信息)】\n${join(refs)}`)
+  return [primary, ...tail].filter(Boolean).join('\n\n')
+}
+
 function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
   const resolved = getAssistantDefinition(assistantId)
   if (!resolved) {
@@ -1674,7 +1699,10 @@ function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
     inputInfo.selectionStart = ovSelStart
     inputInfo.selectionEnd = ovSelEnd
   }
-  const inputText = String(overrides.inputText || inputInfo.text || '').trim()
+  const inputText = composeInputWithAttachments(
+    String(overrides.inputText || inputInfo.text || '').trim(),
+    overrides.attachments
+  )
   // 是否允许空输入运行。规则(覆盖全部助手,无需逐个声明):
   //  - 生成/起草/追加类(defaultAction = insert/append/prepend,如通知起草、写邮件、出题、
   //    方案起草)本就从零产出,不依赖文档既有内容 → 允许为空,{{input}} 替换为空串,

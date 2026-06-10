@@ -15422,6 +15422,18 @@ export default {
       this.$nextTick(() => this.scrollToBottom())
       return true
     },
+    buildAssistantRunAttachments() {
+      // Phase1:把 composer 已解析的附件(含图片识别/OCR 文本)传给助手执行,默认角色「对象」。
+      // 角色切换(对象/样例/参考)由后续上下文 chip 栏提供;a.attachmentRole 已支持透传。
+      return (this.attachments || [])
+        .filter(a => a && a.isText && String(a.content || '').trim())
+        .map(a => ({
+          name: a.name || '附件',
+          role: a.attachmentRole || 'object',
+          kind: a.parsedKind === 'image' ? 'image' : 'doc',
+          text: String(a.content || '')
+        }))
+    },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
       // 同步置锁:必须在任何 await 之前。否则快速连点会在下面 confirmAssistantRun 的 await 处
@@ -15439,6 +15451,7 @@ export default {
         const taskTitle = item.shortLabel || item.label || '任务进度'
         const ret = startAssistantTask(item.key, {
           taskTitle,
+          attachments: this.buildAssistantRunAttachments(),
           ...this.getConversationModelTaskOverrides()
         })
         if (ret.gated) { this.assistantRunLoadingKey = ''; return }
