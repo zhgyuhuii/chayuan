@@ -286,6 +286,9 @@
           <p class="about-muted about-support-note">
             扫码即可购买使用授权 / 额度，微信、支付宝任选；需要服务版 / 至臻版请联系商务。
           </p>
+          <p class="about-muted about-support-note" style="margin-top: 6px;">
+            独立团队，认真做产品。当支持够团队吃饭，全部功能即免费开源、回馈所有人。谢谢你成为其中一份力量。
+          </p>
           <div v-if="showWxQr || showAliQr" class="about-support-qr-row">
             <div v-if="showWxQr" class="about-qr-wrap">
               <img
