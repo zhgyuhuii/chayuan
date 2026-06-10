@@ -707,12 +707,23 @@ export async function applyDocumentDeclassify(options = {}) {
 
   try {
     replaceTextByRanges(doc, preview.replacementMap, 'declassify')
+    // 关键修复:脱密写回后,从【实际文档】重新读取并计算指纹作为复原基线,
+    // 而不是用内存中构造的 preview.declassifiedText。WPS 写回会规范化换行/段落标记,
+    // 二者哈希必然不同,导致复原时「内容已发生变化」误判、永远无法复原(用户实测)。
+    // 以实际文档文本为基线,未改动时与复原处的 getDocumentText() 完全一致,即可正确比对。
+    let appliedDeclassifiedTextHash
+    try {
+      appliedDeclassifiedTextHash = await fingerprintText(getDocumentText())
+    } catch (_) {
+      // 读取实际文档失败则退回构造文本的哈希,不阻断脱密
+      appliedDeclassifiedTextHash = declassifiedTextHash
+    }
     saveDeclassifyState(doc, {
       placeholderPrefix: TOKEN_WRAPPER,
       keywordCount: preview.matchedKeywordEntries.length,
       replacementCount: preview.replacementMap.length,
       originalTextHash,
-      declassifiedTextHash,
+      declassifiedTextHash: appliedDeclassifiedTextHash,
       createdAt,
       algorithm: envelope.algorithm,
       kdf: `${envelope?.keyDerivation?.name || 'PBKDF2'}-${envelope?.keyDerivation?.hash || 'SHA-256'}`
