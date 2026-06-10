@@ -2067,7 +2067,16 @@ async function executeAssistantTask(assistantId, overrides = {}) {
     const structuredChunks = getStructuredChunks(inputInfo, assistantId, runtimeDocumentAction)
       .filter(chunk => String(chunk?.normalizedText || chunk?.text || '').trim())
     if (structuredChunks.length === 0) {
-      throw new Error('未找到可分析的文档分段')
+      // 与输入空判定一致:生成/起草/追加类(insert/append/prepend)或显式 inputOptional 的助手,
+      // 空文档时没有可分析的分段也允许运行——构造一个空分段,模型按 prompt 单次产出后写回(写回到文首)。
+      const genActions = ['insert', 'append', 'prepend']
+      const allowEmptyGen = (definition && definition.inputOptional === true)
+        || overrides.allowEmptyInput === true
+        || genActions.includes(String(definition && definition.defaultAction || ''))
+      if (!allowEmptyGen) {
+        throw new Error('未找到可分析的文档分段')
+      }
+      structuredChunks.push({ text: '', normalizedText: '', start: 0, end: 0, index: 0, riskProfile: null })
     }
 
     if (shouldUsePlainDocumentPipeline(assistantId, reportSettings, runtimeDocumentAction)) {
