@@ -86,10 +86,22 @@ export function resolveDocumentInput(sourceMode = 'selection-preferred') {
   }
 
   if (sourceMode === 'document') {
+    // 用户约定:有选中就用选中内容作输入/上下文,没选中才用全文。
+    // 「始终处理全文」的助手也遵循此规则——选区优先,这样选一段执行就只处理该段。
+    if (hasMeaningfulSelection) {
+      return {
+        text: selectionText,
+        source: 'selection',
+        hasSelection: true,
+        hasDocument: documentText.length > 0,
+        selectionStart,
+        selectionEnd
+      }
+    }
     return {
       text: documentText,
       source: 'document',
-      hasSelection: hasMeaningfulSelection,
+      hasSelection: false,
       hasDocument: documentText.length > 0
     }
   }
