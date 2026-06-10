@@ -1437,7 +1437,9 @@ const DOMAIN_PACK_LOADERS = [
   () => import('./assistant/builtinAssistantsCustoms.js').then(m => m.CUSTOMS_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsDocUtil.js').then(m => m.DOCUTIL_BUILTIN_ASSISTANTS),
   () => import('./assistant/builtinAssistantsAuditExt.js').then(m => m.AUDIT_EXT_BUILTIN_ASSISTANTS),
-  () => import('./assistant/builtinAssistantsKbVerifyExt.js').then(m => m.KBVERIFY_EXT_BUILTIN_ASSISTANTS)
+  () => import('./assistant/builtinAssistantsKbVerifyExt.js').then(m => m.KBVERIFY_EXT_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsSecrecy.js').then(m => m.SECRECY_BUILTIN_ASSISTANTS),
+  () => import('./assistant/builtinAssistantsGovReview.js').then(m => m.GOVREVIEW_BUILTIN_ASSISTANTS)
 ]
 let _domainPacksPromise = null
 // 单个领域包加载封顶时间(ms):WPS 独立子窗口里某些 chunk 的 import() 可能既不 resolve

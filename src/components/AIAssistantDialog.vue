@@ -3877,7 +3877,7 @@ export default {
       // 领域排序优先级:通用类(核对/知识库对比等适用任何行业的)在前 → 合同 → 政务 → 军工
       //  → 政法/警察 → 其它行业(保持插入序)→ 自定义最后。收藏分组始终置顶。
       const ORDER = [
-        'core', 'analysis', 'docutil', 'verify', 'kb-verify',
+        'core', 'analysis', 'docutil', 'verify', 'kb-verify', 'secrecy', 'govreview',
         'legal',
         'gov', 'govdoc', 'govpolicy', 'govservice', 'govpetition', 'govsupervise',
         'govemergency', 'govpersonnel', 'govmeeting', 'goveconomy', 'govgrassroots',
@@ -7584,6 +7584,8 @@ export default {
         legal: '合同 / 法务',
         verify: '文档核对',
         'kb-verify': '知识库对比',
+        secrecy: '保密合规自查（离线）',
+        govreview: '政务公文审查',
         finance: '财务 / 会计',
         marketing: '市场营销',
         gov: '政务 / 公文',
