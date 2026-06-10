@@ -2329,6 +2329,7 @@ import {
   FIXED_MAIN_ASSISTANT_LABELS,
   RIBBON_DYNAMIC_SLOT_COUNT,
   getAssistantSettingItems,
+  ensureDomainPacksLoaded,
   getAssistantDefaultConfig,
   getAssistantResolvedIcon,
   getBuiltinAssistantDefinition,
@@ -2416,6 +2417,8 @@ export default {
   components: { KbSettingsPanel },
   data() {
     return {
+      // 领域包懒加载完成标记(自增以触发助手设置列表重算)
+      domainPacksVersion: 0,
       // 主菜单
       activeMainMenu: 'model-settings',
       activeSubMenu: null,
@@ -2772,6 +2775,9 @@ export default {
       return getModelLogoPath(m.providerId) || 'images/ai-assistant.svg'
     },
     assistantSettingsItems() {
+      // 依赖 domainPacksVersion:领域包懒加载完成后自增,强制本计算属性重算
+      // (BUILTIN_ASSISTANTS 是非响应式模块数组,懒加载注入后不会自动触发刷新)。
+      void this.domainPacksVersion
       return getAssistantSettingItems(this.customAssistants, this.assistantSettingsMap)
     },
     assistantSettingGroups() {
@@ -3442,6 +3448,9 @@ export default {
       this.loadChunkSettings()
       this.loadSpellCheckCommentPolicy()
       this.loadAssistantConfigData()
+      // 设置窗口是独立 WPS 窗口、模块状态隔离:必须自行触发领域包懒加载,否则
+      // BUILTIN_ASSISTANTS 只含同步核心助手,助手设置列表会缺所有领域包助手。
+      ensureDomainPacksLoaded().then(() => { this.domainPacksVersion += 1 }).catch(() => {})
       this.loadAssistantPromptRecommendationDraft()
       this.applyInitialMenuSelection()
       this.normalizeActiveMainMenuIfHidden()
