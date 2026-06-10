@@ -381,11 +381,53 @@ function getContextSnippet(text, start, end) {
   }
 }
 
+// 字符间可忽略的「不可见/对齐」字符:半/全角空格、制表符、不间断空格、零宽字符、BOM、软连字符。
+// 不含换行与单元格分隔符(\n / \x07),避免跨段、跨单元格误匹配。
+const MAX_INTERCHAR_GAP = 3
+
+function isIntercharIgnorable(ch) {
+  switch (String(ch || '').charCodeAt(0)) {
+    case 0x20: case 0x09: case 0xa0: case 0x3000:
+    case 0x200b: case 0x200c: case 0x200d: case 0xfeff: case 0xad:
+      return true
+    default:
+      return false
+  }
+}
+
+function stripIntercharIgnorable(text) {
+  const s = String(text || '')
+  let out = ''
+  for (let i = 0; i < s.length; i += 1) {
+    if (!isIntercharIgnorable(s[i])) out += s[i]
+  }
+  return out
+}
+
+// 容忍式匹配:允许关键词各字符之间夹少量对齐用空格/全角空格/零宽字符
+// (常见于两字姓名用全角空格对齐成"张 辉")。返回实际匹配结束位置(exclusive),失败返回 -1。
+function matchTermWithTolerance(source, index, termCore) {
+  let si = index
+  for (let ti = 0; ti < termCore.length; ti += 1) {
+    if (ti > 0) {
+      let gap = 0
+      while (si < source.length && gap < MAX_INTERCHAR_GAP && isIntercharIgnorable(source[si])) {
+        si += 1
+        gap += 1
+      }
+    }
+    if (si >= source.length || source[si] !== termCore[ti]) return -1
+    si += 1
+  }
+  return si
+}
+
 function findMatchedEntry(entries, text, index) {
   for (const entry of entries) {
-    if (text.startsWith(entry.term, index)) {
-      return entry
-    }
+    const termCore = entry.termCore || stripIntercharIgnorable(entry.term)
+    if (!termCore) continue
+    const end = matchTermWithTolerance(text, index, termCore)
+    if (end > index) return { entry, end }
   }
   return null
 }
@@ -398,6 +440,8 @@ function buildReplacementPlan(text, keywordEntries) {
     if (lengthDiff !== 0) return lengthDiff
     return String(a.term).localeCompare(String(b.term), 'zh-Hans-CN')
   })
+  // 预算去可忽略字符后的核心串,供容忍式匹配复用
+  orderedEntries.forEach((e) => { e.termCore = stripIntercharIgnorable(e.term) })
   const replacementMap = []
   const outputParts = []
   const occurrenceByTerm = new Map()
@@ -406,18 +450,20 @@ function buildReplacementPlan(text, keywordEntries) {
   let outputIndex = 0
 
   while (inputIndex < source.length) {
-    const matchedEntry = findMatchedEntry(orderedEntries, source, inputIndex)
-    if (!matchedEntry) {
+    const matched = findMatchedEntry(orderedEntries, source, inputIndex)
+    if (!matched) {
       outputParts.push(source[inputIndex])
       inputIndex += 1
       outputIndex += 1
       continue
     }
 
+    const matchedEntry = matched.entry
     const term = matchedEntry.term
     const replacementToken = matchedEntry.replacementToken
     const originalStart = inputIndex
-    const originalEnd = inputIndex + term.length
+    // 实际跨度可能含对齐空格(如姓名"张 辉"),整体替换;复原以干净关键词回填。
+    const originalEnd = matched.end
     const replacementStart = outputIndex
     const replacementEnd = outputIndex + replacementToken.length
     const occurrenceIndex = (occurrenceByTerm.get(term) || 0) + 1
