@@ -97,7 +97,7 @@ export const STEEL_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['安全生产', '核查', 'check'], allowedActions: ['comment', 'link-comment', 'none'], defaultAction: 'comment', temperature: 0.2,
     description: '逐条核查隐患排查记录:隐患描述是否清晰、整改措施/责任/时限是否闭环、风险分级是否合理。',
     systemPrompt: '你是一位钢铁企业安全隐患排查核查专家(安全主管)。逐条核查隐患排查台账的完整性与闭环情况。只针对给定文本,定位到具体片段,不臆造未记录的隐患。本助手仅辅助,不替代法定隐患排查治理程序。',
-    userPromptTemplate: `请逐条核查下面隐患排查记录,按问题列出:\n- 命中片段:\\\`原文逐字片段\\\`\n- 问题类型:隐患描述不清/缺整改措施/缺责任人或时限/风险分级不当/未闭环\n- 核查说明与建议\n只针对原文,不编造未记录的隐患。\n隐患排查记录:\n---\n{{input}}\n---`
+    userPromptTemplate: `请逐条核查下面隐患排查记录,按问题列出:\n- 命中片段:\`原文逐字片段\`\n- 问题类型:隐患描述不清/缺整改措施/缺责任人或时限/风险分级不当/未闭环\n- 核查说明与建议\n只针对原文,不编造未记录的隐患。\n隐患排查记录:\n---\n{{input}}\n---`
   }),
   base({
     id: 'analysis.sl-cost-reduction', label: '降本增效材料', shortLabel: '降本增效', icon: '💹',
@@ -157,7 +157,7 @@ export const STEEL_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['工艺技术', '核查', 'check'], allowedActions: ['comment', 'link-comment', 'none'], defaultAction: 'link-comment', temperature: 0.2,
     description: '逐条核查操作规程:是否缺开停车/异常处置/安全条目,参数是否含糊,职责是否明确。',
     systemPrompt: '你是一位钢铁企业工艺规程审核专家(技术管理岗)。逐条核查操作规程的完整性与可执行性,重点看安全与异常处置条目是否齐备、参数是否明确。只针对给定文本,定位到具体片段,不臆造规程内容。本助手仅辅助,正式规程需经审核会签。',
-    userPromptTemplate: `请逐条核查下面操作规程,按问题列出:\n- 命中片段:\\\`原文逐字片段\\\`\n- 问题类型:缺开停车步骤/缺异常处置/缺安全要求/参数含糊或缺单位/职责不清\n- 核查说明与修改建议\n只针对原文,不臆造内容。\n操作规程:\n---\n{{input}}\n---`
+    userPromptTemplate: `请逐条核查下面操作规程,按问题列出:\n- 命中片段:\`原文逐字片段\`\n- 问题类型:缺开停车步骤/缺异常处置/缺安全要求/参数含糊或缺单位/职责不清\n- 核查说明与修改建议\n只针对原文,不臆造内容。\n操作规程:\n---\n{{input}}\n---`
   })
 ])
 

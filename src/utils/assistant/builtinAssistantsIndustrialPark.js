@@ -247,7 +247,7 @@ export const INDUSTRIALPARK_BUILTIN_ASSISTANTS = Object.freeze([
     label: '招商承诺合规核查',
     shortLabel: '承诺核查',
     icon: '⚖️',
-    tags: ['合规', '核查', '招商', 'check'],
+    tags: ['合规', '核查', '招商', '风险'],
     allowedActions: ['comment', 'link-comment', 'insert'],
     defaultAction: 'comment',
     defaultOutputFormat: 'markdown',

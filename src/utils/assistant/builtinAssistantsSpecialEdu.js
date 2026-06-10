@@ -75,7 +75,7 @@ export const SPECIALEDU_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['特殊教育', '生成', '主题活动'], allowedActions: ['insert', 'append', 'none'], defaultAction: 'insert', temperature: 0.5,
     description: '面向特教学生设计节日/季节/安全等主题活动方案:目标、分层任务、感官与体验环节、家校延伸。',
     systemPrompt: '你是一位特殊教育教师,设计适合特教学生的主题活动。重视感官体验、多通道参与和分层目标,环节简明、节奏适配学生注意力。内容贴合给定主题,不照搬普校方案。',
-    userPromptTemplate: `请根据下面主题设计特教主题活动方案:\n## 活动名称与目标\n## 适用学生与分层任务\n## 活动准备(教具、环境、人员)\n## 活动环节(含感官体验与多通道参与，标注个别支持)\n## 安全注意事项\n## 家校延伸\n主题与情况:\n---\n{{input}}\n---` }),
+    userPromptTemplate: `请根据下面主题设计特教主题活动方案:\n## 活动名称与目标\n## 适用学生与分层任务\n## 活动准备(教具、环境、人员)\n## 活动环节(含感官体验与多通道参与,标注个别支持)\n## 安全注意事项\n## 家校延伸\n主题与情况:\n---\n{{input}}\n---` }),
   base({
     id: 'analysis.se-home-communication', label: '家校沟通材料', shortLabel: '家校沟通', icon: '💬',
     tags: ['特殊教育', '生成', '家校沟通'], allowedActions: ['insert', 'append', 'none'], defaultAction: 'insert', temperature: 0.4,
