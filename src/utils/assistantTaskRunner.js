@@ -2815,7 +2815,11 @@ export function getAssistantLaunchInfo(assistantId, overrides = {}) {
     hasSelection: info.inputInfo.hasSelection === true,
     usesDocument: info.inputInfo.source === 'document',
     inputLength: info.inputText.length,
-    requiresFullDocumentConfirm: info.inputInfo.source === 'document' && info.inputInfo.hasSelection !== true
+    // 生成/起草/追加类(insert/append/prepend)是「新增内容」,并不处理文档既有正文,
+    // 不弹「将处理全文(约X字)」确认(尤其空文档约0字时该提示不合适)。
+    requiresFullDocumentConfirm: info.inputInfo.source === 'document'
+      && info.inputInfo.hasSelection !== true
+      && !['insert', 'append', 'prepend'].includes(String(info.effectiveDocumentAction || ''))
   }
 }
 
