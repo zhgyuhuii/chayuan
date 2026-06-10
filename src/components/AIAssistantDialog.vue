@@ -15576,14 +15576,18 @@ export default {
     },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
+      // 同步置锁:必须在任何 await 之前。否则快速连点会在下面 confirmAssistantRun 的 await 处
+      // 全部穿透上一行的判断,一次连点启动多个任务。提前置锁后,后续点击在入口即被挡掉;
+      // 取消确认 / 进入参数收集等提前返回的分支需手动解锁。
+      this.assistantRunLoadingKey = item.key
       try {
         const launchInfo = getAssistantLaunchInfo(item.key)
-        if (!(await this.confirmAssistantRun(launchInfo))) return
+        if (!(await this.confirmAssistantRun(launchInfo))) { this.assistantRunLoadingKey = ''; return }
         if (this.shouldCollectAssistantRunParameters(item)) {
+          this.assistantRunLoadingKey = ''
           this.showAssistantRunParameterCollection(item)
           return
         }
-        this.assistantRunLoadingKey = item.key
         const taskTitle = item.shortLabel || item.label || '任务进度'
         const ret = startAssistantTask(item.key, {
           taskTitle,
