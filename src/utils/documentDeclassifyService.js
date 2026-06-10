@@ -32,7 +32,12 @@ const LOCAL_SENSITIVE_PATTERNS = [
   { regex: /\b[1-9]\d{16}[0-9Xx]\b/g, category: '证件信息', riskLevel: 'high', reason: '命中身份证号模式' },
   { regex: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, category: '联系方式', riskLevel: 'high', reason: '命中邮箱模式' },
   { regex: /\b[A-Z]{2,6}-\d{2,}\b/g, category: '编号标识', riskLevel: 'medium', reason: '命中编号模式' },
-  { regex: /\b\d{6,}\b/g, category: '编号标识', riskLevel: 'medium', reason: '命中长数字编号模式' }
+  { regex: /\b\d{6,}\b/g, category: '编号标识', riskLevel: 'medium', reason: '命中长数字编号模式' },
+  // 安全加固B:补充高风险本地兜底(独立格式,不依赖大模型召回;放在长数字之后,重叠时高风险覆盖)
+  { regex: /\b(?:\d{16}|\d{19})\b/g, category: '金融账户', riskLevel: 'high', reason: '命中银行卡号模式' },
+  { regex: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g, category: '网络信息', riskLevel: 'high', reason: '命中IP地址模式' },
+  { regex: /[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-Z][A-HJ-NP-Z0-9]{4,5}[A-HJ-NP-Z0-9挂学警港澳]/g, category: '车辆信息', riskLevel: 'high', reason: '命中车牌号模式' },
+  { regex: /\b[0-9A-HJ-NP-RTUWXY]{2}\d{6}[0-9A-HJ-NP-RTUWXY]{10}\b/g, category: '单位信息', riskLevel: 'high', reason: '命中统一社会信用代码模式' }
 ]
 
 function interpolateTemplate(template, variables = {}) {
@@ -344,6 +349,8 @@ function normalizeKeywordEntries(entries, documentText = '') {
   const usedTokens = new Set()
   const normalized = Array.from(merged.values())
     .filter((item) => {
+      // 安全加固B:高风险条目一律保留,避免短的高风险词(代号/编号)因是长词子串被过滤而残留明文
+      if (item.riskLevel === 'high') return true
       const comparable = normalizeKeywordComparableKey(item.term)
       if (!comparable || comparable.length > 4) return true
       return !Array.from(merged.values()).some((other) => (
@@ -355,8 +362,10 @@ function normalizeKeywordEntries(entries, documentText = '') {
     .sort((a, b) => String(b.term || '').length - String(a.term || '').length)
     .map((item) => ({
       ...item,
+      // 安全加固A:文档内占位符一律由系统密码学随机生成,弃用大模型给的 replacementToken,
+      // 避免占位符可预测/带语义提示而泄露高风险信息(原词仍存 AES-GCM 信封、凭密码复原)。
       replacementToken: ensureUniqueReplacementToken(
-        item.replacementToken,
+        '',
         usedTokens,
         documentText
       )
