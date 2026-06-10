@@ -1,4 +1,5 @@
 import { buildChatCompletionsRequestSnapshot, chatCompletion, getChatApiConfigByProvider } from './chatApi.js'
+import { isVisionCapable } from './chatApiMultimodal.js'
 import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
 import { startTimer as startPerfTimer } from './perfTracker.js'
@@ -1100,9 +1101,20 @@ async function runPlainDocumentAssistantExecution(ctx) {
   throwIfCancelled(runState)
 
   const temperature = config.temperature ?? 0.3
+  // Phase2 视觉:有图片附件(带 base64)且所选模型支持 vision 时,把图片以 image_url 一并发给模型
+  // (真·看图),让助手按自己的任务 prompt 直接理解图片;否则走文本(图片已由识别相机转为文本)。
+  const visionImages = (Array.isArray(overrides && overrides.attachments) ? overrides.attachments : [])
+    .filter(a => a && a.kind === 'image' && a.imageBase64)
+  const useVision = visionImages.length > 0 && isVisionCapable(model && model.modelId)
+  const userContent = useVision
+    ? [
+        { type: 'text', text: userPrompt },
+        ...visionImages.map(a => ({ type: 'image_url', image_url: { url: `data:${a.mimeType || 'image/png'};base64,${a.imageBase64}`, detail: 'auto' } }))
+      ]
+    : userPrompt
   const messages = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt }
+    { role: 'user', content: userContent }
   ]
   const llmChatRequest = buildChatCompletionsRequestSnapshot({
     providerId: model.providerId,

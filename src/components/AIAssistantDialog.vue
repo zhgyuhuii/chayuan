@@ -2184,6 +2184,7 @@ import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
+import { fileToBase64 } from '../utils/chatApiMultimodal.js'
 import { isRecognizableMultimodalAttachment, recognizeMultimodalAttachment } from '../utils/multimodalRecognitionRunner.js'
 import { getRandomWelcomePrompt } from '../utils/aiAssistantWelcomePrompts.js'
 import { buildRandomAssistantSelfIntro, isAssistantIdentityQuestion, resolveAssistantLocalFaq } from '../utils/aiAssistantSelfIntro.js'
@@ -9871,6 +9872,9 @@ export default {
             const rawText = String(recognized?.text || '')
             item.parsedKind = String(recognized?.kind || '').trim()
             item.recognition = recognized
+            if (String(file.type || '').startsWith('image/')) {
+              try { item.imageBase64 = await fileToBase64(file); item.mimeType = file.type } catch (_) { /* 视觉数据可选,失败不影响识别文本 */ }
+            }
             if (rawText) {
               item.isText = true
               item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
@@ -15447,7 +15451,9 @@ export default {
           name: a.name || '附件',
           role: a.attachmentRole || 'object',
           kind: a.parsedKind === 'image' ? 'image' : 'doc',
-          text: String(a.content || '')
+          text: String(a.content || ''),
+          imageBase64: String(a.imageBase64 || ''),
+          mimeType: String(a.mimeType || '')
         }))
     },
     async runAssistant(item) {
