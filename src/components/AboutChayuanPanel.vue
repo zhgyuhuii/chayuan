@@ -321,6 +321,28 @@
       </div>
     </section>
 
+    <section class="about-section">
+      <h2 class="about-h2">免责声明 · 使用须知</h2>
+      <div class="about-open-card about-disclaimer-card">
+        <div>
+          <p>
+            察元 AI 文档助手是一款<strong>办公辅助工具</strong>。其输出由大语言模型生成，受<strong>模型能力、提示词、参数设置、输入文档质量及检索资料</strong>等多种因素影响，<strong>可能出现错误、遗漏、过时或不准确的内容</strong>。使用前请充分知悉以下条款。
+          </p>
+          <ol class="about-disclaimer-list">
+            <li><strong>结果仅供参考，须自行核对。</strong>所有生成、改写、审查、核查、抽取等结果<strong>均需您逐项人工复核</strong>后再使用；合同审查、保密核查、公文校对、财税与法律等内容，请以现行法律法规、正式文件、权威资料及专业人员意见为准。</li>
+            <li><strong>不具法律效力，不构成专业意见。</strong>本程序出具的任何内容<strong>不具有法律效力</strong>，也不构成法律、财务、税务、医疗、安全等专业意见或承诺，不能作为决策、定密、签署、申报或诉讼的直接依据。</li>
+            <li><strong>结果不理想时如何调整。</strong>若输出不准确，您可自行：①更换或升级所用大模型；②改写、细化提示词（System / 用户提示模板），写明角色、范围与要求；③调整温度等参数（核查类宜调低、创作类可调高）；④补充上下文、绑定更贴合的知识库、缩小输入范围分段处理；⑤多次生成并交叉核验。以上均可在「助手设置 / 模型设置」中自助调整。</li>
+            <li><strong>工具仅提供帮助，决策与责任在您。</strong>察元仅就文档处理提供效率辅助，<strong>不替代</strong>您的独立判断与法定职责；因采纳、传播或依赖本程序输出而产生的一切后果与责任，由使用者自行承担。</li>
+            <li><strong>购买性质说明。</strong>您所付费用<strong>仅为获得本工具的使用许可 / 额度</strong>，并非为生成结果的准确性、完整性或特定用途付费。在法律允许范围内，对因使用本工具及其输出导致的任何直接或间接损失，我们不承担责任。</li>
+            <li><strong>涉密与合规场景。</strong>在政务、涉密及合规场景使用时，请严格遵守保密及相关法规，由<strong>定密责任人、保密审查及专业人员</strong>依法定程序最终把关；本工具不处理、不判定具体密级，仅作辅助提示。</li>
+          </ol>
+          <p class="about-muted about-open-foot">
+            继续使用即表示您已阅读并理解上述条款。
+          </p>
+        </div>
+      </div>
+    </section>
+
     <div
       v-if="shotLightbox"
       class="about-shot-lightbox"
@@ -1099,6 +1121,26 @@ export default {
 
 .about-open-foot {
   margin-top: 8px !important;
+}
+
+.about-disclaimer-card {
+  display: block;
+  border-left: 3px solid var(--about-accent);
+}
+
+.about-disclaimer-list {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  list-style: decimal;
+}
+
+.about-disclaimer-list li {
+  margin: 0 0 9px;
+  line-height: 1.7;
+}
+
+.about-disclaimer-list li:last-child {
+  margin-bottom: 0;
 }
 
 .about-footer {
