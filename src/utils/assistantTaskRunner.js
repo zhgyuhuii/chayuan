@@ -1675,11 +1675,17 @@ function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
     inputInfo.selectionEnd = ovSelEnd
   }
   const inputText = String(overrides.inputText || inputInfo.text || '').trim()
-  // inputOptional:助手定义里可声明"无需文档/选区也能运行"(如出题、空白起草、写邮件等),
-  // 此时空 inputText 不再抛错,而是以空串继续 — userPromptTemplate 里的 {{input}} 会被替换为空,
-  // 模型实际依据 systemPrompt 与用户的对话/参数来产出。
+  // 是否允许空输入运行。规则(覆盖全部助手,无需逐个声明):
+  //  - 生成/起草/追加类(defaultAction = insert/append/prepend,如通知起草、写邮件、出题、
+  //    方案起草)本就从零产出,不依赖文档既有内容 → 允许为空,{{input}} 替换为空串,
+  //    模型依据 systemPrompt 与参数产出。
+  //  - 改写/润色(replace)、审查/核查(comment/link-comment)、抽取(none)必须有文档或选区
+  //    内容,否则没有处理对象,仍按原逻辑提示"请选中/文档无内容"。
+  //  - 助手定义仍可用 inputOptional 显式覆盖。
+  const GENERATION_ACTIONS = ['insert', 'append', 'prepend']
   const inputOptional = runtimeConfig.inputOptional === true
     || overrides.allowEmptyInput === true
+    || GENERATION_ACTIONS.includes(String(definition && definition.defaultAction || ''))
   if (!inputText && !inputOptional) {
     throw new Error(inputInfo.source === 'selection'
       ? '请先选中文本再执行该助手'
