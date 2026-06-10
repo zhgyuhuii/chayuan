@@ -259,9 +259,9 @@
     </section>
 
     <section class="about-section">
-      <h2 class="about-h2">关注我们 · 支持察元</h2>
+      <h2 class="about-h2">关注我们 · 购买授权</h2>
       <p class="about-muted">
-        关注公众号可获取版本更新与使用技巧；若您认可察元带来的效率提升，也欢迎通过下列方式支持我们持续开发与维护。
+        关注公众号可获取版本更新与使用技巧；如需购买使用授权 / 额度，可扫码下单，或联系商务获取服务版 / 至臻版。
       </p>
       <div class="about-support-grid">
         <div class="about-support-block">
@@ -282,16 +282,16 @@
           </div>
         </div>
         <div class="about-support-block">
-          <h3 class="about-h3">支持我们</h3>
+          <h3 class="about-h3">扫码购买</h3>
           <p class="about-muted about-support-note">
-            您的支持将用于服务器、模型测试与功能迭代。若构建中已包含赞赏二维码，将显示在下方。
+            扫码即可购买使用授权 / 额度，微信、支付宝任选；需要服务版 / 至臻版请联系商务。
           </p>
           <div v-if="showWxQr || showAliQr" class="about-support-qr-row">
             <div v-if="showWxQr" class="about-qr-wrap">
               <img
                 class="about-qr"
                 :src="publicAssetUrl('images/pay/wxpay.png')"
-                alt="微信支持"
+                alt="微信购买"
                 loading="lazy"
                 decoding="async"
                 @error="onWxQrError"
@@ -302,30 +302,13 @@
               <img
                 class="about-qr"
                 :src="publicAssetUrl('images/pay/alipay.png')"
-                alt="支付宝支持"
+                alt="支付宝购买"
                 loading="lazy"
                 decoding="async"
                 @error="onAliQrError"
               />
               <span class="about-qr-label">支付宝</span>
             </div>
-          </div>
-        </div>
-        <div class="about-support-block">
-          <h3 class="about-h3">购买授权</h3>
-          <p class="about-muted about-support-note">
-            扫码进入购买,获取使用额度 / 授权;服务版 / 至臻版请联系商务。
-          </p>
-          <div v-if="showBuyQr" class="about-qr-wrap">
-            <img
-              class="about-qr"
-              :src="publicAssetUrl('images/pay/buy.png')"
-              alt="购买授权"
-              loading="lazy"
-              decoding="async"
-              @error="onBuyQrError"
-            />
-            <span class="about-qr-label">购买</span>
           </div>
         </div>
       </div>
@@ -479,7 +462,6 @@ export default {
       showFollowQr: true,
       showWxQr: true,
       showAliQr: true,
-      showBuyQr: true,
       shotLightbox: null,
       modelGroups: MODEL_GROUPS,
       productFamily: PRODUCT_FAMILY,
@@ -622,9 +604,6 @@ export default {
     },
     onAliQrError() {
       this.showAliQr = false
-    },
-    onBuyQrError() {
-      this.showBuyQr = false
     },
     publicAssetUrl,
     iconUrl(icon) {
