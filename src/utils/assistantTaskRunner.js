@@ -1661,7 +1661,13 @@ function composeInputWithAttachments(baseInput, attachments) {
   }
   if (samples.length) tail.push(`【参考样例(请仿照其结构与风格,内容以实际为准)】\n${join(samples)}`)
   if (refs.length) tail.push(`【参考资料(结合以下内容作答,不臆造未提供的信息)】\n${join(refs)}`)
-  return [primary, ...tail].filter(Boolean).join('\n\n')
+  const composed = [primary, ...tail].filter(Boolean).join('\n\n')
+  // token 预算守卫(D3):合成输入过长时从尾部(参考/样例最次要)截断并明确提示,不静默丢弃。
+  const TOTAL_BUDGET = 80000
+  if (composed.length > TOTAL_BUDGET) {
+    return composed.slice(0, TOTAL_BUDGET) + `\n\n(输入内容过长,已截断约 ${composed.length - TOTAL_BUDGET} 字以适配模型上下文,建议精简附件或分批处理)`
+  }
+  return composed
 }
 
 function getAssistantLaunchInfoInternal(assistantId, overrides = {}) {
