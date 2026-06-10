@@ -29,8 +29,8 @@
       <div class="about-intro-card">
         <p>
           <strong>察元(Chayuan)</strong>不是一个孤立工具,而是一组共享同一套<strong>对话引擎 / 知识库结构 / 设计系统</strong>的 AI 办公产品。
-          按部署形态和模块边界分为 <strong>4 档</strong>:开源 WPS 加载项、单机桌面版、服务版(团队)、至臻版(企业)。
-          你现在使用的就是<strong>开源 WPS 加载项</strong> — 把大模型直接写进 WPS Writer,在不离开文档的情况下完成对话、检索、审校与写回。
+          按部署形态和模块边界分为 <strong>4 档</strong>:WPS 加载项、单机桌面版、服务版(团队)、至臻版(企业)。
+          你现在使用的就是<strong>WPS 加载项</strong> — 把大模型直接写进 WPS Writer,在不离开文档的情况下完成对话、检索、审校与写回。
         </p>
         <p>
           四个产品的"差异"只在<strong>部署位置 / 用户上限 / 模块开放度</strong>,引擎层完全一致。这意味着:
@@ -103,7 +103,7 @@
       <h2 class="about-h2">察元产品家族</h2>
       <p class="about-muted">
         同一套设计 / 知识库结构 / 对话引擎,按部署形态和模块边界分 4 档。
-        <strong>你正在使用的是左侧第一档</strong> — 开源、免费、可自托管的 WPS 加载项。
+        <strong>你正在使用的是左侧第一档</strong> — 限量免费、数据可本地 / 内网的 WPS 加载项。
       </p>
       <div class="about-family-grid">
         <article
@@ -218,29 +218,22 @@
     </section>
 
     <section class="about-section about-open">
-      <h2 class="about-h2">开源协议</h2>
+      <h2 class="about-h2">授权与许可</h2>
       <div class="about-open-card">
-        <div class="about-open-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-            <path
-              d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.1.39-1.99 1.03-2.69a3.6 3.6 0 0 1 .1-2.64s.84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.4.1 2.64.64.7 1.03 1.6 1.03 2.69 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.73c0 .27.16.59.67.5A10 10 0 0 0 22 12 10 10 0 0 0 12 2z"
-            />
-          </svg>
-        </div>
         <div>
           <p>
-            本加载项<strong>源代码</strong>以 <strong>Apache License 2.0</strong> 授权发布。在遵守许可证条款的前提下，您可以自由使用、修改与再分发；衍生作品需保留原有版权声明与许可说明。
+            察元 AI 文档助手为<strong>北京智灵鸟科技中心</strong>开发的软件产品，采用<strong>限量免费</strong>方式提供：可免费下载安装，使用察元自带服务有免费额度，<strong>自带 / 本地模型不限量</strong>；软件版权及相关权利归北京智灵鸟科技中心所有。
           </p>
           <p class="about-muted about-open-foot">
-            完整条款见：
+            使用许可、额度与商业授权（服务版 / 至臻版）详情见
             <a
               class="about-inline-link"
-              href="https://www.apache.org/licenses/LICENSE-2.0"
+              href="https://aidooo.com"
               target="_blank"
               rel="noreferrer"
-              @click.prevent="openExternal('https://www.apache.org/licenses/LICENSE-2.0')"
-            >Apache License 2.0（英文全文）</a>
-            。仓库内亦附有 <code>LICENSE</code> 文件供离线查阅。
+              @click.prevent="openAidooo"
+            >aidooo.com</a>
+            或联系商务。
           </p>
         </div>
       </div>
@@ -316,6 +309,23 @@
               />
               <span class="about-qr-label">支付宝</span>
             </div>
+          </div>
+        </div>
+        <div class="about-support-block">
+          <h3 class="about-h3">购买授权</h3>
+          <p class="about-muted about-support-note">
+            扫码进入购买,获取使用额度 / 授权;服务版 / 至臻版请联系商务。
+          </p>
+          <div v-if="showBuyQr" class="about-qr-wrap">
+            <img
+              class="about-qr"
+              :src="publicAssetUrl('images/pay/buy.png')"
+              alt="购买授权"
+              loading="lazy"
+              decoding="async"
+              @error="onBuyQrError"
+            />
+            <span class="about-qr-label">购买</span>
           </div>
         </div>
       </div>
@@ -398,23 +408,23 @@ const PRODUCT_FAMILY = [
   {
     key: 'wps',
     name: '察元 WPS AI 文档助手',
-    sub: '开源 · 免费 · Apache-2.0',
+    sub: '限量免费 · 自带模型不限量',
     icon: '📄',
     tone: 'plain',
     current: true,
-    pitch: '装到 WPS 里,文档级 AI 写作 / 改写 / 摘要 / 引用,内置远程知识库。',
+    pitch: '装到 WPS 里,文档级 AI 写作 / 改写 / 摘要 / 引用,内置域内知识库。',
     points: [
-      '20+ 内置助手,8 种写回方式',
-      '远程知识库 RAG · 引用气泡 · 原文下载',
+      '2000+ 内置助手 · 200+ 行业,8 种写回',
+      '域内知识库 RAG · 引用气泡 · 原文下载',
       '完全本地化 / 内网部署 · 密钥不出域'
     ],
-    price: '免费',
-    cta: 'GitHub · Gitee'
+    price: '限量免费',
+    cta: '免费下载'
   },
   {
     key: 'desktop',
     name: '察元 AI 桌面版',
-    sub: '单机 · 免费',
+    sub: '单机 · 限量免费',
     icon: '💻',
     tone: 'plain',
     pitch: '装到本机即用,个人 / 单机,离线可跑、数据不出域。',
@@ -423,7 +433,7 @@ const PRODUCT_FAMILY = [
       '五类知识源统一查询 · Model Arena',
       '30+ 工具 · MCP 双角色 · 国产化适配'
     ],
-    price: '免费',
+    price: '限量免费',
     cta: '下载桌面版'
   },
   {
@@ -469,6 +479,7 @@ export default {
       showFollowQr: true,
       showWxQr: true,
       showAliQr: true,
+      showBuyQr: true,
       shotLightbox: null,
       modelGroups: MODEL_GROUPS,
       productFamily: PRODUCT_FAMILY,
@@ -570,7 +581,7 @@ export default {
           key: 's4',
           src: 'images/about/screen-4.png',
           alt: '知识库连接',
-          caption: '远程知识库连接管理',
+          caption: '域内知识库连接管理',
           hint: '界面示意'
         }
       ]
@@ -611,6 +622,9 @@ export default {
     },
     onAliQrError() {
       this.showAliQr = false
+    },
+    onBuyQrError() {
+      this.showBuyQr = false
     },
     publicAssetUrl,
     iconUrl(icon) {
