@@ -1803,6 +1803,13 @@
                   </button>
                   <button
                     type="button"
+                    class="composer-attachment-role-btn"
+                    style="border:none;background:rgba(99,102,241,0.12);color:#4f46e5;border-radius:6px;font-size:11px;padding:1px 6px;margin-left:4px;cursor:pointer;flex:0 0 auto;"
+                    :title="`用途:${attachmentRoleLabel(item)}(点击切换 对象/样例/参考)`"
+                    @click.stop="cycleAttachmentRole(item)"
+                  >{{ attachmentRoleLabel(item) }}</button>
+                  <button
+                    type="button"
                     class="composer-attachment-remove-btn"
                     :title="`移除 ${item.name}`"
                     @click.stop="removeAttachment(item.id)"
@@ -15421,6 +15428,15 @@ export default {
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
       return true
+    },
+    attachmentRoleLabel(item) {
+      return ({ object: '对象', sample: '样例', reference: '参考' })[(item && item.attachmentRole) || 'object'] || '对象'
+    },
+    cycleAttachmentRole(item) {
+      if (!item) return
+      const order = ['object', 'sample', 'reference']
+      const cur = item.attachmentRole || 'object'
+      item.attachmentRole = order[(order.indexOf(cur) + 1) % order.length]
     },
     buildAssistantRunAttachments() {
       // Phase1:把 composer 已解析的附件(含图片识别/OCR 文本)传给助手执行,默认角色「对象」。
