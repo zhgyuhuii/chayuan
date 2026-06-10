@@ -304,6 +304,10 @@ function buildRandomReplacementToken() {
   return `${TOKEN_WRAPPER}${body}${TOKEN_WRAPPER}`
 }
 
+export function generateReplacementToken() {
+  return buildRandomReplacementToken()
+}
+
 function ensureUniqueReplacementToken(token, usedTokens, documentText) {
   let candidate = sanitizeReplacementToken(token)
   if (!candidate) {
@@ -362,10 +366,10 @@ function normalizeKeywordEntries(entries, documentText = '') {
     .sort((a, b) => String(b.term || '').length - String(a.term || '').length)
     .map((item) => ({
       ...item,
-      // 安全加固A:文档内占位符一律由系统密码学随机生成,弃用大模型给的 replacementToken,
-      // 避免占位符可预测/带语义提示而泄露高风险信息(原词仍存 AES-GCM 信封、凭密码复原)。
+      // 占位符:尊重传入值——脱密弹窗已为每条用系统随机占位符生成,并允许用户调整;为空则随机兜底。
+      // 弹窗在加载大模型建议时已把大模型给的 token 丢弃换成系统随机,故此处不会用到可预测的 token。
       replacementToken: ensureUniqueReplacementToken(
-        '',
+        item.replacementToken,
         usedTokens,
         documentText
       )

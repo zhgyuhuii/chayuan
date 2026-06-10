@@ -172,16 +172,20 @@ import {
   applyDocumentDeclassify,
   buildDeclassifyPreview,
   extractSecretKeywordsFromDocument,
+  generateReplacementToken,
   getCurrentDeclassifyStatus
 } from '../utils/documentDeclassifyService.js'
 
 function createEmptyRow() {
+  // 新增行即自带系统随机占位符(密文),用户可直接看到并按需调整;生成失败则留空(脱密时兜底)。
+  let replacementToken = ''
+  try { replacementToken = generateReplacementToken() } catch (_) { replacementToken = '' }
   return {
     term: '',
     category: '其他',
     riskLevel: 'medium',
     reason: '',
-    replacementToken: ''
+    replacementToken
   }
 }
 
@@ -229,7 +233,7 @@ export default {
         this.assistantOutput = result.assistantOutput
         this.extractionTaskId = result.extractionTaskId || ''
         this.keywordRows = result.keywordEntries.length
-          ? result.keywordEntries.map(item => ({ ...item }))
+          ? result.keywordEntries.map(item => ({ ...item, replacementToken: this.genToken() }))
           : [createEmptyRow()]
         if (result.keywordEntries.length === 0) {
           this.assistantError = '智能助手未识别到明确涉密关键词，请手工补充后再确认。'
@@ -243,6 +247,9 @@ export default {
         this.loading = false
         this.refreshPreview()
       }
+    },
+    genToken() {
+      try { return generateReplacementToken() } catch (_) { return '' }
     },
     addRow() {
       this.keywordRows.push(createEmptyRow())
@@ -262,10 +269,9 @@ export default {
     },
     refreshPreview() {
       try {
+        // 只刷新「已命中/未命中」统计,绝不回写/重排 keywordRows——否则用户每输入一个字,
+        // 行就被规范化重排、占位符被重新生成,导致无法编辑、密文被覆盖。
         const preview = buildDeclassifyPreview(this.keywordRows)
-        if (preview.keywordEntries.length > 0) {
-          this.keywordRows = preview.keywordEntries.map(item => ({ ...item }))
-        }
         this.previewInfo = {
           matchedKeywordCount: preview.matchedKeywordEntries.length,
           replacementCount: preview.replacementMap.length,
