@@ -148,11 +148,22 @@
               :key="group.key"
               class="assistant-settings-group"
             >
-              <div class="assistant-settings-group-title-row">
-                <div class="assistant-settings-group-title">{{ group.label }}</div>
+              <div
+                class="assistant-settings-group-title-row assistant-settings-group-toggle"
+                role="button"
+                tabindex="0"
+                @click="toggleAssistantSettingGroup(group)"
+                @keydown.enter.prevent="toggleAssistantSettingGroup(group)"
+              >
+                <div class="assistant-settings-group-titlewrap">
+                  <span class="assistant-settings-group-caret" :class="{ 'is-open': isAssistantGroupExpanded(group) }">▸</span>
+                  <div class="assistant-settings-group-title">{{ group.label }}</div>
+                  <span class="assistant-settings-group-count">{{ group.items.length }}</span>
+                </div>
                 <div class="assistant-settings-group-hint">可拖拽排序，右键菜单可复制、删除、上移、下移</div>
               </div>
               <div
+                v-show="isAssistantGroupExpanded(group)"
                 class="default-settings-list assistant-settings-list"
                 :class="{ 'assistant-settings-list-dragging': assistantDragState.groupKey === group.key }"
                 @dragover.prevent="onAssistantGroupDragOver($event, group.key)"
@@ -2330,6 +2341,7 @@ import {
   RIBBON_DYNAMIC_SLOT_COUNT,
   getAssistantSettingItems,
   ensureDomainPacksLoaded,
+  ASSISTANT_GROUP_LABELS,
   getAssistantDefaultConfig,
   getAssistantResolvedIcon,
   getBuiltinAssistantDefinition,
@@ -2419,6 +2431,8 @@ export default {
     return {
       // 领域包懒加载完成标记(自增以触发助手设置列表重算)
       domainPacksVersion: 0,
+      // 助手设置分组展开状态(groupKey->bool;未显式设置则默认仅展开含当前选中项的分组)
+      expandedAssistantGroups: {},
       // 主菜单
       activeMainMenu: 'model-settings',
       activeSubMenu: null,
@@ -2783,8 +2797,11 @@ export default {
     assistantSettingGroups() {
       const groups = {}
       this.assistantSettingsItems.forEach(item => {
-        if (!groups[item.group]) groups[item.group] = []
-        groups[item.group].push(item)
+        // 与对话框统一:领域助手 group 都是 'analysis'、仅 domain 不同,故按 domain 分组;
+        // 无 domain 的核心/自定义助手按 group 分组。
+        const key = String(item.domain || '').trim() || item.group
+        if (!groups[key]) groups[key] = []
+        groups[key].push(item)
       })
       this.assistantCustomGroups.forEach(groupName => {
         const key = normalizeAssistantGroupName(groupName)
@@ -2792,7 +2809,7 @@ export default {
       })
       return Object.keys(groups).map(key => ({
         key,
-        label: getAssistantGroupLabel(key),
+        label: ASSISTANT_GROUP_LABELS[key] || getAssistantGroupLabel(key),
         items: this.sortAssistantItems(groups[key])
       }))
     },
@@ -3486,6 +3503,17 @@ export default {
     this.settingsWindowSession = null
   },
   methods: {
+    isAssistantGroupExpanded(group) {
+      if (!group) return false
+      const explicit = this.expandedAssistantGroups[group.key]
+      if (explicit !== undefined) return explicit
+      // 默认折叠,但自动展开包含当前选中助手的分组
+      return (group.items || []).some(it => it.key === this.activeAssistantSettingItem)
+    },
+    toggleAssistantSettingGroup(group) {
+      if (!group) return
+      this.expandedAssistantGroups[group.key] = !this.isAssistantGroupExpanded(group)
+    },
     getModelTypeLabel,
     inferModelRecordType,
     inferModelType,
@@ -7590,6 +7618,45 @@ export default {
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.assistant-settings-group-toggle {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+}
+
+.assistant-settings-group-toggle:hover {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.assistant-settings-group-titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.assistant-settings-group-caret {
+  font-size: 10px;
+  color: #94a3b8;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.assistant-settings-group-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.assistant-settings-group-count {
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+  flex: 0 0 auto;
 }
 
 .default-model-select.full-width {
