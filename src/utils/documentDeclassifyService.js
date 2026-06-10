@@ -118,6 +118,45 @@ function replaceTextByRanges(doc, replacements, mode) {
   })
 }
 
+// 按占位符 token 就地查找替换的复原:不依赖脱密时记录的字符位置,因此文档在脱密后被
+// 增删改也能尽力还原——只要占位符 §...§ 本身还在文档里。用 doc.Range 就地替换,
+// 保留原有排版格式;被删除/改坏的占位符找不到,如实计入 missing,不伪造还原。
+function restoreDeclassifyByTokens(doc, replacementMap) {
+  const result = { restoredOccurrences: 0, totalTokens: 0, missingTokens: [], failed: 0 }
+  if (!doc?.Range || !Array.isArray(replacementMap) || replacementMap.length === 0) {
+    return result
+  }
+  const tokenTerm = new Map()
+  for (const it of replacementMap) {
+    if (it && it.replacementToken) tokenTerm.set(String(it.replacementToken), String(it.term ?? ''))
+  }
+  result.totalTokens = tokenTerm.size
+  const current = getDocumentText()
+  const ranges = []
+  const found = new Set()
+  for (const [token, term] of tokenTerm) {
+    if (!token) continue
+    let idx = current.indexOf(token)
+    while (idx >= 0) {
+      ranges.push({ start: idx, end: idx + token.length, term })
+      found.add(token)
+      idx = current.indexOf(token, idx + token.length)
+    }
+  }
+  // 降序替换,避免前面的替换改变后面区间的偏移
+  ranges.sort((a, b) => b.start - a.start)
+  for (const r of ranges) {
+    try {
+      doc.Range(r.start, r.end).Text = toDocumentText(r.term)
+      result.restoredOccurrences += 1
+    } catch (_) {
+      result.failed += 1
+    }
+  }
+  result.missingTokens = [...tokenTerm.keys()].filter(t => !found.has(t))
+  return result
+}
+
 function normalizeRiskLevel(value) {
   const raw = String(value || '').trim().toLowerCase()
   if (raw === 'high' || raw === 'medium' || raw === 'low') return raw
@@ -839,9 +878,9 @@ export async function restoreDocumentDeclassify(password) {
     if (!payload || typeof payload !== 'object') {
       throw new Error('脱密载荷已损坏，无法复原')
     }
-    if (expectedHash && currentTextHash !== expectedHash) {
-      throw new Error('当前文档内容已发生变化，为避免错误复原，请先恢复到脱密后的原始状态')
-    }
+    // 文档在脱密后被编辑(增删改)不再拦截:复原改为按占位符 token 就地查找替换,
+    // 可在文档变化后尽力还原。documentEdited 仅用于结果提示。
+    const documentEdited = !!(expectedHash && currentTextHash !== expectedHash)
 
     updateTask(lifecycleTaskId, {
       progress: 70,
@@ -863,11 +902,17 @@ export async function restoreDocumentDeclassify(password) {
 
     const originalText = String(payload.originalText || '')
     const savedReplacementMap = Array.isArray(payload.replacementMap) ? payload.replacementMap : []
+    let restoreSummary = { restoredOccurrences: 0, totalTokens: 0, missingTokens: [], failed: 0 }
     if (savedReplacementMap.length > 0) {
-      replaceTextByRanges(doc, savedReplacementMap, 'restore')
+      // 按占位符 token 就地查找替换:文档脱密后被编辑也能尽力还原,且保留排版
+      restoreSummary = restoreDeclassifyByTokens(doc, savedReplacementMap)
+      if (restoreSummary.totalTokens > 0 && restoreSummary.restoredOccurrences === 0) {
+        throw new Error('未找到任何脱密占位符，无法还原（占位符可能已被全部删除或改动）。文档未改动，可撤销编辑后重试。')
+      }
     } else {
       writeWholeDocumentText(originalText)
     }
+    const missingCount = restoreSummary.missingTokens.length
     clearDeclassifyState(doc)
     invalidateDeclassifyRibbonControls()
 
@@ -880,7 +925,11 @@ export async function restoreDocumentDeclassify(password) {
       outputFormat: 'plain',
       inputPreview: getPreviewText(currentText),
       outputPreview: getPreviewText(originalText),
-      commentPreview: `已完成密码复原，恢复 ${Number(state.replacementCount || 0)} 处替换。`,
+      commentPreview: missingCount > 0
+        ? `已尽力复原:还原 ${restoreSummary.restoredOccurrences} 处;另有 ${missingCount} 个占位符未找到(脱密后可能被删除或改动),未还原。`
+        : (documentEdited
+          ? `已复原 ${restoreSummary.restoredOccurrences} 处(文档脱密后有改动,已按占位符就地还原)。`
+          : `已完成密码复原，恢复 ${restoreSummary.restoredOccurrences || Number(state.replacementCount || 0)} 处替换。`),
       applyResult: {
         ok: true,
         action: 'replace',
@@ -897,7 +946,10 @@ export async function restoreDocumentDeclassify(password) {
     return {
       restored: true,
       keywordCount: Number(state.keywordCount || 0),
-      replacementCount: Number(state.replacementCount || 0)
+      replacementCount: Number(state.replacementCount || 0),
+      restoredOccurrences: restoreSummary.restoredOccurrences,
+      missingTokenCount: missingCount,
+      documentEdited
     }
   } catch (error) {
     failDeclassifyLifecycleTask(lifecycleTaskId, error, {
