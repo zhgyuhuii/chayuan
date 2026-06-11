@@ -119,7 +119,7 @@
                 <!-- 设置分组 -->
                 <group id="groupSettings" label="察元设置" autoScale="true">
                     <button id="btnTaskList" label="任务清单" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
-                    <!-- <button id="btnTaskOrchestration" label="任务编排" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/> -->
+                    <button id="btnTaskOrchestration" label="任务编排" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnSettings" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                 </group>
             </tab>
