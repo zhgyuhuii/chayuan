@@ -1523,7 +1523,7 @@ import {
   saveAssistantSettings,
   saveCustomAssistants
 } from '../utils/assistantSettings.js'
-import { getBuiltinAssistants, getBuiltinAssistantDefinition, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
+import { getBuiltinAssistants, getBuiltinAssistantDefinition, ensureDomainPacksLoaded, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
 import { getTaskById, getTasks, subscribe as subscribeTasks } from '../utils/taskListStore.js'
 import { inAppConfirm } from '../utils/inAppDialog.js'
 import {
@@ -4438,6 +4438,13 @@ onMounted(() => {
   window.addEventListener('resize', handleViewportResize)
   window.addEventListener('click', handleGlobalClick)
   window.addEventListener('keydown', handleGlobalKeydown)
+
+  // 编排窗口是独立 ShowDialog 窗口(全新 Vue 实例)，从未触发领域助手包懒加载，
+  // 故助手 palette 只有基础包。后台拉全部领域包(去重/单包超时/失败不阻断，非阻塞)，
+  // 加载完成后 bump 版本刷新 palette；基础助手先显示，领域包到位再补全。
+  ensureDomainPacksLoaded()
+    .then(() => { assistantStoreVersion.value += 1 })
+    .catch(() => { assistantStoreVersion.value += 1 })
 })
 
 onBeforeUnmount(() => {
