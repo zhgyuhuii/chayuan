@@ -49,7 +49,7 @@ export const EDUCATION_EXT_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['教育', '核查', '学术规范'], allowedActions: ['comment', 'link-comment', 'append', 'none'], defaultAction: 'comment', temperature: 0.2,
     description: '核查论文/作业的学术规范问题:疑似生成痕迹、引用标注缺失、表述空泛套话、数据来源不明,逐处定位,仅辅助提示不下定性结论。',
     systemPrompt: '你是一位教育科研学术规范审查专家。你只做规范性提示,不对"是否抄袭/是否AI代写"下定性结论,这类判断需人工核实。仅基于给定文本,逐处标出疑点,引用原文逐字片段作为锚点。本助手仅辅助核查,不替代教务/学术委员会的正式认定。',
-    userPromptTemplate: `请核查下面文本的学术规范问题,逐处给出(每条都要带逐字原文锚点):\n## 疑似生成/套话痕迹\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:为何可疑(空泛/万能句式/无具体内容)\n## 引用与来源问题\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:缺少出处/数据来源不明\n## 表述与逻辑问题\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:具体问题\n仅做提示,不下"抄袭/代写"定性结论,需人工复核。\n待核查文本:\n---\n{{input}}\n---` }),
+    userPromptTemplate: `请核查下面文本的学术规范问题,逐处给出(每条都要带逐字原文锚点):\n## 疑似生成/套话痕迹\n  - 命中片段:\`原文逐字片段\`\n  - 提示:为何可疑(空泛/万能句式/无具体内容)\n## 引用与来源问题\n  - 命中片段:\`原文逐字片段\`\n  - 提示:缺少出处/数据来源不明\n## 表述与逻辑问题\n  - 命中片段:\`原文逐字片段\`\n  - 提示:具体问题\n仅做提示,不下"抄袭/代写"定性结论,需人工复核。\n待核查文本:\n---\n{{input}}\n---` }),
 
   base({ id: 'analysis.edu-notice-rewrite', label: '校园通知改写', shortLabel: '通知改写', icon: '📢',
     tags: ['教育', '改写', '通知'], allowedActions: ['replace', 'insert', 'comment', 'none'], defaultAction: 'replace',
@@ -80,7 +80,7 @@ export const EDUCATION_EXT_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['教育', '核查', '评课'], allowedActions: ['comment', 'link-comment', 'append', 'none'], defaultAction: 'comment', temperature: 0.25,
     description: '审查听课/评课记录是否规范有效:是否空泛套话、缺少具体课堂证据、只夸不提改进,逐处定位并给改进方向。',
     systemPrompt: '你是一位教研听评课指导专家。评课记录应有具体课堂证据、问题与改进,而不是一味"教态自然、目标明确"等套话。仅基于给定记录,逐处引用原文逐字片段作为锚点,指出空泛或失衡之处,并给出可写得更具体的方向。',
-    userPromptTemplate: `请审查下面听课/评课记录,逐处指出问题(每条带逐字原文锚点):\n## 空泛套话(无具体课堂证据)\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:缺什么证据,可怎么具体化\n## 只夸不提改进 / 评价失衡\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:应补充的改进建议方向\n## 与教学目标/学情脱节\n  - 命中片段:\\\`原文逐字片段\\\`\n  - 提示:具体问题\n只做改进提示,不替写整篇。\n听评课记录:\n---\n{{input}}\n---` })
+    userPromptTemplate: `请审查下面听课/评课记录,逐处指出问题(每条带逐字原文锚点):\n## 空泛套话(无具体课堂证据)\n  - 命中片段:\`原文逐字片段\`\n  - 提示:缺什么证据,可怎么具体化\n## 只夸不提改进 / 评价失衡\n  - 命中片段:\`原文逐字片段\`\n  - 提示:应补充的改进建议方向\n## 与教学目标/学情脱节\n  - 命中片段:\`原文逐字片段\`\n  - 提示:具体问题\n只做改进提示,不替写整篇。\n听评课记录:\n---\n{{input}}\n---` })
 ])
 
 export function mergeEducationExtIntoBuiltins(b = []) {

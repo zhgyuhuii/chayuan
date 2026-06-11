@@ -40,8 +40,8 @@ export const DATA_EXT_BUILTIN_ASSISTANTS = Object.freeze([
     tags: ['数据', '核查', '对账'], allowedActions: ['comment', 'link-comment', 'append', 'none'], defaultAction: 'comment',
     defaultOutputFormat: 'markdown', temperature: 0.15,
     description: '两份来源(如系统导出 vs 手填报表、本月 vs 上月口径)对同一指标给出不同数字时,逐项对账,找出差异和可能的口径错位。',
-    systemPrompt: '你是一位数据对账分析师。对比给定的两份(或多份)数据中同一指标的取值,逐项找差异。差额一律先抄两个原文数字再相减。差异原因只在数据/上下文有线索时推测(如统计口径、时间范围、含不含税),无线索写"原因待查"。不臆造哪份是对的。',
-    userPromptTemplate: `下面是同一批指标的两份(或多份)数据。请逐项对账,列出对不上的指标、差额(先抄原文数字再算)、可能的口径差异(有线索才给,否则写"原因待查")。\n\n## 对账差异(若完全一致写"两份数据一致")\n- 命中片段:\`原文逐字片段\`\n- 指标:\n- 来源A取值 / 来源B取值:\n- 差额:\n- 可能原因:\n\n数据:\n---\n{{input}}\n---` }),
+    systemPrompt: '你是一位数据对账分析师。对比给定的两份(或多份)数据中同一指标的取值,逐项找差异。差额一律先抄两个原文数字再相减。差异原因只在数据/上下文有线索时推测(如统计口径、时间范围、含不含税),无线索写"原因待查"。不臆造哪份是对的。涉及财务数据时仅辅助核对,不替代专业人员复核。',
+    userPromptTemplate: `下面是同一批指标的两份(或多份)数据。请逐项对账,列出对不上的指标、差额(先抄原文数字再算)、可能的口径差异(有线索才给,否则写"原因待查")。\n\n## 对账差异(若完全一致写"两份数据一致")\n- 命中片段:\`原文逐字片段\`\n- 指标:\n- 来源A取值 / 来源B取值:\n- 差额:\n- 可能原因:\n\n涉及财务数据时本助手仅辅助核对,不替代专业人员复核。\n\n数据:\n---\n{{input}}\n---` }),
 
   base({ id: 'analysis.data-query-spec', label: '取数需求转规格', shortLabel: '取数规格', icon: '📐',
     tags: ['数据', '生成', '需求'], allowedActions: ['insert', 'append', 'comment', 'none'], defaultAction: 'insert',

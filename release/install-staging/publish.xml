@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jsplugins>
-    <jsplugin name="chayuan" type="wps" url="chayuan_3.0.4" version="3.0.4" enable="enable" install="null" customDomain=""/>
+    <jsplugin name="chayuan" type="wps" url="chayuan_3.0.8" version="3.0.8" enable="enable" install="null" customDomain=""/>
 </jsplugins>
