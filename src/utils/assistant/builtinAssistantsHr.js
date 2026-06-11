@@ -1,6 +1,6 @@
 /**
  * builtinAssistantsHr — 「人力资源」领域助手包(批5)
- * 接入:registry.js DOMAIN_PACK_LOADERS 懒加载。生成类默认插入、抽取类none、核查类批注。
+ * 接入:registry.js PACK_LOADERS 懒加载。生成类默认插入、抽取类none、核查类批注。
  */
 const INPUT_SOURCE_DOCUMENT = 'document'
 const INPUT_SOURCE_SELECTION_PREFERRED = 'selection-preferred'

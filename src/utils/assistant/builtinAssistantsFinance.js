@@ -1,6 +1,6 @@
 /**
  * builtinAssistantsFinance — 「财务/会计/税务」领域助手包(批4)
- * 接入:registry.js 的 DOMAIN_PACK_LOADERS 懒加载。质量基线同前:角色精准/判据明确/
+ * 接入:registry.js 的 PACK_LOADERS 懒加载。质量基线同前:角色精准/判据明确/
  * 核查类逐字反引号锚点/抽取类严格JSON/不臆造/带必要免责。
  */
 const INPUT_SOURCE_DOCUMENT = 'document'

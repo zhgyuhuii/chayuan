@@ -5,7 +5,7 @@
  * 【当前文档】与【知识库参考】逐条对比。靠 runtimeCapabilities.useKnowledgeBase=true
  * 触发(执行器 assistantTaskRunner 见该位即检索注入;未绑定/未命中时 {{kbContext}} 为提示文案)。
  *
- * 接入:registry.js 的 DOMAIN_PACK_LOADERS 已登记本包(懒加载,独立 chunk)。
+ * 接入:registry.js 的 PACK_LOADERS 已登记本包(懒加载,独立 chunk)。
  *
  * 质量基线:
  *   - 只依据【知识库参考】判断,KB 未覆盖的标「KB未覆盖」,绝不臆造知识库内容;
