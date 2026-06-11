@@ -186,8 +186,7 @@
             >aidooo.com</a>
           </div>
           <div class="sidebar-footer-actions">
-            <button type="button" class="sidebar-footer-text-btn" @click="openSidebarFooterSupportDialog('follow')">关注我们</button>
-            <button type="button" class="sidebar-footer-text-btn" @click="openSidebarFooterSupportDialog('support')">支持我们</button>
+            <button type="button" class="sidebar-footer-text-btn" @click="feedbackDialogVisible = true">反馈及建议</button>
           </div>
         </div>
       </div>
@@ -1975,6 +1974,11 @@
       @goto-settings="onKbGotoSettings"
     />
 
+    <FeedbackDialog
+      :visible="feedbackDialogVisible"
+      @close="feedbackDialogVisible = false"
+    />
+
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
         <div class="assistant-recommend-modal-header">
@@ -2222,6 +2226,7 @@ import { planTextChunks } from '../services/documentIntelligence/chunkPlanner.js
 import { resolveExactToolRequest } from '../services/documentIntelligence/exactTools.js'
 import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
+import FeedbackDialog from './FeedbackDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
@@ -3629,7 +3634,8 @@ export default {
   components: {
     LongTaskRunCard,
     KbSelectorDialog,
-    KbSourceStrip
+    KbSourceStrip,
+    FeedbackDialog
   },
   data() {
     return {
@@ -3725,7 +3731,8 @@ export default {
       assistantSelfIntroTimer: null,
       assistantHighlightedKey: '',
       assistantHighlightTimer: null,
-      desktopUnsub: null
+      desktopUnsub: null,
+      feedbackDialogVisible: false
     }
   },
   computed: {
