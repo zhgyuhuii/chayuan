@@ -85,9 +85,9 @@
             >
               <span class="assistant-group-arrow">▾</span>
               <span class="assistant-group-label">{{ group.label }}</span>
-              <span class="assistant-group-count">{{ group.items.length }}</span>
+              <span class="assistant-group-count">{{ group.count != null ? group.count : group.items.length }}</span>
             </div>
-            <div v-show="!isAssistantGroupCollapsed(group.key)" class="assistant-group-items">
+            <div v-if="!isAssistantGroupCollapsed(group.key)" class="assistant-group-items">
               <div
                 v-for="item in group.items"
                 :key="item.key"
@@ -159,6 +159,7 @@
                   </div>
                 </div>
               </div>
+              <div v-if="group.isDomain && group.items.length === 0" class="assistant-group-loading">加载中…</div>
             </div>
           </div>
           <div v-if="assistantGroups.length === 0" class="assistant-empty">暂无可用助手</div>
@@ -2147,6 +2148,8 @@ import { buildSelectionContextPrompt, getSelectionContextSnapshot } from '../uti
 import {
   getAssistantSettingItems,
   ensureDomainPacksLoaded,
+  ensureDomainLoaded,
+  isDomainLoaded,
   getAssistantGroupLabel,
   ASSISTANT_GROUP_LABELS,
   getBuiltinAssistantDefinition,
@@ -2154,6 +2157,7 @@ import {
   INPUT_SOURCE_OPTIONS,
   DOCUMENT_ACTION_OPTIONS
 } from '../utils/assistantRegistry.js'
+import { DOMAIN_MANIFEST, DOMAIN_ORDER } from '../utils/assistant/assistantDomainManifest.js'
 import {
   loadAssistantSettings,
   getAssistantSetting,
@@ -3883,6 +3887,23 @@ export default {
         }
         group.items.push(item)
       })
+      // 浏览态(无搜索):补齐全部领域标题,未加载的显示 manifest 计数、空 items,
+      // 实现「先出分组、点开再加载助手」。已加载的领域沿用其真实 items。
+      if (!search) {
+        DOMAIN_ORDER.forEach((domain) => {
+          const meta = DOMAIN_MANIFEST[domain]
+          if (!meta) return
+          const existing = groupMap.get(domain)
+          if (existing) {
+            existing.isDomain = true
+            existing.count = meta.count
+          } else {
+            const g = { key: domain, label: meta.label, items: [], count: meta.count, isDomain: true }
+            groupMap.set(domain, g)
+            groups.push(g)
+          }
+        })
+      }
       // 领域排序优先级:通用类(核对/知识库对比等适用任何行业的)在前 → 合同 → 政务 → 军工
       //  → 政法/警察 → 其它行业(保持插入序)→ 自定义最后。收藏分组始终置顶。
       const ORDER = [
@@ -6050,9 +6071,14 @@ export default {
       return !['__fav__', 'core', 'analysis', 'custom'].includes(groupKey)
     },
     toggleAssistantGroup(groupKey) {
+      const willExpand = this.isAssistantGroupCollapsed(groupKey)
       this.assistantGroupCollapsed = {
         ...this.assistantGroupCollapsed,
         [groupKey]: !this.assistantGroupCollapsed[groupKey]
+      }
+      // 展开某领域且其助手尚未加载 -> 优先按域懒加载(与后台全量加载共享去重)
+      if (willExpand && DOMAIN_MANIFEST[groupKey] && !isDomainLoaded(groupKey)) {
+        ensureDomainLoaded(groupKey).then(() => this.loadAssistantItems()).catch(() => {})
       }
     },
     resolveHistoryStorageScope() {
@@ -16713,6 +16739,12 @@ export default {
 
 .assistant-group-items {
   padding-top: 2px;
+}
+
+.assistant-group-loading {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.5);
 }
 
 .assistant-item {
