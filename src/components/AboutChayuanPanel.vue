@@ -289,28 +289,17 @@
           <p class="about-muted about-support-note" style="margin-top: 6px;">
             独立团队，认真做产品。当支持够团队吃饭，全部功能即免费开源、回馈所有人。谢谢你成为其中一份力量。
           </p>
-          <div v-if="showWxQr || showAliQr" class="about-support-qr-row">
-            <div v-if="showWxQr" class="about-qr-wrap">
+          <div class="about-support-qr-row">
+            <div class="about-qr-wrap">
               <img
+                v-if="purchaseQrDataUrl"
                 class="about-qr"
-                :src="publicAssetUrl('images/pay/wxpay.png')"
-                alt="微信购买"
-                loading="lazy"
+                :src="purchaseQrDataUrl"
+                alt="扫码购买"
                 decoding="async"
-                @error="onWxQrError"
               />
-              <span class="about-qr-label">微信</span>
-            </div>
-            <div v-if="showAliQr" class="about-qr-wrap">
-              <img
-                class="about-qr"
-                :src="publicAssetUrl('images/pay/alipay.png')"
-                alt="支付宝购买"
-                loading="lazy"
-                decoding="async"
-                @error="onAliQrError"
-              />
-              <span class="about-qr-label">支付宝</span>
+              <div v-else class="about-qr about-qr--placeholder">加载中…</div>
+              <span class="about-qr-label">扫码购买（解除次数限制）</span>
             </div>
           </div>
         </div>
@@ -384,6 +373,8 @@ import pkg from '../../package.json'
 import { MODEL_GROUPS } from '@/utils/defaultModelGroups.js'
 import { getModelLogoPath } from '@/utils/modelLogos.js'
 import { publicAssetUrl } from '@/utils/publicAssetUrl.js'
+import { toDataUrl as buildPurchaseQrDataUrl } from '@/utils/qrcode.js'
+import { getFingerprint } from '@/utils/license/fingerprint.js'
 import AboutChayuanArchitecture from './AboutChayuanArchitecture.vue'
 
 /*
@@ -463,8 +454,7 @@ export default {
       heroLogoOk: true,
       shotErr: {},
       showFollowQr: true,
-      showWxQr: true,
-      showAliQr: true,
+      purchaseQrDataUrl: '',
       shotLightbox: null,
       modelGroups: MODEL_GROUPS,
       productFamily: PRODUCT_FAMILY,
@@ -577,6 +567,7 @@ export default {
       if (e.key === 'Escape' && this.shotLightbox) this.closeShotLightbox()
     }
     window.addEventListener('keydown', this._shotLightboxOnKeydown)
+    this.loadPurchaseQr()
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this._shotLightboxOnKeydown)
@@ -602,11 +593,18 @@ export default {
     onFollowQrError() {
       this.showFollowQr = false
     },
-    onWxQrError() {
-      this.showWxQr = false
-    },
-    onAliQrError() {
-      this.showAliQr = false
+    // 生成「扫码购买（解除次数限制）」二维码：含本机指纹，离线本地生成，指向官方购买页。
+    async loadPurchaseQr() {
+      let fp = ''
+      try { fp = await getFingerprint() } catch (_) { fp = '' }
+      const url = fp
+        ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(fp)}`
+        : 'https://aidooo.com/buy?app=wps'
+      try {
+        this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
+      } catch (_) {
+        this.purchaseQrDataUrl = ''
+      }
     },
     publicAssetUrl,
     iconUrl(icon) {
@@ -906,6 +904,13 @@ export default {
   border-radius: 8px;
   border: 1px solid var(--about-border);
   background: rgba(0, 0, 0, 0.2);
+}
+.about-qr--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--about-muted);
 }
 
 .about-qr-label {
