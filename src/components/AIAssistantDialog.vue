@@ -17233,17 +17233,17 @@ export default {
 }
 
 .welcome-support {
-  margin-top: 18px;
+  margin-top: 14px;
   position: relative;
-  padding: 16px 14px 14px;
+  padding: 13px 13px 11px;
   overflow: hidden;
   border: 1px solid rgba(96, 165, 250, 0.24);
-  border-radius: 14px;
+  border-radius: 13px;
   background:
     radial-gradient(circle at top, rgba(96, 165, 250, 0.22), rgba(96, 165, 250, 0) 40%),
     linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.84));
   box-shadow:
-    0 24px 56px rgba(15, 23, 42, 0.28),
+    0 14px 34px rgba(15, 23, 42, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 0 rgba(59, 130, 246, 0.18);
   isolation: isolate;
@@ -17314,10 +17314,10 @@ export default {
 }
 
 .welcome-support-text {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   color: rgba(226, 232, 240, 0.92);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.55;
   text-align: center;
   text-shadow: 0 1px 12px rgba(14, 165, 233, 0.16);
 }
@@ -17325,11 +17325,30 @@ export default {
 .welcome-support-codes {
   display: flex;
   flex-wrap: nowrap;
-  justify-content: space-between;
+  justify-content: center;
   align-items: stretch;
-  gap: 10px;
+  gap: 12px;
   overflow: visible;
   perspective: 1000px;
+}
+
+/* 精致化:welcome 态二维码卡片更紧凑、居中不撑满整行(仅作用于欢迎区) */
+.welcome-support-codes .welcome-support-card {
+  flex: 0 1 150px;
+  max-width: 158px;
+  min-height: 0;
+  padding: 10px 10px 8px;
+  gap: 6px;
+  border-radius: 11px;
+}
+.welcome-support-codes .welcome-support-qr-wrap {
+  width: min(100%, 92px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+.welcome-support-codes .welcome-support-label {
+  font-size: 11px;
+  min-height: 0;
+  line-height: 1.35;
 }
 
 .welcome-support-card {
