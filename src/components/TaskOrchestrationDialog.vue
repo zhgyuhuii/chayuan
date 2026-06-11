@@ -1523,7 +1523,8 @@ import {
   saveAssistantSettings,
   saveCustomAssistants
 } from '../utils/assistantSettings.js'
-import { getBuiltinAssistants, getBuiltinAssistantDefinition, ensureDomainPacksLoaded, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
+import { getBuiltinAssistants, getBuiltinAssistantDefinition, ensureDomainPacksLoaded, getAssistantGroupLabel, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
+import { DOMAIN_MANIFEST, DOMAIN_ORDER } from '../utils/assistant/assistantDomainManifest.js'
 import { getTaskById, getTasks, subscribe as subscribeTasks } from '../utils/taskListStore.js'
 import { inAppConfirm } from '../utils/inAppDialog.js'
 import {
@@ -1839,18 +1840,30 @@ const groupedTools = computed(() => {
 
 const groupedAssistants = computed(() => {
   const keyword = paletteKeyword.value.toLowerCase()
+  // 按「领域 domain」分组(无 domain 回退原 group),领域标签取自 DOMAIN_MANIFEST,
+  // 与对话窗口助手面板一致;领域组按 DOMAIN_ORDER 排序,非领域组(核对/文本分析/自定义等)在前。
   const groups = new Map()
   eligibleAssistants.value.forEach(item => {
     if (keyword) {
       const haystack = `${item.title} ${item.description} ${item.groupLabel}`.toLowerCase()
       if (!haystack.includes(keyword)) return
     }
-    const key = item.groupLabel || '其他助手'
-    const list = groups.get(key) || []
-    list.push(item)
-    groups.set(key, list)
+    const key = item.domain || item.group || 'custom'
+    if (!groups.has(key)) {
+      const label = DOMAIN_MANIFEST[key]?.label || getAssistantGroupLabel(key) || '其他助手'
+      const domainIdx = DOMAIN_ORDER.indexOf(key)
+      groups.set(key, { label, items: [], order: domainIdx < 0 ? -1 : domainIdx })
+    }
+    groups.get(key).items.push(item)
   })
-  return [...groups.entries()].map(([label, items]) => ({ label, items }))
+  return [...groups.values()]
+    .sort((a, b) => {
+      if (a.order < 0 && b.order < 0) return a.label.localeCompare(b.label, 'zh-Hans-CN')
+      if (a.order < 0) return -1
+      if (b.order < 0) return 1
+      return a.order - b.order
+    })
+    .map(({ label, items }) => ({ label, items }))
 })
 const activePaletteGroups = computed(() => {
   const groups = paletteTab.value === 'tool' ? groupedTools.value : groupedAssistants.value
