@@ -464,12 +464,11 @@
               <div class="welcome-entitlement">
                 <template v-if="entitlementSummary.licensed">
                   <span class="welcome-entitlement-badge">已购买</span>
-                  <span v-if="entitlementSummary.kind === 'count'" class="welcome-entitlement-item">购买次数剩余 {{ entitlementSummary.value }} 次</span>
-                  <span v-else-if="entitlementSummary.expireAt" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.expireAt) }}</span>
-                  <span v-else class="welcome-entitlement-item">已激活 · 不限次</span>
-                  <!-- 仅次数档的对话仍走每日免费池;时间档对话不限次,不显示「今日剩余」避免误导 -->
-                  <span v-if="entitlementSummary.kind === 'count'" class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
-                  <span v-else class="welcome-entitlement-item">对话不限次</span>
+                  <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.timeExpireAt) }}</span>
+                  <span v-if="entitlementSummary.countValid" class="welcome-entitlement-item">{{ entitlementSummary.timeValid ? '过期后剩' : '购买次数剩余' }} {{ entitlementSummary.counts }} 次</span>
+                  <!-- 时间档对话不限次;仅次数档对话仍走每日免费池 -->
+                  <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">对话不限次</span>
+                  <span v-else class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
                 </template>
                 <template v-else>
                   <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
@@ -3791,20 +3790,25 @@ export default {
     hasDonationQrCode() {
       return this.showFollowDonationQrCode || this.showWechatDonationQrCode || this.showAlipayDonationQrCode
     },
-    // 权益汇总:免费态显示对话/助手今日剩余;已购买显示到期日(时间授权)或剩余次数(次数授权)。
+    // 权益汇总:免费态显示对话/助手今日剩余;已购买按共存模型显示(时间档+次数档可同时存在)。
     entitlementSummary() {
       let lic = { plan: 'free' }
       let paid = false
       try { lic = getLicense() } catch (_) { lic = { plan: 'free' } }
       try { paid = isPaidPlan() } catch (_) { paid = false }
+      const now = Date.now()
+      const timeValid = !!(lic.timeExpireAt && new Date(lic.timeExpireAt).getTime() > now)
+      const counts = typeof lic.counts === 'number' ? lic.counts : 0
+      const countValid = counts > 0 && (!lic.countExpireAt || new Date(lic.countExpireAt).getTime() > now)
       const quota = (pool) => {
         try { return { remaining: getQuotaRemaining(pool), limit: getQuotaLimit(pool) } } catch (_) { return { remaining: 0, limit: 0 } }
       }
       return {
         licensed: paid,
-        kind: String(lic.kind || ''),
-        value: typeof lic.value === 'number' ? lic.value : null,
-        expireAt: String(lic.expireAt || ''),
+        timeValid,
+        timeExpireAt: String(lic.timeExpireAt || ''),
+        counts,
+        countValid,
         chat: quota('chat'),
         assistant: quota('assistant')
       }

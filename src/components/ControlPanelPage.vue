@@ -310,10 +310,14 @@ export default {
         if (rec.plan === 'expired') return '授权已过期或次数已耗尽'
         return ''
       }
+      const now = Date.now()
+      const timeValid = rec.timeExpireAt && new Date(rec.timeExpireAt).getTime() > now
+      const countValid = typeof rec.counts === 'number' && rec.counts > 0
+        && (!rec.countExpireAt || new Date(rec.countExpireAt).getTime() > now)
       const parts = []
       if (Array.isArray(rec.modules) && rec.modules.length) parts.push('模块:' + rec.modules.join(', '))
-      if (rec.kind === 'time' && rec.expireAt) parts.push('到期:' + this.formatDate(rec.expireAt))
-      if (rec.kind === 'count' && typeof rec.value === 'number') parts.push('剩余次数:' + rec.value)
+      if (timeValid) parts.push('到期:' + this.formatDate(rec.timeExpireAt))
+      if (countValid) parts.push((timeValid ? '过期后剩' : '剩余') + rec.counts + '次')
       return parts.join(' · ')
     }
   },
