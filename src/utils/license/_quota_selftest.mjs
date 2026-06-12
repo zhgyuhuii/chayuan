@@ -35,9 +35,9 @@ for (let i = 0; i < 30; i++) { assert.equal(checkCapability('chat', false).allow
 r = checkCapability('chat', false)
 assert.equal(r.allowed, false); assert.equal(r.reason, 'chat_quota'); assert.equal(r.remaining, 0)
 
-// 4) assistant 池：5 次后超额；普通/未知 key 落 assistant 池
-assert.equal(getQuotaLimit('assistant'), 5)
-for (let i = 0; i < 5; i++) { assert.equal(checkCapability('some-normal-assistant', false).allowed, true); incQuota('assistant') }
+// 4) assistant 池：2 次后超额；普通/未知 key 落 assistant 池
+assert.equal(getQuotaLimit('assistant'), 2)
+for (let i = 0; i < 2; i++) { assert.equal(checkCapability('some-normal-assistant', false).allowed, true); incQuota('assistant') }
 r = checkCapability('assistant', false)
 assert.equal(r.allowed, false); assert.equal(r.reason, 'assistant_quota')
 

@@ -20,18 +20,17 @@ assert.equal(calls.length, 1, '涉密未购买应弹购买引导')
 assert.ok(String(calls[0][0]).includes('purchase-guide-dialog'), 'url 应指向购买引导窗')
 assert.ok(String(calls[0][0]).includes('security_check'), '弹窗 reason 为 security_check')
 
-// 3) 其余涉密 key 同样拦截；普通 cap 仍走 assistant 池(5 次)
+// 3) 其余涉密 key 同样拦截；普通 cap 仍走 assistant 池(2 次)
 calls.length = 0
 assert.equal(ensureCapability('document-declassify', false), false)
 assert.equal(ensureCapability('document-declassify-restore', false), false)
 assert.equal(ensureCapability('analysis.secret-keyword-extract', false), false)
-assert.equal(ensureCapability('normal-x', false), true)                         // 1/5
-assert.equal(ensureCapability('normal-y', false), true)                         // 2/5
+assert.equal(ensureCapability('normal-x', false), true)                         // 1/2
+assert.equal(ensureCapability('normal-y', false), true)                         // 2/2
 
 // 4) 普通 cap 超额 → 拦截 + 弹购买(assistant_quota, 剩余0)
 calls.length = 0
-for (let i = 0; i < 3; i++) ensureCapability('normal-z', false)               // 3/4/5
-assert.equal(ensureCapability('normal-z', false), false)                        // 超额
+assert.equal(ensureCapability('normal-z', false), false)                        // assistant 池 2 次已耗尽 → 超额
 assert.ok(String(calls[calls.length - 1][0]).includes('assistant_quota'))
 
 console.log('OK _gate_selftest 全部通过')

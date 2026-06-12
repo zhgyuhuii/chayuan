@@ -13,7 +13,7 @@
  *
  * 命名额度池(本地按日计数,各池独立重置):
  *   - chat 池: 30 次/天；key: cy_quota_chat_<YYYY-MM-DD>
- *   - assistant 池: 5 次/天；key: cy_quota_assistant_<YYYY-MM-DD>
+ *   - assistant 池: 2 次/天；key: cy_quota_assistant_<YYYY-MM-DD>
  *   - 不做 server 计数,MVP 阶段本地计数
  *
  * 用法:
@@ -35,7 +35,7 @@ import { verifySerial, hasModule, MODULE_BIT_WPS } from './license/index.js'
 const KEY = 'chayuanLicense'
 
 // 命名额度池（按日重置，各自独立）；key: cy_quota_<pool>_<YYYY-MM-DD>
-const QUOTAS = { chat: 30, assistant: 5 }
+const QUOTAS = { chat: 30, assistant: 2 }
 
 // 付费专属能力：key -> 弹窗 reason（零免费，未购买直接拦截）。
 // 涉密类（脱密/脱密还原/保密检查/涉密关键词提取）现为付费专属，不再走免费池。
