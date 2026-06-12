@@ -348,17 +348,17 @@ function readRawFromBrowser() {
 function writeRawToBrowser(raw) {
   try { if (typeof localStorage !== 'undefined') localStorage.setItem(RAW_LS_KEY, raw) } catch (e) { /* ignore */ }
 }
-// 持久化原始标识:固定文件(跨 WPS 上下文 + 与桌面一致,尽力) + localStorage(保证同一 WPS 稳定,即使 FS 不可用)
-function persistRaw(raw) { writeFixedRawId(raw); writeRawToBrowser(raw) }
-
 async function getRawMachineId() {
-  let raw = readFixedRawId()                 // 1 固定共享文件(最稳,跨端一致)
-  if (raw) { persistRaw(raw); return raw }
-  raw = readSharedRawId()                     // 2 老桌面默认路径(兼容)
-  if (!raw) raw = readOsRawId()               // 3 OS 硬件标识(确定性,与桌面一致)
-  if (!raw) raw = readRawFromBrowser()        // 4 上次持久化的 raw —— 关键:保证不再每次随机
-  if (!raw) raw = await randomUuidHex()       // 5 兜底:仅全无时生成一次
-  persistRaw(raw)
+  let raw = readFixedRawId()                 // 1 固定共享文件:已是真源,仅镜像到 localStorage
+  if (raw) { writeRawToBrowser(raw); return raw }
+  let deterministic = false
+  raw = readSharedRawId()                    // 2 老桌面默认路径(来源不明,不提升到 fixed)
+  if (!raw) { raw = readOsRawId(); if (raw) deterministic = true }  // 3 OS 硬件标识:确定性,可写 fixed
+  if (!raw) raw = readRawFromBrowser()       // 4 上次持久化的 raw(来源不明)
+  if (!raw) raw = await randomUuidHex()      // 5 兜底:随机,不写 fixed
+  // 仅确定性 OS 标识写固定共享文件(随机/来源不明不污染跨端);所有来源都镜像到 localStorage 保自身稳定
+  if (deterministic) writeFixedRawId(raw)
+  writeRawToBrowser(raw)
   return raw
 }
 
