@@ -2231,7 +2231,7 @@ import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
-import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan } from '../utils/licenseStore.js'
+import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan, evalLicense } from '../utils/licenseStore.js'
 import { toDataUrl as buildPurchaseQrDataUrl } from '../utils/qrcode.js'
 import { getFingerprint as getPurchaseFingerprint } from '../utils/license/fingerprint.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
@@ -3796,19 +3796,16 @@ export default {
       let paid = false
       try { lic = getLicense() } catch (_) { lic = { plan: 'free' } }
       try { paid = isPaidPlan() } catch (_) { paid = false }
-      const now = Date.now()
-      const timeValid = !!(lic.timeExpireAt && new Date(lic.timeExpireAt).getTime() > now)
-      const counts = typeof lic.counts === 'number' ? lic.counts : 0
-      const countValid = counts > 0 && (!lic.countExpireAt || new Date(lic.countExpireAt).getTime() > now)
+      const ev = evalLicense(lic, Date.now())
       const quota = (pool) => {
         try { return { remaining: getQuotaRemaining(pool), limit: getQuotaLimit(pool) } } catch (_) { return { remaining: 0, limit: 0 } }
       }
       return {
         licensed: paid,
-        timeValid,
-        timeExpireAt: String(lic.timeExpireAt || ''),
-        counts,
-        countValid,
+        timeValid: ev.timeValid,
+        timeExpireAt: String(ev.timeExpireAt || ''),
+        counts: ev.counts,
+        countValid: ev.countValid,
         chat: quota('chat'),
         assistant: quota('assistant')
       }

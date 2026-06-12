@@ -238,7 +238,8 @@ import {
   NEW_ASSISTANT_COUNT
 } from '../utils/assistant/runtimeAssistantsInstaller.js'
 import {
-  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining, getQuotaLimit, getQuotaRemaining
+  getLicense, isPaidPlan, activate, startTrial, deactivate, getDailyFreeRemaining, getQuotaLimit, getQuotaRemaining,
+  evalLicense
 } from '../utils/licenseStore.js'
 import { getFingerprint } from '../utils/license/fingerprint.js'
 import { toDataUrl as buildQrDataUrl } from '../utils/qrcode.js'
@@ -310,14 +311,11 @@ export default {
         if (rec.plan === 'expired') return '授权已过期或次数已耗尽'
         return ''
       }
-      const now = Date.now()
-      const timeValid = rec.timeExpireAt && new Date(rec.timeExpireAt).getTime() > now
-      const countValid = typeof rec.counts === 'number' && rec.counts > 0
-        && (!rec.countExpireAt || new Date(rec.countExpireAt).getTime() > now)
+      const ev = evalLicense(rec, Date.now())
       const parts = []
       if (Array.isArray(rec.modules) && rec.modules.length) parts.push('模块:' + rec.modules.join(', '))
-      if (timeValid) parts.push('到期:' + this.formatDate(rec.timeExpireAt))
-      if (countValid) parts.push((timeValid ? '过期后剩' : '剩余') + rec.counts + '次')
+      if (ev.timeValid) parts.push('到期:' + this.formatDate(ev.timeExpireAt))
+      if (ev.countValid) parts.push((ev.timeValid ? '过期后剩' : '剩余') + ev.counts + '次')
       return parts.join(' · ')
     }
   },
@@ -472,7 +470,9 @@ export default {
     /* ── 通用 ── */
     formatDate(s) {
       if (!s) return ''
-      try { return new Date(s).toLocaleString() } catch { return String(s) }
+      const d = new Date(s)
+      if (Number.isNaN(d.getTime())) return String(s)
+      return d.toLocaleString()
     },
     goBack() {
       if (window.history.length > 1) window.history.back()
