@@ -489,7 +489,7 @@
                         </span>
                       </span>
                     </div>
-                    <p class="welcome-support-pitch-cost">免费额度有限，每一次调用背后都是实打实的模型成本。</p>
+                    <p class="welcome-support-pitch-cost">免费额度有限，每一次使用背后都是实打实的研发成本。</p>
                     <button
                       type="button"
                       class="welcome-support-pitch-cta"
