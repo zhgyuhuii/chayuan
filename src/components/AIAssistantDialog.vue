@@ -429,7 +429,7 @@
               class="welcome-support"
               :class="[`welcome-entry-${welcomeEntryAnimation}`]"
             >
-              <p class="welcome-support-text">欢迎关注我们的微信公众号，便于提需求，帮助我持续进化成你想要的样子。</p>
+              <p class="welcome-support-text">关注公众号「智灵鸟科技」，随时提需求，帮我进化成你想要的样子 ❤️</p>
               <div v-if="hasDonationQrCode" class="welcome-support-codes">
                 <div v-if="showFollowDonationQrCode" class="welcome-support-card">
                   <div class="welcome-support-qr-wrap">
@@ -490,24 +490,36 @@
                       </span>
                     </div>
                     <p class="welcome-support-pitch-cost">免费额度有限，每一次调用背后都是实打实的模型成本。</p>
-                    <p class="welcome-support-pitch-cta">支持开发者 → 解锁更多次数，也让我有动力继续做下去。</p>
+                    <button
+                      type="button"
+                      class="welcome-support-pitch-cta"
+                      @click="openPurchaseDialog()"
+                    >
+                      支持开发者，解锁更多次数
+                      <span class="welcome-support-pitch-cta-arrow" aria-hidden="true">→</span>
+                    </button>
+                    <span class="welcome-support-pitch-note">也让我有动力，继续把它做下去 ❤️</span>
                   </div>
                 </template>
               </div>
-              <button type="button" class="welcome-entitlement-activate" @click="openActivateDialog">
-                已购买？点此<span class="welcome-entitlement-activate-key">输入授权码</span>激活
-              </button>
-              <p class="welcome-entitlement-query">忘记授权码？请关注公众号「智灵鸟科技」查询</p>
-              <p class="welcome-support-copyright">
-                版权所有 北京智灵鸟科技中心
-                <a
-                  href="https://aidooo.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  class="welcome-support-link"
-                  @click.prevent="openExternalWebsite('https://aidooo.com')"
-                >aidooo.com</a>
-              </p>
+              <div class="welcome-foot">
+                <button type="button" class="welcome-foot-activate" @click="openActivateDialog">
+                  <span class="welcome-foot-activate-ic" aria-hidden="true">🔑</span>
+                  已购买？点此<span class="welcome-foot-activate-key">输入授权码</span>激活
+                </button>
+                <p class="welcome-foot-query">忘记授权码？关注公众号「智灵鸟科技」即可查询</p>
+                <div class="welcome-foot-divider" aria-hidden="true"></div>
+                <p class="welcome-foot-copyright">
+                  © 北京智灵鸟科技中心
+                  <a
+                    href="https://aidooo.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    class="welcome-foot-link"
+                    @click.prevent="openExternalWebsite('https://aidooo.com')"
+                  >aidooo.com</a>
+                </p>
+              </div>
               <span class="welcome-support-floor" aria-hidden="true"></span>
             </div>
           </div>
@@ -6966,6 +6978,10 @@ export default {
     // 已购买 → 打开购买引导窗（含购买/分享二维码 + 公众号 + 下方授权码输入），输入授权码激活
     openActivateDialog() {
       this.openDialogRoute('/purchase-guide-dialog', { reason: 'activate' }, '激活授权', 460, 660, true)
+    },
+    // 「解锁更多次数」CTA → 不分场景，直接进购买页（扫码购买 + 分享 + 授权码）
+    openPurchaseDialog() {
+      this.openDialogRoute('/purchase-guide-dialog', { reason: 'purchase' }, '购买授权', 460, 660, true)
     },
     openSidebarFooterSupportDialog(mode = 'follow') {
       this.sidebarFooterSupportDialogMode = mode === 'support' ? 'support' : 'follow'
@@ -17601,55 +17617,117 @@ export default {
   line-height: 1.65;
 }
 .welcome-support-pitch-cta {
-  margin: 7px 0 0;
-  color: #f1edff;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.6;
-}
-.welcome-support-pitch--exhausted .welcome-support-pitch-cta {
-  color: #fde68a;
-}
-
-.welcome-entitlement-activate {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  margin-top: 10px;
-  padding: 6px 14px;
-  background: transparent;
-  border: 1px solid rgba(124, 108, 220, 0.55);
-  border-radius: 8px;
+  gap: 6px;
+  margin: 12px auto 0;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8b7cf0 0%, #6d5dd3 100%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px -8px rgba(124, 108, 220, 0.85);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.welcome-support-pitch-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 10px 24px -8px rgba(124, 108, 220, 0.95);
+}
+.welcome-support-pitch-cta:active {
+  transform: translateY(0);
+}
+.welcome-support-pitch-cta-arrow {
+  font-size: 14px;
+  transition: transform 0.15s ease;
+}
+.welcome-support-pitch-cta:hover .welcome-support-pitch-cta-arrow {
+  transform: translateX(3px);
+}
+.welcome-support-pitch--exhausted .welcome-support-pitch-cta {
+  background: linear-gradient(135deg, #f5c451 0%, #e0a93a 100%);
+  color: #3a2c08;
+  box-shadow: 0 8px 20px -8px rgba(250, 204, 21, 0.85);
+}
+.welcome-support-pitch-note {
+  display: block;
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.55);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* 底部统一页脚:激活入口 + 找回提示 + 版权 */
+.welcome-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin-top: 14px;
+}
+.welcome-foot-activate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  background: rgba(124, 108, 220, 0.08);
+  border: 1px solid rgba(124, 108, 220, 0.5);
+  border-radius: 10px;
   color: rgba(226, 232, 240, 0.92);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
-.welcome-entitlement-activate:hover {
-  background: rgba(124, 108, 220, 0.16);
+.welcome-foot-activate:hover {
+  background: rgba(124, 108, 220, 0.2);
   border-color: rgba(124, 108, 220, 0.85);
+  transform: translateY(-1px);
 }
-.welcome-entitlement-activate-key {
-  margin: 0 3px;
+.welcome-foot-activate-ic {
+  font-size: 12px;
+  filter: grayscale(0.1);
+}
+.welcome-foot-activate-key {
+  margin: 0 2px;
   color: #facc15;
   font-weight: 700;
-  font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.welcome-entitlement-query {
-  margin: 8px 0 0;
-  color: rgba(226, 232, 240, 0.7);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.welcome-support-copyright {
-  margin: 12px 0 0;
-  color: rgba(226, 232, 240, 0.66);
+.welcome-foot-query {
+  margin: 9px 0 0;
+  color: rgba(226, 232, 240, 0.6);
   font-size: 11.5px;
   line-height: 1.6;
   text-align: center;
+}
+.welcome-foot-divider {
+  width: 60%;
+  max-width: 220px;
+  height: 1px;
+  margin: 14px 0 10px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0) 0%, rgba(148, 163, 184, 0.28) 50%, rgba(148, 163, 184, 0) 100%);
+}
+.welcome-foot-copyright {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.45);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+}
+.welcome-foot-link {
+  margin-left: 5px;
+  color: rgba(125, 211, 252, 0.85);
+  text-decoration: none;
+}
+.welcome-foot-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
 }
 
 .welcome-support-link {
