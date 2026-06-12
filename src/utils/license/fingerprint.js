@@ -407,6 +407,12 @@ async function fetchDesktopSidecarFingerprint() {
 
 export async function getFingerprint() {
   if (_cachedMain) return _cachedMain
+  // 0. 已确定的稳定锚点优先:cy_machine_id 是本机第一次确定并落盘的指纹。
+  //    一旦存在就永远沿用,避免版本升级切换取值来源(sidecar/raw/随机)导致指纹跳变,
+  //    进而让「购买时已签发的序列号」对不上而失效。老用户多半就是用这个值购买的。
+  const anchored = readFromLocalStorage()
+  if (isValid16Hex(anchored)) { _cachedMain = anchored; return _cachedMain }
+  // 1. 首次确定:desktop 在跑则问 sidecar(与桌面同源)
   try {
     const fp = await fetchDesktopSidecarFingerprint()
     if (isValid16Hex(fp)) {
@@ -415,11 +421,14 @@ export async function getFingerprint() {
       return _cachedMain
     }
   } catch (e) { /* sidecar unreachable */ }
+  // 2. 原始系统标识派生(/etc/machine-id、MachineGuid 等);确定后焊死锚点,下次走第 0 步
   try {
     const raw = await getRawMachineId()
-    if (raw) { _cachedMain = await sha256First8Hex(raw); return _cachedMain }
+    if (raw) { _cachedMain = await sha256First8Hex(raw); writeToLocalStorage(_cachedMain); return _cachedMain }
   } catch (e) { /* fallback */ }
+  // 3. WPS 自身随机兜底(内部已焊死 cy_machine_id)
   _cachedMain = await getWpsOwnFingerprint()
+  writeToLocalStorage(_cachedMain)
   return _cachedMain
 }
 
@@ -430,15 +439,21 @@ export async function getFingerprint() {
  */
 export async function getCandidateFingerprints() {
   const list = []
-  try {
-    const main = await getFingerprint()
-    if (isValid16Hex(main)) list.push(main.toLowerCase())
-  } catch (e) { /* ignore */ }
-  // 兼容老安装:旧 WPS 自身随机指纹(只读,不新生成)
-  try {
-    const legacy = readFromFileSystem() || (await readFromOPFS()) || readFromLocalStorage()
-    if (isValid16Hex(legacy) && !list.includes(String(legacy).toLowerCase())) list.push(String(legacy).toLowerCase())
-  } catch (e) { /* ignore */ }
+  const add = (v) => {
+    const s = String(v || '').trim().toLowerCase()
+    if (isValid16Hex(s) && !list.includes(s)) list.push(s)
+  }
+  // 主指纹(稳定锚点)
+  try { add(await getFingerprint()) } catch (e) { /* ignore */ }
+  // desktop sidecar 真指纹(可能与主不同)
+  try { add(await fetchDesktopSidecarFingerprint()) } catch (e) { /* ignore */ }
+  // cy_machine_id:老随机锚点,购买时多半用它(关键救场点,务必逐项纳入而非短路只取一个)
+  try { add(readFromLocalStorage()) } catch (e) { /* ignore */ }
+  // sha256(cy_machine_raw):新版升级后的取值来源(升级后界面显示的那个指纹)
+  try { const raw = readRawFromBrowser(); if (raw) add(await sha256First8Hex(raw)) } catch (e) { /* ignore */ }
+  // 历史文件 / OPFS 里残留的旧值(老安装兼容,只读不新生成)
+  try { add(readFromFileSystem()) } catch (e) { /* ignore */ }
+  try { add(await readFromOPFS()) } catch (e) { /* ignore */ }
   return list
 }
 
