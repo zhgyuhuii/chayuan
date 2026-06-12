@@ -6,7 +6,7 @@
             <tab id="tabAssistant" label="察元AI助理" > 
                 <!-- 关于分组 -->
                 <group id="groupAbout" label="关于" autoScale="true">
-                    <button id="btnAboutChayuan" label="关于察元AI助手" onAction="ribbon.OnAction" size="large" getImage="ribbon.GetImage"  />
+                    <button id="btnAboutChayuan" label="关于察元" onAction="ribbon.OnAction" size="large" getImage="ribbon.GetImage"  />
                     <!-- <button id="btnAIWebsites" label="AI网址大全" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  />
                     <button id="btnRequirementCollection" label="需求征集" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  />
                     <button id="btnChayuanDiscussionGroup" label="察元讨论组" onAction="ribbon.OnAction" getImage="ribbon.GetImage"  /> -->
