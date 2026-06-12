@@ -33,5 +33,13 @@ markSerialUsed('S1')
 ok('去重: 已用命中', isSerialUsed('S1') === true)
 ok('去重: 未用不命中', isSerialUsed('S9') === false)
 
+// 损坏 expireAt 不 throw(Critical 回归)
+let threw = false
+try {
+  const rc = computeStackedRec({ plan: 'active', kind: 'time', expireAt: 'corrupted' }, { kind: 0, value: 30 }, 'SX', now)
+  ok('损坏expireAt兜底(now+30天)', Math.abs(new Date(rc.expireAt).getTime() - (now + 30 * DAY)) < 2000, `exp=${rc.expireAt}`)
+} catch (e) { threw = true }
+ok('损坏expireAt不抛错', threw === false)
+
 console.log(`\n结果: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

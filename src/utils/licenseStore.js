@@ -77,18 +77,21 @@ function save(rec) {
 
 // ── 时长叠加 + 去重 ─────────────────────────────────────────────────
 
-const USED_KEY = 'cy_used_serials'
-
-/** 序列号是否已激活过(防同码重复刷)。 */
+/** 序列号是否已激活过(防同码重复刷;与主记录同走 globalSettings 双后端)。 */
 export function isSerialUsed(serial) {
-  try { return JSON.parse(localStorage.getItem(USED_KEY) || '[]').includes(serial) } catch (e) { return false }
+  try {
+    const s = loadGlobalSettings()
+    const a = Array.isArray(s.usedSerials) ? s.usedSerials : []
+    return a.includes(serial)
+  } catch (e) { return false }
 }
 
 /** 记录序列号已激活。 */
 export function markSerialUsed(serial) {
   try {
-    const a = JSON.parse(localStorage.getItem(USED_KEY) || '[]')
-    if (!a.includes(serial)) { a.push(serial); localStorage.setItem(USED_KEY, JSON.stringify(a)) }
+    const s = loadGlobalSettings()
+    const a = Array.isArray(s.usedSerials) ? s.usedSerials : []
+    if (!a.includes(serial)) { a.push(serial); saveGlobalSettings({ usedSerials: a }) }
   } catch (e) { /* ignore */ }
 }
 
@@ -99,8 +102,9 @@ export function markSerialUsed(serial) {
  */
 export function computeStackedRec(existing, result, serial, now) {
   if (result.kind === 0) {
-    const curExp = (existing.plan === 'active' && existing.kind === 'time' && existing.expireAt)
+    let curExp = (existing.plan === 'active' && existing.kind === 'time' && existing.expireAt)
       ? new Date(existing.expireAt).getTime() : 0
+    if (Number.isNaN(curExp)) curExp = 0            // 损坏 expireAt 兜底,避免 new Date(NaN) 抛错
     const base = Math.max(curExp, now)
     return {
       plan: 'active', serial, modules: ['wps'], kind: 'time', value: result.value,
