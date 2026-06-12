@@ -30,6 +30,15 @@ function _deobfuscateDomain() {
   return h
 }
 
+// 把服务端返回的相对附件 URL(/feedback-uploads/...)解析为 aidooo 绝对地址,
+// 供 WPS(非 aidooo 源)正确加载图片/下载附件。
+export function resolveAttachmentUrl(url) {
+  const u = String(url || '')
+  if (!u) return ''
+  if (/^https?:\/\//i.test(u)) return u
+  return _getBaseUrl() + (u.charAt(0) === '/' ? u : '/' + u)
+}
+
 function _getBaseUrl() {
   try {
     return 'https://' + _deobfuscateDomain()

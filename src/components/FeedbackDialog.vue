@@ -41,14 +41,25 @@
               <div class="feedback-bubble feedback-bubble--user">
                 <p class="feedback-bubble-text">{{ item.content }}</p>
                 <div v-if="item.attachments && item.attachments.length" class="feedback-attachments">
-                  <a
-                    v-for="(att, ai) in item.attachments"
-                    :key="ai"
-                    :href="att.url || '#'"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="feedback-attachment-link"
-                  >{{ att.name || ('附件' + (ai + 1)) }}</a>
+                  <template v-for="(att, ai) in item.attachments">
+                    <a
+                      v-if="att.kind === 'image'"
+                      :key="'img'+ai"
+                      :href="attUrl(att.url)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="feedback-attachment-thumb-link"
+                    ><img :src="attUrl(att.url)" class="feedback-attachment-thumb" alt="" /></a>
+                    <a
+                      v-else
+                      :key="'file'+ai"
+                      :href="attUrl(att.url)"
+                      :download="att.name || ''"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="feedback-attachment-link"
+                    >📎 {{ att.name || ('附件' + (ai + 1)) }}</a>
+                  </template>
                 </div>
                 <span v-if="item._pending" class="feedback-bubble-status feedback-bubble-status--pending">发送中...</span>
                 <span v-if="item._draft" class="feedback-bubble-status feedback-bubble-status--draft">已存草稿，联网后自动重发</span>
@@ -167,7 +178,7 @@
 
 <script>
 import pkg from '../../package.json'
-import { listMyFeedback, submitFeedback, uploadAttachment, retryDrafts } from '../utils/feedbackClient.js'
+import { listMyFeedback, submitFeedback, uploadAttachment, retryDrafts, resolveAttachmentUrl } from '../utils/feedbackClient.js'
 import { activate } from '../utils/licenseStore.js'
 
 export default {
@@ -256,6 +267,7 @@ export default {
         }
       }
     },
+    attUrl(url) { return resolveAttachmentUrl(url) },
     toggleGrant(item) {
       const id = item.id
       const current = this.expandedGrants[id]
@@ -495,6 +507,14 @@ export default {
   gap: 4px;
 }
 
+.feedback-attachment-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.feedback-attachment-thumb-link { display: inline-block; margin: 2px 4px 2px 0; }
 .feedback-attachment-link {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.85);
