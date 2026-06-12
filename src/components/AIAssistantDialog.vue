@@ -471,8 +471,27 @@
                   <span v-else class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
                 </template>
                 <template v-else>
-                  <span class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
-                  <span class="welcome-entitlement-item">助手今日剩余 {{ entitlementSummary.assistant.remaining }} / {{ entitlementSummary.assistant.limit }} 次</span>
+                  <div
+                    class="welcome-support-pitch"
+                    :class="{ 'welcome-support-pitch--exhausted': entitlementSummary.chat.remaining <= 0 && entitlementSummary.assistant.remaining <= 0 }"
+                  >
+                    <div class="welcome-support-pitch-counts">
+                      <span class="welcome-support-pitch-chip">
+                        <span class="welcome-support-pitch-chip-label">今日对话</span>
+                        <span class="welcome-support-pitch-chip-value" :class="{ 'is-zero': entitlementSummary.chat.remaining <= 0 }">
+                          {{ entitlementSummary.chat.remaining }}<i class="welcome-support-pitch-chip-sep">/</i>{{ entitlementSummary.chat.limit }}
+                        </span>
+                      </span>
+                      <span class="welcome-support-pitch-chip">
+                        <span class="welcome-support-pitch-chip-label">今日助手</span>
+                        <span class="welcome-support-pitch-chip-value" :class="{ 'is-zero': entitlementSummary.assistant.remaining <= 0 }">
+                          {{ entitlementSummary.assistant.remaining }}<i class="welcome-support-pitch-chip-sep">/</i>{{ entitlementSummary.assistant.limit }}
+                        </span>
+                      </span>
+                    </div>
+                    <p class="welcome-support-pitch-cost">免费额度有限，每一次调用背后都是实打实的模型成本。</p>
+                    <p class="welcome-support-pitch-cta">支持开发者 → 解锁更多次数，也让我有动力继续做下去。</p>
+                  </div>
                 </template>
               </div>
               <button type="button" class="welcome-entitlement-activate" @click="openActivateDialog">
@@ -17519,6 +17538,77 @@ export default {
   color: rgba(226, 232, 240, 0.85);
   font-size: 12px;
   line-height: 1.6;
+}
+
+/* 第二档「价值 + 稀缺」支持卡片(免费态) */
+.welcome-support-pitch {
+  width: 100%;
+  margin-top: 2px;
+  padding: 14px 16px 15px;
+  border: 1px solid rgba(124, 108, 220, 0.32);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(124, 108, 220, 0.18) 0%, rgba(124, 108, 220, 0) 55%),
+    linear-gradient(180deg, rgba(30, 27, 56, 0.55) 0%, rgba(20, 18, 38, 0.55) 100%);
+  box-shadow: 0 6px 22px -12px rgba(124, 108, 220, 0.55);
+  text-align: center;
+}
+.welcome-support-pitch--exhausted {
+  border-color: rgba(250, 204, 21, 0.38);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(250, 204, 21, 0.16) 0%, rgba(250, 204, 21, 0) 55%),
+    linear-gradient(180deg, rgba(40, 32, 20, 0.55) 0%, rgba(24, 20, 14, 0.55) 100%);
+  box-shadow: 0 6px 22px -12px rgba(250, 204, 21, 0.5);
+}
+.welcome-support-pitch-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 10px;
+}
+.welcome-support-pitch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+.welcome-support-pitch-chip-label {
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 11.5px;
+}
+.welcome-support-pitch-chip-value {
+  color: #c4b5fd;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.welcome-support-pitch-chip-value.is-zero {
+  color: #fca5a5;
+}
+.welcome-support-pitch-chip-sep {
+  margin: 0 1px;
+  font-style: normal;
+  color: rgba(226, 232, 240, 0.42);
+  font-weight: 500;
+}
+.welcome-support-pitch-cost {
+  margin: 11px 0 0;
+  color: rgba(226, 232, 240, 0.68);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.welcome-support-pitch-cta {
+  margin: 7px 0 0;
+  color: #f1edff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.welcome-support-pitch--exhausted .welcome-support-pitch-cta {
+  color: #fde68a;
 }
 
 .welcome-entitlement-activate {
