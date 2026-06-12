@@ -17,6 +17,8 @@ eq('fp 张三', await computeFpHome('file://C:/Users/张三'), '56cea89e9e6fe544
 eq('fp Alice', await computeFpHome('C:/Users/Alice'), 'd0787d4eae659d04')
 eq('fp mac', await computeFpHome('/Users/alice'), '1ac03ebdd106d3fa')
 eq('fp linux', await computeFpHome('/home/alice'), '0da135ff2ca62640')
+eq('norm file:/// 三斜杠', normalizeHome('file:///C:/Users/Alice'), 'c:/Users/Alice')
+eq('fp file:/// 三斜杠', await computeFpHome('file:///C:/Users/Alice'), 'd0787d4eae659d04')
 
 console.log(`\n结果: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

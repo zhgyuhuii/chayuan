@@ -220,6 +220,8 @@ async function sha256First8Hex(raw) {
 /**
  * 规范化 home 路径，使 WPS 与 desktop 从同一台机得到字节级相同的字符串。
  * 步骤：去 file:// → 反斜杠转正斜杠 → 折叠重复斜杠 → 去尾斜杠 → 盘符小写(主体保留大小写)。
+ * 兼容 file:/// 三斜杠：WPS 传 Windows 本地路径时用 file:///C:/...，去前缀后残留 /C:/...，
+ * 需额外剥去前导斜杠才能匹配盘符。Linux file:///home/alice 去前缀后为 /home/alice，前导斜杠是路径一部分须保留。
  */
 export function normalizeHome(raw) {
   let s = String(raw || '').trim()
@@ -228,6 +230,7 @@ export function normalizeHome(raw) {
   s = s.replace(/\\/g, '/')
   s = s.replace(/\/{2,}/g, '/')
   s = s.replace(/\/+$/, '')
+  s = s.replace(/^\/([A-Za-z]):/, (m, d) => d.toLowerCase() + ':')
   s = s.replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase() + ':')
   return s
 }
