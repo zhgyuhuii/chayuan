@@ -4,12 +4,19 @@
  * 激活流程:
  *   1. activate(serial) 调用 website server POST /api/license/verify 验签
  *   2. 服务端持有 HMAC key,本地不存 key,防伪造
- *   3. 验签通过则本地持久化激活态(serial + modules + kind + value + expireAt)
+ *   3. 验签通过则叠加到本地持久化激活态(共存模型:time/count 不互相覆盖)
+ *
+ * 共存模型(rec 字段):
+ *   - timeExpireAt   : 时间授权到期时间(ISO string);null 表示无时间授权
+ *   - counts         : 次数授权剩余次数;0 表示无剩余
+ *   - countExpireAt  : 次数有效期(ISO string);null 表示次数永不过期
  *
  * 授权状态:
- *   - 未激活:无持久化激活记录
- *   - 激活·有效:有记录且(time: expireAt 未过期 / count: value > 0)
- *   - 激活·过期/耗尽:有记录但已无效
+ *   - 未激活:无持久化激活记录(plan !== 'active')
+ *   - 激活·有效:plan=active 且 (timeExpireAt 未过期) 或 (counts>0 且次数有效期未过)
+ *   - 激活·过期/耗尽:有记录但 time 已过期 且 counts 耗尽或次数有效期已过
+ *
+ * 有效性优先级:time 有效时优先不限次;time 过期后扣 counts。
  *
  * 命名额度池(本地按日计数,各池独立重置):
  *   - chat 池: 30 次/天；key: cy_quota_chat_<YYYY-MM-DD>
@@ -86,12 +93,12 @@ export function normalizeRec(rec) {
   if ('timeExpireAt' in rec || 'counts' in rec) {
     return {
       timeExpireAt: rec.timeExpireAt || null,
-      counts: typeof rec.counts === 'number' ? rec.counts : 0,
+      counts: (typeof rec.counts === 'number' && !Number.isNaN(rec.counts)) ? rec.counts : 0,
       countExpireAt: rec.countExpireAt || null,
     }
   }
   if (rec.kind === 'time') return { timeExpireAt: rec.expireAt || null, counts: 0, countExpireAt: null }
-  if (rec.kind === 'count') return { timeExpireAt: null, counts: typeof rec.value === 'number' ? rec.value : 0, countExpireAt: rec.expireAt || null }
+  if (rec.kind === 'count') return { timeExpireAt: null, counts: (typeof rec.value === 'number' && !Number.isNaN(rec.value)) ? rec.value : 0, countExpireAt: rec.expireAt || null }
   return { timeExpireAt: null, counts: 0, countExpireAt: null }
 }
 
@@ -213,7 +220,7 @@ function _reasonText(reason) {
  * 激活序列号:本地验签(离线,不联网) → 存储激活态。
  * HMAC key 由构建注入 VITE_LICENSE_HMAC_KEY（见 license/index.js）。
  * @param {string} serial - 序列号(带或不带横杠)
- * @returns {Promise<{ok:boolean, plan?:string, modules?:string[], kind?:string, value?:number, expireAt?:string, error?:string}>}
+ * @returns {Promise<{ok:boolean, plan?:string, modules?:string[], timeExpireAt?:string, counts?:number, countExpireAt?:string, error?:string}>}
  */
 export async function activate(serial) {
   const k = String(serial || '').trim()
