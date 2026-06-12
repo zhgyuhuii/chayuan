@@ -38,18 +38,18 @@
         <div class="palette-groups">
           <div
             v-for="group in activePaletteGroups"
-            :key="group.label"
+            :key="group.key || group.label"
             class="palette-group"
           >
             <button
               type="button"
               class="palette-group-header"
               :class="{ collapsed: group.collapsed }"
-              @click="togglePaletteGroup(group.label)"
+              @click="togglePaletteGroup(group)"
             >
               <span class="palette-group-title">{{ group.label }}</span>
               <span class="palette-group-meta">
-                <span class="palette-group-count">{{ group.items.length }}</span>
+                <span class="palette-group-count">{{ group.count != null ? group.count : group.items.length }}</span>
                 <span class="palette-group-arrow" :class="{ collapsed: group.collapsed }">⌄</span>
               </span>
             </button>
@@ -1523,7 +1523,7 @@ import {
   saveAssistantSettings,
   saveCustomAssistants
 } from '../utils/assistantSettings.js'
-import { getBuiltinAssistants, getBuiltinAssistantDefinition, ensureDomainPacksLoaded, getAssistantGroupLabel, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
+import { getBuiltinAssistants, getBuiltinAssistantDefinition, ensureDomainPacksLoaded, ensureDomainLoaded, isDomainLoaded, getAssistantGroupLabel, OUTPUT_FORMAT_OPTIONS } from '../utils/assistantRegistry.js'
 import { DOMAIN_MANIFEST, DOMAIN_ORDER } from '../utils/assistant/assistantDomainManifest.js'
 import { getTaskById, getTasks, subscribe as subscribeTasks } from '../utils/taskListStore.js'
 import { inAppConfirm } from '../utils/inAppDialog.js'
@@ -1840,22 +1840,29 @@ const groupedTools = computed(() => {
 
 const groupedAssistants = computed(() => {
   const keyword = paletteKeyword.value.toLowerCase()
-  // 按「领域 domain」分组(无 domain 回退原 group),领域标签取自 DOMAIN_MANIFEST,
-  // 与对话窗口助手面板一致;领域组按 DOMAIN_ORDER 排序,非领域组(核对/文本分析/自定义等)在前。
+  // 按「领域 domain」分组(无 domain 回退原 group),领域标签取自 DOMAIN_MANIFEST,与对话窗口一致。
+  // group-first:无搜索时补齐全部领域空分组(用 manifest 计数),实现「先出分组、点开再加载该域」。
   const groups = new Map()
+  const ensureGroup = (key, label, order, isDomain, count) => {
+    if (!groups.has(key)) groups.set(key, { key, label, items: [], order, isDomain, count: Number(count) || 0 })
+    return groups.get(key)
+  }
   eligibleAssistants.value.forEach(item => {
     if (keyword) {
       const haystack = `${item.title} ${item.description} ${item.groupLabel}`.toLowerCase()
       if (!haystack.includes(keyword)) return
     }
     const key = item.domain || item.group || 'custom'
-    if (!groups.has(key)) {
-      const label = DOMAIN_MANIFEST[key]?.label || getAssistantGroupLabel(key) || '其他助手'
-      const domainIdx = DOMAIN_ORDER.indexOf(key)
-      groups.set(key, { label, items: [], order: domainIdx < 0 ? -1 : domainIdx })
-    }
-    groups.get(key).items.push(item)
+    const label = DOMAIN_MANIFEST[key]?.label || getAssistantGroupLabel(key) || '其他助手'
+    const domainIdx = DOMAIN_ORDER.indexOf(key)
+    ensureGroup(key, label, domainIdx < 0 ? -1 : domainIdx, domainIdx >= 0, DOMAIN_MANIFEST[key]?.count).items.push(item)
   })
+  if (!keyword) {
+    DOMAIN_ORDER.forEach((key, idx) => {
+      const meta = DOMAIN_MANIFEST[key]
+      if (meta) ensureGroup(key, meta.label, idx, true, meta.count)
+    })
+  }
   return [...groups.values()]
     .sort((a, b) => {
       if (a.order < 0 && b.order < 0) return a.label.localeCompare(b.label, 'zh-Hans-CN')
@@ -1863,18 +1870,37 @@ const groupedAssistants = computed(() => {
       if (b.order < 0) return 1
       return a.order - b.order
     })
-    .map(({ label, items }) => ({ label, items }))
+    .map(({ key, label, items, isDomain, count }) => ({
+      key, label, items, isDomain,
+      // 已加载领域用真实条目数, 未加载用 manifest 计数
+      count: items.length || count
+    }))
 })
 const activePaletteGroups = computed(() => {
   const groups = paletteTab.value === 'tool' ? groupedTools.value : groupedAssistants.value
   const collapsedMap = paletteCollapsedGroups.value[paletteTab.value] || {}
   const hasKeyword = Boolean(paletteKeyword.value.trim())
-  return groups.map(group => ({
-    ...group,
-    collapsed: hasKeyword ? false : Boolean(collapsedMap[group.label])
-  }))
+  return groups.map(group => {
+    const key = group.key ?? group.label
+    const explicit = collapsedMap[key]
+    // 搜索时全展开;否则用户显式设置优先,未设置时领域组默认折叠(配合点开再加载)、基础组默认展开
+    const collapsed = hasKeyword
+      ? false
+      : (explicit !== undefined ? Boolean(explicit) : Boolean(group.isDomain))
+    return { ...group, collapsed }
+  })
 })
 const paletteSearchPlaceholder = computed(() => (paletteTab.value === 'tool' ? '搜索工具' : '搜索助手'))
+
+// 助手搜索要跨所有领域:首次在助手 tab 输入关键字时全量加载领域包(去重,只触发一次),
+// 加载完成后刷新 palette 让搜索命中未加载的领域助手。浏览态不触发,保持开窗轻快。
+let _assistantSearchAllLoaded = false
+watch(paletteKeyword, (kw) => {
+  if (!_assistantSearchAllLoaded && paletteTab.value === 'assistant' && String(kw || '').trim()) {
+    _assistantSearchAllLoaded = true
+    ensureDomainPacksLoaded().then(() => { assistantStoreVersion.value += 1 })
+  }
+})
 
 function getNodeById(nodeId) {
   return nodes.value.find(item => item.id === nodeId) || null
@@ -4336,16 +4362,21 @@ function scheduleViewportSync() {
   })
 }
 
-function togglePaletteGroup(label) {
-  if (!label) return
+function togglePaletteGroup(group) {
+  const key = typeof group === 'string' ? group : (group?.key ?? group?.label)
+  if (!key) return
   const tab = paletteTab.value === 'assistant' ? 'assistant' : 'tool'
   const currentMap = paletteCollapsedGroups.value[tab] || {}
+  // 当前折叠态:用户显式优先,未设置时领域组默认折叠
+  const wasCollapsed = currentMap[key] !== undefined ? currentMap[key] : Boolean(group?.isDomain)
+  const willExpand = wasCollapsed
   paletteCollapsedGroups.value = {
     ...paletteCollapsedGroups.value,
-    [tab]: {
-      ...currentMap,
-      [label]: !currentMap[label]
-    }
+    [tab]: { ...currentMap, [key]: !wasCollapsed }
+  }
+  // 展开某领域且尚未加载 -> 按域懒加载(与全量加载共享去重),完成后刷新 palette
+  if (willExpand && tab === 'assistant' && group?.isDomain && DOMAIN_MANIFEST[key] && !isDomainLoaded(key)) {
+    ensureDomainLoaded(key).then(() => { assistantStoreVersion.value += 1 })
   }
 }
 
@@ -4452,12 +4483,9 @@ onMounted(() => {
   window.addEventListener('click', handleGlobalClick)
   window.addEventListener('keydown', handleGlobalKeydown)
 
-  // 编排窗口是独立 ShowDialog 窗口(全新 Vue 实例)，从未触发领域助手包懒加载，
-  // 故助手 palette 只有基础包。后台拉全部领域包(去重/单包超时/失败不阻断，非阻塞)，
-  // 加载完成后 bump 版本刷新 palette；基础助手先显示，领域包到位再补全。
-  ensureDomainPacksLoaded()
-    .then(() => { assistantStoreVersion.value += 1 })
-    .catch(() => { assistantStoreVersion.value += 1 })
+  // 助手 palette 采用 group-first 懒加载(与对话窗口一致):领域分组标题先用 manifest
+  // 计数显示, 展开某域时才 ensureDomainLoaded(域) 加载该域助手, 搜索时才全量加载。
+  // 不在开窗时一次性拉全部 ~200 领域(400+ chunk), 避免开窗卡顿。
 })
 
 onBeforeUnmount(() => {
