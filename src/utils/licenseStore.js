@@ -75,6 +75,36 @@ function save(rec) {
   return saveGlobalSettings({ [KEY]: rec })
 }
 
+// ── 共存纯函数 ──────────────────────────────────────────────────────
+
+/**
+ * 归一化许可记录到共存模型 { timeExpireAt, counts, countExpireAt }(兼容老单 kind rec)。
+ * 非 active 返回空授权。
+ */
+export function normalizeRec(rec) {
+  if (!rec || rec.plan !== 'active') return { timeExpireAt: null, counts: 0, countExpireAt: null }
+  if ('timeExpireAt' in rec || 'counts' in rec) {
+    return {
+      timeExpireAt: rec.timeExpireAt || null,
+      counts: typeof rec.counts === 'number' ? rec.counts : 0,
+      countExpireAt: rec.countExpireAt || null,
+    }
+  }
+  if (rec.kind === 'time') return { timeExpireAt: rec.expireAt || null, counts: 0, countExpireAt: null }
+  if (rec.kind === 'count') return { timeExpireAt: null, counts: typeof rec.value === 'number' ? rec.value : 0, countExpireAt: rec.expireAt || null }
+  return { timeExpireAt: null, counts: 0, countExpireAt: null }
+}
+
+/**
+ * 共存有效性判定(纯函数)。time 有效优先;time 过期后看 count(带次数有效期)。
+ */
+export function evalLicense(rec, now) {
+  const n = normalizeRec(rec)
+  const timeValid = !!(n.timeExpireAt && new Date(n.timeExpireAt).getTime() > now)
+  const countValid = n.counts > 0 && (!n.countExpireAt || new Date(n.countExpireAt).getTime() > now)
+  return { timeValid, countValid, counts: n.counts, timeExpireAt: n.timeExpireAt, countExpireAt: n.countExpireAt, active: timeValid || countValid }
+}
+
 // ── 时长叠加 + 去重 ─────────────────────────────────────────────────
 
 /** 序列号是否已激活过(防同码重复刷;与主记录同走 globalSettings 双后端)。 */
@@ -96,58 +126,43 @@ export function markSerialUsed(serial) {
 }
 
 /**
- * 计算叠加后的许可记录(纯函数,便于测试)。
+ * 计算叠加后的许可记录(纯函数,便于测试)。共存模型:time/count 不互相覆盖。
  *   existing: 现有 getLicense() 结果;result: 验签结果({kind:0/1, value, expireAt?});serial;now=Date.now()
- * time: 新到期 = max(当前未过期到期, now) + value天;count: 累加 value 次。
+ * time(kind=0): 累加到期天数,不动 counts。count(kind=1): 累加次数,不动 timeExpireAt。
  */
 export function computeStackedRec(existing, result, serial, now) {
-  if (result.kind === 0) {
-    let curExp = (existing.plan === 'active' && existing.kind === 'time' && existing.expireAt)
-      ? new Date(existing.expireAt).getTime() : 0
-    if (Number.isNaN(curExp)) curExp = 0            // 损坏 expireAt 兜底,避免 new Date(NaN) 抛错
-    const base = Math.max(curExp, now)
-    return {
-      plan: 'active', serial, modules: ['wps'], kind: 'time', value: result.value,
-      activatedAt: now, expireAt: new Date(base + result.value * 86400000).toISOString(),
-    }
+  const cur = normalizeRec(existing)
+  let timeExpireAt = cur.timeExpireAt
+  let counts = cur.counts
+  let countExpireAt = cur.countExpireAt
+  if (result.kind === 0) {                          // time:累加到期天数,不动 counts
+    let curExp = timeExpireAt ? new Date(timeExpireAt).getTime() : 0
+    if (Number.isNaN(curExp)) curExp = 0
+    timeExpireAt = new Date(Math.max(curExp, now) + result.value * 86400000).toISOString()
+  } else {                                          // count:累加次数,不动 timeExpireAt
+    counts = cur.counts + result.value
+    const rExp = result.expireAt ? new Date(result.expireAt).getTime() : 0
+    const curCExp = countExpireAt ? new Date(countExpireAt).getTime() : 0
+    countExpireAt = (rExp || curCExp) ? new Date(Math.max(curCExp, rExp)).toISOString() : null
   }
-  const curCnt = (existing.plan === 'active' && existing.kind === 'count' && typeof existing.value === 'number'
-    && (!existing.expireAt || new Date(existing.expireAt).getTime() > now)) ? existing.value : 0
-  const expIso = result.expireAt ? new Date(result.expireAt).toISOString() : undefined
-  return {
-    plan: 'active', serial, modules: ['wps'], kind: 'count', value: curCnt + result.value,
-    activatedAt: now, ...(expIso ? { expireAt: expIso } : {}),
-  }
+  return { plan: 'active', serial, modules: ['wps'], timeExpireAt, counts, countExpireAt, activatedAt: now }
 }
 
 // ── 状态读取 ────────────────────────────────────────────────────────
 
 /**
- * 返回当前许可记录(自动校验有效期/次数)。
+ * 返回当前许可记录(自动校验有效期/次数,共存模型)。
  */
 export function getLicense() {
   const rec = load()
   if (rec.plan !== 'active') return rec
-
-  // time 授权:到期检查
-  if (rec.kind === 'time' && rec.expireAt) {
-    if (Date.now() >= new Date(rec.expireAt).getTime()) {
-      const expired = { ...rec, plan: 'expired' }
-      save(expired)
-      return expired
-    }
+  const ev = evalLicense(rec, Date.now())
+  if (!ev.active) {
+    const expired = { ...rec, plan: 'expired' }
+    save(expired)
+    return expired
   }
-  // count 授权:次数耗尽检查 + 有效期检查
-  if (rec.kind === 'count') {
-    const countExhausted = typeof rec.value === 'number' && rec.value <= 0
-    const countExpired = rec.expireAt && Date.now() >= new Date(rec.expireAt).getTime()
-    if (countExhausted || countExpired) {
-      const expired = { ...rec, plan: 'expired' }
-      save(expired)
-      return expired
-    }
-  }
-  return rec
+  return { ...rec, timeExpireAt: ev.timeExpireAt, counts: ev.counts, countExpireAt: ev.countExpireAt }
 }
 
 export function getPlan() {
@@ -251,9 +266,9 @@ export async function activate(serial) {
     ok: true,
     plan: 'active',
     modules: rec.modules,
-    kind: rec.kind,
-    value: rec.value,
-    expireAt: rec.expireAt || null,
+    timeExpireAt: rec.timeExpireAt || null,
+    counts: rec.counts,
+    countExpireAt: rec.countExpireAt || null,
   }
 }
 
@@ -315,25 +330,16 @@ export function incQuota(pool) {
  */
 export function checkCapability(cap, isPaid = isPaidPlan()) {
   const rec = getLicense()
-  const isCountLicense = rec.plan === 'active' && rec.kind === 'count' && typeof rec.value === 'number'
 
   if (isPaid) {
-    if (isCountLicense) {
-      // 次数授权：对话仍走免费日额度（不耗购买次数）；助手/付费功能按购买次数扣减。
-      // 调用方(ensureCapability)见 licenseCount=true 时调 consumeLicenseCount() 扣 1 次。
-      if (cap !== 'chat') {
-        const notExpired = !rec.expireAt || new Date(rec.expireAt).getTime() > Date.now()
-        if (rec.value > 0 && notExpired) {
-          return { allowed: true, licenseCount: true, remaining: rec.value }
-        }
-        // 购买次数已用尽或已过期 → 不再当付费，落到下方免费门控
-        // （value<=0 或过期时 getLicense 通常已置 expired，此处为保险回退）
-      }
-      // cap === 'chat' → 继续走下方免费 chat 池
-    } else {
-      // 时间/订阅类有效授权：全部不限次
-      return { allowed: true }
+    const ev = evalLicense(rec, Date.now())
+    if (ev.timeValid) {
+      return { allowed: true }                       // 时间有效:不限次,不扣
     }
+    if (ev.countValid && cap !== 'chat') {
+      return { allowed: true, licenseCount: true, remaining: ev.counts }  // 过期后扣次数
+    }
+    // chat 或无有效次数 → 落下方免费门控
   }
 
   // 付费专属：零免费，直接拦截
@@ -351,19 +357,19 @@ export function checkCapability(cap, isPaid = isPaidPlan()) {
 
 /**
  * 扣减一次「次数授权」的剩余次数（本地离线扣减；WPS 加载项无服务端实时扣次）。
- * 仅对 plan=active 且 kind=count 生效；扣到 0 时置为 expired，门控自动回落免费额度。
+ * 共存模型:扣 counts 字段,不影响 timeExpireAt。扣到 0 且无 time 时置为 expired。
  * @returns {number} 扣减后的剩余次数
  */
 export function consumeLicenseCount() {
   const rec = load()
-  if (rec.plan !== 'active' || rec.kind !== 'count' || typeof rec.value !== 'number') {
-    return typeof rec.value === 'number' ? rec.value : 0
-  }
-  const next = rec.value - 1
-  const updated = { ...rec, value: Math.max(0, next) }
-  if (next <= 0) updated.plan = 'expired'
+  const ev = evalLicense(rec, Date.now())
+  if (rec.plan !== 'active' || ev.counts <= 0) return ev.counts
+  const next = Math.max(0, ev.counts - 1)
+  const updated = { ...rec, timeExpireAt: ev.timeExpireAt, counts: next, countExpireAt: ev.countExpireAt }
+  delete updated.kind; delete updated.value; delete updated.expireAt
+  if (next <= 0 && !ev.timeValid) updated.plan = 'expired'
   save(updated)
-  return updated.value
+  return next
 }
 
 // ── 兼容别名：旧「执行助手免费次数」= assistant 池 ────────────────────
