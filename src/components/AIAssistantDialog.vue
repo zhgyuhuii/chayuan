@@ -413,8 +413,8 @@
         </div>
         <template v-if="currentMessages.length === 0">
           <div class="welcome">
-            <p class="welcome-title">{{ welcomeTitle }}</p>
-            <p class="welcome-subtitle">{{ welcomeSubtitle }}</p>
+            <p v-if="welcomeTitle" class="welcome-title">{{ welcomeTitle }}</p>
+            <p v-if="welcomeSubtitle" class="welcome-subtitle">{{ welcomeSubtitle }}</p>
             <button
               v-if="!hasConfiguredChatModels"
               type="button"
@@ -3796,13 +3796,13 @@ export default {
     },
     welcomeTitle() {
       if (this.hasConfiguredChatModels) {
-        return '你好，我是察元 AI 文档助手。'
+        return ''
       }
       return '先配置模型，再开启智能写作。'
     },
     welcomeSubtitle() {
       if (this.hasConfiguredChatModels) {
-        return '你可以直接让我写文档、审文档、生成报告、参考附件模板，或者按自然语言帮你改格式。'
+        return ''
       }
       return '当前未检测到可用模型。请先前往模型设置完成提供商启用、API 地址与密钥配置，并刷新模型清单后再开始使用。'
     },
