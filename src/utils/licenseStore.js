@@ -75,6 +75,47 @@ function save(rec) {
   return saveGlobalSettings({ [KEY]: rec })
 }
 
+// ── 时长叠加 + 去重 ─────────────────────────────────────────────────
+
+const USED_KEY = 'cy_used_serials'
+
+/** 序列号是否已激活过(防同码重复刷)。 */
+export function isSerialUsed(serial) {
+  try { return JSON.parse(localStorage.getItem(USED_KEY) || '[]').includes(serial) } catch (e) { return false }
+}
+
+/** 记录序列号已激活。 */
+export function markSerialUsed(serial) {
+  try {
+    const a = JSON.parse(localStorage.getItem(USED_KEY) || '[]')
+    if (!a.includes(serial)) { a.push(serial); localStorage.setItem(USED_KEY, JSON.stringify(a)) }
+  } catch (e) { /* ignore */ }
+}
+
+/**
+ * 计算叠加后的许可记录(纯函数,便于测试)。
+ *   existing: 现有 getLicense() 结果;result: 验签结果({kind:0/1, value, expireAt?});serial;now=Date.now()
+ * time: 新到期 = max(当前未过期到期, now) + value天;count: 累加 value 次。
+ */
+export function computeStackedRec(existing, result, serial, now) {
+  if (result.kind === 0) {
+    const curExp = (existing.plan === 'active' && existing.kind === 'time' && existing.expireAt)
+      ? new Date(existing.expireAt).getTime() : 0
+    const base = Math.max(curExp, now)
+    return {
+      plan: 'active', serial, modules: ['wps'], kind: 'time', value: result.value,
+      activatedAt: now, expireAt: new Date(base + result.value * 86400000).toISOString(),
+    }
+  }
+  const curCnt = (existing.plan === 'active' && existing.kind === 'count' && typeof existing.value === 'number'
+    && (!existing.expireAt || new Date(existing.expireAt).getTime() > now)) ? existing.value : 0
+  const expIso = result.expireAt ? new Date(result.expireAt).toISOString() : undefined
+  return {
+    plan: 'active', serial, modules: ['wps'], kind: 'count', value: curCnt + result.value,
+    activatedAt: now, ...(expIso ? { expireAt: expIso } : {}),
+  }
+}
+
 // ── 状态读取 ────────────────────────────────────────────────────────
 
 /**
@@ -195,19 +236,12 @@ export async function activate(serial) {
     return { ok: false, error: '该序列号不包含「察元 AI 文档助手」授权' }
   }
 
-  // 规范化为 licenseStore 存储格式（kind 数字→字符串，modules→数组，expireAt→ISO）
-  const kindStr = result.kind === 0 ? 'time' : 'count'
-  const expireAtIso = result.expireAt ? new Date(result.expireAt).toISOString() : undefined
-  const rec = {
-    plan: 'active',
-    serial: k,
-    modules: ['wps'],
-    kind: kindStr,
-    value: result.value,
-    activatedAt: Date.now(),
-    ...(expireAtIso ? { expireAt: expireAtIso } : {}),
-  }
+  // 防同码重复刷(永久有效下的安全底线)
+  if (isSerialUsed(k)) return { ok: false, error: '该序列号已激活过' }
+  // 叠加到现有授权(time 累加到期天数 / count 累加次数),而非覆盖
+  const rec = computeStackedRec(getLicense(), result, k, Date.now())
   save(rec)
+  markSerialUsed(k)
 
   return {
     ok: true,
