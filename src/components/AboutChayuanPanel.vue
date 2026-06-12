@@ -3,7 +3,7 @@
     <header class="about-hero">
       <div class="about-hero-text">
         <p class="about-kicker">WPS 智能加载项 · {{ appVersion }}</p>
-        <h1 class="about-title">察元 AI 文档助手</h1>
+        <h1 class="about-title">关于察元AI</h1>
         <p class="about-lead">
           「察元」由北京智灵鸟科技中心开发与维护，面向 WPS 文字的办公场景 AI 助手：在本地文档中完成智能写作、审查与写回。<strong>特别强调支持离线模型</strong>——可通过 Ollama、LM Studio、Xinference、OneAPI 等 <strong>OpenAI 兼容</strong> 的本地或内网网关接入，对话与敏感内容<strong>无需依赖公网大模型 API</strong>；同时也可对接多家云端供应商，在效率与数据可控之间取得平衡。
         </p>
@@ -430,10 +430,10 @@ const PRODUCT_FAMILY = [
   {
     key: 'premium',
     name: '察元 AI 至臻版',
-    sub: '企业 · ≤ 500 人 · 推荐',
+    sub: '企业 · 500 人以上 · 推荐',
     icon: '👑',
     tone: 'highlight',
-    pitch: '服务化部署 ≤ 500 人,在线办公 / 智能空间 / 训练数据中心全模块齐全。',
+    pitch: '服务化部署 500 人以上(支持千人 / 万人规模),在线办公 / 智能空间 / 训练数据中心全模块齐全。',
     points: [
       '在线 Office + 智能空间 + 应用市场',
       '训练数据中心 · 微调反馈闭环',
