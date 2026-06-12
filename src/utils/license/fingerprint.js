@@ -217,6 +217,31 @@ async function sha256First8Hex(raw) {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * 规范化 home 路径，使 WPS 与 desktop 从同一台机得到字节级相同的字符串。
+ * 步骤：去 file:// → 反斜杠转正斜杠 → 折叠重复斜杠 → 去尾斜杠 → 盘符小写(主体保留大小写)。
+ */
+export function normalizeHome(raw) {
+  let s = String(raw || '').trim()
+  if (!s) return ''
+  s = s.replace(/^file:\/\//i, '')
+  s = s.replace(/\\/g, '/')
+  s = s.replace(/\/{2,}/g, '/')
+  s = s.replace(/\/+$/, '')
+  s = s.replace(/^([A-Za-z]):/, (m, d) => d.toLowerCase() + ':')
+  return s
+}
+
+/**
+ * home 路径派生指纹：sha256("chayuan-fp-home:v1:" + normalizeHome)[前8字节hex]。
+ * 与 desktop fingerprint_home.fp_home 字节级一致。空 home 返回 ''。
+ */
+export async function computeFpHome(home) {
+  const norm = normalizeHome(home)
+  if (!norm) return ''
+  return sha256First8Hex('chayuan-fp-home:v1:' + norm)
+}
+
 // 读共享 machine.id(原始标识,desktop 与 WPS 共用同一文件)
 function readSharedRawId() {
   try {
