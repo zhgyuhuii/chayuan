@@ -4182,7 +4182,10 @@ export default {
       } catch (_) {
         this.purchaseFingerprint = ''
       }
-      const url = 'https://aidooo.com/buy'
+      const fp = this.purchaseFingerprint
+      const url = fp
+        ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(fp)}`
+        : 'https://aidooo.com/buy?app=wps'
       try {
         this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
       } catch (_) {
