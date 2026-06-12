@@ -302,8 +302,7 @@ export default {
       try { return isPaidPlan() } catch (_) { return false }
     },
     buyUrl() {
-      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
-      return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
+      return 'https://aidooo.com/buy'
     },
     licenseDetail() {
       const rec = this.license || {}

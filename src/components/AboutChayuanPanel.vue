@@ -374,7 +374,6 @@ import { MODEL_GROUPS } from '@/utils/defaultModelGroups.js'
 import { getModelLogoPath } from '@/utils/modelLogos.js'
 import { publicAssetUrl } from '@/utils/publicAssetUrl.js'
 import { toDataUrl as buildPurchaseQrDataUrl } from '@/utils/qrcode.js'
-import { getFingerprint } from '@/utils/license/fingerprint.js'
 import AboutChayuanArchitecture from './AboutChayuanArchitecture.vue'
 
 /*
@@ -595,11 +594,7 @@ export default {
     },
     // 生成「扫码购买（解除次数限制）」二维码：含本机指纹，离线本地生成，指向官方购买页。
     async loadPurchaseQr() {
-      let fp = ''
-      try { fp = await getFingerprint() } catch (_) { fp = '' }
-      const url = fp
-        ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(fp)}`
-        : 'https://aidooo.com/buy?app=wps'
+      const url = 'https://aidooo.com/buy'
       try {
         this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
       } catch (_) {

@@ -242,8 +242,7 @@ export default {
     title() { return this.meta.title },
     desc() { return this.meta.desc },
     buyUrl() {
-      if (!this.fingerprint) return 'https://aidooo.com/buy?app=wps'
-      return `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.fingerprint)}`
+      return 'https://aidooo.com/buy'
     },
     shareUrl() {
       // 分享裂变链接：mid=本机指纹(与购买码一致,确保扫码后能带上分享者指纹),

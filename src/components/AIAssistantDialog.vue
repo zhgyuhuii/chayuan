@@ -4150,9 +4150,7 @@ export default {
       } catch (_) {
         this.purchaseFingerprint = ''
       }
-      const url = this.purchaseFingerprint
-        ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(this.purchaseFingerprint)}`
-        : 'https://aidooo.com/buy?app=wps'
+      const url = 'https://aidooo.com/buy'
       try {
         this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
       } catch (_) {
