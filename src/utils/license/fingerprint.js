@@ -22,6 +22,18 @@ function getApplication() {
   )
 }
 
+/** 仅取直接 home（GetHomePath），不走下载路径反推（反推不可靠，不用于 fpHome）。 */
+function getDirectHome() {
+  try {
+    const app = getApplication()
+    if (app?.Env && typeof app.Env.GetHomePath === 'function') {
+      const hp = String(app.Env.GetHomePath() || '').trim()
+      if (hp) return hp
+    }
+  } catch (e) { /* ignore */ }
+  return ''
+}
+
 /** 探测 OS 类型 + 用户主目录 + 路径分隔符（WPS Env，FileSystem 路径拼接用）。 */
 function _resolveHomeOs() {
   try {
@@ -449,12 +461,20 @@ export async function getFingerprint() {
       return _cachedMain
     }
   } catch (e) { /* sidecar unreachable */ }
-  // 2. 原始系统标识派生(/etc/machine-id、MachineGuid 等);确定后焊死锚点,下次走第 0 步
+  // 2. home 路径派生(纯 WPS 同源桥,desktop 也能算同值)
+  try {
+    const h = getDirectHome()
+    if (h) {
+      const fph = await computeFpHome(h)
+      if (isValid16Hex(fph)) { _cachedMain = fph; writeToLocalStorage(fph); return _cachedMain }
+    }
+  } catch (e) { /* fallback */ }
+  // 3. 原始系统标识派生(/etc/machine-id、MachineGuid 等);确定后焊死锚点,下次走第 0 步
   try {
     const raw = await getRawMachineId()
     if (raw) { _cachedMain = await sha256First8Hex(raw); writeToLocalStorage(_cachedMain); return _cachedMain }
   } catch (e) { /* fallback */ }
-  // 3. WPS 自身随机兜底(内部已焊死 cy_machine_id)
+  // 4. WPS 自身随机兜底(内部已焊死 cy_machine_id)
   _cachedMain = await getWpsOwnFingerprint()
   writeToLocalStorage(_cachedMain)
   return _cachedMain
@@ -475,6 +495,8 @@ export async function getCandidateFingerprints() {
   try { add(await getFingerprint()) } catch (e) { /* ignore */ }
   // desktop sidecar 真指纹(可能与主不同)
   try { add(await fetchDesktopSidecarFingerprint()) } catch (e) { /* ignore */ }
+  // home 派生(同源桥):与 desktop 字节级一致
+  try { const h = getDirectHome(); if (h) add(await computeFpHome(h)) } catch (e) { /* ignore */ }
   // cy_machine_id:老随机锚点,购买时多半用它(关键救场点,务必逐项纳入而非短路只取一个)
   try { add(readFromLocalStorage()) } catch (e) { /* ignore */ }
   // sha256(cy_machine_raw):新版升级后的取值来源(升级后界面显示的那个指纹)

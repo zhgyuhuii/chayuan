@@ -45,5 +45,16 @@ _resetFingerprintCache()
 const fp3b = await getFingerprint()
 ok('稳定: 全新装生成后焊死 cy_machine_id', !!anchored && fp3a === fp3b && fp3a === anchored, `a=${fp3a} b=${fp3b} anchored=${anchored}`)
 
+// 测试4:候选含 fpHome(home 派生同源桥)
+// mock GetHomePath 返回固定 home,候选应含其 fpHome
+globalThis.window = {
+  Application: { Env: { GetHomePath: () => '/home/alice' } }
+}
+for (const k of Object.keys(store)) delete store[k]
+store.cy_machine_id = REAL.cy_machine_id
+_resetFingerprintCache()
+const cands4 = await getCandidateFingerprints()
+ok('同源桥: 候选含 fpHome(/home/alice=0da135ff2ca62640)', cands4.includes('0da135ff2ca62640'), `cands=${JSON.stringify(cands4)}`)
+
 console.log(`\n结果: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
