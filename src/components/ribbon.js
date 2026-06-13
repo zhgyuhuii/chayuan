@@ -19,7 +19,8 @@ import {
   getAssistantResolvedIcon,
   MAIN_CONTROL_ASSISTANT_MAP,
   RIBBON_DYNAMIC_SLOT_COUNT,
-  ensureDomainPacksLoaded
+  ensureDomainPacksLoaded,
+  getAssistantGroupLabel
 } from '../utils/assistantRegistry.js'
 // assistantTaskRunner 把整个任务运行子图(chatApi / multimodalTaskRunner / artifactRenderer /
 // evolution / taskListStore...)都拉进了主 bundle,但 ribbon 真正用它的 3 个函数都是按钮点击
@@ -424,11 +425,6 @@ function getRibbonOverflowAssistants() {
   return getRibbonMainSlotAssistants().slice(RIBBON_DYNAMIC_SLOT_COUNT)
 }
 
-function getRibbonExclusiveMoreAssistants() {
-  const overflowIds = new Set(getRibbonOverflowAssistants().map(item => item.id))
-  return getAssistantsForDisplayLocation('ribbon-more').filter(item => !overflowIds.has(item.id))
-}
-
 function getRibbonMoreAssistants() {
   return dedupeAssistants([
     ...getRibbonOverflowAssistants(),
@@ -601,17 +597,43 @@ function GetTranslationMenuContent(control) {
   return `<menu xmlns="${ns}">${buttons.join('')}</menu>`
 }
 
+// 助手的分组键:内置助手取 config.category(= 定义里的 group,如 core/analysis),
+// 自定义助手归入 'custom'。用于把扁平的「更多」清单收成二级分组菜单。
+function getAssistantGroupKey(assistant) {
+  if (assistant?.source === 'custom') return 'custom'
+  const key = String(assistant?.config?.category || '').trim()
+  return key || 'core'
+}
+
+// 把一个扁平助手数组(index 必须是其在该数组里的位置,onAction 反解依赖此 index)按分组
+// 收成若干 <menu> 二级子菜单。已知分组(core/analysis/custom)优先排序,其余按出现顺序追加。
+// 关键:每个 button 的 id 仍用助手在原扁平数组的 index,getAssistantForControl 无需改动。
+function buildGroupedAssistantSubMenus(assistants, prefix, idScope) {
+  const KNOWN_ORDER = ['core', 'analysis', 'custom']
+  const buckets = new Map()
+  assistants.forEach((assistant, index) => {
+    const key = getAssistantGroupKey(assistant)
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key).push({ assistant, index })
+  })
+  const orderedKeys = [
+    ...KNOWN_ORDER.filter(k => buckets.has(k)),
+    ...[...buckets.keys()].filter(k => !KNOWN_ORDER.includes(k))
+  ]
+  return orderedKeys.map(key => {
+    const childButtons = buckets.get(key).map(({ assistant, index }) =>
+      `<button id="${buildDynamicAssistantButtonId(prefix, index)}" label="${escapeXml(assistant.title || '未命名助手')}" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />`
+    ).join('')
+    return `<menu id="grp${idScope}_${escapeXml(key)}" label="${escapeXml(getAssistantGroupLabel(key))}" getImage="ribbon.GetImage">${childButtons}</menu>`
+  })
+}
+
 function GetMoreAssistantsMenuContent(control) {
   const ns = 'http://schemas.microsoft.com/office/2006/01/customui'
-  const overflowAssistants = getRibbonOverflowAssistants()
-  const moreAssistants = getRibbonExclusiveMoreAssistants()
   const assistants = getRibbonMoreAssistants()
-  const buttons = assistants.map(
-    (assistant, index) => `<button id="${buildDynamicAssistantButtonId(RIBBON_MORE_ASSISTANT_CONTROL_PREFIX, index)}" label="${escapeXml(assistant.title || '未命名助手')}" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />`
-  )
-  if (overflowAssistants.length && moreAssistants.length) {
-    buttons.splice(overflowAssistants.length, 0, '<menuSeparator id="sepRibbonMoreAssistantGroups" />')
-  }
+  // 旧实现:一层平铺 20-30 个助手按钮,过长。改为按分组(系统助手功能 / 文本分析 / 自定义)
+  // 收成二级子菜单,一层只剩几个分组入口 + 创建/管理。
+  const buttons = buildGroupedAssistantSubMenus(assistants, RIBBON_MORE_ASSISTANT_CONTROL_PREFIX, 'RibbonMore')
   buttons.push('<menuSeparator id="sepCustomAssistants" />')
   buttons.push('<button id="btnCustomAssistantCreate" label="创建智能助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />')
   buttons.push('<button id="btnCustomAssistantManage" label="管理智能助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" />')

@@ -2125,7 +2125,7 @@
 </template>
 
 <script>
-import JSZip from 'jszip'
+// jszip(~96KB)首屏用不到,仅在导出 zip 时才需要 → 改为按需动态 import,见 createGeneratedZipFile
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
@@ -2234,7 +2234,7 @@ import { getCurrentDocumentSavePath } from '../utils/documentFileActions.js'
 import { canCreateDocumentBackup, createDocumentBackupRecord, restoreDocumentBackupRecordById } from '../utils/documentBackupStore.js'
 import { REPORT_TYPE_OPTIONS, getReportTypeLabel, createDefaultReportSettings, normalizeReportSettings } from '../utils/reportSettings.js'
 import { getReportAssistantPresetGroups, buildReportAssistantPresetDraft } from '../utils/reportAssistantPresets.js'
-import { buildReportDraftWithModel } from '../utils/reportDraftBuilder.js'
+// reportDraftBuilder 仅在确认起草报告草稿时才用 → 按需动态 import,见 confirmPendingReportGenerationForm
 import { createRenderedArtifact, createRenderedArtifactAsync } from '../utils/artifactRenderer.js'
 import { createArtifactRecord } from '../utils/artifactTypes.js'
 import { bindArtifactsToOwner } from '../utils/artifactStore.js'
@@ -2263,7 +2263,7 @@ import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBindi
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
 import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan, evalLicense } from '../utils/licenseStore.js'
-import { toDataUrl as buildPurchaseQrDataUrl } from '../utils/qrcode.js'
+// qrcode(独立 24KB chunk)仅购买二维码用 → 按需动态 import,见 loadPurchaseQr
 import { getFingerprint as getPurchaseFingerprint } from '../utils/license/fingerprint.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
@@ -4052,7 +4052,7 @@ export default {
   },
   mounted() {
     bootMark('AIAssistantDialog mounted 进入')
-    this.loadPurchaseQr()
+    this._idleHandles = []
     this.aiAssistantWindowSession = createAIAssistantWindowSession((request) => {
       this.handleAIAssistantWindowRequest(request)
     })
@@ -4073,7 +4073,6 @@ export default {
     // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索
     setAssistantKbBindingGetter(() => this.currentChatKbBinding)
     this.loadAssistantFavorites()
-    bootMeasure('requestAssistantEvolutionSuggestionCheck', () => this.requestAssistantEvolutionSuggestionCheck())
     bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''
     const fromContext = new URLSearchParams(hashPart || window.location.search || '').get('from') === 'context'
@@ -4110,8 +4109,18 @@ export default {
     window.addEventListener('mouseup', this.stopSidebarResize)
     bootMark('AIAssistantDialog mounted 同步部分结束')
     this.desktopUnsub = desktopStore.subscribe(() => { this.modelGroupsVersion += 1 })
+    // 非关键路径延后到首屏可交互之后(空闲)再跑,避免阻塞打开:
+    //  - loadPurchaseQr:指纹计算 + 二维码生成,仅购买弹窗用,首屏不展示
+    //  - requestAssistantEvolutionSuggestionCheck:对自定义助手做 O(N²) 相似度,首屏无关
+    this.runWhenIdle(() => this.loadPurchaseQr())
+    this.runWhenIdle(() => this.requestAssistantEvolutionSuggestionCheck())
   },
   beforeUnmount() {
+    (this._idleHandles || []).forEach(([kind, h]) => {
+      if (kind === 'idle' && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h)
+      else window.clearTimeout(h)
+    })
+    this._idleHandles = []
     window.removeEventListener('focus', this.handleWindowFocus)
     window.removeEventListener('storage', this.handleStorageEvent)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
@@ -4175,6 +4184,17 @@ export default {
     alipayDonationQrCode() {
       return publicAssetUrl(DONATION_ALIPAY_QR_CODE)
     },
+    // 把非关键初始化排到浏览器空闲时段执行(无 requestIdleCallback 的 WPS 宿主回退 setTimeout)。
+    // 句柄存起来,beforeUnmount 时取消,避免组件销毁后回调仍触发;回调内再次确认会话存活。
+    runWhenIdle(fn, timeout = 1500) {
+      if (!this._idleHandles) this._idleHandles = []
+      const run = () => { if (this.aiAssistantWindowSession) { try { fn() } catch (e) { console.debug('runWhenIdle 任务失败:', e) } } }
+      if (typeof window.requestIdleCallback === 'function') {
+        this._idleHandles.push(['idle', window.requestIdleCallback(run, { timeout })])
+      } else {
+        this._idleHandles.push(['timeout', window.setTimeout(run, 200)])
+      }
+    },
     // 生成购买二维码(含本机指纹,离线本地生成);供欢迎区「扫码购买」展示。
     async loadPurchaseQr() {
       try {
@@ -4187,6 +4207,7 @@ export default {
         ? `https://aidooo.com/buy?app=wps&mid=${encodeURIComponent(fp)}`
         : 'https://aidooo.com/buy?app=wps'
       try {
+        const { toDataUrl: buildPurchaseQrDataUrl } = await import('../utils/qrcode.js')
         this.purchaseQrDataUrl = await buildPurchaseQrDataUrl(url, 160)
       } catch (_) {
         this.purchaseQrDataUrl = ''
@@ -6788,6 +6809,7 @@ export default {
       const validFiles = Array.isArray(files) ? files.filter(Boolean) : []
       if (validFiles.length === 0) return null
       const signal = options.signal || null
+      const JSZip = (await import('jszip')).default
       const zip = new JSZip()
       const usedNames = new Set()
       for (const file of validFiles) {
@@ -12493,6 +12515,7 @@ export default {
       this.saveHistory()
       try {
         const values = this.buildReportFormValues(pending)
+        const { buildReportDraftWithModel } = await import('../utils/reportDraftBuilder.js')
         const draft = await buildReportDraftWithModel({
           model: this.selectedModel,
           requirementText: pending.originalText,
