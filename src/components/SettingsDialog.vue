@@ -2279,7 +2279,7 @@
 import { activateHostWindow } from '../utils/windowActivation.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
-import { loadGlobalSettings, saveGlobalSettings } from '../utils/globalSettings.js'
+import { loadGlobalSettings, saveGlobalSettings, getLastSaveFailureReason } from '../utils/globalSettings.js'
 import {
   getModelConfig,
   saveModelConfig,
@@ -6628,7 +6628,13 @@ export default {
         if (refreshed) this.assistantForm = cloneValue(refreshed)
       }
       if (!saveAssistantSettings(this.assistantSettingsMap)) {
-        this.showMessage('助手设置保存失败', 'error')
+        const reason = getLastSaveFailureReason()
+        this.showMessage(
+          reason === 'quota'
+            ? '助手设置保存失败：本地存储空间已满，请清理历史数据后重试'
+            : '助手设置保存失败',
+          'error'
+        )
         hasError = true
       }
       if (!saveCustomAssistants(this.customAssistants)) {

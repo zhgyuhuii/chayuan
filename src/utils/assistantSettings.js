@@ -181,11 +181,27 @@ export function loadAssistantSettings() {
   return _assistantSettingsCache
 }
 
+// 只保留与默认值不同的顶层字段。loadAssistantSettings 读取时会把存储值合并到默认值上,
+// 所以未自定义的字段不需要落盘。
+function diffFromDefault(full, base) {
+  const diff = {}
+  Object.keys(full).forEach(key => {
+    if (JSON.stringify(full[key]) !== JSON.stringify(base[key])) {
+      diff[key] = full[key]
+    }
+  })
+  return diff
+}
+
 export function saveAssistantSettings(settingsMap) {
   const defaults = getBuiltinAssistantSettingsDefaults()
-  const safe = {}
+  // 旧实现:把全部 46 个内置助手的完整配置(~111KB)整块写进 settings,即使用户一个字段
+  // 都没改。这是 settings 体系里最大的单次写入,localStorage 接近配额时会因此 QuotaExceeded,
+  // 报“助手设置保存失败”。改为只持久化与默认值的差异 —— 典型用户(改 0~2 个助手)体积可降约 95%。
+  // loadAssistantSettings 已按 defaults 合并存储值,读取侧无需改动。
+  const stored = {}
   Object.keys(defaults).forEach(id => {
-    safe[id] = {
+    const full = {
       ...deepClone(defaults[id]),
       ...ensureObject(settingsMap?.[id]),
       displayOrder: normalizeDisplayOrder(settingsMap?.[id]?.displayOrder, defaults[id].displayOrder ?? null),
@@ -202,8 +218,12 @@ export function saveAssistantSettings(settingsMap) {
         ...ensureObject(settingsMap?.[id]?.mediaOptions)
       }
     }
+    const diff = diffFromDefault(full, defaults[id])
+    if (Object.keys(diff).length > 0) {
+      stored[id] = diff
+    }
   })
-  return saveGlobalSettings({ [ASSISTANT_SETTINGS_KEY]: safe })
+  return saveGlobalSettings({ [ASSISTANT_SETTINGS_KEY]: stored })
 }
 
 export function getAssistantSetting(id) {

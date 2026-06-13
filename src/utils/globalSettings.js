@@ -75,6 +75,14 @@ function isAbsolutePath(p) {
 // 后续调用静默走 localStorage / PluginStorage。
 let _fileWriteDisabled = false
 
+// 最近一次 saveGlobalSettings 失败的原因,供调用方给用户更准确的提示。
+// null = 无失败 / 'quota' = localStorage 配额已满 / 'unavailable' = 文件与 localStorage 均不可用。
+let _lastSaveFailureReason = null
+
+export function getLastSaveFailureReason() {
+  return _lastSaveFailureReason
+}
+
 function _isPathSeparatorRejection(err) {
   const msg = String(err?.message || err || '').toLowerCase()
   return msg.includes('path cannot') && (msg.includes('/') || msg.includes('\\'))
@@ -104,12 +112,27 @@ function saveToFile(obj) {
   }
 }
 
+// 区分配额超限和其它异常。之前这里 catch 后静默 return false,QuotaExceededError
+// 连控制台都看不到,根因无法定位(“助手设置保存失败”查不到原因)。
+function isQuotaExceededError(e) {
+  if (!e) return false
+  return e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    e.code === 22 || e.code === 1014
+}
+
 function saveToLocalStorage(obj) {
   try {
     if (typeof localStorage === 'undefined') return false
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(obj))
     return true
   } catch (e) {
+    if (isQuotaExceededError(e)) {
+      _lastSaveFailureReason = 'quota'
+      console.error('globalSettings saveToLocalStorage: localStorage 配额已满,无法写入。', e)
+    } else {
+      console.error('globalSettings saveToLocalStorage 失败:', e)
+    }
     return false
   }
 }
@@ -186,17 +209,20 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
  * 同时写入文件和 localStorage，确保关闭 WPS 后数据不丢失
  */
 export function saveGlobalSettings(partial) {
+  _lastSaveFailureReason = null
   const current = loadGlobalSettings()
   const merged = { ...current, ...(partial && typeof partial === 'object' ? partial : {}) }
   let fileOk = false
   let storageOk = false
   fileOk = saveToFile(merged)
-  storageOk = saveToLocalStorage(merged)
+  storageOk = saveToLocalStorage(merged) // 失败为配额时会置 _lastSaveFailureReason='quota'
   saveToPluginStorage(merged)
   if (!fileOk && !storageOk) {
+    if (!_lastSaveFailureReason) _lastSaveFailureReason = 'unavailable'
     console.error('globalSettings: 保存失败（文件和 localStorage 均不可用）')
     return false
   }
+  _lastSaveFailureReason = null
   // 文件路径已被宿主拒绝时,saveToFile 内部已一次性 info 提示,这里就不再每次都 warn。
   if (!fileOk && !_fileWriteDisabled) {
     console.warn('globalSettings: 文件保存失败，已保存到 localStorage')
