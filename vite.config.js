@@ -3,6 +3,17 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { copyFile } from "wpsjs/vite_plugins"
+import { readFileSync } from 'node:fs'
+
+// 版本真源:package.json(打包脚本 build-linux-deb / build-macos-pkg 也从这里取)。
+// 注入到前端 __APP_VERSION__,供心跳(runtimeSync)上报真实版本,避免硬编码漂移。
+const pkgVersion = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
 
 function createDashscopeDevProxy() {
   return {
@@ -70,6 +81,9 @@ function createDashscopeDevProxy() {
 // https://vitejs.dev/config/
 export default defineConfig({
   base:'./',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+  },
   plugins: [
     copyFile({
       src: 'manifest.xml',

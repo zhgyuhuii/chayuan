@@ -10,7 +10,10 @@
  */
 
 const PRODUCT = 'wps'
-const VERSION = '3.0.0'
+/* global __APP_VERSION__ */
+// 版本真源:package.json(经 vite define 注入 __APP_VERSION__)。此前写死 '3.0.0',
+// package.json 已到 3.0.10,心跳一直发旧版本 → website 在线主机看不到真实版本。
+const VERSION = (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) ? __APP_VERSION__ : '3.0.0'
 const FIRST_DELAY_MS = 30 * 1000
 const INTERVAL_MS = 90 * 60 * 1000   // 1.5 小时一次(2026-06-02 由 30 分钟拉长)
 const HID_KEY = 'cy_rid'
