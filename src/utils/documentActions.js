@@ -1731,7 +1731,7 @@ function getMediaRangeForAction(action) {
   return range
 }
 
-function tryAddInlinePicture(source, range) {
+export function tryAddInlinePicture(source, range) {
   const doc = getActiveDocument()
   const inlineShapes = doc?.InlineShapes
   if (!inlineShapes?.AddPicture) {
