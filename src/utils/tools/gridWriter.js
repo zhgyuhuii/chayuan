@@ -1,7 +1,7 @@
 // 通用网格写回：建一张 N 列表格，每格插一张图 + 可选编号文字。
 // 条码 / 二维码 / 未来标签工具共用。仅在 WPS 运行（依赖 WPS Tables / InlineShapes API）。
 import { insertTableAtPosition } from '../documentInsertActions.js'
-import { getActiveDocument, tryAddInlinePicture, saveGeneratedAssetToFile } from '../documentActions.js'
+import { getActiveDocument, saveGeneratedAssetToFile } from '../documentActions.js'
 
 // 从 dataURL（如 data:image/png;base64,XXXX）取出纯 base64 串；非 base64 dataURL 返回空。
 export function dataUrlToBase64(dataUrl) {
@@ -43,6 +43,27 @@ function materializeImageFile(dataUrl) {
   return saveGeneratedAssetToFile({ base64, extension: 'png' }, { prefix: 'chayuan_barcode' })
 }
 
+// 把图片插入指定单元格,返回 InlineShape。
+// 关键:必须用真实的 cell.Range COM 对象定位。早先的 AddPicture({ Range:{start,end} })
+// 传的是普通 JS 对象,WPS 认不了 → 退回当前光标处插入,导致所有图堆进一列且倒序。
+function addPictureToCell(doc, cell, filePath) {
+  // 主:文档级 InlineShapes.AddPicture 的第 4 个定位参数传真实 cell.Range
+  const docInline = doc?.InlineShapes
+  if (docInline?.AddPicture) {
+    try {
+      return docInline.AddPicture(filePath, false, true, cell.Range)
+    } catch (_) { /* 落到选区兜底 */ }
+  }
+  // 兜底:选中单元格,在选区里插入(选区天然定位到该单元格)
+  cell.Select?.()
+  const sel = doc?.Application?.Selection
+  const selInline = sel?.InlineShapes
+  if (selInline?.AddPicture) {
+    return selInline.AddPicture(filePath, false, true)
+  }
+  throw new Error('无法向单元格插入图片')
+}
+
 // items: [{ value, dataUrl, ok }]，只写 ok 的项
 // options: { columns:number, caption:boolean }
 // 返回 { written:number, rows:number, columns:number, imageFailures:number }
@@ -72,10 +93,10 @@ export function writeGrid(items, options = {}) {
     const rowIndex = Math.floor(i / columns) + 1
     const colIndex = (i % columns) + 1
     const cell = table.Rows.Item(rowIndex).Cells.Item(colIndex)
-    // 先插图到单元格起始：dataURL 需先落临时文件再按路径插（WPS 不认 base64）
+    // 先插图到单元格：dataURL 需先落临时文件再按路径插（WPS 不认 base64），并用真实 cell.Range 定位
     try {
       const filePath = materializeImageFile(valid[i].dataUrl)
-      const shape = tryAddInlinePicture(filePath, cell.Range)
+      const shape = addPictureToCell(doc, cell, filePath)
       // 约束图片宽度,避免条码原始像素过宽撑乱窄格表格;锁纵横比让高度自适应
       try {
         if (shape) {
