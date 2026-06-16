@@ -44,8 +44,9 @@ export function insertTableAtPosition(options = {}) {
   const rows = Math.max(1, Number(options.rows || 0))
   const columns = Math.max(1, Number(options.columns || 0))
   const range = getPageInsertRange(options.pageNumber)
-  doc.Tables.Add(range, rows, columns)
+  const table = doc.Tables.Add(range, rows, columns)
   return {
+    table,
     rows,
     columns,
     pageNumber: Number(options.pageNumber || 0)

@@ -12,13 +12,18 @@ export function writeGrid(items, options = {}) {
   if (valid.length === 0) return { written: 0, rows: 0, columns }
 
   const rows = Math.ceil(valid.length / columns)
-  insertTableAtPosition({ rows, columns })
+  const created = insertTableAtPosition({ rows, columns })
 
-  const doc = getActiveDocument()
-  const tables = doc?.Tables
-  const tableCount = tables?.Count || 0
-  if (!tableCount) throw new Error('未能创建表格')
-  const table = tables.Item(tableCount) // 最新插入的表
+  let table = created && created.table
+  if (!table) {
+    // 兜底：旧版 WPS 若 Tables.Add 不返回句柄，退回取末表（已知在光标后有旧表时不准，仅兜底）
+    const doc = getActiveDocument()
+    const tables = doc?.Tables
+    const tableCount = tables?.Count || 0
+    if (!tableCount) throw new Error('未能创建表格')
+    table = tables.Item(tableCount)
+  }
+  if (!table) throw new Error('未能创建表格')
 
   for (let i = 0; i < valid.length; i += 1) {
     const rowIndex = Math.floor(i / columns) + 1
