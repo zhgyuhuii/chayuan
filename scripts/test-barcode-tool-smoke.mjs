@@ -21,6 +21,8 @@ async function main() {
   assert('流水号首项', seq[0] === 'WP-0001', `got ${seq[0]}`)
   assert('流水号末项', seq[2] === 'WP-0003', `got ${seq[2]}`)
   assert('流水号起始号生效', buildCodeList({ dataSource: 'sequence', prefix: '', start: 10, count: 1, padding: 2, suffix: 'X' })[0] === '10X')
+  assert('流水号 start 小数取整', buildCodeList({ dataSource: 'sequence', prefix: '', start: 1.9, count: 1, padding: 4 })[0] === '0001', `got ${buildCodeList({ dataSource: 'sequence', prefix: '', start: 1.9, count: 1, padding: 4 })[0]}`)
+  assert('流水号 start 负数归零', buildCodeList({ dataSource: 'sequence', prefix: '', start: -5, count: 1, padding: 4 })[0] === '0000', `got ${buildCodeList({ dataSource: 'sequence', prefix: '', start: -5, count: 1, padding: 4 })[0]}`)
 
   // 粘贴列表
   const list = buildCodeList({ dataSource: 'list', listText: ' A1 \n\nB2\nC3 \n' })

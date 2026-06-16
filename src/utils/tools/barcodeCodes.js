@@ -16,7 +16,8 @@ export function buildCodeList(params = {}) {
   }
   const prefix = String(params.prefix || '')
   const suffix = String(params.suffix || '')
-  const start = Number.isFinite(Number(params.start)) ? Number(params.start) : 1
+  const rawStart = Number(params.start)
+  const start = Number.isFinite(rawStart) ? Math.max(0, Math.trunc(rawStart)) : 1
   const count = Math.max(0, Number(params.count) || 0)
   const padding = Math.max(0, Number(params.padding) || 0)
   const out = []
