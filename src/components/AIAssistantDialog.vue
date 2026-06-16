@@ -277,8 +277,15 @@
 
     <!-- 右侧主区域 -->
     <main class="main-area">
+      <!-- 工具助手面板:与对话区互斥,activeToolId 非空时占据右侧主区 -->
+      <ToolAssistantPanel
+        v-if="activeToolId"
+        :tool-id="activeToolId"
+        @inserted="onToolInserted"
+        @error="onToolError"
+      />
       <!-- 消息区域 -->
-      <div class="messages-container" ref="messagesRef">
+      <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
         <div
           v-if="displayedWelcomePrompt"
           class="welcome-inline-banner"
@@ -1789,7 +1796,7 @@
       </div>
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
-      <div class="input-area">
+      <div v-if="!activeToolId" class="input-area">
         <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen }">
           <div v-if="attachments.length" class="composer-meta-row">
             <div
@@ -2188,6 +2195,7 @@ import {
   ASSISTANT_GROUP_LABELS,
   getBuiltinAssistantDefinition,
   getDocumentActionOptions,
+  getAssistantToolInfo,
   INPUT_SOURCE_OPTIONS,
   DOCUMENT_ACTION_OPTIONS
 } from '../utils/assistantRegistry.js'
@@ -2258,6 +2266,7 @@ import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import FeedbackDialog from './FeedbackDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
+import ToolAssistantPanel from './ToolAssistantPanel.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
 import services from '../services/index.js'
@@ -3665,7 +3674,8 @@ export default {
     LongTaskRunCard,
     KbSelectorDialog,
     KbSourceStrip,
-    FeedbackDialog
+    FeedbackDialog,
+    ToolAssistantPanel
   },
   data() {
     return {
@@ -3685,6 +3695,7 @@ export default {
       assistantSearchText: '',
       assistantFavorites: [],
       assistantRunLoadingKey: '',
+      activeToolId: '',
       userInput: '',
       attachments: [],
       selectedModelId: null,
@@ -6332,6 +6343,7 @@ export default {
       return out
     },
     newChat() {
+      this.activeToolId = ''
       const id = 'chat_' + Date.now()
       this.chatHistory.unshift({
         id,
@@ -6343,6 +6355,7 @@ export default {
       this.saveHistory()
     },
     switchChat(id) {
+      this.activeToolId = ''
       this.currentChatId = id
       this.saveHistory()
     },
@@ -15556,6 +15569,13 @@ export default {
       // 取消确认 / 进入参数收集等提前返回的分支需手动解锁。
       this.assistantRunLoadingKey = item.key
       try {
+        // 工具助手(如条形码批量生成)不进对话/参数收集流程,直接在右侧主区渲染工具面板。
+        const toolInfo = getAssistantToolInfo(item.key)
+        if (toolInfo?.isToolAssistant) {
+          this.assistantRunLoadingKey = ''
+          this.activeToolId = toolInfo.toolId
+          return
+        }
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!(await this.confirmAssistantRun(launchInfo))) { this.assistantRunLoadingKey = ''; return }
         if (this.shouldCollectAssistantRunParameters(item)) {
@@ -15596,6 +15616,13 @@ export default {
         this.assistantRunLoadingKey = ''
         await inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
       }
+    },
+    onToolInserted(written) {
+      const n = (written && written.written) || 0
+      inAppAlert(`已插入 ${n} 个条码`, { title: '插入完成' })
+    },
+    onToolError(msg) {
+      inAppAlert(msg || '操作失败', { title: '操作失败' })
     },
     async sendMessage() {
       const sendStartedAt = Date.now()
