@@ -30,8 +30,10 @@ const BARCODE_TOOL = {
     }
   ],
   generate: (params) => generateBarcode(params),
+  // 条码图本身已由 JsBarcode 把编号画在下方(showText 控制),不再单独插一行文字编号,
+  // 否则编号会重复显示。caption 能力留给将来二维码等"图内无文字"的工具。
   writeBack: (genResult, params) =>
-    writeGrid(genResult.items, { columns: params.columns, caption: params.showText !== false })
+    writeGrid(genResult.items, { columns: params.columns, caption: false })
 }
 
 const TOOL_DEFINITIONS = { [BARCODE_TOOL.id]: BARCODE_TOOL }
