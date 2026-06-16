@@ -61,6 +61,13 @@ async function main() {
   const rowsComma = parseLabelRows('A,B', 'comma')
   assert('label 逗号分隔', rowsComma[0].length === 2 && rowsComma[0][1] === 'B')
 
+  const { fitLabelCodeDims } = await import(repoRoot + 'src/utils/tools/labelComposer.js')
+  const sq = fitLabelCodeDims(100, 100, 120)
+  assert('fit 方形码 等比', sq.drawW === 120 && sq.drawH === 120)
+  const wide = fitLabelCodeDims(300, 60, 120)
+  assert('fit 横长条码 加宽不压扁', wide.drawH === 120 && wide.drawW === 600, `got ${wide.drawW}`)
+  assert('fit 异常尺寸兜底', fitLabelCodeDims(0, 0, 120).drawW === 120)
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }
