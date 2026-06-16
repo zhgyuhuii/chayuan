@@ -43,6 +43,17 @@ async function main() {
   assert('EAN13 含字母报错', validateBarcodeValue('40063813339A', 'EAN13').ok === false)
   assert('EAN13 位数不对报错', validateBarcodeValue('123', 'EAN13').ok === false)
 
+  const { getToolDefinition, buildDefaultParams, isFieldVisible } =
+    await import(repoRoot + 'src/utils/tools/toolDefinitions.js')
+  const def = getToolDefinition('tools.barcode')
+  assert('条码工具已注册', !!def && def.id === 'tools.barcode')
+  const dp = buildDefaultParams(def)
+  assert('默认参数:数据源=流水号', dp.dataSource === 'sequence')
+  assert('默认参数:个数=10', dp.count === 10)
+  assert('流水号字段在 sequence 下可见', isFieldVisible(def.formSchema.find((f) => f.key === 'prefix'), dp))
+  assert('列表字段在 sequence 下隐藏', !isFieldVisible(def.formSchema.find((f) => f.key === 'listText'), dp))
+  assert('未知工具返回 null', getToolDefinition('tools.nope') === null)
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }
