@@ -29,6 +29,8 @@ async function main() {
   const rr = expandTemplate('{rand:6}', { count: 1, rng: () => 0.5 })
   assert('rand 长度', rr.items[0].value.length === 6)
   assert('rand 字符集', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]+$/.test(rr.items[0].value))
+  assert('rand rng=1.0 不越界', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]$/.test(expandTemplate('{rand:1}', { count: 1, rng: () => 1 }).items[0].value))
+  assert('rand rng=负 不越界', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]$/.test(expandTemplate('{rand:1}', { count: 1, rng: () => -0.5 }).items[0].value))
 
   assert('字面前后缀', expandTemplate('AB{seq:2}CD', { start: 1, count: 1 }).items[0].value === 'AB01CD')
 

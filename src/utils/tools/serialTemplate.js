@@ -25,7 +25,8 @@ function formatDate(dateVal, fmt) {
 function randStr(n, rng) {
   let s = ''
   for (let i = 0; i < n; i += 1) {
-    s += RAND_CHARSET[Math.floor(rng() * RAND_CHARSET.length)]
+    const idx = Math.floor(rng() * RAND_CHARSET.length)
+    s += RAND_CHARSET[Math.min(RAND_CHARSET.length - 1, Math.max(0, idx))]
   }
   return s
 }
