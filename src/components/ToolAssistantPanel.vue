@@ -94,6 +94,13 @@ export default {
       this.params = this.toolDef ? buildDefaultParams(this.toolDef) : {}
       this.previewItems = []
       this.invalidCount = 0
+    },
+    params: {
+      deep: true,
+      handler() {
+        this.previewItems = []
+        this.invalidCount = 0
+      }
     }
   },
   methods: {

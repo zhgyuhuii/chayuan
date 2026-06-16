@@ -3958,7 +3958,7 @@ export default {
       // 领域排序优先级:通用类(核对/知识库对比等适用任何行业的)在前 → 合同 → 政务 → 军工
       //  → 政法/警察 → 其它行业(保持插入序)→ 自定义最后。收藏分组始终置顶。
       const ORDER = [
-        'core', 'analysis', 'docutil', 'verify', 'kb-verify', 'secrecy', 'govreview',
+        'core', 'analysis', 'tools', 'docutil', 'verify', 'kb-verify', 'secrecy', 'govreview',
         'legal',
         'gov', 'govdoc', 'govpolicy', 'govservice', 'govpetition', 'govsupervise',
         'govemergency', 'govpersonnel', 'govmeeting', 'goveconomy', 'govgrassroots',
@@ -15622,7 +15622,7 @@ export default {
     },
     onToolInserted(written) {
       const n = (written && written.written) || 0
-      inAppAlert(`已插入 ${n} 个条码`, { title: '插入完成' })
+      inAppAlert(`已插入 ${n} 项到文档`, { title: '插入完成' })
     },
     onToolError(msg) {
       inAppAlert(msg || '操作失败', { title: '操作失败' })

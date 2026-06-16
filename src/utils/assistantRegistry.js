@@ -1501,7 +1501,7 @@ const CORE_BUILTIN_ASSISTANTS = [
     modelType: 'chat',
     defaultModelCategory: 'chat',
     supportsRibbon: false,
-    defaultDisplayLocations: ['ribbon-more'],
+    defaultDisplayLocations: [],
     allowedActions: ['none'],
     defaultAction: 'none',
     defaultOutputFormat: 'plain',
