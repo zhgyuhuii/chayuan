@@ -64,6 +64,24 @@ function addPictureToCell(doc, cell, filePath) {
   throw new Error('无法向单元格插入图片')
 }
 
+// 建一张 ceil(count/columns) 行 × columns 列的表,返回表句柄。两种网格写回共用。
+function createGridTable(count, columns) {
+  const cols = Math.max(1, Number(columns) || 1)
+  const rows = Math.ceil(count / cols)
+  const created = insertTableAtPosition({ rows, columns: cols })
+  const doc = getActiveDocument()
+  let table = created && created.table
+  if (!table) {
+    // 兜底：旧版 WPS 若 Tables.Add 不返回句柄，退回取末表
+    const tables = doc?.Tables
+    const tableCount = tables?.Count || 0
+    if (!tableCount) throw new Error('未能创建表格')
+    table = tables.Item(tableCount)
+  }
+  if (!table) throw new Error('未能创建表格')
+  return { table, rows, columns: cols, doc }
+}
+
 // items: [{ value, dataUrl, ok }]，只写 ok 的项
 // options: { columns:number, caption:boolean }
 // 返回 { written:number, rows:number, columns:number, imageFailures:number }
@@ -72,19 +90,7 @@ export function writeGrid(items, options = {}) {
   const columns = Math.max(1, Number(options.columns) || 1)
   if (valid.length === 0) return { written: 0, rows: 0, columns, imageFailures: 0 }
 
-  const rows = Math.ceil(valid.length / columns)
-  const created = insertTableAtPosition({ rows, columns })
-
-  const doc = getActiveDocument()
-  let table = created && created.table
-  if (!table) {
-    // 兜底：旧版 WPS 若 Tables.Add 不返回句柄，退回取末表（已知在光标后有旧表时不准，仅兜底）
-    const tables = doc?.Tables
-    const tableCount = tables?.Count || 0
-    if (!tableCount) throw new Error('未能创建表格')
-    table = tables.Item(tableCount)
-  }
-  if (!table) throw new Error('未能创建表格')
+  const { table, rows, doc } = createGridTable(valid.length, columns)
 
   const imageWidthPt = cellImageWidthPt(readUsableWidthPt(doc), columns)
 
@@ -120,4 +126,27 @@ export function writeGrid(items, options = {}) {
     } catch (_) { /* 不支持段落对齐则跳过 */ }
   }
   return { written: valid.length, rows, columns, imageFailures }
+}
+
+// 把字符串铺进 N 列表格,每格写文本并居中。供流水号等文本类工具复用。
+// values: string[]（已是要写入的最终编号）;options: { columns:number }
+// 返回 { written:number, rows:number, columns:number }
+export function writeTextGrid(values, options = {}) {
+  const list = (values || []).filter((v) => v != null && String(v).length > 0).map(String)
+  const columns = Math.max(1, Number(options.columns) || 1)
+  if (list.length === 0) return { written: 0, rows: 0, columns }
+
+  const { table, rows } = createGridTable(list.length, columns)
+  for (let i = 0; i < list.length; i += 1) {
+    const rowIndex = Math.floor(i / columns) + 1
+    const colIndex = (i % columns) + 1
+    const cell = table.Rows.Item(rowIndex).Cells.Item(colIndex)
+    try {
+      cell.Range.Text = list[i]
+    } catch (_) { /* 单格写入失败则跳过 */ }
+    try {
+      cell.Range.ParagraphFormat.Alignment = 1 // wdAlignParagraphCenter
+    } catch (_) { /* 不支持段落对齐则跳过 */ }
+  }
+  return { written: list.length, rows, columns }
 }
