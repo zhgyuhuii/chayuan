@@ -9,6 +9,7 @@ function assert(name, condition, detail = '') {
 async function main() {
   console.log('Serial + Label tools smoke tests\n')
   const { expandTemplate } = await import(repoRoot + 'src/utils/tools/serialTemplate.js')
+  const { parseLabelRows } = await import(repoRoot + 'src/utils/tools/labelData.js')
 
   const a = expandTemplate('WP-{seq:4}', { start: 1, count: 3, step: 1 })
   assert('seq 个数', a.items.length === 3, `got ${a.items.length}`)
@@ -50,6 +51,15 @@ async function main() {
 
   const reg2 = await import(repoRoot + 'src/utils/assistantRegistry.js')
   assert('getAssistantToolInfo 命中流水号', reg2.getAssistantToolInfo('tools.serial')?.toolId === 'tools.serial')
+
+  const rows = parseLabelRows('WP-001 | 电机 | 220V\nWP-002|减速器\n\n  ', '|')
+  assert('label 行数(空行跳过)', rows.length === 2, `got ${rows.length}`)
+  assert('label 字段拆分+trim', rows[0].length === 3 && rows[0][0] === 'WP-001' && rows[0][1] === '电机')
+  assert('label 第二行2字段', rows[1].length === 2 && rows[1][1] === '减速器')
+  const rowsTab = parseLabelRows('A\tB\tC', 'tab')
+  assert('label tab 分隔', rowsTab[0].length === 3 && rowsTab[0][2] === 'C')
+  const rowsComma = parseLabelRows('A,B', 'comma')
+  assert('label 逗号分隔', rowsComma[0].length === 2 && rowsComma[0][1] === 'B')
 
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
