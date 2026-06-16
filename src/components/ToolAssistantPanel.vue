@@ -2,6 +2,7 @@
   <div class="tool-panel" v-if="toolDef">
     <div class="tool-panel__header">
       <span class="tool-panel__title">{{ toolDef.label }}</span>
+      <button type="button" class="tool-panel__back" @click="$emit('close')">返回对话</button>
     </div>
 
     <div class="tool-panel__form">
@@ -128,7 +129,13 @@ export default {
 
 <style scoped>
 .tool-panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: auto; }
+.tool-panel__header { display: flex; align-items: center; justify-content: space-between; }
 .tool-panel__title { font-weight: 600; font-size: 15px; }
+.tool-panel__back {
+  border: 1px solid #d9d9d9; background: #fff; color: #555;
+  border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.tool-panel__back:hover { border-color: #1677ff; color: #1677ff; }
 .tool-panel__form { display: flex; flex-direction: column; gap: 8px; }
 .tool-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .tool-field__label { color: #555; }

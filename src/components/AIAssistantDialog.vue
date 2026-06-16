@@ -283,6 +283,7 @@
         :tool-id="activeToolId"
         @inserted="onToolInserted"
         @error="onToolError"
+        @close="activeToolId = ''"
       />
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
@@ -15576,6 +15577,8 @@ export default {
           this.activeToolId = toolInfo.toolId
           return
         }
+        // 非工具助手:确保切回对话视图,否则参数收集气泡/对话被 v-if="!activeToolId" 隐藏
+        this.activeToolId = ''
         const launchInfo = getAssistantLaunchInfo(item.key)
         if (!(await this.confirmAssistantRun(launchInfo))) { this.assistantRunLoadingKey = ''; return }
         if (this.shouldCollectAssistantRunParameters(item)) {
