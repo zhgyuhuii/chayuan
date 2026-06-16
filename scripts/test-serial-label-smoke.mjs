@@ -38,6 +38,18 @@ async function main() {
   assert('未知token ok=false', u.items[0].ok === false)
   assert('未知token 计入invalid', u.invalidCount === 1)
 
+  const td = await import(repoRoot + 'src/utils/tools/toolDefinitions.js')
+  const serial = td.getToolDefinition('tools.serial')
+  assert('流水号工具已注册', !!serial && serial.id === 'tools.serial')
+  const sp = td.buildDefaultParams(serial)
+  assert('流水号默认模板', sp.template === 'WP-{date:YYYYMMDD}-{seq:4}')
+  assert('流水号默认个数10', sp.count === 10)
+  const sg = serial.generate({ template: 'X-{seq:3}', start: 1, step: 1, count: 2, date: '' })
+  assert('流水号 generate 出2项', sg.items.length === 2 && sg.items[0].value === 'X-001')
+
+  const reg2 = await import(repoRoot + 'src/utils/assistantRegistry.js')
+  assert('getAssistantToolInfo 命中流水号', reg2.getAssistantToolInfo('tools.serial')?.toolId === 'tools.serial')
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }

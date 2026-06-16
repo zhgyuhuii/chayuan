@@ -1,7 +1,8 @@
 // 工具助手定义表。面板 ToolAssistantPanel 由此驱动。
 // 注意：与 src/services/toolRegistry/ 无关（那是 LLM 工具执行策略）。
 import { generate as generateBarcode } from './barcode.js'
-import { writeGrid } from './gridWriter.js'
+import { writeGrid, writeTextGrid } from './gridWriter.js'
+import { expandTemplate } from './serialTemplate.js'
 
 // 字段类型：text / number / select / textarea / radio / checkbox
 const BARCODE_TOOL = {
@@ -36,7 +37,29 @@ const BARCODE_TOOL = {
     writeGrid(genResult.items, { columns: params.columns, caption: false })
 }
 
-const TOOL_DEFINITIONS = { [BARCODE_TOOL.id]: BARCODE_TOOL }
+const SERIAL_TOOL = {
+  id: 'tools.serial',
+  label: '流水号批量生成',
+  formSchema: [
+    { key: 'template', type: 'text', label: '编号模板', default: 'WP-{date:YYYYMMDD}-{seq:4}' },
+    { key: 'date', type: 'date', label: '日期（空=今天）', default: '' },
+    { key: 'start', type: 'number', label: '起始号', default: 1, min: 0 },
+    { key: 'step', type: 'number', label: '步长', default: 1, min: 1 },
+    { key: 'count', type: 'number', label: '个数', default: 10, min: 1, max: 500 },
+    { key: 'columns', type: 'number', label: '每行列数', default: 4, min: 1, max: 10 }
+  ],
+  generate: (params) => expandTemplate(params.template, {
+    start: params.start, step: params.step, count: params.count,
+    date: params.date || undefined
+  }),
+  writeBack: (genResult, params) =>
+    writeTextGrid(genResult.items.filter((it) => it.ok).map((it) => it.value), { columns: params.columns })
+}
+
+const TOOL_DEFINITIONS = {
+  [BARCODE_TOOL.id]: BARCODE_TOOL,
+  [SERIAL_TOOL.id]: SERIAL_TOOL
+}
 
 export function getToolDefinition(toolId) {
   return TOOL_DEFINITIONS[toolId] || null

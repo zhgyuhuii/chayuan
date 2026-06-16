@@ -1508,6 +1508,23 @@ const CORE_BUILTIN_ASSISTANTS = [
     defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
     runtimeCapabilities: { isToolAssistant: true, toolId: 'tools.barcode' },
     description: '按流水号或粘贴列表批量生成条形码，网格排版插入文档'
+  },
+  {
+    id: 'tools.serial',
+    label: '流水号批量生成',
+    shortLabel: '流水号',
+    icon: '🔢',
+    group: 'tools',
+    modelType: 'chat',
+    defaultModelCategory: 'chat',
+    supportsRibbon: false,
+    defaultDisplayLocations: [],
+    allowedActions: ['none'],
+    defaultAction: 'none',
+    defaultOutputFormat: 'plain',
+    defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
+    runtimeCapabilities: { isToolAssistant: true, toolId: 'tools.serial' },
+    description: '按模板（{seq}/{date}/{rand}）批量生成流水号/批号，多列表格写入文档'
   }
 ]
 
