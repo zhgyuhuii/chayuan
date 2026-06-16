@@ -16,6 +16,8 @@
                  :min="field.min" :max="field.max"
                  v-model.number="params[field.key]" />
 
+          <input v-else-if="field.type === 'date'" type="date" v-model="params[field.key]" />
+
           <textarea v-else-if="field.type === 'textarea'" rows="6" v-model="params[field.key]"></textarea>
 
           <select v-else-if="field.type === 'select'" v-model="params[field.key]">
@@ -46,7 +48,8 @@
       <div class="tool-preview-grid" :style="gridStyle">
         <div v-for="(it, idx) in previewItems" :key="idx"
              class="tool-preview-cell" :class="{ 'is-invalid': !it.ok }">
-          <img v-if="it.ok" :src="it.dataUrl" alt="" />
+          <img v-if="it.ok && it.dataUrl" :src="it.dataUrl" alt="" />
+          <span v-else-if="it.ok" class="tool-preview-cell__text">{{ it.value }}</span>
           <span v-else class="tool-preview-cell__err">{{ it.value }}：{{ it.error }}</span>
         </div>
       </div>
@@ -165,4 +168,5 @@ export default {
 .tool-preview-cell img { max-width: 100%; }
 .tool-preview-cell.is-invalid { border-color: #ffccc7; background: #fff2f0; }
 .tool-preview-cell__err { color: #d4380d; font-size: 12px; }
+.tool-preview-cell__text { font-size: 13px; color: #333; word-break: break-all; }
 </style>
