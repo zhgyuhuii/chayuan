@@ -113,12 +113,7 @@ export default {
       if (!this.toolDef || this.busy) return
       this.busy = true
       try {
-        let result = { items: this.previewItems, invalidCount: this.invalidCount }
-        if (!this.previewItems.length) {
-          result = await this.toolDef.generate(this.params)
-          this.previewItems = result.items || []
-          this.invalidCount = result.invalidCount || 0
-        }
+        const result = { items: this.previewItems, invalidCount: this.invalidCount }
         const written = await this.toolDef.writeBack(result, this.params)
         this.$emit('inserted', written)
       } catch (e) {
