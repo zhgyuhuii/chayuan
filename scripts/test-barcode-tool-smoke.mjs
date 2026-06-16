@@ -54,6 +54,11 @@ async function main() {
   assert('列表字段在 sequence 下隐藏', !isFieldVisible(def.formSchema.find((f) => f.key === 'listText'), dp))
   assert('未知工具返回 null', getToolDefinition('tools.nope') === null)
 
+  const reg = await import(repoRoot + 'src/utils/assistantRegistry.js')
+  assert('ASSISTANT_GROUPS 含 tools', reg.ASSISTANT_GROUPS.some((g) => g.key === 'tools'))
+  assert('getAssistantToolInfo 命中条码', reg.getAssistantToolInfo('tools.barcode')?.toolId === 'tools.barcode')
+  assert('getAssistantToolInfo 普通助手返回 null', reg.getAssistantToolInfo('summary') === null)
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }

@@ -44,6 +44,7 @@ export const ASSISTANT_DISPLAY_LOCATION_OPTIONS = [
 export const ASSISTANT_GROUPS = [
   { key: 'core', label: '系统助手功能' },
   { key: 'analysis', label: '文本分析分组' },
+  { key: 'tools', label: '工具助手' },
   { key: 'custom', label: '自定义智能助手' }
 ]
 
@@ -1490,6 +1491,23 @@ const CORE_BUILTIN_ASSISTANTS = [
 ---
 {{input}}
 ---`
+  },
+  {
+    id: 'tools.barcode',
+    label: '条形码批量生成',
+    shortLabel: '条形码',
+    icon: '🏷️',
+    group: 'tools',
+    modelType: 'chat',
+    defaultModelCategory: 'chat',
+    supportsRibbon: false,
+    defaultDisplayLocations: ['ribbon-more'],
+    allowedActions: ['none'],
+    defaultAction: 'none',
+    defaultOutputFormat: 'plain',
+    defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
+    runtimeCapabilities: { isToolAssistant: true, toolId: 'tools.barcode' },
+    description: '按流水号或粘贴列表批量生成条形码，网格排版插入文档'
   }
 ]
 
@@ -1940,6 +1958,16 @@ export function getBuiltinAssistantMap() {
 export function getBuiltinAssistantDefinition(id) {
   const found = BUILTIN_ASSISTANTS.find(item => item.id === id)
   return found ? deepClone(found) : null
+}
+
+// 给定助手 key/id，返回其工具能力 { isToolAssistant, toolId } 或 null
+export function getAssistantToolInfo(assistantId) {
+  const def = BUILTIN_ASSISTANTS.find(a => a.id === assistantId || a.key === assistantId)
+  const caps = def?.runtimeCapabilities
+  if (caps?.isToolAssistant) {
+    return { isToolAssistant: true, toolId: caps.toolId || def.id }
+  }
+  return null
 }
 
 export function getAssistantDefaultConfig(definitionOrId) {
