@@ -59,6 +59,11 @@ async function main() {
   assert('getAssistantToolInfo 命中条码', reg.getAssistantToolInfo('tools.barcode')?.toolId === 'tools.barcode')
   assert('getAssistantToolInfo 普通助手返回 null', reg.getAssistantToolInfo('summary') === null)
 
+  const { dataUrlToBase64 } = await import(repoRoot + 'src/utils/tools/gridWriter.js')
+  assert('dataUrlToBase64 取出 png base64', dataUrlToBase64('data:image/png;base64,AAAB') === 'AAAB')
+  assert('dataUrlToBase64 非 base64 返回空', dataUrlToBase64('http://x/y.png') === '')
+  assert('dataUrlToBase64 空值返回空', dataUrlToBase64('') === '')
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }
