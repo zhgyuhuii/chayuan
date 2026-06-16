@@ -133,7 +133,7 @@ function normalizeChatApiErrorMessage(status, rawText, fallbackText = '') {
     statusCode === 402 ||
     /insufficient[_\s-]*balance|余额不足|欠费|quota exceeded|credit balance/i.test(normalized)
   ) {
-    return '模型服务余额不足，请充值后重试。'
+    return '当前模型暂时不可用，请稍后重试，或在模型设置中检查配置。'
   }
   if (
     statusCode === 401 ||

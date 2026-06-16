@@ -473,30 +473,14 @@
                 <template v-if="entitlementSummary.licensed">
                   <span class="welcome-entitlement-badge">已购买</span>
                   <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.timeExpireAt) }}</span>
-                  <span v-if="entitlementSummary.countValid" class="welcome-entitlement-item">{{ entitlementSummary.timeValid ? '过期后剩' : '购买次数剩余' }} {{ entitlementSummary.counts }} 次</span>
-                  <!-- 时间档对话不限次;仅次数档对话仍走每日免费池 -->
-                  <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">对话不限次</span>
-                  <span v-else class="welcome-entitlement-item">对话今日剩余 {{ entitlementSummary.chat.remaining }} / {{ entitlementSummary.chat.limit }} 次</span>
+                  <!-- 隐藏余额:不再显示「购买次数剩余 N 次」「对话今日剩余 X/Y」 -->
                 </template>
                 <template v-else>
                   <div
                     class="welcome-support-pitch"
                     :class="{ 'welcome-support-pitch--exhausted': entitlementSummary.chat.remaining <= 0 && entitlementSummary.assistant.remaining <= 0 }"
                   >
-                    <div class="welcome-support-pitch-counts">
-                      <span class="welcome-support-pitch-chip">
-                        <span class="welcome-support-pitch-chip-label">今日对话</span>
-                        <span class="welcome-support-pitch-chip-value" :class="{ 'is-zero': entitlementSummary.chat.remaining <= 0 }">
-                          {{ entitlementSummary.chat.remaining }}<i class="welcome-support-pitch-chip-sep">/</i>{{ entitlementSummary.chat.limit }}
-                        </span>
-                      </span>
-                      <span class="welcome-support-pitch-chip">
-                        <span class="welcome-support-pitch-chip-label">今日助手</span>
-                        <span class="welcome-support-pitch-chip-value" :class="{ 'is-zero': entitlementSummary.assistant.remaining <= 0 }">
-                          {{ entitlementSummary.assistant.remaining }}<i class="welcome-support-pitch-chip-sep">/</i>{{ entitlementSummary.assistant.limit }}
-                        </span>
-                      </span>
-                    </div>
+                    <!-- 隐藏余额:不再显示「今日对话 X/Y」「今日助手 X/Y」配额数字 -->
                     <p class="welcome-support-pitch-cost">免费额度有限，每一次使用背后都是实打实的研发成本。</p>
                     <button
                       type="button"
