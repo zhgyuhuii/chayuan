@@ -23,6 +23,7 @@ async function main() {
   assert('date YYYYMMDD', expandTemplate('{date:YYYYMMDD}', { count: 1, date: d }).items[0].value === '20260616')
   assert('date YYYY-MM-DD', expandTemplate('{date:YYYY-MM-DD}', { count: 1, date: d }).items[0].value === '2026-06-16')
   assert('date YYMMDD', expandTemplate('{date:YYMMDD}', { count: 1, date: d }).items[0].value === '260616')
+  assert('date 字符串本地解析不差天', expandTemplate('{date:YYYYMMDD}', { count: 1, date: '2026-06-16' }).items[0].value === '20260616')
 
   const r0 = expandTemplate('{rand:4}', { count: 1, rng: () => 0 })
   assert('rand 固定rng=0 全A', r0.items[0].value === 'AAAA', `got ${r0.items[0].value}`)

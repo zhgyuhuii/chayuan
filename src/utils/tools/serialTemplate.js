@@ -9,7 +9,15 @@ function zeroPad(num, width) {
 }
 
 function formatDate(dateVal, fmt) {
-  const d = dateVal instanceof Date ? dateVal : new Date(dateVal)
+  let d
+  if (dateVal instanceof Date) {
+    d = dateVal
+  } else {
+    const s = String(dateVal)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+    // 'YYYY-MM-DD' 按本地时间构造,避免 new Date(串) 的 UTC 解析在负时区差一天
+    d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(s)
+  }
   if (Number.isNaN(d.getTime())) throw new Error('日期无效')
   const YYYY = String(d.getFullYear())
   const YY = YYYY.slice(-2)
