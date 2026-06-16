@@ -1525,6 +1525,23 @@ const CORE_BUILTIN_ASSISTANTS = [
     defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
     runtimeCapabilities: { isToolAssistant: true, toolId: 'tools.serial' },
     description: '按模板（{seq}/{date}/{rand}）批量生成流水号/批号，多列表格写入文档'
+  },
+  {
+    id: 'tools.label',
+    label: '资产物料标签批量',
+    shortLabel: '资产标签',
+    icon: '🏷️',
+    group: 'tools',
+    modelType: 'chat',
+    defaultModelCategory: 'chat',
+    supportsRibbon: false,
+    defaultDisplayLocations: [],
+    allowedActions: ['none'],
+    defaultAction: 'none',
+    defaultOutputFormat: 'plain',
+    defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
+    runtimeCapabilities: { isToolAssistant: true, toolId: 'tools.label' },
+    description: '粘贴多字段列表，每行合成「码+文字」标签图，网格排版插入文档'
   }
 ]
 

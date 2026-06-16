@@ -3,6 +3,7 @@
 import { generate as generateBarcode } from './barcode.js'
 import { writeGrid, writeTextGrid } from './gridWriter.js'
 import { expandTemplate } from './serialTemplate.js'
+import { generate as generateLabel } from './label.js'
 
 // 字段类型：text / number / select / textarea / radio / checkbox
 const BARCODE_TOOL = {
@@ -56,9 +57,34 @@ const SERIAL_TOOL = {
     writeTextGrid(genResult.items.filter((it) => it.ok).map((it) => it.value), { columns: params.columns })
 }
 
+const LABEL_TOOL = {
+  id: 'tools.label',
+  label: '资产物料标签批量',
+  formSchema: [
+    { key: 'listText', type: 'textarea', label: '标签列表（每行一张，字段用分隔符；首字段入码）', default: '' },
+    {
+      key: 'separator', type: 'select', label: '字段分隔符', default: '|',
+      options: [{ value: '|', label: '竖线 |' }, { value: 'tab', label: 'Tab' }, { value: 'comma', label: '逗号' }]
+    },
+    {
+      key: 'codeType', type: 'select', label: '码制', default: 'QR',
+      options: [{ value: 'QR', label: '二维码' }, { value: 'CODE128', label: 'Code128' }]
+    },
+    { key: 'columns', type: 'number', label: '每行列数', default: 3, min: 1, max: 8 },
+    {
+      key: 'size', type: 'select', label: '标签尺寸', default: 'medium',
+      options: [{ value: 'small', label: '小' }, { value: 'medium', label: '中' }, { value: 'large', label: '大' }]
+    }
+  ],
+  generate: (params) => generateLabel(params),
+  writeBack: (genResult, params) =>
+    writeGrid(genResult.items, { columns: params.columns, caption: false })
+}
+
 const TOOL_DEFINITIONS = {
   [BARCODE_TOOL.id]: BARCODE_TOOL,
-  [SERIAL_TOOL.id]: SERIAL_TOOL
+  [SERIAL_TOOL.id]: SERIAL_TOOL,
+  [LABEL_TOOL.id]: LABEL_TOOL
 }
 
 export function getToolDefinition(toolId) {

@@ -68,6 +68,14 @@ async function main() {
   assert('fit 横长条码 加宽不压扁', wide.drawH === 120 && wide.drawW === 600, `got ${wide.drawW}`)
   assert('fit 异常尺寸兜底', fitLabelCodeDims(0, 0, 120).drawW === 120)
 
+  const label = td.getToolDefinition('tools.label')
+  assert('标签工具已注册', !!label && label.id === 'tools.label')
+  const lp = td.buildDefaultParams(label)
+  assert('标签默认分隔符|', lp.separator === '|')
+  assert('标签默认码制QR', lp.codeType === 'QR')
+  assert('标签默认列数3', lp.columns === 3)
+  assert('getAssistantToolInfo 命中标签', reg2.getAssistantToolInfo('tools.label')?.toolId === 'tools.label')
+
   console.log(`\n${failures === 0 ? 'ALL PASS' : failures + ' FAILED'}`)
   process.exit(failures === 0 ? 0 : 1)
 }
