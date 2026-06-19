@@ -73,19 +73,21 @@ Chayuan is a **WPS Writer** add-in built with **Vue 3** and **Vite**. It connect
 > **This add-in is not a standalone plugin.** The official site sums up Chayuan AI as **"one engine, four SKUs"** —
 > the same query engine (document / structured / vector / office / image knowledge sources) + model gateway (170+ models) + local capabilities, repackaged per scenario. **This add-in is the first SKU, the "Document Assistant"**, whose job is to bring that engine **into the WPS document you're writing**.
 
+> **Open source:** WPS Document Assistant (this project) → <https://github.com/zhgyuhuii/chayuan-wps-releases> · Desktop / Network → <https://github.com/zhgyuhuii/chayuan-desktop-releases>
+
 | # | SKU (Form) | Project / Entry | The user worry it answers |
 |---|---|---|---|
-| 1 | **Document Assistant** (this project) | `chayuan` (WPS add-in) | "Don't make me bounce between a browser and my document — help me right here on the page I'm writing." |
-| 2 | **Desktop Edition** | `chayuan-desktop` (single-machine installer) | "Install on *my* computer, run offline, no byte of data leaves this machine." |
-| 3 | **Team Edition** | `chayuan-desktop` (Docker network edition) | "Deploy once for the whole office, pool the KB, stop charging per seat / per call." |
-| 4 | **Enterprise Edition** | `chayuan-desktop` (Docker network edition + online office) | "Hundreds to tens of thousands of people, a workspace per person in the browser, governable & auditable." |
+| 1 | **Document Assistant** (this project) | [chayuan-wps](https://github.com/zhgyuhuii/chayuan-wps-releases) (WPS add-in) | "Don't make me bounce between a browser and my document — help me right here on the page I'm writing." |
+| 2 | **Desktop Edition** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases) (single-machine installer) | "Install on *my* computer, run offline, no byte of data leaves this machine." |
+| 3 | **Team Edition** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases) (Docker network edition) | "Deploy once for the whole office, pool the KB, stop charging per seat / per call." |
+| 4 | **Enterprise Edition** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases) (Docker network edition + online office) | "Hundreds to tens of thousands of people, a workspace per person in the browser, governable & auditable." |
 
 **How this add-in cooperates with the Desktop / Network editions:** in the add-in's **"Server URL"** field, point at either
 
 - the **single-machine edition** → `http://127.0.0.1:62581` (local, keyless), or
 - a **network deployment** → `https://your-deployment` (team, with login).
 
-Then the Desktop/Network sidecar does the embedding / retrieval / reranking, and the add-in reuses the **same knowledge base for both writing and chatting — keys and documents never leave your domain**. The **v3.0 Remote KB RAG integration** (see top) is exactly this link: JWT user mode for the multi-user **network edition**, HMAC app mode / `authMode:'none'` for the keyless local **single-machine edition**. The add-in works standalone (just your own Ollama / cloud models), and gains enterprise-grade **five-source unified retrieval, citation bubbles, one-click source download** once connected. See the chayuan-desktop README and its `docker/README.md` for those editions.
+Then the Desktop/Network sidecar does the embedding / retrieval / reranking, and the add-in reuses the **same knowledge base for both writing and chatting — keys and documents never leave your domain**. The **v3.0 Remote KB RAG integration** (see top) is exactly this link: JWT user mode for the multi-user **network edition**, HMAC app mode / `authMode:'none'` for the keyless local **single-machine edition**. The add-in works standalone (just your own Ollama / cloud models), and gains enterprise-grade **five-source unified retrieval, citation bubbles, one-click source download** once connected. See the chayuan-desktop README (<https://github.com/zhgyuhuii/chayuan-desktop-releases>) and its `docker/README.md` for those editions.
 
 ---
 
@@ -212,6 +214,15 @@ Use **`wpsjs debug`** to attach the add-in to dev server or build output.
 ## 10. Donations
 
 Voluntary support via **[aidooo.com](https://aidooo.com)** or in-app instructions; follow the [GitHub Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service) when posting donation content.
+
+**Get it / source:**
+
+| Item | Project | Address |
+|---|---|---|
+| Official site | — | <https://aidooo.com> |
+| Open source (WPS add-in, this project) | chayuan-wps | <https://github.com/zhgyuhuii/chayuan-wps-releases> |
+| Open source (Desktop / Network) | chayuan-desktop | <https://github.com/zhgyuhuii/chayuan-desktop-releases> |
+| Baidu Netdisk (downloads) | — | <https://pan.baidu.com/s/5kGNUqSLs7-6g8RNh5FsBcA> |
 
 ---
 

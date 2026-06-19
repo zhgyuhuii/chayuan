@@ -112,12 +112,14 @@ npm run build:wps    # WPS add-in bundle
 > 同一套查询引擎(文档 / 结构化 / 向量 / 办公 / 图像五类知识源)+ 模型网关(170+ 模型)+ 本地能力,
 > 按场景换一种用法。**本加载项就是其中第一档「文档助手」**,负责把这套能力**送进你正在写的 WPS 文档里**。
 
+> **开源地址:** WPS 文档助手(本项目) → <https://github.com/zhgyuhuii/chayuan-wps-releases> · 桌面版 / 网络版 → <https://github.com/zhgyuhuii/chayuan-desktop-releases>
+
 | # | 形态(SKU) | 项目 / 入口 | 解决的用户心结 |
 |---|---|---|---|
-| 1 | **察元 AI 文档助手**(本项目) | `chayuan`(WPS 加载项) | "AI 别让我在浏览器和文档之间反复横跳 —— 就在我正写的这页公文 / 合同里帮我改、帮我查、帮我写回。" |
-| 2 | **察元 AI 桌面版** | `chayuan-desktop`(单机安装包) | "装我自己电脑里、断网也能跑,密钥和文档一个字节都别出我这台机器。" |
-| 3 | **察元 AI 服务版** | `chayuan-desktop`(Docker 网络版) | "一次部署全科室共用,知识库集中沉淀,别再按人头 / 按调用量收费。" |
-| 4 | **察元 AI 至臻版** | `chayuan-desktop`(Docker 网络版 + 在线办公) | "数百到上万人,打开浏览器每人一个工作空间,管得住、审得清。" |
+| 1 | **察元 AI 文档助手**(本项目) | [chayuan-wps](https://github.com/zhgyuhuii/chayuan-wps-releases)(WPS 加载项) | "AI 别让我在浏览器和文档之间反复横跳 —— 就在我正写的这页公文 / 合同里帮我改、帮我查、帮我写回。" |
+| 2 | **察元 AI 桌面版** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases)(单机安装包) | "装我自己电脑里、断网也能跑,密钥和文档一个字节都别出我这台机器。" |
+| 3 | **察元 AI 服务版** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases)(Docker 网络版) | "一次部署全科室共用,知识库集中沉淀,别再按人头 / 按调用量收费。" |
+| 4 | **察元 AI 至臻版** | [chayuan-desktop](https://github.com/zhgyuhuii/chayuan-desktop-releases)(Docker 网络版 + 在线办公) | "数百到上万人,打开浏览器每人一个工作空间,管得住、审得清。" |
 
 **本加载项与「桌面版 / 网络版」如何协作:**
 
@@ -148,7 +150,7 @@ npm run build:wps    # WPS add-in bundle
 - **能独立用,也能组合用**:只用本加载项 + 你自己的 Ollama / 云端模型即可工作;
   接上桌面版 / 网络版后,额外获得**五类知识源统一检索、引用气泡、原文一键下载**等企业级能力。
 
-> 桌面版 / 网络版的完整说明见 chayuan-desktop 仓库 README 及其 `docker/README.md`(网络版一键部署)。
+> 桌面版 / 网络版的完整说明见 chayuan-desktop 仓库 README(<https://github.com/zhgyuhuii/chayuan-desktop-releases>)及其 `docker/README.md`(网络版一键部署)。
 
 ### 4.1 本次 2.0.0 重大更新（重大重构 / 稳定性版本）
 
@@ -462,6 +464,17 @@ npm run format
 ## 十、捐助与社区
 
 感谢支持开源与持续维护。自愿捐助与关注方式以 **[aidooo.com](https://aidooo.com)** 及应用内说明为准；在 GitHub 发布捐助信息时请遵守 [GitHub 服务条款](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service)。
+
+**获取与下载:**
+
+| 渠道 | 项目 | 地址 |
+|---|---|---|
+| 官网 | — | <https://aidooo.com> |
+| 开源仓库(本项目) | 察元 AI 文档助手 · WPS 加载项 | <https://github.com/zhgyuhuii/chayuan-wps-releases> |
+| 开源仓库(桌面版 / 网络版) | 察元 AI 桌面版 · 单机 / Docker | <https://github.com/zhgyuhuii/chayuan-desktop-releases> |
+| 百度网盘(安装包下载) | — | <https://pan.baidu.com/s/5kGNUqSLs7-6g8RNh5FsBcA> |
+
+公开技术问题欢迎到对应仓库的 GitHub Issue 讨论;商务合作 / 企业授权 / OEM 定制请走官网。
 
 ---
 
