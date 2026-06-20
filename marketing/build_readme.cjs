@@ -25,12 +25,15 @@ let md = `# 察元 AI · 100 条爆款短视频脚本包
 
 | 资产 | 路径 | 说明 |
 |---|---|---|
-| 脚本 | \`scripts/<编号>.md\` | 100 条分镜脚本（钩子 / 痛点 / 分镜表 / CTA / 素材 / 可拍清单） |
+| **配音稿** | \`voiceover/<编号>.md\` | **纯主持人口播文稿**，无任何标注，拿来直接配音 / 喂 TTS 生成音频 |
+| 分镜脚本 | \`scripts/<编号>.md\` | 100 条分镜脚本（钩子 / 痛点 / 分镜表 / CTA / 素材 / 可拍清单），拍摄 / 剪辑用 |
 | 封面 | \`covers/<编号>.svg\` | 9:16 竖版标题封面，可直接做视频首帧 / 缩略图 |
 | 截图 | \`assets/screenshots/<代码>.png\` | 仓库现有真实界面截图的语义软链（见下方图例） |
 | 清单 | \`manifest.csv\` | 编号→系列→场景→截图→需录屏 的机器可读映射 |
 
-**编号即对应**：\`scripts/072.md\` ↔ \`covers/072.svg\` ↔ \`manifest.csv\` 第 072 行指定截图。
+**编号即对应**：\`voiceover/072.md\`（配音）↔ \`scripts/072.md\`（分镜）↔ \`covers/072.svg\`（封面）↔ \`manifest.csv\` 第 072 行指定截图。
+
+> 制作流程：① 念 \`voiceover/<编号>.md\` 配音生成音频 → ② 按 \`scripts/<编号>.md\` 分镜表录屏 / 套用 \`covers/<编号>.svg\` 首帧 → ③ 音画合成成片。
 
 ## 重要说明
 
@@ -66,9 +69,9 @@ const codeName = { A: 'A 政务公文合规', B: 'B 合同法务', C: 'C 标书�
 for (const code of Object.keys(SERIES)) {
   const s = SERIES[code];
   md += `\n### ${codeName[code] || code}（${s.items.length} 条）\n\n`;
-  md += `| 编号 | 场景 | 受众 | 时长 | 主截图 | 封面 | 需录屏 |\n|---|---|---|---|---|---|---|\n`;
+  md += `| 编号 | 场景 | 受众 | 时长 | 配音稿 | 分镜 | 封面 | 主截图 | 需录屏 |\n|---|---|---|---|---|---|---|---|---|\n`;
   for (const r of s.items) {
-    md += `| [${r.id}](scripts/${r.id}.md) | ${r.title} | ${r.audience} | ${r.duration_s}s | ${r.screenshot} | [svg](covers/${r.id}.svg) | ${r.need_record} |\n`;
+    md += `| ${r.id} | ${r.title} | ${r.audience} | ${r.duration_s}s | [配音](voiceover/${r.id}.md) | [分镜](scripts/${r.id}.md) | [封面](covers/${r.id}.svg) | ${r.screenshot} | ${r.need_record} |\n`;
   }
 }
 
