@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#1a2230"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <!-- 顶部品牌 -->
+  <text x="90" y="180" font-size="56" font-weight="800" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC',sans-serif">察元 AI</text>
+  <text x="90" y="240" font-size="34" fill="#ffffffcc" font-family="'Microsoft YaHei','PingFang SC',sans-serif">AI 办公助手 · 就在你写文档的页面里</text>
+  <!-- 编号 -->
+  <text x="90" y="560" font-size="240" font-weight="900" fill="#ffffff22" font-family="Arial,sans-serif">020</text>
+  <!-- 系列标签 -->
+  <rect x="90" y="600" rx="36" ry="36" width="412" height="72" fill="#ffffff22"/>
+  <text x="126" y="650" font-size="40" font-weight="700" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC',sans-serif">B · 合同法务</text>
+  <!-- 标题 -->
+  <text x="90" y="920" font-size="96" font-weight="800" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif">合同字段结构化</text>
+    <text x="90" y="1040" font-size="96" font-weight="800" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif">抽取入表</text>
+  <!-- 受众 / 时长 -->
+  <text x="90" y="1180" font-size="40" fill="#ffffffdd" font-family="'Microsoft YaHei','PingFang SC',sans-serif">面向 法务 · 时长约 33s · 竖屏 9:16</text>
+  <!-- 底部 CTA -->
+  <rect x="0" y="1740" width="1080" height="180" fill="#00000033"/>
+  <text x="90" y="1815" font-size="40" font-weight="700" fill="#ffffff" font-family="'Microsoft YaHei','PingFang SC',sans-serif">官网 aidooo.com</text>
+  <text x="90" y="1875" font-size="34" fill="#ffffffcc" font-family="'Microsoft YaHei','PingFang SC',sans-serif">Apache 2.0 开源 · 出品：北京智灵鸟科技中心</text>
+</svg>
