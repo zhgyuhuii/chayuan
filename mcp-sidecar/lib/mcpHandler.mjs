@@ -129,7 +129,7 @@ function userIntentsGuide() {
         primaryTools: ['document_list_paragraphs', 'document_apply_ops', 'document_insert']
       },
       {
-        userSays: ['用 WPS 打开桌面起诉文件夹里的答辩状', 'Open the defense brief on my Desktop'],
+        userSays: ['用 WPS 打开桌面工作文档里的年度战略规划报告', 'Open the annual strategy report on my Desktop'],
         playbook: [
           'Resolve absolute path',
           'document_open viaOs=true force=true activate=true',

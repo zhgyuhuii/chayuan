@@ -25,6 +25,7 @@ function storageSet(key, value) {
 
 function fileUrlToPath(url) {
   let s = String(url || '')
+  if (/^https?:\/\//i.test(s)) return ''
   if (/^file:\/\//i.test(s)) {
     s = s.replace(/^file:\/\//i, '')
     // file:///C:/path → C:/path ; file://localhost/C:/path
@@ -134,8 +135,9 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
   const startedAt = Date.now()
   const hasApi = !!(window.Application?.OAAssist?.ShellExecute)
   const candidates = getSidecarStartCandidates()
-    .filter(c => /\.cmd$/i.test(c))
+    .filter(c => /\.cmd$/i.test(c) && !/^https?:\/\//i.test(c))
     .map(c => ({ raw: c, path: fileUrlToPath(c) }))
+    .filter(c => c.path && !/^https?:\/\//i.test(c.path))
 
   if (!hasApi) {
     return {
@@ -166,6 +168,7 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
   }
 
   for (const c of spikeCmdCandidates) {
+    if (!c.path || /^https?:\/\//i.test(c.path)) continue
     try {
       // Pass marker via env-like arg: ShellExecute may only take path
       window.Application.OAAssist.ShellExecute(c.path)

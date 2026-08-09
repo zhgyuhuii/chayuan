@@ -1925,100 +1925,190 @@
             </div>
           </div>
 
-          <!-- MCP 服务（Sidecar + Agent） -->
+          <!-- MCP 服务管理：列表 + 弹窗添加/编辑/详情 -->
           <div
             v-else-if="activeMainMenu === 'general' && activeSubMenu === 'mcp'"
-            class="config-panel"
+            class="config-panel mcp-mgmt-panel"
           >
-            <div class="config-header">
-              <h4>MCP 服务</h4>
+            <div class="config-header mcp-mgmt-header">
+              <div class="config-header-text">
+                <h4>MCP 服务管理</h4>
+                <p class="config-header-desc mcp-mgmt-status">{{ mcpStatusLine }}</p>
+              </div>
+              <div class="config-header-actions mcp-mgmt-header-actions">
+                <button type="button" class="btn btn-secondary" :disabled="mcpBusy" @click="refreshMcpStatusAndProbeAll">刷新</button>
+                <button type="button" class="btn btn-primary" :disabled="mcpBusy" @click="openMcpEditorAdd">添加</button>
+              </div>
             </div>
             <div class="config-content">
-              <div class="config-item">
-                <p class="config-desc">
-                  本机标准 MCP（Streamable HTTP，默认端口 62588）。Claude Code、Codex、Hermes、OpenClaw 等任意 MCP 客户端只需填写下方 URL，无需 Token。请先启动 sidecar，再打开 WPS 使 Agent 注册。
-                </p>
-                <p class="path-hint">状态：{{ mcpStatusLine }}</p>
-                <p class="path-hint">MCP URL：{{ mcpUrlDisplay }}</p>
-                <p class="path-hint">客户端只需填写上述链接，无需 Token（仅监听 127.0.0.1）。</p>
-                <pre class="path-hint" style="white-space: pre-wrap; margin-top: 8px; padding: 10px 12px; background: rgba(0,0,0,.04); border-radius: 8px; font-size: 12px; line-height: 1.55;">{{ mcpClientConfigExample }}</pre>
-                <p class="path-hint">
-                  口语示例：帮我检查这份答辩状的保密风险 / 帮我翻译成英文并插到每段后面 / 帮我找出错别字并加批注。
-                </p>
-                <p class="path-hint">
-                  Windows 开机自启（可选）：在安装目录执行
-                  mcp-sidecar/autostart/install-windows-user.ps1（写入当前用户 Run 键，需本机 Node）。
-                </p>
-                <div class="path-row" style="gap: 8px; flex-wrap: wrap; margin-top: 8px;">
-                  <button class="btn btn-secondary" :disabled="mcpBusy" @click="refreshMcpStatus">刷新状态</button>
-                  <button class="btn btn-secondary" :disabled="mcpBusy" @click="startMcpSidecar">启动 MCP 服务</button>
-                  <button class="btn btn-secondary" :disabled="!mcpUrlDisplay" @click="copyMcpConnection">复制链接</button>
-                  <button class="btn btn-secondary" :disabled="mcpBusy" @click="runMcpSpikes">运行 Spike</button>
-                </div>
+              <p v-if="mcpMessage" class="config-desc mcp-mgmt-message">{{ mcpMessage }}</p>
 
-                <div class="config-item" style="margin-top: 18px;">
-                  <h5>助手页可用的 MCP 服务器（仅 Streamable HTTP）</h5>
-                  <p class="config-desc">
-                    内置察元不可删除。可额外添加其它 HTTP MCP；助手页「文档智能体」会合并这些工具。不支持 stdio / npx。
-                  </p>
-                  <div
-                    v-for="server in mcpServerList"
-                    :key="server.id"
-                    class="path-hint"
-                    style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; padding: 8px 10px; background: rgba(0,0,0,.03); border-radius: 8px;"
-                  >
-                    <label style="display: inline-flex; align-items: center; gap: 6px;">
-                      <input
-                        type="checkbox"
-                        :checked="server.enabled !== false"
-                        @change="onToggleMcpServer(server.id, $event.target.checked)"
-                      />
+              <div class="mcp-mgmt-list">
+                <div
+                  v-for="server in mcpServerList"
+                  :key="server.id"
+                  class="mcp-mgmt-item"
+                  :title="server.url"
+                  @click="openMcpEditorDetail(server)"
+                >
+                  <span
+                    class="mcp-mgmt-dot"
+                    :class="mcpServerOnlineMap[server.id] === true ? 'is-online' : 'is-offline'"
+                    :title="mcpServerOnlineMap[server.id] === true ? '已连通' : (mcpServerOnlineMap[server.id] === false ? '未连通' : '未测试')"
+                  ></span>
+                  <div class="mcp-mgmt-item-main">
+                    <div class="mcp-mgmt-item-title">
                       <strong>{{ server.name }}</strong>
-                      <span v-if="server.builtin">（内置）</span>
-                    </label>
-                    <code style="font-size: 12px;">{{ server.url }}</code>
-                    <button
-                      v-if="!server.builtin"
-                      type="button"
-                      class="btn btn-secondary"
-                      :disabled="mcpBusy"
-                      @click="probeMcpServer(server.id)"
-                    >测连</button>
-                    <button
-                      v-if="!server.builtin"
-                      type="button"
-                      class="btn btn-secondary"
-                      :disabled="mcpBusy"
-                      @click="removeMcpServerRow(server.id)"
-                    >删除</button>
-                    <span v-if="mcpServerProbeHints[server.id]" class="config-desc">{{ mcpServerProbeHints[server.id] }}</span>
-                  </div>
-                  <div style="margin-top: 12px; display: grid; gap: 8px; max-width: 520px;">
-                    <input v-model="mcpNewServerName" class="form-input" type="text" placeholder="名称（如 filesystem）" />
-                    <input v-model="mcpNewServerId" class="form-input" type="text" placeholder="id（可选，英文）" />
-                    <input v-model="mcpNewServerUrl" class="form-input" type="text" placeholder="HTTP URL，如 http://127.0.0.1:8000/mcp" />
-                    <input v-model="mcpNewServerHeader" class="form-input" type="text" placeholder="可选 Header：Authorization: Bearer xxx" />
-                    <div class="path-row" style="gap: 8px;">
-                      <button type="button" class="btn btn-secondary" :disabled="mcpBusy" @click="addMcpServerRow">添加 HTTP MCP</button>
-                      <button type="button" class="btn btn-secondary" :disabled="mcpBusy" @click="reloadMcpServerList">刷新列表</button>
+                      <span v-if="server.builtin" class="mcp-mgmt-tag">内置</span>
+                      <span v-if="server.enabled === false" class="mcp-mgmt-tag mcp-mgmt-tag--muted">禁用</span>
                     </div>
+                    <div class="mcp-mgmt-item-url">{{ server.url }}</div>
+                  </div>
+                  <div class="mcp-mgmt-item-actions" @click.stop>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-compact"
+                      :disabled="mcpBusy"
+                      @click="testMcpServerFromList(server)"
+                    >测试</button>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <p v-if="mcpMessage" class="config-desc" style="margin-top: 10px;">{{ mcpMessage }}</p>
-                <div v-if="mcpManual" class="config-item" style="margin-top: 12px;">
-                  <h5>手动启动命令</h5>
-                  <p class="path-hint" v-for="(cmd, idx) in mcpManual.commands || []" :key="idx">{{ cmd }}</p>
-                  <p class="config-desc">{{ mcpManual.note }}</p>
+            <div
+              v-if="mcpView === 'editor'"
+              class="mcp-editor-overlay"
+              @click.self="closeMcpEditor"
+            >
+              <div class="mcp-editor-modal" role="dialog" aria-modal="true" :aria-label="mcpEditorTitle">
+                <div class="mcp-editor-modal-header">
+                  <div>
+                    <h4>{{ mcpEditorTitle }}</h4>
+                    <p>{{ mcpEditorForm.builtin ? '本机察元文档 MCP；可测试连通、查看工具，以及启动与外部客户端配置。' : '仅支持 Streamable HTTP；填写后可先测试连通并查看工具列表。' }}</p>
+                  </div>
+                  <button type="button" class="btn-close-modal" :disabled="mcpBusy" @click="closeMcpEditor">×</button>
                 </div>
-                <div v-if="mcpSpikeResults" class="config-item" style="margin-top: 14px;">
-                  <h5>Spike 结果（决定 Phase 3 门禁）</h5>
-                  <p class="path-hint">1 WebSocket：{{ mcpSpikeResults.ws?.verdict }} — {{ mcpSpikeResults.ws?.note }}</p>
-                  <p class="path-hint">2 ShellExecute：{{ mcpSpikeResults.shell?.verdict }} — {{ mcpSpikeResults.shell?.note }}</p>
-                  <p class="path-hint">3 Ribbon 存活：{{ mcpSpikeResults.alive?.verdict }} — {{ mcpSpikeResults.alive?.note }}</p>
-                  <p class="config-desc">
-                    建议：{{ mcpSpikeSummary }}
-                  </p>
+                <div class="mcp-editor-modal-body">
+                  <div class="mcp-editor-grid">
+                    <label class="mcp-editor-field mcp-editor-field--full">
+                      <span>名称</span>
+                      <input
+                        v-model="mcpEditorForm.name"
+                        class="config-input"
+                        type="text"
+                        :readonly="mcpEditorForm.builtin"
+                        placeholder="如 filesystem / 察元 WPS"
+                      />
+                    </label>
+                    <label class="mcp-editor-field mcp-editor-field--full">
+                      <span>HTTP URL</span>
+                      <input
+                        v-model="mcpEditorForm.url"
+                        class="config-input"
+                        type="text"
+                        :readonly="mcpEditorForm.builtin"
+                        placeholder="http://127.0.0.1:8000/mcp"
+                      />
+                    </label>
+                    <label v-if="!mcpEditorForm.builtin" class="mcp-editor-field mcp-editor-field--full">
+                      <span>Header（可选）</span>
+                      <input
+                        v-model="mcpEditorForm.headerLine"
+                        class="config-input"
+                        type="text"
+                        placeholder="Authorization: Bearer xxx"
+                      />
+                    </label>
+                    <label v-if="!mcpEditorForm.builtin" class="mcp-editor-field mcp-editor-field--check">
+                      <input v-model="mcpEditorForm.enabled" type="checkbox" />
+                      <span>在助手页文档智能体中启用</span>
+                    </label>
+                  </div>
+
+                  <div class="mcp-editor-actions">
+                    <button type="button" class="btn btn-primary" :disabled="mcpBusy" @click="testMcpEditorConnection">
+                      {{ mcpBusy ? '测试中…' : '测试连接' }}
+                    </button>
+                    <button
+                      v-if="mcpEditorForm.builtin"
+                      type="button"
+                      class="btn btn-secondary"
+                      :disabled="mcpBusy"
+                      @click="startMcpSidecar"
+                    >启动本机服务</button>
+                    <button
+                      v-if="mcpEditorForm.builtin"
+                      type="button"
+                      class="btn btn-secondary"
+                      :disabled="!mcpUrlDisplay"
+                      @click="copyMcpConnection"
+                    >复制链接</button>
+                    <button
+                      v-if="!mcpEditorForm.builtin"
+                      type="button"
+                      class="btn btn-secondary"
+                      :disabled="mcpBusy"
+                      @click="saveMcpEditor"
+                    >保存</button>
+                    <button
+                      v-if="!mcpEditorForm.builtin && mcpEditorMode !== 'add'"
+                      type="button"
+                      class="btn btn-secondary"
+                      :disabled="mcpBusy"
+                      @click="deleteMcpEditorServer"
+                    >删除</button>
+                    <span
+                      class="mcp-mgmt-dot mcp-mgmt-dot--inline"
+                      :class="mcpEditorOnline === true ? 'is-online' : 'is-offline'"
+                    ></span>
+                    <span class="path-hint">{{ mcpEditorStatusText }}</span>
+                  </div>
+                  <p v-if="mcpEditorMessage" class="config-desc">{{ mcpEditorMessage }}</p>
+
+                  <div class="mcp-editor-tools">
+                    <div class="mcp-editor-tools-head">
+                      <h5>工具信息</h5>
+                      <span class="path-hint">{{ mcpEditorTools.length }} 个</span>
+                    </div>
+                    <div v-if="!mcpEditorTools.length" class="mcp-editor-tools-empty">
+                      点击「测试连接」后将拉取工具名称与描述。
+                    </div>
+                    <details
+                      v-for="tool in mcpEditorTools"
+                      :key="tool.name"
+                      class="mcp-editor-tool"
+                    >
+                      <summary class="mcp-editor-tool-name">{{ tool.name }}</summary>
+                      <div class="mcp-editor-tool-desc">{{ tool.description || '（无描述）' }}</div>
+                    </details>
+                  </div>
+
+                  <details v-if="mcpEditorForm.builtin" class="mcp-mgmt-advanced mcp-editor-builtin-advanced">
+                    <summary>高级 · 外部客户端 / 诊断</summary>
+                    <pre class="path-hint mcp-mgmt-pre">{{ mcpClientConfigExample }}</pre>
+                    <div class="mcp-mgmt-advanced-row">
+                      <button type="button" class="btn btn-secondary btn-compact" :disabled="mcpBusy" @click="runMcpSpikes">运行 Spike</button>
+                    </div>
+                    <div v-if="mcpManual" class="mcp-mgmt-advanced-block">
+                      <p class="path-hint" v-for="(cmd, idx) in mcpManual.commands || []" :key="idx">{{ cmd }}</p>
+                      <p v-if="mcpManual.note" class="config-desc">{{ mcpManual.note }}</p>
+                    </div>
+                    <div v-if="mcpSpikeResults" class="mcp-mgmt-advanced-block">
+                      <p class="path-hint">WS {{ mcpSpikeResults.ws?.verdict }} · Shell {{ mcpSpikeResults.shell?.verdict }} · Alive {{ mcpSpikeResults.alive?.verdict }}</p>
+                      <p v-if="mcpSpikeSummary" class="config-desc">{{ mcpSpikeSummary }}</p>
+                    </div>
+                  </details>
+                </div>
+                <div class="mcp-editor-modal-footer">
+                  <button type="button" class="btn btn-secondary" :disabled="mcpBusy" @click="closeMcpEditor">关闭</button>
+                  <button
+                    v-if="!mcpEditorForm.builtin"
+                    type="button"
+                    class="btn btn-primary"
+                    :disabled="mcpBusy"
+                    @click="saveMcpEditorAndClose"
+                  >保存并关闭</button>
                 </div>
               </div>
             </div>
@@ -2544,7 +2634,7 @@ export default {
       generalSubMenus: [
         { key: 'data', label: '数据设置' },
         { key: 'kb', label: '知识库设置' },
-        { key: 'mcp', label: 'MCP 服务' }
+        { key: 'mcp', label: 'MCP 服务管理' }
       ],
       mcpStatus: null,
       mcpBusy: false,
@@ -2555,10 +2645,21 @@ export default {
       mcpSpikeResults: null,
       mcpServerList: [],
       mcpServerProbeHints: {},
-      mcpNewServerName: '',
-      mcpNewServerId: '',
-      mcpNewServerUrl: '',
-      mcpNewServerHeader: '',
+      mcpServerOnlineMap: {},
+      mcpView: 'list',
+      mcpEditorMode: 'add',
+      mcpEditorForm: {
+        id: '',
+        name: '',
+        url: '',
+        headerLine: '',
+        enabled: true,
+        builtin: false
+      },
+      mcpEditorTools: [],
+      mcpEditorOnline: null,
+      mcpEditorMessage: '',
+      mcpEditorCache: {},
       // 模型设置用的清单：固定清单 + getDefaultModels 全部，带图标
       allModels: [],
       selectedModelId: null,
@@ -2804,11 +2905,20 @@ export default {
     },
     mcpStatusLine() {
       const s = this.mcpStatus
-      if (!s) return '未刷新'
-      const side = s.sidecar?.online ? 'sidecar 在线' : 'sidecar 离线'
-      const agent = s.agentRunning ? 'Agent 轮询中' : 'Agent 未启动'
-      const aOnline = s.sidecar?.agent?.agentOnline ? '已注册' : '未注册'
-      return `${side} · ${agent} · Agent ${aOnline}`
+      if (!s) return '状态未刷新'
+      const side = s.sidecar?.online ? '本机在线' : '本机离线'
+      const aOnline = s.sidecar?.agent?.agentOnline ? 'Agent 已注册' : 'Agent 未注册'
+      return `${side} · ${aOnline}`
+    },
+    mcpEditorTitle() {
+      if (this.mcpEditorMode === 'add') return '添加 MCP 服务'
+      if (this.mcpEditorForm?.builtin) return 'MCP 服务详情（内置）'
+      return 'MCP 服务详情 / 编辑'
+    },
+    mcpEditorStatusText() {
+      if (this.mcpEditorOnline === true) return '已连通'
+      if (this.mcpEditorOnline === false) return '未连通'
+      return '尚未测试'
     },
     mcpUrlDisplay() {
       return this.mcpStatus?.mcpUrl || this.mcpStatus?.sidecar?.url || 'http://127.0.0.1:62588/mcp'
@@ -3877,73 +3987,196 @@ export default {
       const value = raw.slice(idx + 1).trim()
       return key ? { [key]: value } : {}
     },
-    async addMcpServerRow() {
+    formatMcpHeaderLine(headers) {
+      if (!headers || typeof headers !== 'object') return ''
+      const entries = Object.entries(headers)
+      if (!entries.length) return ''
+      const [k, v] = entries[0]
+      return `${k}: ${v}`
+    },
+    headerLineFromServer(server) {
+      return this.formatMcpHeaderLine(server?.headers || {})
+    },
+    openMcpEditorAdd() {
+      this.mcpEditorMode = 'add'
+      this.mcpEditorForm = {
+        id: '',
+        name: '',
+        url: '',
+        headerLine: '',
+        enabled: true,
+        builtin: false
+      }
+      this.mcpEditorTools = []
+      this.mcpEditorOnline = null
+      this.mcpEditorMessage = ''
+      this.mcpView = 'editor'
+    },
+    openMcpEditorDetail(server) {
+      if (!server) return
+      this.mcpEditorMode = server.builtin ? 'detail' : 'edit'
+      this.mcpEditorForm = {
+        id: server.id,
+        name: server.name,
+        url: server.url,
+        headerLine: this.headerLineFromServer(server),
+        enabled: server.enabled !== false,
+        builtin: !!server.builtin
+      }
+      const cached = this.mcpEditorCache[server.id]
+      this.mcpEditorTools = Array.isArray(cached?.tools) ? cached.tools : []
+      this.mcpEditorOnline = Object.prototype.hasOwnProperty.call(this.mcpServerOnlineMap, server.id)
+        ? this.mcpServerOnlineMap[server.id]
+        : null
+      this.mcpEditorMessage = cached?.message || this.mcpServerProbeHints[server.id] || ''
+      this.mcpView = 'editor'
+    },
+    closeMcpEditor() {
+      this.mcpView = 'list'
+      this.reloadMcpServerList()
+    },
+    applyMcpProbeResult(serverId, result) {
+      const online = !!result?.ok
+      this.mcpServerOnlineMap = { ...this.mcpServerOnlineMap, [serverId]: online }
+      this.mcpServerProbeHints = {
+        ...this.mcpServerProbeHints,
+        [serverId]: result?.message || (online ? '已连通' : '未连通')
+      }
+      this.mcpEditorCache = {
+        ...this.mcpEditorCache,
+        [serverId]: {
+          tools: Array.isArray(result?.tools) ? result.tools : [],
+          message: result?.message || '',
+          at: Date.now()
+        }
+      }
+    },
+    async ensureMcpSidecarOrExplain() {
+      const launcher = await import('../services/mcpBridge/sidecarLauncher.js')
+      const start = await launcher.startSidecarBestEffort()
+      if (start?.ok) return start
+      const msg = start?.message
+        || '本机 MCP sidecar（127.0.0.1:62588）未运行。请先点击「启动本机服务」，或在仓库根目录执行：npm run mcp:sidecar'
+      this.mcpManual = start?.manual || launcher.getManualStartCommand()
+      const err = new Error(msg)
+      err.code = start?.code || 'SIDECAR_NOT_RUNNING'
+      throw err
+    },
+    async testMcpServerFromList(server) {
+      if (!server) return
       this.mcpBusy = true
       this.mcpMessage = ''
+      this.mcpServerProbeHints = { ...this.mcpServerProbeHints, [server.id]: '测连中…' }
       try {
-        const mod = await import('../services/mcpBridge/mcpServerRegistry.js')
-        this.mcpServerList = mod.upsertMcpServer({
-          id: this.mcpNewServerId,
-          name: this.mcpNewServerName || this.mcpNewServerId,
-          url: this.mcpNewServerUrl,
-          headers: this.parseMcpHeaderLine(this.mcpNewServerHeader),
-          enabled: true
-        })
-        this.mcpNewServerName = ''
-        this.mcpNewServerId = ''
-        this.mcpNewServerUrl = ''
-        this.mcpNewServerHeader = ''
-        this.mcpMessage = '已添加 HTTP MCP（仅 URL，不支持 stdio）'
-        try {
-          const http = await import('../services/mcpBridge/mcpHttpClient.js')
-          await http.syncUpstreamAllowlist()
-        } catch { /* sidecar may be offline */ }
+        await this.ensureMcpSidecarOrExplain()
+        const http = await import('../services/mcpBridge/mcpHttpClient.js')
+        const result = await http.probeMcpServerDetail(server)
+        this.applyMcpProbeResult(server.id, result)
+        this.mcpMessage = result.message || (result.ok ? '测连成功' : '测连失败')
       } catch (e) {
-        this.mcpMessage = e?.message || String(e)
+        this.applyMcpProbeResult(server.id, { ok: false, message: e?.message || '测连失败', tools: [] })
+        this.mcpMessage = e?.message || '测连失败'
       } finally {
         this.mcpBusy = false
       }
     },
-    async removeMcpServerRow(id) {
+    async testMcpEditorConnection() {
+      this.mcpBusy = true
+      this.mcpEditorMessage = '正在测试连接并拉取工具…'
+      try {
+        await this.ensureMcpSidecarOrExplain()
+        const http = await import('../services/mcpBridge/mcpHttpClient.js')
+        // 中文名称无法生成 slug 时用 draft；已保存服务优先用真实 id
+        const draftId = String(this.mcpEditorForm.id || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '_')
+          || ('draft_' + Date.now().toString(36))
+        const server = {
+          id: this.mcpEditorForm.builtin ? 'chayuan' : draftId,
+          name: this.mcpEditorForm.name || draftId,
+          url: this.mcpEditorForm.url,
+          headers: this.parseMcpHeaderLine(this.mcpEditorForm.headerLine),
+          builtin: !!this.mcpEditorForm.builtin,
+          enabled: this.mcpEditorForm.enabled !== false
+        }
+        if (!server.builtin && !String(server.url || '').trim()) {
+          throw new Error('请先填写 HTTP URL')
+        }
+        const result = await http.probeMcpServerDetail(server)
+        this.mcpEditorOnline = !!result.ok
+        this.mcpEditorTools = Array.isArray(result.tools) ? result.tools : []
+        this.mcpEditorMessage = result.message || (result.ok ? '已连通' : '未连通')
+        if (server.id) {
+          this.applyMcpProbeResult(server.id, result)
+        }
+      } catch (e) {
+        this.mcpEditorOnline = false
+        this.mcpEditorTools = []
+        this.mcpEditorMessage = e?.message || '测连失败'
+      } finally {
+        this.mcpBusy = false
+      }
+    },
+    async saveMcpEditor() {
+      this.mcpBusy = true
+      this.mcpEditorMessage = ''
+      try {
+        const mod = await import('../services/mcpBridge/mcpServerRegistry.js')
+        const isAdd = this.mcpEditorMode === 'add'
+        this.mcpServerList = mod.upsertMcpServer({
+          // 添加时不传 id，由 registry 按名称自动生成唯一 id
+          id: isAdd ? '' : this.mcpEditorForm.id,
+          name: this.mcpEditorForm.name,
+          url: this.mcpEditorForm.url,
+          headers: this.parseMcpHeaderLine(this.mcpEditorForm.headerLine),
+          enabled: this.mcpEditorForm.enabled !== false
+        })
+        try {
+          const http = await import('../services/mcpBridge/mcpHttpClient.js')
+          await http.syncUpstreamAllowlist()
+        } catch { /* ignore */ }
+        this.mcpEditorMode = 'edit'
+        this.mcpEditorMessage = '已保存'
+        this.mcpMessage = 'MCP 服务已保存'
+        const nameKey = String(this.mcpEditorForm.name || '').trim()
+        const saved = this.mcpServerList
+          .filter(s => !s.builtin)
+          .find(s => s.name === nameKey && s.url === String(this.mcpEditorForm.url || '').trim().replace(/\/+$/, ''))
+          || this.mcpServerList.filter(s => !s.builtin).slice(-1)[0]
+        if (saved) {
+          this.mcpEditorForm.id = saved.id
+          this.mcpEditorForm.name = saved.name
+          this.mcpEditorForm.url = saved.url
+        }
+      } catch (e) {
+        this.mcpEditorMessage = e?.message || String(e)
+      } finally {
+        this.mcpBusy = false
+      }
+    },
+    async saveMcpEditorAndClose() {
+      await this.saveMcpEditor()
+      if (!this.mcpEditorMessage || this.mcpEditorMessage === '已保存') {
+        this.closeMcpEditor()
+      }
+    },
+    async deleteMcpEditorServer() {
+      if (this.mcpEditorForm.builtin) return
+      const id = this.mcpEditorForm.id
+      if (!id) return
       this.mcpBusy = true
       try {
         const mod = await import('../services/mcpBridge/mcpServerRegistry.js')
         this.mcpServerList = mod.removeMcpServer(id)
+        try {
+          const http = await import('../services/mcpBridge/mcpHttpClient.js')
+          await http.syncUpstreamAllowlist()
+        } catch { /* ignore */ }
         this.mcpMessage = '已删除'
-        try {
-          const http = await import('../services/mcpBridge/mcpHttpClient.js')
-          await http.syncUpstreamAllowlist()
-        } catch { /* ignore */ }
+        this.closeMcpEditor()
       } catch (e) {
-        this.mcpMessage = e?.message || String(e)
-      } finally {
-        this.mcpBusy = false
-      }
-    },
-    async onToggleMcpServer(id, enabled) {
-      try {
-        const mod = await import('../services/mcpBridge/mcpServerRegistry.js')
-        this.mcpServerList = mod.setMcpServerEnabled(id, enabled)
-        try {
-          const http = await import('../services/mcpBridge/mcpHttpClient.js')
-          await http.syncUpstreamAllowlist()
-        } catch { /* ignore */ }
-      } catch (e) {
-        this.mcpMessage = e?.message || String(e)
-      }
-    },
-    async probeMcpServer(id) {
-      this.mcpBusy = true
-      this.mcpServerProbeHints = { ...this.mcpServerProbeHints, [id]: '测连中…' }
-      try {
-        const launcher = await import('../services/mcpBridge/sidecarLauncher.js')
-        await launcher.startSidecarBestEffort()
-        const http = await import('../services/mcpBridge/mcpHttpClient.js')
-        const out = await http.probeUpstream(id)
-        const hint = `可用 · ${out.toolCount || 0} 个工具`
-        this.mcpServerProbeHints = { ...this.mcpServerProbeHints, [id]: hint }
-      } catch (e) {
-        this.mcpServerProbeHints = { ...this.mcpServerProbeHints, [id]: e?.message || '测连失败' }
+        this.mcpEditorMessage = e?.message || String(e)
       } finally {
         this.mcpBusy = false
       }
@@ -3960,10 +4193,20 @@ export default {
         this.mcpManual = this.mcpStatus?.sidecar?.online ? null : manual
         const reg = await import('../services/mcpBridge/mcpServerRegistry.js')
         this.mcpServerList = reg.loadMcpServersWithBuiltinFlag()
+        this.mcpView = this.mcpView || 'list'
       } catch (e) {
         this.mcpMessage = e?.message || String(e)
       } finally {
         this.mcpBusy = false
+      }
+    },
+    async refreshMcpStatusAndProbeAll() {
+      await this.refreshMcpStatus()
+      const list = Array.isArray(this.mcpServerList) ? this.mcpServerList.slice() : []
+      for (const server of list) {
+        // sequential to avoid hammering sidecar
+        // eslint-disable-next-line no-await-in-loop
+        await this.testMcpServerFromList(server)
       }
     },
     async startMcpSidecar() {
@@ -5371,6 +5614,7 @@ export default {
         this.loadSpellCheckCommentPolicy()
       }
       if (key === 'mcp') {
+        this.mcpView = 'list'
         this.refreshMcpStatus()
         import('../services/mcpBridge/spikes.js')
           .then(m => {
@@ -9481,5 +9725,310 @@ input:checked + .slider:before {
   border-radius: 1px;
   flex-shrink: 0;
   box-shadow: 0 0 4px rgba(24, 144, 255, 0.5);
+}
+
+.mcp-mgmt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mcp-mgmt-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.mcp-mgmt-status {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.mcp-mgmt-message {
+  margin: 0 0 8px;
+}
+.mcp-mgmt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-mgmt-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.mcp-mgmt-item:hover {
+  border-color: rgba(14, 165, 233, 0.4);
+  background: rgba(248, 250, 252, 0.95);
+}
+.mcp-mgmt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #adb5bd;
+  flex-shrink: 0;
+}
+.mcp-mgmt-dot.is-online { background: #2f9e44; }
+.mcp-mgmt-dot.is-offline { background: #adb5bd; }
+.mcp-mgmt-dot--inline {
+  margin-top: 0;
+  align-self: center;
+}
+.mcp-mgmt-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-mgmt-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.mcp-mgmt-item-title strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-mgmt-item-url {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-mgmt-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mcp-mgmt-tag--muted {
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+}
+.mcp-mgmt-item-actions {
+  flex-shrink: 0;
+}
+.mcp-mgmt-advanced {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.03);
+}
+.mcp-editor-builtin-advanced {
+  margin-top: 16px;
+}
+.mcp-mgmt-advanced summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}
+.mcp-mgmt-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mcp-mgmt-url-code {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-mgmt-advanced-block {
+  margin-top: 8px;
+}
+.mcp-mgmt-pre {
+  white-space: pre-wrap;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.mcp-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.mcp-editor-modal {
+  width: min(640px, 96vw);
+  max-height: min(86vh, 820px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 56px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+.mcp-editor-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.mcp-editor-modal-header h4 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: #0f172a;
+}
+.mcp-editor-modal-header p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+.mcp-editor-modal .btn-close-modal {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.mcp-editor-modal .btn-close-modal:hover {
+  color: #0f172a;
+}
+.mcp-editor-modal-body {
+  padding: 14px 18px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.mcp-editor-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+}
+.mcp-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  max-width: none;
+}
+.mcp-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+.mcp-editor-field--full {
+  grid-column: 1 / -1;
+}
+.mcp-editor-field--check {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+  font-size: 13px;
+}
+.mcp-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mcp-editor-tools {
+  margin-top: 18px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding-top: 12px;
+}
+.mcp-editor-tools-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.mcp-editor-tools-head h5 {
+  margin: 0;
+  font-size: 14px;
+}
+.mcp-editor-tools-empty {
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 8px 0;
+}
+.mcp-editor-tool {
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: rgba(248, 250, 252, 0.9);
+}
+.mcp-editor-tool-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: #0f172a;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+.mcp-editor-tool-name::-webkit-details-marker {
+  display: none;
+}
+.mcp-editor-tool-name::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 12px;
+  color: #94a3b8;
+  transition: transform 0.12s ease;
+  flex-shrink: 0;
+}
+.mcp-editor-tool[open] > .mcp-editor-tool-name::before {
+  transform: rotate(90deg);
+}
+.mcp-editor-tool-desc {
+  margin-top: 6px;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+  white-space: pre-wrap;
+}
+@media (max-width: 720px) {
+  .mcp-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .mcp-mgmt-header {
+    flex-wrap: wrap;
+  }
 }
 </style>

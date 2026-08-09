@@ -18,6 +18,17 @@ function abortError(signal) {
   }
 }
 
+const SIDECAR_OFFLINE_HINT =
+  '本机 MCP sidecar（127.0.0.1:62588）未运行。请先在设置页点击「启动本机服务」，或在仓库根目录执行：npm run mcp:sidecar'
+
+function networkErrorMessage(err) {
+  const raw = String(err?.message || err || '')
+  if (/Failed to fetch|NetworkError|ECONNREFUSED|abort|timeout|timed out/i.test(raw)) {
+    return SIDECAR_OFFLINE_HINT
+  }
+  return raw || SIDECAR_OFFLINE_HINT
+}
+
 async function postJson(url, body, { headers = {}, signal, timeoutMs = 60000 } = {}) {
   abortError(signal)
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
@@ -47,6 +58,14 @@ async function postJson(url, body, { headers = {}, signal, timeoutMs = 60000 } =
       try { json = JSON.parse(text) } catch { json = { raw: text.slice(0, 2000) } }
     }
     return { ok: res.ok, status: res.status, sessionId, json, text }
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      sessionId: '',
+      json: { message: networkErrorMessage(e), error: 'NETWORK_ERROR' },
+      text: ''
+    }
   } finally {
     if (timer) clearTimeout(timer)
     if (signal && ctrl) signal.removeEventListener?.('abort', onParent)
@@ -56,7 +75,14 @@ async function postJson(url, body, { headers = {}, signal, timeoutMs = 60000 } =
 export async function healthz({ signal } = {}) {
   try {
     const res = await fetch(MCP_HEALTHZ_URL, { method: 'GET', signal })
-    if (!res.ok) return { ok: false, online: false, status: res.status }
+    if (!res.ok) {
+      return {
+        ok: false,
+        online: false,
+        status: res.status,
+        error: `healthz HTTP ${res.status}`
+      }
+    }
     const data = await res.json()
     return {
       ok: !!data?.ok,
@@ -65,7 +91,7 @@ export async function healthz({ signal } = {}) {
       data
     }
   } catch (e) {
-    return { ok: false, online: false, error: e?.message || String(e) }
+    return { ok: false, online: false, error: networkErrorMessage(e) }
   }
 }
 
@@ -153,6 +179,125 @@ export async function probeUpstream(serverId, { signal } = {}) {
     throw err
   }
   return res.json
+}
+
+/**
+ * Probe builtin or upstream MCP and return tools for settings UI.
+ * @param {{ id: string, url?: string, headers?: Record<string,string>, builtin?: boolean }} server
+ */
+export async function probeMcpServerDetail(server, { signal } = {}) {
+  const id = String(server?.id || '').trim()
+  const isBuiltin = !!server?.builtin || id === CHAYUAN_SERVER_ID
+  if (isBuiltin) {
+    const hz = await healthz({ signal })
+    if (!hz.online) {
+      return {
+        ok: false,
+        online: false,
+        serverId: CHAYUAN_SERVER_ID,
+        url: MCP_URL,
+        toolCount: 0,
+        tools: [],
+        message: hz.error || SIDECAR_OFFLINE_HINT
+      }
+    }
+    try {
+      await initializeLocal({ signal })
+      const tools = await listLocalTools({ signal })
+      return {
+        ok: true,
+        online: true,
+        serverId: CHAYUAN_SERVER_ID,
+        url: MCP_URL,
+        agentOnline: !!hz.agentOnline,
+        toolCount: tools.length,
+        tools: tools.map(t => ({
+          name: t.name,
+          description: String(t.description || ''),
+          inputSchema: t.inputSchema || null
+        })),
+        message: hz.agentOnline ? '已连接（Agent 在线）' : '已连接（Agent 未注册）'
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        online: false,
+        serverId: CHAYUAN_SERVER_ID,
+        url: MCP_URL,
+        toolCount: 0,
+        tools: [],
+        message: e?.message || '测连失败'
+      }
+    }
+  }
+
+  // Ensure draft/current server is in allowlist before probe
+  const extras = getUpstreamAllowlistPayload().filter(s => s.id !== id)
+  if (server?.url) {
+    extras.push({
+      id: id || 'draft',
+      name: String(server.name || id || 'draft'),
+      url: String(server.url).trim().replace(/\/+$/, ''),
+      headers: server.headers && typeof server.headers === 'object' ? server.headers : {}
+    })
+  }
+  const allowRes = await postJson(`${MCP_BASE_URL}/upstream/allowlist`, { servers: extras }, { signal, timeoutMs: 15000 })
+  if (!allowRes.ok) {
+    return {
+      ok: false,
+      online: false,
+      serverId: id,
+      url: server?.url || '',
+      toolCount: 0,
+      tools: [],
+      message: allowRes.json?.message || '同步白名单失败（请先启动本机 sidecar）'
+    }
+  }
+  const probeId = id || 'draft'
+  try {
+    const res = await postJson(`${MCP_BASE_URL}/upstream/probe`, { serverId: probeId }, { signal, timeoutMs: 30000 })
+    if (!res.ok || res.json?.ok === false) {
+      return {
+        ok: false,
+        online: false,
+        serverId: probeId,
+        url: server?.url || '',
+        toolCount: 0,
+        tools: [],
+        message: res.json?.message || '上游测连失败'
+      }
+    }
+    const tools = Array.isArray(res.json?.tools) ? res.json.tools : []
+    // Prefer full list when available
+    let fullTools = tools
+    try {
+      const listed = await listUpstreamTools(probeId, { signal })
+      if (listed.length) fullTools = listed
+    } catch { /* probe tools preview is enough */ }
+    return {
+      ok: true,
+      online: true,
+      serverId: probeId,
+      url: server?.url || res.json?.url || '',
+      toolCount: Number(res.json?.toolCount || fullTools.length || 0),
+      tools: fullTools.map(t => ({
+        name: t.name,
+        description: String(t.description || ''),
+        inputSchema: t.inputSchema || null
+      })),
+      message: `已连接 · ${Number(res.json?.toolCount || fullTools.length || 0)} 个工具`
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      online: false,
+      serverId: probeId,
+      url: server?.url || '',
+      toolCount: 0,
+      tools: [],
+      message: e?.message || '上游测连失败'
+    }
+  }
 }
 
 export async function listUpstreamTools(serverId, { signal } = {}) {

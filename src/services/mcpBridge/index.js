@@ -46,6 +46,7 @@ export {
 export {
   healthz as mcpHealthz,
   probeMcpHealthBundle,
+  probeMcpServerDetail,
   probeUpstream,
   syncUpstreamAllowlist
 } from './mcpHttpClient.js'

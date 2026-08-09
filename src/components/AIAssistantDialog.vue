@@ -288,18 +288,14 @@
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
         <div class="mcp-service-banner" role="note">
-          <div class="mcp-service-banner-main">
-            <div class="mcp-service-banner-title">察元 AI 文档助手 · MCP 服务</div>
-            <p class="mcp-service-banner-text">
-              把下方地址填进 Claude Code、Codex、Hermes、OpenClaw、Cursor 等 MCP 客户端，即可对当前文档说「帮我检查XX」「翻译成英文」「找出错别字」。助手页开启「文档智能体」时，本页对话走同一 MCP 通道，并可合并设置里添加的其它 HTTP MCP。
-            </p>
-            <div class="mcp-service-banner-url-row">
-              <code class="mcp-service-banner-url" :title="mcpUrl">{{ mcpUrl }}</code>
-              <button type="button" class="mcp-service-banner-copy" @click="copyMcpServiceUrl">
-                {{ mcpUrlCopyHint || '复制' }}
-              </button>
-            </div>
-          </div>
+          <span class="mcp-service-banner-label">MCP 服务地址</span>
+          <code class="mcp-service-banner-url" :title="mcpUrl">{{ mcpUrl }}</code>
+          <button type="button" class="mcp-service-banner-copy" @click="copyMcpServiceUrl">
+            {{ mcpUrlCopyHint || '复制' }}
+          </button>
+          <button type="button" class="mcp-service-banner-detail" @click="showMcpGuideDialog = true">
+            查看详情
+          </button>
         </div>
         <div
           v-if="mcpEnabled && mcpSoftBanner"
@@ -1839,7 +1835,7 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
-        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen }">
+        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen }">
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -1916,40 +1912,128 @@
             multiple
             @change="onAttachmentChange"
           />
-          <label
-            class="mcp-doc-agent-toggle"
-            :title="'经本机 MCP 操作当前文档，并可调用设置中添加的其它 HTTP MCP（与 Cursor 等外部智能体同一通道）'"
-          >
-            <input
-              type="checkbox"
-              :checked="mcpEnabled"
-              @change="onMcpEnabledChange($event.target.checked)"
-            />
-            <span class="mcp-doc-agent-toggle-label">文档智能体</span>
-            <span
-              class="mcp-health-dot"
-              :class="`mcp-health-dot--${mcpHealthLevel || 'gray'}`"
-              :title="mcpHealthHint"
-              @click.prevent="refreshMcpHealthBundle({ deep: true })"
-            ></span>
-          </label>
+          <div class="composer-tools">
+          <div class="mcp-select-wrap" ref="mcpSelectRef">
+            <button
+              type="button"
+              class="composer-tool-btn mcp-select-btn"
+              :class="{ 'is-active': mcpEnabled, 'is-open': mcpDropdownOpen }"
+              :title="mcpComposerButtonTitle"
+              aria-label="文档智能体"
+              aria-haspopup="true"
+              :aria-expanded="mcpDropdownOpen ? 'true' : 'false'"
+              @click="toggleMcpDropdown"
+              @blur="onMcpSelectBlur"
+            >
+              <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M8 4.8h5.1L16.5 8.2V18.5A1.5 1.5 0 0 1 15 20H8a1.5 1.5 0 0 1-1.5-1.5v-12A1.5 1.5 0 0 1 8 4.8Z"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M13 4.9V8.2h3.4M9.4 12.2h4.4M9.4 15.2h3.2"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M17.6 12.2 19 10.8M17.6 12.2 19 13.6M17.6 12.2h-1.8"
+                  stroke="currentColor"
+                  stroke-width="1.55"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span
+                class="composer-tool-dot"
+                :class="`is-${mcpHealthLevel || 'gray'}`"
+              ></span>
+              <span v-if="mcpEnabled && mcpEnabledServerCount > 0" class="composer-tool-badge">{{ mcpEnabledServerCount }}</span>
+            </button>
+            <div
+              v-if="mcpDropdownOpen"
+              class="mcp-dropdown"
+              @mousedown.prevent
+            >
+              <label class="mcp-dropdown-row mcp-dropdown-row--master">
+                <input
+                  type="checkbox"
+                  :checked="mcpEnabled"
+                  @change="onMcpEnabledChange($event.target.checked)"
+                />
+                <span class="mcp-dropdown-row-name">文档智能体</span>
+                <span
+                  class="mcp-dropdown-status"
+                  :class="`is-${mcpHealthLevel || 'gray'}`"
+                  :title="mcpHealthHint || ''"
+                >{{ mcpHealthHintShort }}</span>
+              </label>
+              <div class="mcp-dropdown-divider"></div>
+              <label
+                v-for="server in mcpServerList"
+                :key="server.id"
+                class="mcp-dropdown-row"
+                :class="{ disabled: !mcpEnabled }"
+                :title="server.url"
+              >
+                <input
+                  type="checkbox"
+                  :checked="server.enabled !== false"
+                  :disabled="!mcpEnabled"
+                  @change="onMcpServerEnabledChange(server.id, $event.target.checked)"
+                />
+                <span class="mcp-dropdown-row-name">{{ server.name }}</span>
+                <span v-if="server.builtin" class="mcp-dropdown-tag">内置</span>
+              </label>
+              <div v-if="!mcpServerList.length" class="mcp-dropdown-empty">暂无服务</div>
+              <div class="mcp-dropdown-foot">
+                <button type="button" class="mcp-dropdown-link" @click="refreshMcpHealthBundle({ deep: true })">刷新</button>
+                <button type="button" class="mcp-dropdown-link" @click="openMcpSettingsFromComposer">管理</button>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
-            class="knowledge-base-btn"
+            class="composer-tool-btn knowledge-base-btn"
             :title="currentChatKbBoundCount ? `已绑定 ${currentChatKbBoundCount} 个知识库 · 点击编辑` : '选择知识库'"
             aria-label="选择知识库"
-            :class="{ 'has-binding': currentChatKbBoundCount > 0 }"
+            :class="{ 'is-active': currentChatKbBoundCount > 0 }"
             @click="openKnowledgeBaseDialog"
           >
-            <svg class="knowledge-base-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v15.5A2.5 2.5 0 0 1 17.5 20H7.5A2.5 2.5 0 0 1 5 17.5zm2.5-.5a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V4zm2 3H16v1.8H9.5zm0 3.8H16v1.8H9.5zm-4 9.2A2.5 2.5 0 0 1 3 16.5V7h2v9.5a.5.5 0 0 0 .5.5z"/>
+            <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M6.5 5.5h9.2A1.8 1.8 0 0 1 17.5 7.3v11.2H8.3A1.8 1.8 0 0 1 6.5 16.7V5.5Z"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M6.5 16.7A1.8 1.8 0 0 0 8.3 18.5h9.2"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+              <path d="M9.5 9h5.2M9.5 12.2h5.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             </svg>
-            <span v-if="currentChatKbBoundCount > 0" class="kb-binding-badge">{{ currentChatKbBoundCount }}</span>
+            <span v-if="currentChatKbBoundCount > 0" class="composer-tool-badge">{{ currentChatKbBoundCount }}</span>
           </button>
           <div class="model-select-wrap" ref="modelSelectRef">
-            <button type="button" class="model-select-btn" @click="modelDropdownOpen = !modelDropdownOpen" @blur="onModelSelectBlur" :title="selectedModelName">
-              <img :src="publicAssetUrl(selectedModelIcon)" class="model-select-icon" alt="" decoding="async" />
-              <span class="model-select-arrow">▾</span>
+            <button
+              type="button"
+              class="composer-tool-btn model-select-btn"
+              :class="{ 'is-open': modelDropdownOpen }"
+              @click="toggleModelDropdown"
+              @blur="onModelSelectBlur"
+              :title="selectedModelName"
+              aria-label="配置模型"
+            >
+              <img :src="publicAssetUrl(selectedModelIcon)" class="composer-tool-logo" alt="" decoding="async" />
+              <svg class="composer-tool-caret" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
             </button>
             <div v-if="modelDropdownOpen" class="model-dropdown">
               <div v-if="filteredModelGroups.length === 0" class="model-dropdown-empty">
@@ -1997,6 +2081,71 @@
               </template>
             </div>
           </div>
+          <button
+            type="button"
+            class="composer-tool-btn"
+            title="选择附件"
+            aria-label="选择附件"
+            @click="openAttachmentPicker"
+          >
+            <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M15.2 7.3 8.55 13.95a2.4 2.4 0 1 0 3.4 3.4l7.05-7.05a3.9 3.9 0 0 0-5.52-5.51L6.3 11.97a5.4 5.4 0 0 0 7.64 7.64l5.9-5.9"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="selectionContextSnapshot"
+            type="button"
+            class="composer-tool-btn"
+            :class="{ 'is-active': !selectionContextCollapsed }"
+            :title="selectionContextCollapsed ? '展开文档感知' : '收起文档感知'"
+            aria-label="展开文档感知"
+            @click="selectionContextCollapsed = !selectionContextCollapsed"
+          >
+            <svg
+              class="composer-tool-icon composer-tool-toggle"
+              :class="{ 'is-expanded': !selectionContextCollapsed }"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M9 7.5 15 12l-6 4.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="composer-tool-btn composer-tool-btn--send"
+            :class="{ 'is-launching': sendLaunchEffect.active }"
+            :disabled="isStreaming || !hasPendingInput"
+            @click="sendMessage"
+            title="发送"
+            aria-label="发送"
+          >
+            <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5.2 11.2 18.4 5.4c.7-.3 1.4.4 1.1 1.1l-5.8 13.2c-.3.7-1.3.7-1.6 0l-2.1-5.2-5.2-2.1c-.7-.3-.7-1.3 0-1.6Z"
+                fill="currentColor"
+              />
+              <path
+                d="m10.7 13.3 7.6-7.6"
+                stroke="#fff"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          </div>
           <textarea
             ref="composerInputRef"
             v-model="userInput"
@@ -2006,38 +2155,6 @@
             @input="handleComposerInput"
             @keydown="handleComposerKeydown"
           />
-          <button
-            type="button"
-            class="tool-icon-btn"
-            title="选择附件"
-            @click="openAttachmentPicker"
-          >
-            <img :src="aiDialogAssetsInline.chatAttach" alt="" class="tool-icon-image" />
-          </button>
-          <button
-            v-if="selectionContextSnapshot"
-            type="button"
-            class="tool-icon-btn"
-            :title="selectionContextCollapsed ? '展开文档感知' : '收起文档感知'"
-            @click="selectionContextCollapsed = !selectionContextCollapsed"
-          >
-            <img
-              :src="aiDialogAssetsInline.chatToggle"
-              alt=""
-              class="tool-icon-image tool-icon-toggle"
-              :class="{ expanded: !selectionContextCollapsed }"
-            />
-          </button>
-          <button
-            type="button"
-            class="tool-icon-btn send"
-            :class="{ 'is-launching': sendLaunchEffect.active }"
-            :disabled="isStreaming || !hasPendingInput"
-            @click="sendMessage"
-            title="发送"
-          >
-            <img :src="aiDialogAssetsInline.chatSend" alt="" class="tool-icon-image" />
-          </button>
         </div>
         </div>
         <div v-if="selectionContextSnapshot" class="context-sense-panel" :class="{ collapsed: selectionContextCollapsed }">
@@ -2074,6 +2191,50 @@
       :visible="feedbackDialogVisible"
       @close="feedbackDialogVisible = false"
     />
+
+    <div
+      v-if="showMcpGuideDialog"
+      class="assistant-recommend-modal-overlay"
+      @click.self="showMcpGuideDialog = false"
+    >
+      <div class="mcp-guide-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-guide-title">
+        <div class="modal-header">
+          <h4 id="mcp-guide-title">MCP 连接说明</h4>
+          <button type="button" class="btn-close-modal" @click="showMcpGuideDialog = false">×</button>
+        </div>
+        <div class="modal-body mcp-guide-modal-body">
+          <p>任意支持 <strong>Streamable HTTP MCP</strong> 的客户端均可连接（Cursor / Claude Code / Codex / Hermes / OpenClaw 等），无需 Token。</p>
+          <p class="mcp-guide-url-line">
+            服务地址：
+            <code>{{ mcpUrl }}</code>
+            <button type="button" class="mcp-service-banner-copy" @click="copyMcpServiceUrl">
+              {{ mcpUrlCopyHint || '复制' }}
+            </button>
+          </p>
+          <h5>1. 启动本机 sidecar</h5>
+          <pre class="mcp-guide-pre">npm run mcp:sidecar
+# 或
+node mcp-sidecar/server.mjs</pre>
+          <p>默认监听 <code>127.0.0.1:62588</code>。Windows 也可双击 <code>mcp-sidecar/start-mcp.cmd</code>（需本机 Node 18+）。</p>
+          <h5>2. 打开 WPS 并加载察元插件</h5>
+          <p>加载项会注册 Agent。请先启动 sidecar，再打开文档。</p>
+          <h5>3. 客户端配置示例</h5>
+          <pre class="mcp-guide-pre">{{ mcpClientConfigExample }}</pre>
+          <h5>4. 口语示例</h5>
+          <ul class="mcp-guide-list">
+            <li>帮我检查这份答辩状的保密风险</li>
+            <li>帮我翻译成英文，并插到每一段后面</li>
+            <li>帮我找出错别字，用批注标出来</li>
+          </ul>
+          <h5>5. 助手页文档智能体</h5>
+          <p>输入区图标可启用文档智能体，并勾选设置里添加的其它 HTTP MCP；与外部客户端共用同一本机通道。</p>
+          <p class="mcp-guide-foot">
+            更多管理请到
+            <button type="button" class="mcp-guide-link" @click="openMcpSettingsFromGuide">设置 → MCP 服务管理</button>
+          </p>
+        </div>
+      </div>
+    </div>
 
     <div v-if="showAssistantRecommendModal" class="assistant-recommend-modal-overlay" @click.self="showAssistantRecommendModal = false">
       <div class="assistant-recommend-modal">
@@ -2289,7 +2450,9 @@ import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { MCP_URL } from '../services/mcpBridge/config.js'
 import {
   loadMcpEnabled,
-  saveMcpEnabled
+  loadMcpServersWithBuiltinFlag,
+  saveMcpEnabled,
+  setMcpServerEnabled
 } from '../services/mcpBridge/mcpServerRegistry.js'
 import {
   probeMcpHealthBundle
@@ -3756,11 +3919,14 @@ export default {
       activeSidebarTab: 'assistants',
       mcpUrl: MCP_URL || 'http://127.0.0.1:62588/mcp',
       mcpUrlCopyHint: '',
+      showMcpGuideDialog: false,
       mcpEnabled: true,
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
       activeMcpTurnContext: null,
+      mcpDropdownOpen: false,
+      mcpServerList: [],
       sidebarWidth: 300,
       sidebarCollapsed: false,
       lastExpandedSidebarWidth: 300,
@@ -3884,6 +4050,34 @@ export default {
     },
     selectedModelIcon() {
       return this.selectedModel ? (getModelLogoPath(this.selectedModel.providerId) || 'images/ai-assistant.svg') : 'images/ai-assistant.svg'
+    },
+    mcpEnabledServerCount() {
+      return (this.mcpServerList || []).filter(s => s && s.enabled !== false).length
+    },
+    mcpComposerButtonTitle() {
+      if (!this.mcpEnabled) return '文档智能体（已关闭）· 点击选择 MCP'
+      const n = this.mcpEnabledServerCount
+      const health = this.mcpHealthHint ? ` · ${this.mcpHealthHint}` : ''
+      return `文档智能体（已启用 ${n} 个 MCP）${health}`
+    },
+    mcpHealthHintShort() {
+      if (!this.mcpEnabled) return '已关闭'
+      const level = this.mcpHealthLevel || 'gray'
+      if (level === 'green') return '就绪'
+      if (level === 'yellow') return '部分可用'
+      return '未就绪'
+    },
+    mcpClientConfigExample() {
+      const url = String(this.mcpUrl || 'http://127.0.0.1:62588/mcp')
+      return [
+        '{',
+        '  "mcpServers": {',
+        '    "chayuan-wps": {',
+        `      "url": "${url}"`,
+        '    }',
+        '  }',
+        '}'
+      ].join('\n')
     },
     welcomeTitle() {
       if (this.hasConfiguredChatModels) {
@@ -4210,6 +4404,7 @@ export default {
     } catch {
       this.mcpEnabled = true
     }
+    this.reloadMcpServerList()
     if (this.mcpEnabled) {
       this.runWhenIdle(() => this.refreshMcpHealthBundle())
     }
@@ -4910,11 +5105,48 @@ export default {
       if (kind === 'assistant-task') return '助手任务'
       return ''
     },
+    reloadMcpServerList() {
+      try {
+        this.mcpServerList = loadMcpServersWithBuiltinFlag()
+      } catch {
+        this.mcpServerList = []
+      }
+    },
+    toggleMcpDropdown() {
+      this.modelDropdownOpen = false
+      this.mcpDropdownOpen = !this.mcpDropdownOpen
+      if (this.mcpDropdownOpen) {
+        this.reloadMcpServerList()
+        this.refreshMcpHealthBundle()
+      }
+    },
+    onMcpSelectBlur() {
+      setTimeout(() => { this.mcpDropdownOpen = false }, 150)
+    },
     onMcpEnabledChange(enabled) {
       this.mcpEnabled = !!enabled
       saveMcpEnabled(this.mcpEnabled)
-      if (this.mcpEnabled) this.refreshMcpHealthBundle()
-      else this.mcpSoftBanner = ''
+      if (this.mcpEnabled) {
+        this.reloadMcpServerList()
+        this.refreshMcpHealthBundle()
+      } else {
+        this.mcpSoftBanner = ''
+      }
+    },
+    onMcpServerEnabledChange(serverId, enabled) {
+      try {
+        this.mcpServerList = setMcpServerEnabled(serverId, enabled)
+        if (this.mcpEnabled) this.refreshMcpHealthBundle()
+      } catch (e) {
+        console.warn('[mcp] toggle server failed', e)
+        this.reloadMcpServerList()
+      }
+    },
+    openMcpSettingsFromComposer() {
+      this.mcpDropdownOpen = false
+      try {
+        openSettingsWindow({ menu: 'general-settings', sub: 'mcp' }, { title: 'MCP 服务' })
+      } catch (e) { /* noop */ }
     },
     async refreshMcpHealthBundle(options = {}) {
       try {
@@ -7175,6 +7407,10 @@ export default {
       this.selectedModelId = m.id
       this.modelDropdownOpen = false
     },
+    toggleModelDropdown() {
+      this.mcpDropdownOpen = false
+      this.modelDropdownOpen = !this.modelDropdownOpen
+    },
     onModelSelectBlur() {
       setTimeout(() => { this.modelDropdownOpen = false }, 150)
     },
@@ -7287,6 +7523,12 @@ export default {
         }, 1600)
       }
     },
+    openMcpSettingsFromGuide() {
+      this.showMcpGuideDialog = false
+      try {
+        openSettingsWindow({ menu: 'general-settings', sub: 'mcp' }, { title: 'MCP 服务管理' })
+      } catch (e) { /* noop */ }
+    },
     openExternalWebsite(url) {
       const normalizedUrl = String(url || '').trim()
       if (!normalizedUrl) return
@@ -7321,6 +7563,7 @@ export default {
     },
     openKnowledgeBaseDialog() {
       this.modelDropdownOpen = false
+      this.mcpDropdownOpen = false
       this.showKnowledgeBaseDialog = true
     },
     closeKnowledgeBaseDialog() {
@@ -17375,40 +17618,30 @@ export default {
 }
 
 .mcp-service-banner {
-  margin: 0 0 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(37, 99, 235, 0.16);
-  border-radius: 12px;
-  background:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
-}
-.mcp-service-banner-title {
-  color: #1e3a8a;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.4;
-  margin-bottom: 4px;
-}
-.mcp-service-banner-text {
-  margin: 0 0 8px;
-  color: #475569;
-  font-size: 12.5px;
-  line-height: 1.65;
-}
-.mcp-service-banner-url-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 10px;
+  background: rgba(239, 246, 255, 0.72);
   min-width: 0;
+}
+.mcp-service-banner-label {
+  flex: 0 0 auto;
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 .mcp-service-banner-url {
   flex: 1;
   min-width: 0;
-  padding: 7px 10px;
-  border-radius: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
   border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.92);
   color: #0f172a;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -17416,16 +17649,106 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mcp-service-banner-copy {
+.mcp-service-banner-copy,
+.mcp-service-banner-detail {
   flex: 0 0 auto;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(37, 99, 235, 0.28);
-  background: #2563eb;
-  color: #fff;
+  padding: 5px 10px;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+}
+.mcp-service-banner-copy {
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  background: #2563eb;
+  color: #fff;
+}
+.mcp-service-banner-detail {
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  background: #fff;
+  color: #1d4ed8;
+}
+.mcp-service-banner-detail:hover {
+  background: #eff6ff;
+}
+.mcp-guide-modal {
+  width: min(560px, 92vw);
+  max-height: min(78vh, 720px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+.mcp-guide-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.mcp-guide-modal .modal-header h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+.mcp-guide-modal-body {
+  padding: 12px 16px 18px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #334155;
+}
+.mcp-guide-modal-body h5 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+.mcp-guide-modal-body p {
+  margin: 0 0 8px;
+}
+.mcp-guide-url-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mcp-guide-url-line code {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-size: 12px;
+}
+.mcp-guide-pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+.mcp-guide-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.mcp-guide-foot {
+  margin-top: 12px !important;
+  color: #64748b;
+}
+.mcp-guide-link {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
 }
 .mcp-soft-banner {
   margin: 0 16px 10px;
@@ -17436,24 +17759,144 @@ export default {
   font-size: 12px;
   line-height: 1.45;
 }
-.mcp-doc-agent-toggle {
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  order: 1;
+}
+.composer-tool-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-right: 4px;
-  padding: 4px 6px;
-  border-radius: 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
   cursor: pointer;
-  user-select: none;
-  font-size: 12px;
-  color: #445;
-  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
-.mcp-doc-agent-toggle input {
-  margin: 0;
+.composer-tool-btn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
 }
-.mcp-doc-agent-toggle-label {
-  line-height: 1;
+.composer-tool-btn.is-open {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0369a1;
+}
+.composer-tool-btn.is-active {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+.composer-tool-btn.knowledge-base-btn.is-active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+.composer-tool-btn:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+}
+.composer-tool-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.composer-tool-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  display: block;
+  border-radius: 3px;
+}
+.composer-tool-caret {
+  width: 10px;
+  height: 10px;
+  margin-left: 1px;
+  opacity: 0.72;
+}
+.composer-tool-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1.5px #fff;
+  pointer-events: none;
+}
+.composer-tool-dot {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #adb5bd;
+  box-shadow: 0 0 0 1.5px #fff;
+  pointer-events: none;
+}
+.composer-tool-dot.is-green { background: #22c55e; }
+.composer-tool-dot.is-yellow { background: #f59e0b; }
+.composer-tool-dot.is-gray { background: #adb5bd; }
+.composer-tool-toggle {
+  transition: transform 0.18s ease;
+}
+.composer-tool-toggle.is-expanded {
+  transform: rotate(90deg);
+}
+.composer-tool-btn--send {
+  margin-left: auto;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0284c7;
+}
+.composer-tool-btn--send:hover:not(:disabled) {
+  background: rgba(14, 165, 233, 0.2);
+  color: #0369a1;
+}
+.composer-tool-btn--send:disabled {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  opacity: 1;
+}
+.composer-tool-btn--send.is-launching {
+  animation: send-button-launch 0.72s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+.composer-tool-btn--send.is-launching::before,
+.composer-tool-btn--send.is-launching::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.composer-tool-btn--send.is-launching::before {
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.34), rgba(59, 130, 246, 0) 70%);
+  animation: send-button-wave 0.72s ease-out both;
+}
+.composer-tool-btn--send.is-launching::after {
+  border: 1px solid rgba(59, 130, 246, 0.42);
+  animation: send-button-ring 0.72s ease-out both;
+}
+.mcp-select-wrap {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 41;
 }
 .mcp-health-dot {
   width: 8px;
@@ -17465,6 +17908,97 @@ export default {
 .mcp-health-dot--green { background: #2f9e44; }
 .mcp-health-dot--yellow { background: #f08c00; }
 .mcp-health-dot--gray { background: #adb5bd; }
+.mcp-dropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(240px, 72vw);
+  max-height: min(280px, 45vh);
+  overflow: auto;
+  padding: 6px 0;
+  border: 1px solid var(--ai-border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+.mcp-dropdown-divider {
+  height: 1px;
+  margin: 2px 0;
+  background: rgba(15, 23, 42, 0.08);
+}
+.mcp-dropdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.mcp-dropdown-row--master {
+  font-weight: 600;
+}
+.mcp-dropdown-row:hover {
+  background: rgba(14, 165, 233, 0.06);
+}
+.mcp-dropdown-row.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mcp-dropdown-row input {
+  flex-shrink: 0;
+  margin: 0;
+}
+.mcp-dropdown-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #0f172a;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-dropdown-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.mcp-dropdown-status.is-green { color: #2f9e44; }
+.mcp-dropdown-status.is-yellow { color: #d97706; }
+.mcp-dropdown-status.is-gray { color: #94a3b8; }
+.mcp-dropdown-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(15, 118, 110, 0.1);
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 600;
+}
+.mcp-dropdown-empty {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.mcp-dropdown-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px 2px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  margin-top: 2px;
+}
+.mcp-dropdown-link {
+  border: 0;
+  background: transparent;
+  color: #0369a1;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.mcp-dropdown-link:hover {
+  text-decoration: underline;
+}
 .mcp-lane-badge {
   display: inline-block;
   margin-right: 6px;
@@ -20525,19 +21059,14 @@ export default {
 
 .input-row {
   display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 8px;
-  /* WPS 侧边栏宽度收窄时,默认 nowrap 会把 textarea 挤到几像素宽,
-     于是用户每打一个汉字都换行。允许工具按钮在窄宽下整体换行,textarea 仍能保持可读宽度。 */
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
 .input-row > .text-input {
-  /* textarea 在所有同行按钮之上独占一条:flex-basis 100% 强制它不被挤压。
-     窄宽下整体表现为"输入框一条 + 工具按钮一条",而非逐字符断行。 */
-  flex-basis: 100%;
+  width: 100%;
   min-width: 0;
-  order: -1;
+  order: 0;
 }
 
 .chat-attachment-input {
@@ -20598,62 +21127,6 @@ export default {
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
 }
 
-.knowledge-base-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 38px;
-  width: 42px;
-  padding: 8px 10px;
-  border: 1px solid var(--ai-border);
-  border-radius: var(--ai-radius-sm);
-  background: #fff;
-  color: var(--ai-text);
-  cursor: pointer;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.knowledge-base-btn:hover {
-  border-color: #0ea5e9;
-}
-
-.knowledge-base-btn.has-binding {
-  border-color: #1d4ed8;
-  background: #1d4ed8;
-  color: #fff;
-  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.18), 0 8px 18px rgba(29, 78, 216, 0.22);
-}
-
-.knowledge-base-btn.has-binding:hover {
-  border-color: #1e40af;
-  background: #1e40af;
-}
-
-.kb-binding-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  background: #0f172a;
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  border-radius: 9px;
-  min-width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-  box-shadow: 0 0 0 2px white;
-}
-
-.knowledge-base-icon {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
 .model-select-wrap {
   position: relative;
   flex-shrink: 0;
@@ -20661,31 +21134,8 @@ export default {
 }
 
 .model-select-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid var(--ai-border);
-  border-radius: var(--ai-radius-sm);
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--ai-text);
-}
-
-.model-select-btn:hover {
-  border-color: #0ea5e9;
-}
-
-.model-select-icon {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.model-select-arrow {
-  font-size: 10px;
-  color: var(--ai-text-muted);
+  width: 40px;
+  gap: 0;
 }
 
 .model-dropdown {
@@ -20865,76 +21315,6 @@ export default {
 
 .text-input:focus {
   outline: none;
-}
-
-.tool-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  position: relative;
-  background: rgba(248, 250, 252, 0.72);
-  border-radius: 10px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
-}
-
-.tool-icon-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  filter: saturate(1.08);
-  background: rgba(239, 246, 255, 0.95);
-}
-
-.tool-icon-btn:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-  filter: grayscale(0.25);
-}
-
-.tool-icon-image {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
-.tool-icon-btn.send .tool-icon-image {
-  width: 22px;
-  height: 22px;
-}
-
-.tool-icon-btn.send.is-launching {
-  animation: send-button-launch 0.72s cubic-bezier(0.2, 0.9, 0.2, 1) both;
-}
-
-.tool-icon-btn.send.is-launching::before,
-.tool-icon-btn.send.is-launching::after {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  pointer-events: none;
-}
-
-.tool-icon-btn.send.is-launching::before {
-  background: radial-gradient(circle, rgba(125, 211, 252, 0.34), rgba(59, 130, 246, 0) 70%);
-  animation: send-button-wave 0.72s ease-out both;
-}
-
-.tool-icon-btn.send.is-launching::after {
-  border: 1px solid rgba(59, 130, 246, 0.42);
-  animation: send-button-ring 0.72s ease-out both;
-}
-
-.tool-icon-toggle {
-  transition: transform 0.18s ease;
-}
-
-.tool-icon-toggle.expanded {
-  transform: rotate(90deg);
 }
 
 .attachment-list {

@@ -79,19 +79,58 @@ function readDiskMarkers() {
   }
 }
 
+function tryStopPid(pid) {
+  if (!pid || pid === process.pid) return false
+  try {
+    process.kill(pid, 0)
+  } catch {
+    return false
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    try { process.kill(pid) } catch { /* ignore */ }
+  }
+  const deadline = Date.now() + 2500
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    const waitUntil = Date.now() + 50
+    while (Date.now() < waitUntil) { /* spin */ }
+  }
+  try { process.kill(pid, 'SIGKILL') } catch { /* ignore */ }
+  return true
+}
+
 function acquireLock() {
   const lock = lockFilePath()
   try {
     if (fs.existsSync(lock)) {
       const prev = JSON.parse(fs.readFileSync(lock, 'utf8') || '{}')
       if (prev.pid && prev.pid !== process.pid) {
+        let alive = false
         try {
           process.kill(prev.pid, 0)
-          console.error(`[chayuan-mcp] already running pid=${prev.pid} port=${prev.port || port}`)
-          console.error(`[chayuan-mcp] dataDir=${dataDir}`)
-          process.exit(2)
+          alive = true
         } catch {
           // stale lock
+        }
+        if (alive) {
+          const prevPort = Number(prev.port) || 0
+          // Port migration (e.g. 3920 → 62588): stop the old instance and take over.
+          if (prevPort && prevPort !== port) {
+            console.warn(
+              `[chayuan-mcp] replacing old sidecar pid=${prev.pid} port=${prevPort} → ${port}`
+            )
+            tryStopPid(prev.pid)
+          } else {
+            console.error(`[chayuan-mcp] already running pid=${prev.pid} port=${prevPort || port}`)
+            console.error(`[chayuan-mcp] dataDir=${dataDir}`)
+            process.exit(2)
+          }
         }
       }
     }

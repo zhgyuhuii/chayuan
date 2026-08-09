@@ -67,10 +67,10 @@ export const TOOLS = [
     name: 'document_open',
     description: [
       'WHAT: Open a local Word/WPS file so it becomes the active document in a user-visible window.',
-      'WHEN: 「用WPS打开…」「打开桌面\\起诉\\答辩状.docx」「open this file in WPS」. Always prefer absolute Windows paths.',
+      'WHEN: 「用WPS打开…」「打开桌面\\工作文档\\年度战略规划报告.docx」「open this file in WPS」. Always prefer absolute Windows paths.',
       'NOT: Do not use fs_read / read_file for .docx binary. Do not assume alreadyOpen means the user can see it — check ui.documentVisibleInWindowTitle.',
       'HOW: Default viaOs=true (shell/wps.exe /wps) to avoid headless Preview/-Embedding hosts; force=true re-opens even if Agent reports alreadyOpen; activate=true brings window forward.',
-      'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\起诉\\\\答辩状.docx","viaOs":true,"force":true,"activate":true}'
+      'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\工作文档\\\\年度战略规划报告.docx","viaOs":true,"force":true,"activate":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     inputSchema: {
@@ -80,7 +80,7 @@ export const TOOLS = [
       properties: {
         path: {
           type: 'string',
-          description: 'Absolute local file path. Example: C:\\Users\\zhgyu\\Desktop\\起诉\\答辩状.docx'
+          description: 'Absolute local file path. Example: C:\\Users\\me\\Desktop\\工作文档\\年度战略规划报告.docx'
         },
         activate: {
           type: 'boolean',
@@ -102,9 +102,9 @@ export const TOOLS = [
     name: 'document_ensure_open',
     description: [
       'WHAT: No-op if ActiveDocument already matches path; otherwise open that path.',
-      'WHEN: Pipeline guard before edits — 「确保答辩状是当前文档」.',
+      'WHEN: Pipeline guard before edits — 「确保年度战略规划报告是当前文档」.',
       'NOT: Prefer document_open(viaOs/force) when the user reports they cannot see the window.',
-      'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\a.docx"}'
+      'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\工作文档\\\\年度战略规划报告.docx"}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     inputSchema: {
@@ -205,7 +205,7 @@ export const TOOLS = [
       'WHAT: Find occurrences of a phrase; return start/end matches for anchoring writes/comments.',
       'WHEN: 「找到这句话」「定位某词」「where is … in the doc」 before replace/comment/insert.',
       'NOT: Not a semantic search. For listing all paragraphs use document_list_paragraphs.',
-      'EXAMPLE: {"text":"答辩人认为","hintStart":0,"maxMatches":5}'
+      'EXAMPLE: {"text":"执行摘要","hintStart":0,"maxMatches":5}'
     ].join(' '),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     inputSchema: {

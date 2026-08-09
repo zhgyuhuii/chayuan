@@ -125,25 +125,55 @@ export function saveMcpServers(servers) {
   return loadMcpServersWithBuiltinFlag()
 }
 
+function allocateUniqueServerId(preferred, excludeId = '') {
+  const existing = new Set(
+    loadMcpServers()
+      .map(s => s.id)
+      .filter(id => id && id !== excludeId)
+  )
+  existing.add(CHAYUAN_SERVER_ID)
+  let base = normalizeSlug(preferred || 'mcp')
+  if (!base || base === CHAYUAN_SERVER_ID) base = `mcp_${Date.now().toString(36)}`
+  if (!existing.has(base)) return base
+  for (let i = 2; i < 1000; i += 1) {
+    const candidate = `${base}_${i}`
+    if (!existing.has(candidate)) return candidate
+  }
+  return `${base}_${Date.now().toString(36)}`
+}
+
+/**
+ * Create or update a user MCP server.
+ * If `id` is empty on create, generate from name (unique). Existing id is kept on update.
+ */
 export function upsertMcpServer(input) {
-  const id = normalizeSlug(input?.id || input?.name)
+  const name = String(input?.name || '').trim()
+  const rawId = String(input?.id || '').trim()
+  const extras = loadMcpServers().filter(s => !s.builtin)
+  const updating = rawId ? extras.find(s => s.id === normalizeSlug(rawId)) : null
+  const id = updating
+    ? updating.id
+    : allocateUniqueServerId(rawId || name || 'mcp')
   if (!id || id === CHAYUAN_SERVER_ID) {
     throw new Error('不能覆盖内置察元 MCP 服务器')
   }
   if (!isValidHttpMcpUrl(input?.url)) {
     throw new Error('仅支持 http(s) Streamable HTTP URL')
   }
+  if (!name && !updating) {
+    throw new Error('请填写服务名称')
+  }
   const next = {
     id,
-    name: String(input.name || id).trim() || id,
+    name: name || updating?.name || id,
     url: String(input.url).trim().replace(/\/+$/, ''),
     headers: normalizeHeaders(input.headers),
     enabled: input.enabled !== false,
     builtin: false
   }
-  const extras = loadMcpServers().filter(s => !s.builtin).filter(s => s.id !== id)
-  extras.push(next)
-  return saveMcpServers(extras)
+  const rest = extras.filter(s => s.id !== id)
+  rest.push(next)
+  return saveMcpServers(rest)
 }
 
 export function removeMcpServer(id) {
