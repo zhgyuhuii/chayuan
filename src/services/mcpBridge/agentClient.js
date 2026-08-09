@@ -1,0 +1,333 @@
+/**
+ * WPS Addon MCP Agent — HTTP long-poll client against sidecar.
+ */
+import {
+  MCP_BASE_URL,
+  MCP_DEFAULT_PORT,
+  MCP_HEALTHZ_URL,
+  MCP_PROTOCOL_VERSION,
+  PLUGIN_STORAGE_AGENT_ID_KEY,
+  PLUGIN_STORAGE_TOKEN_KEY,
+  getAddonVersion
+} from './config.js'
+import { dispatchMcpJob } from './dispatch.js'
+
+const POLL_TIMEOUT_SEC = 25
+const HEARTBEAT_MS = 20_000
+const RECONNECT_BASE_MS = 1500
+const RECONNECT_MAX_MS = 20_000
+
+let _running = false
+let _agentId = ''
+let _token = ''
+let _loopPromise = null
+let _heartbeatTimer = null
+let _backoff = RECONNECT_BASE_MS
+let _autoSpikeStarted = false
+
+function storageGet(key) {
+  try {
+    return window.Application?.PluginStorage?.getItem?.(key)
+  } catch {
+    return null
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.Application?.PluginStorage?.setItem?.(key, value)
+  } catch { /* ignore */ }
+}
+
+export function getStoredToken() {
+  return String(storageGet(PLUGIN_STORAGE_TOKEN_KEY) || _token || '').trim()
+}
+
+export function setStoredToken(token) {
+  _token = String(token || '').trim()
+  if (_token) storageSet(PLUGIN_STORAGE_TOKEN_KEY, _token)
+}
+
+function ensureAgentId() {
+  if (_agentId) return _agentId
+  const existing = String(storageGet(PLUGIN_STORAGE_AGENT_ID_KEY) || '').trim()
+  if (existing) {
+    _agentId = existing
+    return _agentId
+  }
+  _agentId = `wps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  storageSet(PLUGIN_STORAGE_AGENT_ID_KEY, _agentId)
+  return _agentId
+}
+
+async function fetchJson(url, options = {}) {
+  const headers = {
+    Accept: 'application/json',
+    ...(options.headers || {})
+  }
+  // MCP/Agent: no token required (localhost-only sidecar)
+  const res = await fetch(url, { ...options, headers })
+  const text = await res.text()
+  let data = null
+  try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
+  if (!res.ok) {
+    const err = new Error(data?.error || `HTTP ${res.status}`)
+    err.status = res.status
+    err.data = data
+    throw err
+  }
+  return data
+}
+
+export async function probeSidecar() {
+  try {
+    const res = await fetch(MCP_HEALTHZ_URL, { method: 'GET' })
+    if (!res.ok) return { online: false }
+    const data = await res.json()
+    return { online: true, ...data }
+  } catch {
+    return { online: false }
+  }
+}
+
+/**
+ * Bootstrap token from sidecar (localhost bootstrap=1 once if we have no token).
+ */
+export async function syncTokenFromSidecar() {
+  let token = getStoredToken()
+  if (token) {
+    _token = token
+    return token
+  }
+  try {
+    const data = await fetchJson(`${MCP_BASE_URL}/token?bootstrap=1`)
+    if (data?.token) {
+      setStoredToken(data.token)
+      return data.token
+    }
+  } catch { /* ignore */ }
+  return ''
+}
+
+async function register() {
+  const agentId = ensureAgentId()
+  await syncTokenFromSidecar()
+  const body = {
+    agentId,
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    addonVersion: getAddonVersion(),
+    windowId: String(window.name || 'ribbon')
+  }
+  const data = await fetchJson(`${MCP_BASE_URL}/agent/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  _backoff = RECONNECT_BASE_MS
+  try {
+    const { recordAgentAliveTick } = await import('./spikes.js')
+    recordAgentAliveTick('register')
+  } catch { /* ignore */ }
+  scheduleAutoSelftest()
+  return data
+}
+
+/**
+ * After first successful register: run spikes once and POST /selftest/report
+ * so external `npm run mcp:selftest` can discover results without clicking UI.
+ */
+function scheduleAutoSelftest() {
+  if (_autoSpikeStarted) return
+  _autoSpikeStarted = true
+  setTimeout(async () => {
+    try {
+      const spikes = await import('./spikes.js')
+      const results = await spikes.runMcpSpikes()
+      const status = await getMcpBridgeStatus()
+      await fetchJson(`${MCP_BASE_URL}/selftest/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'addon-auto',
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          status,
+          spikes: results,
+          page: {
+            href: String(window.location?.href || '').slice(0, 200),
+            protocol: String(window.location?.protocol || '')
+          }
+        })
+      })
+      console.info('[mcpAgent] auto selftest report uploaded')
+    } catch (e) {
+      console.warn('[mcpAgent] auto selftest failed:', e?.message || e)
+      try {
+        await fetchJson(`${MCP_BASE_URL}/selftest/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: 'addon-auto',
+            error: e?.message || String(e)
+          })
+        })
+      } catch { /* ignore */ }
+    }
+  }, 2500)
+}
+
+async function pollOnce() {
+  const agentId = ensureAgentId()
+  const url = `${MCP_BASE_URL}/agent/poll?agentId=${encodeURIComponent(agentId)}&timeout=${POLL_TIMEOUT_SEC}`
+  return fetchJson(url, { method: 'GET' })
+}
+
+async function postResult(jobId, ok, result, error) {
+  const agentId = ensureAgentId()
+  return fetchJson(`${MCP_BASE_URL}/agent/result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      agentId,
+      jobId,
+      ok,
+      result: ok ? result : undefined,
+      error: ok ? undefined : error
+    })
+  })
+}
+
+const JOB_HARD_TIMEOUT_MS = 55_000
+
+function withHardTimeout(promise, ms, label) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`Agent handler timeout: ${label}`)
+      err.code = 'AGENT_HANDLER_TIMEOUT'
+      reject(err)
+    }, ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+async function handleJob(job) {
+  if (!job?.jobId) return
+  try {
+    // Note: sync WPS API hangs still block the event loop; avoid Documents.Item etc.
+    const result = await withHardTimeout(
+      Promise.resolve().then(() => dispatchMcpJob({ method: job.method, params: job.params })),
+      JOB_HARD_TIMEOUT_MS,
+      job.method || 'job'
+    )
+    await postResult(job.jobId, true, result)
+  } catch (e) {
+    await postResult(job.jobId, false, null, {
+      code: e.code || 'AGENT_JOB_FAILED',
+      message: e.message || String(e),
+      details: e.details
+    })
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat()
+  _heartbeatTimer = setInterval(async () => {
+    if (!_running) return
+    try {
+      await fetchJson(`${MCP_BASE_URL}/agent/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: ensureAgentId() })
+      })
+      try {
+        const { recordAgentAliveTick } = await import('./spikes.js')
+        recordAgentAliveTick('heartbeat')
+      } catch { /* ignore */ }
+    } catch { /* reconnect loop will handle */ }
+  }, HEARTBEAT_MS)
+}
+
+function stopHeartbeat() {
+  if (_heartbeatTimer) {
+    clearInterval(_heartbeatTimer)
+    _heartbeatTimer = null
+  }
+}
+
+async function loop() {
+  while (_running) {
+    try {
+      const health = await probeSidecar()
+      if (!health.online) {
+        console.info('[mcpAgent] sidecar offline, retry…')
+        await sleep(_backoff)
+        _backoff = Math.min(_backoff * 1.5, RECONNECT_MAX_MS)
+        continue
+      }
+      await register()
+      startHeartbeat()
+      while (_running) {
+        const out = await pollOnce()
+        if (out?.error?.code === 'AGENT_NOT_REGISTERED') {
+          await register()
+          continue
+        }
+        if (out?.job) {
+          await handleJob(out.job)
+        }
+      }
+    } catch (e) {
+      console.warn('[mcpAgent] loop error:', e?.message || e)
+      stopHeartbeat()
+      await sleep(_backoff)
+      _backoff = Math.min(_backoff * 1.5, RECONNECT_MAX_MS)
+    }
+  }
+  stopHeartbeat()
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+export function startMcpAgent() {
+  if (_running) return _loopPromise
+  _running = true
+  console.info(`[mcpAgent] starting long-poll → ${MCP_BASE_URL} (port ${MCP_DEFAULT_PORT})`)
+  _loopPromise = loop().finally(() => {
+    _loopPromise = null
+  })
+  return _loopPromise
+}
+
+export function stopMcpAgent() {
+  _running = false
+  stopHeartbeat()
+}
+
+export function isMcpAgentRunning() {
+  return _running
+}
+
+export async function getMcpBridgeStatus() {
+  const health = await probeSidecar()
+  return {
+    agentRunning: _running,
+    agentId: _agentId || String(storageGet(PLUGIN_STORAGE_AGENT_ID_KEY) || ''),
+    tokenPresent: !!getStoredToken(),
+    sidecar: health,
+    mcpUrl: `${MCP_BASE_URL}/mcp`,
+    protocolVersion: MCP_PROTOCOL_VERSION
+  }
+}
+
+export default {
+  startMcpAgent,
+  stopMcpAgent,
+  isMcpAgentRunning,
+  probeSidecar,
+  syncTokenFromSidecar,
+  getMcpBridgeStatus,
+  getStoredToken,
+  setStoredToken
+}

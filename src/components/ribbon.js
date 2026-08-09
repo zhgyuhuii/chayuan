@@ -99,6 +99,18 @@ function OnAddinLoad(ribbonUI) {
   // 然后尝试从接口加载（异步）
   loadModelList()
 
+  // MCP Agent：探测 sidecar，在线则长轮询注册（sidecar 需设置页/终端手动启动）
+  try {
+    import('../services/mcpBridge/agentClient.js')
+      .then(m => {
+        m.startMcpAgent()
+        console.info('[ribbon] MCP Agent long-poll started')
+      })
+      .catch(err => console.warn('[ribbon] MCP Agent start failed:', err))
+  } catch (e) {
+    console.warn('[ribbon] MCP Agent import failed:', e)
+  }
+
   return true
 }
 
@@ -2931,7 +2943,8 @@ function invalidateAssistantSlotControls() {
       ribbonUI.InvalidateControl(`btnContextAssistantSlot${i}`)
       ribbonUI.InvalidateControl(`btnContextAssistantSlot${i}TableCell`)
     }
-    ribbonUI.InvalidateControl('menuMoreAssistants')
+    ribbonUI.InvalidateControl('btnAssistantManage')
+    try { ribbonUI.InvalidateControl('menuMoreAssistants') } catch (_) { /* legacy id */ }
     ribbonUI.InvalidateControl('menuContextAssistantMore')
     ribbonUI.InvalidateControl('menuContextAssistantMoreTableCell')
   } catch (e) {}
@@ -3626,8 +3639,12 @@ function OnAction(control) {
         openAssistantSettings('create-custom-assistant')
         break
       }
-      if (eleId === 'btnCustomAssistantManage') {
-        openAssistantSettings('create-custom-assistant')
+      if (eleId === 'btnCustomAssistantManage' || eleId === 'btnAssistantManage' || eleId === 'menuMoreAssistants') {
+        try {
+          openSettingsWindow({ menu: 'assistant-settings' }, { title: '助手管理' })
+        } catch (e) {
+          reportError('无法打开助手管理', e)
+        }
         break
       }
       if (
@@ -3726,6 +3743,7 @@ function getRibbonImageRelative(control) {
     'btnTaskList': 'images/report.svg',
     'btnTaskOrchestration': 'images/task-orchestration.svg',
     'menuMoreAssistants': 'images/add-to-assistant.svg',
+    'btnAssistantManage': 'images/add-to-assistant.svg',
     'menuContextAssistantMore': 'images/add-to-assistant.svg',
     // 表格批量分组
     'btnSelectAllTables': 'images/export-table.svg',
@@ -3836,7 +3854,7 @@ function OnGetVisible(control) {
   if (eleId && eleId.startsWith('btnContextAssistantSlot')) {
     return !!getAssistantForControl(eleId)
   }
-  if (eleId === 'menuMoreAssistants') {
+  if (eleId === 'menuMoreAssistants' || eleId === 'btnAssistantManage') {
     return true
   }
   if (eleId === 'menuContextAssistantMore') {
@@ -3907,6 +3925,9 @@ function OnGetLabel(control) {
       return getAssistantDisplayEntry('text-to-video')?.title || '文本转视频'
     case 'menuContextAssistantMore':
       return '更多智能助手'
+    case 'btnAssistantManage':
+    case 'menuMoreAssistants':
+      return '助手管理'
   }
   if (eleId && eleId.startsWith('btnAssistantPrimarySlot')) {
     return getAssistantForControl(eleId)?.title || '智能助手'

@@ -1136,7 +1136,8 @@ async function processSpellCheckChunks({
   onChunkContent,
   onError,
   onTaskCreated,
-  taskId: existingTaskId = ''
+  taskId: existingTaskId = '',
+  dryRun = false
 }) {
   const filteredChunks = (chunks || []).filter(c => (c.text || '').trim().length > 0)
   if (filteredChunks.length === 0) {
@@ -1159,6 +1160,7 @@ async function processSpellCheckChunks({
     }
   })
 
+  const resolvedDocumentAction = dryRun ? 'none' : getSpellCheckDocumentAction()
   const taskId = String(existingTaskId || '').trim() || addTask({
     type: 'spell-check',
     title: taskTitle,
@@ -1170,7 +1172,8 @@ async function processSpellCheckChunks({
       chunkCount: filteredChunks.length,
       chunkSource: chunkSource || 'document',
       chunkSettings: chunkSettings || getChunkSettings(),
-      documentAction: getSpellCheckDocumentAction(),
+      documentAction: resolvedDocumentAction,
+      mcpDryRun: !!dryRun,
       items: initialItems,
       commentCount: 0
     }
@@ -1186,7 +1189,8 @@ async function processSpellCheckChunks({
         chunkCount: filteredChunks.length,
         chunkSource: chunkSource || 'document',
         chunkSettings: chunkSettings || getChunkSettings(),
-        documentAction: getSpellCheckDocumentAction(),
+        documentAction: resolvedDocumentAction,
+        mcpDryRun: !!dryRun,
         items: initialItems,
         commentCount: 0,
         progressStage: 'preparing',
@@ -1201,7 +1205,8 @@ async function processSpellCheckChunks({
     cancelled: false,
     abortController: typeof AbortController !== 'undefined' ? new AbortController() : null
   }
-  const documentAction = getSpellCheckDocumentAction()
+  // MCP dryRun: force documentAction=none so chunk loop never writes comments
+  const documentAction = resolvedDocumentAction
   const reviewCommentPolicy = getSpellCheckReviewCommentPolicy()
   activeSpellCheckRuns.set(taskId, runState)
   const liveItems = [...initialItems]
@@ -1218,6 +1223,8 @@ async function processSpellCheckChunks({
         chunkCount: filteredChunks.length,
         chunkSource: chunkSource || 'document',
         chunkSettings: chunkSettings || getChunkSettings(),
+        documentAction,
+        mcpDryRun: !!dryRun,
         items: [...liveItems]
       }
     })
@@ -1527,7 +1534,8 @@ export function startSpellCheckAllTask(options = {}) {
       const args = await prepareSpellCheckAllArgs(options)
       return await processSpellCheckChunks({
         ...args,
-        taskId
+        taskId,
+        dryRun: options.dryRun === true
       })
     } catch (error) {
       updateTask(taskId, {
@@ -1556,7 +1564,8 @@ export function startSpellCheckSelectionTask(options = {}) {
       const args = await prepareSpellCheckSelectionArgs(options)
       return await processSpellCheckChunks({
         ...args,
-        taskId
+        taskId,
+        dryRun: options.dryRun === true
       })
     } catch (error) {
       updateTask(taskId, {

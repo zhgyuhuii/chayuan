@@ -9,55 +9,23 @@
       <div class="sidebar-tabbar">
         <div
           class="sidebar-tab"
-          :class="{ active: activeSidebarTab === 'chats' }"
-          @click="activeSidebarTab = 'chats'"
-        >
-          <span>对话</span>
-          <span class="sidebar-tab-badge">{{ chatHistory.length }}</span>
-        </div>
-        <div
-          class="sidebar-tab"
           :class="{ active: activeSidebarTab === 'assistants' }"
           @click="activeSidebarTab = 'assistants'"
         >
           <span>助手</span>
           <span class="sidebar-tab-badge">{{ assistantVisibleCount }}</span>
         </div>
+        <div
+          class="sidebar-tab"
+          :class="{ active: activeSidebarTab === 'chats' }"
+          @click="activeSidebarTab = 'chats'"
+        >
+          <span>对话</span>
+          <span class="sidebar-tab-badge">{{ chatHistory.length }}</span>
+        </div>
       </div>
 
-      <div v-if="activeSidebarTab === 'chats'" class="sidebar-pane">
-        <div class="tab-toolbar chat-toolbar">
-          <div class="assistant-search chat-search">
-            <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5A6.5 6.5 0 1 0 9.5 16a6.47 6.47 0 0 0 4.23-1.57l.27.28v.79L20 21.5L21.5 20zM9.5 14A4.5 4.5 0 1 1 14 9.5A4.5 4.5 0 0 1 9.5 14"/></svg>
-            <input v-model.trim="chatSearchText" type="text" placeholder="搜索对话" />
-          </div>
-          <button type="button" class="toolbar-action-btn" @click="newChat" title="新建对话">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
-            <span>新建</span>
-          </button>
-        </div>
-        <div class="history-list">
-          <div
-            v-for="(chat, idx) in filteredChatHistory"
-            :key="chat.id"
-            class="history-item"
-            :class="{ active: currentChatId === chat.id }"
-            @click="switchChat(chat.id)"
-          >
-            <span class="history-title">{{ chat.title || `对话 ${idx + 1}` }}</span>
-            <button
-              type="button"
-              class="icon-action-btn danger"
-              title="删除会话"
-              @click.stop="deleteChat(chat.id)"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 7h12v2H6zm2 3h8l-.7 9H8.7zm3-6h2l1 1h4v2H6V5h4z"/></svg>
-            </button>
-          </div>
-          <div v-if="filteredChatHistory.length === 0" class="history-empty">暂无对话</div>
-        </div>
-      </div>
-      <div v-else class="sidebar-pane">
+      <div v-if="activeSidebarTab === 'assistants'" class="sidebar-pane">
         <div class="tab-toolbar assistant-toolbar">
           <button
             type="button"
@@ -163,6 +131,38 @@
             </div>
           </div>
           <div v-if="assistantGroups.length === 0" class="assistant-empty">暂无可用助手</div>
+        </div>
+      </div>
+      <div v-else class="sidebar-pane">
+        <div class="tab-toolbar chat-toolbar">
+          <div class="assistant-search chat-search">
+            <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5A6.5 6.5 0 1 0 9.5 16a6.47 6.47 0 0 0 4.23-1.57l.27.28v.79L20 21.5L21.5 20zM9.5 14A4.5 4.5 0 1 1 14 9.5A4.5 4.5 0 0 1 9.5 14"/></svg>
+            <input v-model.trim="chatSearchText" type="text" placeholder="搜索对话" />
+          </div>
+          <button type="button" class="toolbar-action-btn" @click="newChat" title="新建对话">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
+            <span>新建</span>
+          </button>
+        </div>
+        <div class="history-list">
+          <div
+            v-for="(chat, idx) in filteredChatHistory"
+            :key="chat.id"
+            class="history-item"
+            :class="{ active: currentChatId === chat.id }"
+            @click="switchChat(chat.id)"
+          >
+            <span class="history-title">{{ chat.title || `对话 ${idx + 1}` }}</span>
+            <button
+              type="button"
+              class="icon-action-btn danger"
+              title="删除会话"
+              @click.stop="deleteChat(chat.id)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 7h12v2H6zm2 3h8l-.7 9H8.7zm3-6h2l1 1h4v2H6V5h4z"/></svg>
+            </button>
+          </div>
+          <div v-if="filteredChatHistory.length === 0" class="history-empty">暂无对话</div>
         </div>
       </div>
       <div class="sidebar-footer">
@@ -287,6 +287,27 @@
       />
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
+        <div class="mcp-service-banner" role="note">
+          <div class="mcp-service-banner-main">
+            <div class="mcp-service-banner-title">察元 AI 文档助手 · MCP 服务</div>
+            <p class="mcp-service-banner-text">
+              把下方地址填进 Claude Code、Codex、Hermes、OpenClaw、Cursor 等 MCP 客户端，即可对当前文档说「帮我检查XX」「翻译成英文」「找出错别字」。助手页开启「文档智能体」时，本页对话走同一 MCP 通道，并可合并设置里添加的其它 HTTP MCP。
+            </p>
+            <div class="mcp-service-banner-url-row">
+              <code class="mcp-service-banner-url" :title="mcpUrl">{{ mcpUrl }}</code>
+              <button type="button" class="mcp-service-banner-copy" @click="copyMcpServiceUrl">
+                {{ mcpUrlCopyHint || '复制' }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="mcpEnabled && mcpSoftBanner"
+          class="mcp-soft-banner"
+          role="status"
+        >
+          {{ mcpSoftBanner }}
+        </div>
         <div
           v-if="displayedWelcomePrompt"
           class="welcome-inline-banner"
@@ -475,24 +496,7 @@
                   <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.timeExpireAt) }}</span>
                   <!-- 隐藏余额:不再显示「购买次数剩余 N 次」「对话今日剩余 X/Y」 -->
                 </template>
-                <template v-else>
-                  <div
-                    class="welcome-support-pitch"
-                    :class="{ 'welcome-support-pitch--exhausted': entitlementSummary.chat.remaining <= 0 && entitlementSummary.assistant.remaining <= 0 }"
-                  >
-                    <!-- 隐藏余额:不再显示「今日对话 X/Y」「今日助手 X/Y」配额数字 -->
-                    <p class="welcome-support-pitch-cost">免费额度有限，每一次使用背后都是实打实的研发成本。</p>
-                    <button
-                      type="button"
-                      class="welcome-support-pitch-cta"
-                      @click="openPurchaseDialog()"
-                    >
-                      支持开发者，解锁更多次数
-                      <span class="welcome-support-pitch-cta-arrow" aria-hidden="true">→</span>
-                    </button>
-                    <span class="welcome-support-pitch-note">也让我有动力，继续把它做下去 ❤️</span>
-                  </div>
-                </template>
+                <!-- 已移除免费额度支持文案块 -->
               </div>
               <div class="welcome-foot">
                 <button type="button" class="welcome-foot-activate" @click="openActivateDialog">
@@ -598,6 +602,15 @@
                       @toggle-details="toggleDocumentRevisionDetails(taskRun.run)"
                       @toggle-backup="handleLongTaskRunToggleBackup(taskRun.stopAction, msg, $event)"
                     />
+                    <button
+                      v-if="msg.lane === 'mcp' && activeMcpTurnContext?.messageId === msg.id"
+                      type="button"
+                      class="message-error-action-btn"
+                      style="margin-top: 8px;"
+                      @click.stop="stopActiveMcpTurn()"
+                    >
+                      停止
+                    </button>
                   </div>
                 </template>
                 <template v-else>
@@ -635,14 +648,58 @@
                       {{ getAssistantErrorSecondaryActionLabel(msg) }}
                     </button>
                   </div>
+                  <div
+                    v-if="msg.role === 'assistant' && msg.mcpProofreadCard && !msg.mcpProofreadCard.applied"
+                    class="mcp-proofread-card"
+                  >
+                    <div class="mcp-proofread-card-title">校对结果</div>
+                    <p class="mcp-proofread-card-summary">
+                      {{ msg.mcpProofreadCard.summary || `发现 ${msg.mcpProofreadCard.issueCount || 0} 处问题` }}
+                    </p>
+                    <div class="mcp-proofread-card-actions">
+                      <button
+                        type="button"
+                        class="message-error-action-btn"
+                        :class="{ primary: msg.mcpProofreadCard.intent !== 'fix' }"
+                        :disabled="isStreaming || msg.mcpProofreadCard.applying"
+                        @click.stop="applyMcpProofreadOutcome(msg, 'comments')"
+                      >
+                        写成批注
+                      </button>
+                      <button
+                        type="button"
+                        class="message-error-action-btn"
+                        :class="{ primary: msg.mcpProofreadCard.intent === 'fix' }"
+                        :disabled="isStreaming || msg.mcpProofreadCard.applying"
+                        @click.stop="applyMcpProofreadOutcome(msg, 'fix')"
+                      >
+                        直接改正正文
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    v-if="msg.role === 'assistant' && Array.isArray(msg.mcpSteps) && msg.mcpSteps.length"
+                    class="mcp-steps-list"
+                  >
+                    <div
+                      v-for="(step, stepIdx) in msg.mcpSteps.slice(-8)"
+                      :key="`${msg.id}-mcp-step-${stepIdx}`"
+                      class="mcp-steps-item"
+                    >
+                      {{ step.label }}<span v-if="step.detail"> · {{ step.detail }}</span>
+                    </div>
+                  </div>
                 </template>
                 <div v-if="shouldShowAssistantFooter(msg)" class="message-footer">
                   <div
-                    v-if="msg.role === 'assistant' && getMessagePrimaryRouteLabel(msg)"
+                    v-if="msg.role === 'assistant' && (msg.lane === 'mcp' || getMessagePrimaryRouteLabel(msg))"
                     class="message-route-hint"
                     :title="getMessagePrimaryRouteDetail(msg)"
                   >
-                    已识别为：{{ getMessagePrimaryRouteLabel(msg) }}
+                    <span v-if="msg.lane === 'mcp'" class="mcp-lane-badge">文档智能体</span>
+                    <template v-if="getMessagePrimaryRouteLabel(msg)">
+                      已识别为：{{ getMessagePrimaryRouteLabel(msg) }}
+                    </template>
                   </div>
                   <div v-if="!isAssistantErrorMessage(msg) && msg.recommendations && msg.recommendations.length" class="message-recommend-inline">
                     <span class="message-recommend-inline-prefix">通过感知，你需要</span>
@@ -1859,6 +1916,23 @@
             multiple
             @change="onAttachmentChange"
           />
+          <label
+            class="mcp-doc-agent-toggle"
+            :title="'经本机 MCP 操作当前文档，并可调用设置中添加的其它 HTTP MCP（与 Cursor 等外部智能体同一通道）'"
+          >
+            <input
+              type="checkbox"
+              :checked="mcpEnabled"
+              @change="onMcpEnabledChange($event.target.checked)"
+            />
+            <span class="mcp-doc-agent-toggle-label">文档智能体</span>
+            <span
+              class="mcp-health-dot"
+              :class="`mcp-health-dot--${mcpHealthLevel || 'gray'}`"
+              :title="mcpHealthHint"
+              @click.prevent="refreshMcpHealthBundle({ deep: true })"
+            ></span>
+          </label>
           <button
             type="button"
             class="knowledge-base-btn"
@@ -2212,6 +2286,20 @@ import { exportDocumentImagesAsAssets } from '../utils/documentImageExportServic
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
+import { MCP_URL } from '../services/mcpBridge/config.js'
+import {
+  loadMcpEnabled,
+  saveMcpEnabled
+} from '../services/mcpBridge/mcpServerRegistry.js'
+import {
+  probeMcpHealthBundle
+} from '../services/mcpBridge/mcpHttpClient.js'
+import {
+  applyProofreadComments,
+  applyProofreadTextFixes,
+  runMcpChatOrchestrator
+} from '../services/mcpBridge/mcpChatOrchestrator.js'
+import { startSidecarBestEffort } from '../services/mcpBridge/sidecarLauncher.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
@@ -3665,7 +3753,14 @@ export default {
   data() {
     return {
       aiDialogAssetsInline: AI_DIALOG_ASSETS_INLINE,
-      activeSidebarTab: 'chats',
+      activeSidebarTab: 'assistants',
+      mcpUrl: MCP_URL || 'http://127.0.0.1:62588/mcp',
+      mcpUrlCopyHint: '',
+      mcpEnabled: true,
+      mcpHealthLevel: 'gray',
+      mcpHealthHint: '点击刷新 MCP 状态',
+      mcpSoftBanner: '',
+      activeMcpTurnContext: null,
       sidebarWidth: 300,
       sidebarCollapsed: false,
       lastExpandedSidebarWidth: 300,
@@ -4110,9 +4205,18 @@ export default {
     //  - requestAssistantEvolutionSuggestionCheck:对自定义助手做 O(N²) 相似度,首屏无关
     this.runWhenIdle(() => this.loadPurchaseQr())
     this.runWhenIdle(() => this.requestAssistantEvolutionSuggestionCheck())
+    try {
+      this.mcpEnabled = loadMcpEnabled()
+    } catch {
+      this.mcpEnabled = true
+    }
+    if (this.mcpEnabled) {
+      this.runWhenIdle(() => this.refreshMcpHealthBundle())
+    }
   },
   beforeUnmount() {
-    (this._idleHandles || []).forEach(([kind, h]) => {
+    this.stopActiveMcpTurn()
+    ;(this._idleHandles || []).forEach(([kind, h]) => {
       if (kind === 'idle' && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h)
       else window.clearTimeout(h)
     })
@@ -4795,7 +4899,9 @@ export default {
       return prepareDialogDisplayText(String(msg?.loadingState?.detail || '内容已加入会话，正在整理上下文与请求。'))
     },
     getMessagePrimaryRouteLabel(message) {
+      if (message?.lane === 'mcp') return '文档智能体（MCP）'
       const kind = String(message?.primaryRoute?.kind || '').trim()
+      if (kind === 'mcp-chat') return '文档智能体（MCP）'
       if (kind === 'kb-chat') return '知识库检索分析'
       if (kind === 'chat') return '普通对话'
       if (kind === 'document-operation') return '文档处理'
@@ -4803,6 +4909,176 @@ export default {
       if (kind === 'generated-output') return '报告或文件生成'
       if (kind === 'assistant-task') return '助手任务'
       return ''
+    },
+    onMcpEnabledChange(enabled) {
+      this.mcpEnabled = !!enabled
+      saveMcpEnabled(this.mcpEnabled)
+      if (this.mcpEnabled) this.refreshMcpHealthBundle()
+      else this.mcpSoftBanner = ''
+    },
+    async refreshMcpHealthBundle(options = {}) {
+      try {
+        const bundle = await probeMcpHealthBundle({
+          deep: options.deep === true,
+          ensureSidecar: async () => {
+            await startSidecarBestEffort()
+          }
+        })
+        this.mcpHealthLevel = bundle.level || 'gray'
+        if (!bundle.anyOk) {
+          this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
+          this.mcpHealthHint = 'sidecar 不可用或无已启用 MCP'
+        } else if (bundle.level === 'yellow') {
+          this.mcpSoftBanner = ''
+          this.mcpHealthHint = `仅外服可用（${bundle.upstreamOkCount}/${bundle.upstreamTotal}），察元文档通道未就绪`
+        } else {
+          this.mcpSoftBanner = ''
+          this.mcpHealthHint = bundle.agentOnline
+            ? '察元 MCP 与 Agent 可用'
+            : '察元 MCP 可用（Agent 未注册时部分文档工具会失败）'
+        }
+        return bundle
+      } catch (e) {
+        this.mcpHealthLevel = 'gray'
+        this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
+        this.mcpHealthHint = e?.message || '健康检查失败'
+        return { anyOk: false, level: 'gray' }
+      }
+    },
+    buildMcpSelectionCtx() {
+      const snap = this.selectionContextSnapshot
+      const text = String(snap?.text || '').trim()
+      return {
+        hasSelection: !!text,
+        charCount: text.length,
+        preview: text.slice(0, 240),
+        fileName: String(snap?.fileName || snap?.name || '').trim()
+      }
+    },
+    async runMcpExclusiveTurn({ text, model, prepared, assistantMsg }) {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      this.activeMcpTurnContext = {
+        messageId: assistantMsg?.id || '',
+        abortController: ctrl,
+        cancelled: false
+      }
+      this.isStreaming = true
+      assistantMsg.lane = 'mcp'
+      assistantMsg.primaryRoute = {
+        kind: 'mcp-chat',
+        confidence: 'high',
+        reason: '文档智能体已开启，本轮经 MCP 编排（与外部智能体同通道）。'
+      }
+      assistantMsg.mcpSteps = []
+      this.updateAssistantLoadingProgress(assistantMsg, {
+        label: '文档智能体处理中…',
+        detail: '正在连接 MCP 并编排工具',
+        percent: 18
+      })
+      const historyMessages = (this.currentMessages || [])
+        .filter(m => m && m.id !== assistantMsg.id && (m.role === 'user' || m.role === 'assistant'))
+        .slice(-8)
+        .map(m => ({ role: m.role, content: String(m.content || '').slice(0, 4000) }))
+
+      try {
+        const result = await runMcpChatOrchestrator({
+          userText: text,
+          model,
+          selectionCtx: this.buildMcpSelectionCtx(),
+          kbBound: this.currentChatKbBinding.kbNames.length > 0,
+          historyMessages,
+          signal: ctrl?.signal,
+          onProgress: (step, steps) => {
+            assistantMsg.mcpSteps = steps.slice()
+            this.updateAssistantLoadingProgress(assistantMsg, {
+              label: step.label || '文档智能体处理中…',
+              detail: step.detail || '',
+              percent: Math.min(90, 20 + steps.length * 8)
+            })
+            this.saveHistory()
+          }
+        })
+
+        if (result.fallback) {
+          this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          assistantMsg.lane = ''
+          assistantMsg.primaryRoute = null
+          assistantMsg.content = ''
+          this.isStreaming = false
+          this.activeMcpTurnContext = null
+          return { handled: false, fallback: true, reason: result.reason }
+        }
+
+        assistantMsg.content = String(result.content || '已完成。')
+        if (result.proofreadCard) {
+          assistantMsg.mcpProofreadCard = {
+            ...result.proofreadCard,
+            applied: false,
+            applying: false
+          }
+        }
+        assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        this.isStreaming = false
+        this.activeMcpTurnContext = null
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+        return { handled: true }
+      } catch (e) {
+        this.isStreaming = false
+        this.activeMcpTurnContext = null
+        if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          assistantMsg.content = '已停止文档智能体本轮执行。'
+          this.saveHistory()
+          return { handled: true, cancelled: true }
+        }
+        this.stopAssistantLoadingProgress(assistantMsg)
+        assistantMsg.isLoading = false
+        assistantMsg.lane = ''
+        assistantMsg.content = ''
+        this.mcpSoftBanner = '文档智能体执行失败，将尝试内置助手链路'
+        return { handled: false, fallback: true, reason: e?.message || 'mcp_error' }
+      }
+    },
+    async applyMcpProofreadOutcome(msg, mode) {
+      const card = msg?.mcpProofreadCard
+      if (!card || card.applied || card.applying) return
+      card.applying = true
+      this.saveHistory()
+      try {
+        if (mode === 'comments') {
+          if (!card.taskId) throw new Error('缺少校对 taskId，请重新检查错别字')
+          await applyProofreadComments(card.taskId, { maxComments: 40 })
+          msg.content = `${String(msg.content || '').trim()}\n\n已将校对结果写成批注。`.trim()
+        } else {
+          const out = await applyProofreadTextFixes({
+            raw: card.raw,
+            scope: card.scope || 'document'
+          })
+          msg.content = `${String(msg.content || '').trim()}\n\n已尝试直接改正正文（${out?.count || 0} 处替换）。`.trim()
+        }
+        card.applied = true
+        card.applying = false
+        this.saveHistory()
+      } catch (e) {
+        card.applying = false
+        await inAppAlert(e?.message || '应用校对结果失败', { title: '校对写回失败' })
+        this.saveHistory()
+      }
+    },
+    stopActiveMcpTurn() {
+      const ctx = this.activeMcpTurnContext
+      if (!ctx) return false
+      ctx.cancelled = true
+      try { ctx.abortController?.abort?.() } catch { /* ignore */ }
+      this.activeMcpTurnContext = null
+      this.isStreaming = false
+      return true
     },
     getMessagePrimaryRouteDetail(message) {
       const label = this.getMessagePrimaryRouteLabel(message)
@@ -6979,6 +7255,37 @@ export default {
     },
     openSettingsDialog() {
       openSettingsWindow()
+    },
+    async copyMcpServiceUrl() {
+      const url = String(this.mcpUrl || '').trim()
+      if (!url) return
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = url
+          ta.setAttribute('readonly', 'readonly')
+          ta.style.position = 'fixed'
+          ta.style.left = '-9999px'
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
+        this.mcpUrlCopyHint = '已复制'
+        clearTimeout(this._mcpUrlCopyTimer)
+        this._mcpUrlCopyTimer = setTimeout(() => {
+          this.mcpUrlCopyHint = ''
+        }, 1600)
+      } catch (e) {
+        console.warn('复制 MCP 地址失败', e)
+        this.mcpUrlCopyHint = '复制失败'
+        clearTimeout(this._mcpUrlCopyTimer)
+        this._mcpUrlCopyTimer = setTimeout(() => {
+          this.mcpUrlCopyHint = ''
+        }, 1600)
+      }
     },
     openExternalWebsite(url) {
       const normalizedUrl = String(url || '').trim()
@@ -15549,6 +15856,10 @@ export default {
     },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
+      if (this.activeMcpTurnContext?.messageId) {
+        await inAppAlert('文档智能体正在写文档，请等待完成或停止后再执行助手。', { title: '请稍候' })
+        return
+      }
       // 同步置锁:必须在任何 await 之前。否则快速连点会在下面 confirmAssistantRun 的 await 处
       // 全部穿透上一行的判断,一次连点启动多个任务。提前置锁后,后续点击在入口即被挡掉;
       // 取消确认 / 进入参数收集等提前返回的分支需手动解锁。
@@ -15619,6 +15930,13 @@ export default {
         await inAppAlert(
           '当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。',
           { title: '修订预览生成中' }
+        )
+        return
+      }
+      if (this.activeMcpTurnContext?.messageId) {
+        await inAppAlert(
+          '文档智能体正在执行。请等待完成，或先停止后再发送。',
+          { title: '文档智能体执行中' }
         )
         return
       }
@@ -15702,6 +16020,36 @@ export default {
       await this.waitForUiCommit()
 
       try {
+        // Exclusive Lane: 文档智能体开启且 MCP 可用时，整轮只走 MCP，禁止再进意图/助手文档链路
+        if (this.mcpEnabled) {
+          const health = await this.refreshMcpHealthBundle()
+          if (health?.anyOk) {
+            const mcpTurn = await this.runMcpExclusiveTurn({
+              text,
+              model,
+              prepared,
+              assistantMsg
+            })
+            if (mcpTurn?.handled) {
+              recordPerf({
+                kind: 'send.mcp-exclusive',
+                providerId: model?.providerId,
+                modelId: model?.modelId,
+                durationMs: Date.now() - sendStartedAt,
+                ok: true
+              })
+              return
+            }
+            // 整轮回落旧链路（不是半成功再补跑）
+            assistantMsg.isLoading = true
+            this.startAssistantLoadingProgress(assistantMsg, {
+              label: '已回落内置助手链路...',
+              detail: '文档智能体不可用，正在使用原有意图路由。',
+              percent: 8
+            })
+          }
+        }
+
         const routeStartedAt = Date.now()
         const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model)
         const unifiedLane = String(resolvedPrimaryIntent?.unifiedPlan?.lane || '').trim()
@@ -17024,6 +17372,141 @@ export default {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(248, 250, 252, 0.22)),
     radial-gradient(circle at 50% 0%, rgba(110, 141, 248, 0.08), transparent 38%);
+}
+
+.mcp-service-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+.mcp-service-banner-title {
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.mcp-service-banner-text {
+  margin: 0 0 8px;
+  color: #475569;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.mcp-service-banner-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mcp-service-banner-url {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-service-banner-copy {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mcp-soft-banner {
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(180, 120, 20, 0.1);
+  color: #7a5a14;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.mcp-doc-agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #445;
+  white-space: nowrap;
+}
+.mcp-doc-agent-toggle input {
+  margin: 0;
+}
+.mcp-doc-agent-toggle-label {
+  line-height: 1;
+}
+.mcp-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b0b0b0;
+  flex-shrink: 0;
+}
+.mcp-health-dot--green { background: #2f9e44; }
+.mcp-health-dot--yellow { background: #f08c00; }
+.mcp-health-dot--gray { background: #adb5bd; }
+.mcp-lane-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(32, 100, 180, 0.12);
+  color: #1c5a9e;
+  font-size: 11px;
+}
+.mcp-proofread-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.mcp-proofread-card-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.mcp-proofread-card-summary {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #445;
+}
+.mcp-proofread-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mcp-steps-list {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #667;
+  line-height: 1.4;
+}
+.mcp-steps-item + .mcp-steps-item {
+  margin-top: 2px;
+}
+.mcp-service-banner-copy:hover {
+  background: #1d4ed8;
 }
 
 .welcome-inline-banner {

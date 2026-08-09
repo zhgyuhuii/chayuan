@@ -1,0 +1,17 @@
+{
+  "name": "chayuan-mcp-sidecar",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "察元 WPS MCP Sidecar — Streamable HTTP MCP + Agent long-poll",
+  "bin": {
+    "chayuan-mcp": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

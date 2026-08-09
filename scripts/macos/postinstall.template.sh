@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # Installs Chayuan WPS add-in into the console user's jsaddons (no manual copy).
 set -e
 INSTALL_ROOT="__INSTALL_ROOT__"
@@ -38,5 +38,19 @@ install_one() {
 install_one "$USER_HOME/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons"
 # Non-sandbox / older layouts (best-effort)
 install_one "$USER_HOME/Library/Application Support/Kingsoft/wps/jsaddons"
+
+# Phase 2+: stage MCP sidecar + LaunchAgent (best-effort)
+MCP_SRC="$INSTALL_ROOT/$ADDON_FOLDER/mcp-sidecar"
+if [[ -d "$MCP_SRC" ]]; then
+	MCP_HOME="$USER_HOME/.config/chayuan-wps/mcp"
+	/bin/mkdir -p "$MCP_HOME/runtime"
+	/bin/cp -R "$MCP_SRC/." "$MCP_HOME/runtime/"
+	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$MCP_HOME" 2>/dev/null || true
+	if [[ -x "$MCP_HOME/runtime/autostart/install-macos-launchagent.sh" ]]; then
+		/usr/bin/su - "$CONSOLE_USER" -c "bash $MCP_HOME/runtime/autostart/install-macos-launchagent.sh" 2>/dev/null \
+			|| echo "Chayuan WPS: MCP LaunchAgent skipped — run $MCP_HOME/runtime/autostart/install-macos-launchagent.sh" >&2
+	fi
+	echo "Chayuan WPS: MCP sidecar staged at $MCP_HOME/runtime (URL http://127.0.0.1:62588/mcp)"
+fi
 
 exit 0

@@ -41,7 +41,7 @@
                     <button id="btnAssistantPrimarySlot2" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot3" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnAssistantPrimarySlot4" label="智能助手" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
-                    <dynamicMenu id="menuMoreAssistants" label="更多" getContent="ribbon.GetMoreAssistantsMenuContent" getImage="ribbon.GetImage" size="large" invalidateContentOnDrop="true"/>
+                    <button id="btnAssistantManage" label="助手管理" getLabel="ribbon.OnGetLabel" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                 <separator id="Sep2" />
                 </group>
 

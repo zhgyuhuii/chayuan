@@ -59,6 +59,12 @@ function copyDistToOnlineTarget(distDir, targetRoot) {
 		if (skip.has(name)) continue
 		fsEx.copySync(path.join(distDir, name), path.join(targetRoot, name))
 	}
+	const mcpSidecarSrc = path.join(root, 'mcp-sidecar')
+	if (fs.existsSync(mcpSidecarSrc)) {
+		fsEx.copySync(mcpSidecarSrc, path.join(targetRoot, 'mcp-sidecar'), {
+			filter: (src) => !src.includes(`${path.sep}node_modules${path.sep}`)
+		})
+	}
 }
 
 function add7z(archivePath, inputPaths) {
@@ -112,6 +118,14 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 	for (const file of fs.readdirSync(distDir)) {
 		if (skip.has(file)) continue
 		fsEx.copySync(path.join(distDir, file), path.join(nested, file))
+	}
+	// Bundle MCP sidecar (HTTP server + start script) next to addon for settings/manual start
+	const mcpSidecarSrc = path.join(root, 'mcp-sidecar')
+	if (fs.existsSync(mcpSidecarSrc)) {
+		const mcpDest = path.join(nested, 'mcp-sidecar')
+		fsEx.copySync(mcpSidecarSrc, mcpDest, {
+			filter: (src) => !src.includes(`${path.sep}node_modules${path.sep}`)
+		})
 	}
 	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
 	const meta = {

@@ -2989,6 +2989,7 @@ function refreshAssistantViews() {
     if (window.Application?.ribbonUI?.InvalidateControl) {
       [
         'menuMoreAssistants',
+        'btnAssistantManage',
         'menuContextAssistantMore',
         'btnAssistantPrimarySlot1',
         'btnAssistantPrimarySlot2',

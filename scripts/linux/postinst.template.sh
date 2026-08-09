@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 # Copies add-in into the invoking user's jsaddons (typical: sudo dpkg -i).
 # 麒麟 / UOS 等环境下若用图形界面安装 .deb，可能没有 SUDO_USER，需额外推断登录用户。
 set -e
@@ -103,6 +103,20 @@ done
 
 if test -x "/opt/apps/cn.wps.wps-office-pro/files/bin/quickstartoffice"; then
 	echo "chayuan-wps-addon: 若未看到加载项，请执行: /opt/apps/cn.wps.wps-office-pro/files/bin/quickstartoffice restart" >&2
+fi
+
+# Phase 2+: install MCP sidecar user autostart (best-effort; needs node)
+MCP_SRC="$INSTALL_ROOT/$ADDON_FOLDER/mcp-sidecar"
+if test -d "$MCP_SRC" && test -n "$TARGET_USER" && test "$TARGET_USER" != "root"; then
+	MCP_HOME="$USER_HOME/.config/chayuan-wps/mcp"
+	mkdir -p "$MCP_HOME/runtime"
+	cp -a "$MCP_SRC/." "$MCP_HOME/runtime/" 2>/dev/null || true
+	chown -R "$TARGET_USER:$TARGET_USER" "$MCP_HOME" 2>/dev/null || true
+	if test -x "$MCP_HOME/runtime/autostart/install-linux-user.sh"; then
+		su - "$TARGET_USER" -c "CHAYUAN_MCP_HOME=$MCP_HOME/runtime bash $MCP_HOME/runtime/autostart/install-linux-user.sh" 2>/dev/null \
+			|| echo "chayuan-wps-addon: MCP autostart skipped (run $MCP_HOME/runtime/autostart/install-linux-user.sh as user)" >&2
+	fi
+	echo "chayuan-wps-addon: MCP sidecar staged at $MCP_HOME/runtime (URL http://127.0.0.1:62588/mcp)"
 fi
 
 exit 0

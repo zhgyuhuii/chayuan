@@ -494,3 +494,83 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
   }
   return extractContentFromResponse(data)
 }
+
+/**
+ * Non-streaming chat completions returning the full assistant message
+ * (content + tool_calls) for MCP / agent tool loops.
+ */
+export async function chatCompletionMessage({
+  ribbonModelId,
+  providerId,
+  modelId,
+  messages,
+  signal,
+  timeoutMs,
+  requestTimeoutMs,
+  ...extraBody
+}) {
+  let cfg = null
+  if (providerId && modelId) {
+    cfg = getChatApiConfigByProvider(providerId, modelId)
+  } else {
+    cfg = getChatApiConfig(ribbonModelId)
+  }
+  if (!cfg) {
+    throw new Error('未配置该模型的 API 地址，请在设置中配置')
+  }
+  const pid = providerId || parseModelCompositeId(ribbonModelId)?.providerId
+  if (!isLocalLikeProvider(pid) && !cfg.apiKey) {
+    throw new Error('未配置 API 密钥，请在设置中配置')
+  }
+
+  const body = {
+    ...extraBody,
+    model: cfg.model,
+    messages,
+    stream: false
+  }
+
+  const headers = { 'Content-Type': 'application/json' }
+  if (cfg.apiKey) {
+    headers['Authorization'] = `Bearer ${cfg.apiKey.split(',')[0].trim()}`
+  }
+
+  const timeout = requestTimeoutMs ?? timeoutMs ?? defaultIdleTimeoutForProvider(pid)
+  const abort = createRequestAbortSignal(signal, timeout)
+  let res
+  let text
+  try {
+    res = await fetch(cfg.apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: abort.signal
+    })
+    abort.notifyActivity()
+    text = await res.text()
+  } catch (e) {
+    if (abort.isTimeout()) {
+      throw new Error(formatRequestTimeoutMessage(timeout, { endpoint: cfg.apiUrl, model: cfg.model }))
+    }
+    throw e
+  } finally {
+    abort.cleanup()
+  }
+  if (!res.ok) {
+    throw new Error(normalizeChatApiErrorMessage(res.status, text, '请求失败'))
+  }
+  let data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    throw new Error(`响应非 JSON: ${text.slice(0, 200)}`)
+  }
+  const message = data?.choices?.[0]?.message || {}
+  const content = extractContentFromResponse(data)
+  return {
+    role: message.role || 'assistant',
+    content: content || (typeof message.content === 'string' ? message.content : ''),
+    tool_calls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+    raw: data
+  }
+}
