@@ -1913,6 +1913,81 @@
             @change="onAttachmentChange"
           />
           <div class="composer-tools">
+          <div class="model-select-wrap" ref="modelSelectRef">
+            <button
+              type="button"
+              class="composer-tool-btn model-select-btn"
+              :class="{ 'is-open': modelDropdownOpen }"
+              @click="toggleModelDropdown"
+              @blur="onModelSelectBlur"
+              :title="selectedModelName || '配置模型'"
+              aria-label="配置模型"
+            >
+              <!-- 模型：芯片 + 当前厂商标识 -->
+              <svg class="composer-tool-icon composer-tool-icon--model" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.7" />
+                <path d="M10 10h4v4h-4z" stroke="currentColor" stroke-width="1.5" />
+                <path
+                  d="M9 4.5v2.5M12 4.5v2.5M15 4.5v2.5M9 17v2.5M12 17v2.5M15 17v2.5M4.5 9h2.5M4.5 12h2.5M4.5 15h2.5M17 9h2.5M17 12h2.5M17 15h2.5"
+                  stroke="currentColor"
+                  stroke-width="1.55"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <img
+                v-if="selectedModelIcon"
+                :src="publicAssetUrl(selectedModelIcon)"
+                class="composer-tool-logo-badge"
+                alt=""
+                decoding="async"
+              />
+            </button>
+            <div v-if="modelDropdownOpen" class="model-dropdown">
+              <div v-if="filteredModelGroups.length === 0" class="model-dropdown-empty">
+                <p class="model-dropdown-empty-text">请先在设置中配置模型：开启提供商、填写 API 地址与密钥、刷新模型清单</p>
+                <button type="button" class="model-dropdown-empty-btn" @mousedown.prevent="openModelSettings">
+                  立即配置模型
+                </button>
+              </div>
+              <template v-else>
+                <div v-for="group in filteredModelGroups" :key="group.providerId || group.label" class="model-group">
+                  <div
+                    class="model-group-label"
+                    :class="{ collapsed: isModelGroupCollapsed(group.providerId) }"
+                    @mousedown.prevent="toggleModelGroupCollapsed(group.providerId)"
+                  >
+                    <span class="model-group-arrow">▾</span>
+                    <img
+                      :src="publicAssetUrl(group.icon || getModelLogoPath(group.providerId))"
+                      class="model-group-icon"
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span>{{ group.label }}</span>
+                  </div>
+                  <div v-show="!isModelGroupCollapsed(group.providerId)" class="model-group-models">
+                    <div
+                      v-for="m in group.models"
+                      :key="m.id"
+                      class="model-option"
+                      :class="{ active: selectedModelId === m.id }"
+                      @mousedown.prevent="selectModel(m)"
+                    >
+                      <img
+                        :src="publicAssetUrl(getModelLogoPath(m.providerId))"
+                        class="model-option-icon"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <span>{{ m.name || m.modelId }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
           <div class="mcp-select-wrap" ref="mcpSelectRef">
             <button
               type="button"
@@ -1925,27 +2000,15 @@
               @click="toggleMcpDropdown"
               @blur="onMcpSelectBlur"
             >
+              <!-- 文档智能体：机器人 -->
               <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M8 4.8h5.1L16.5 8.2V18.5A1.5 1.5 0 0 1 15 20H8a1.5 1.5 0 0 1-1.5-1.5v-12A1.5 1.5 0 0 1 8 4.8Z"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M13 4.9V8.2h3.4M9.4 12.2h4.4M9.4 15.2h3.2"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M17.6 12.2 19 10.8M17.6 12.2 19 13.6M17.6 12.2h-1.8"
-                  stroke="currentColor"
-                  stroke-width="1.55"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
+                <path d="M12 4.2v2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                <circle cx="12" cy="3.4" r="0.9" fill="currentColor" />
+                <rect x="6.2" y="6.8" width="11.6" height="9.2" rx="3.2" stroke="currentColor" stroke-width="1.7" />
+                <circle cx="9.6" cy="11" r="1.05" fill="currentColor" />
+                <circle cx="14.4" cy="11" r="1.05" fill="currentColor" />
+                <path d="M10.2 14.1h3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <path d="M4.8 10.2v2.8M19.2 10.2v2.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
               </svg>
               <span
                 class="composer-tool-dot"
@@ -2003,84 +2066,24 @@
             :class="{ 'is-active': currentChatKbBoundCount > 0 }"
             @click="openKnowledgeBaseDialog"
           >
+            <!-- 知识库：书本 -->
             <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
-                d="M6.5 5.5h9.2A1.8 1.8 0 0 1 17.5 7.3v11.2H8.3A1.8 1.8 0 0 1 6.5 16.7V5.5Z"
+                d="M5.5 5.2c1.5-.7 3.1-.7 4.5 0v12.4c-1.4-.7-3-.7-4.5 0V5.2Z"
                 stroke="currentColor"
                 stroke-width="1.7"
                 stroke-linejoin="round"
               />
               <path
-                d="M6.5 16.7A1.8 1.8 0 0 0 8.3 18.5h9.2"
+                d="M18.5 5.2c-1.5-.7-3.1-.7-4.5 0v12.4c1.4-.7 3-.7 4.5 0V5.2Z"
                 stroke="currentColor"
                 stroke-width="1.7"
-                stroke-linecap="round"
+                stroke-linejoin="round"
               />
-              <path d="M9.5 9h5.2M9.5 12.2h5.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M12 5.4v12.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
             <span v-if="currentChatKbBoundCount > 0" class="composer-tool-badge">{{ currentChatKbBoundCount }}</span>
           </button>
-          <div class="model-select-wrap" ref="modelSelectRef">
-            <button
-              type="button"
-              class="composer-tool-btn model-select-btn"
-              :class="{ 'is-open': modelDropdownOpen }"
-              @click="toggleModelDropdown"
-              @blur="onModelSelectBlur"
-              :title="selectedModelName"
-              aria-label="配置模型"
-            >
-              <img :src="publicAssetUrl(selectedModelIcon)" class="composer-tool-logo" alt="" decoding="async" />
-              <svg class="composer-tool-caret" viewBox="0 0 12 12" aria-hidden="true">
-                <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <div v-if="modelDropdownOpen" class="model-dropdown">
-              <div v-if="filteredModelGroups.length === 0" class="model-dropdown-empty">
-                <p class="model-dropdown-empty-text">请先在设置中配置模型：开启提供商、填写 API 地址与密钥、刷新模型清单</p>
-                <button type="button" class="model-dropdown-empty-btn" @mousedown.prevent="openModelSettings">
-                  立即配置模型
-                </button>
-              </div>
-              <template v-else>
-                <div v-for="group in filteredModelGroups" :key="group.providerId || group.label" class="model-group">
-                  <div
-                    class="model-group-label"
-                    :class="{ collapsed: isModelGroupCollapsed(group.providerId) }"
-                    @mousedown.prevent="toggleModelGroupCollapsed(group.providerId)"
-                  >
-                    <span class="model-group-arrow">▾</span>
-                    <img
-                      :src="publicAssetUrl(group.icon || getModelLogoPath(group.providerId))"
-                      class="model-group-icon"
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <span>{{ group.label }}</span>
-                  </div>
-                  <div v-show="!isModelGroupCollapsed(group.providerId)" class="model-group-models">
-                    <div
-                      v-for="m in group.models"
-                      :key="m.id"
-                      class="model-option"
-                      :class="{ active: selectedModelId === m.id }"
-                      @mousedown.prevent="selectModel(m)"
-                    >
-                      <img
-                        :src="publicAssetUrl(getModelLogoPath(m.providerId))"
-                        class="model-option-icon"
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <span>{{ m.name || m.modelId }}</span>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
           <button
             type="button"
             class="composer-tool-btn"
@@ -2088,9 +2091,10 @@
             aria-label="选择附件"
             @click="openAttachmentPicker"
           >
+            <!-- 附件：回形针 -->
             <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
-                d="M15.2 7.3 8.55 13.95a2.4 2.4 0 1 0 3.4 3.4l7.05-7.05a3.9 3.9 0 0 0-5.52-5.51L6.3 11.97a5.4 5.4 0 0 0 7.64 7.64l5.9-5.9"
+                d="M15.4 7.1 8.7 13.8a2.5 2.5 0 0 0 3.54 3.54l7.35-7.35a4 4 0 0 0-5.66-5.66L6.1 12.16a5.5 5.5 0 0 0 7.78 7.78l5.4-5.4"
                 stroke="currentColor"
                 stroke-width="1.7"
                 stroke-linecap="round"
@@ -2107,20 +2111,20 @@
             aria-label="展开文档感知"
             @click="selectionContextCollapsed = !selectionContextCollapsed"
           >
+            <!-- 文档感知：眼睛 -->
             <svg
-              class="composer-tool-icon composer-tool-toggle"
-              :class="{ 'is-expanded': !selectionContextCollapsed }"
+              class="composer-tool-icon"
               viewBox="0 0 24 24"
               fill="none"
               aria-hidden="true"
             >
               <path
-                d="M9 7.5 15 12l-6 4.5"
+                d="M3.8 12s2.8-5.4 8.2-5.4S20.2 12 20.2 12s-2.8 5.4-8.2 5.4S3.8 12 3.8 12Z"
                 stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
+                stroke-width="1.7"
                 stroke-linejoin="round"
               />
+              <circle cx="12" cy="12" r="2.2" stroke="currentColor" stroke-width="1.7" />
             </svg>
           </button>
           <button
@@ -2132,17 +2136,13 @@
             title="发送"
             aria-label="发送"
           >
+            <!-- 发送：纸飞机 -->
             <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
-                d="M5.2 11.2 18.4 5.4c.7-.3 1.4.4 1.1 1.1l-5.8 13.2c-.3.7-1.3.7-1.6 0l-2.1-5.2-5.2-2.1c-.7-.3-.7-1.3 0-1.6Z"
+                d="M4.6 11.1 19.2 4.7c.65-.28 1.28.35 1 1L14.4 20c-.28.65-1.2.66-1.5 0l-2-4.9-4.9-2c-.66-.28-.65-1.2 0-1.5Z"
                 fill="currentColor"
               />
-              <path
-                d="m10.7 13.3 7.6-7.6"
-                stroke="#fff"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
+              <path d="m10.5 13.1 7.8-7.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           </button>
           </div>
@@ -17808,18 +17808,22 @@ export default {
   height: 18px;
   display: block;
 }
-.composer-tool-logo {
-  width: 16px;
-  height: 16px;
+.composer-tool-icon--model {
+  width: 18px;
+  height: 18px;
+}
+.composer-tool-logo-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 11px;
+  height: 11px;
   object-fit: contain;
   display: block;
-  border-radius: 3px;
-}
-.composer-tool-caret {
-  width: 10px;
-  height: 10px;
-  margin-left: 1px;
-  opacity: 0.72;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+  pointer-events: none;
 }
 .composer-tool-badge {
   position: absolute;
@@ -17854,12 +17858,6 @@ export default {
 .composer-tool-dot.is-green { background: #22c55e; }
 .composer-tool-dot.is-yellow { background: #f59e0b; }
 .composer-tool-dot.is-gray { background: #adb5bd; }
-.composer-tool-toggle {
-  transition: transform 0.18s ease;
-}
-.composer-tool-toggle.is-expanded {
-  transform: rotate(90deg);
-}
 .composer-tool-btn--send {
   margin-left: auto;
   background: rgba(14, 165, 233, 0.12);
@@ -21134,8 +21132,7 @@ export default {
 }
 
 .model-select-btn {
-  width: 40px;
-  gap: 0;
+  width: 32px;
 }
 
 .model-dropdown {
