@@ -1,0 +1,208 @@
+﻿{
+  "at": "2026-08-09T11:03:23.656Z",
+  "decision": {
+    "phase2": "GO",
+    "reasons": [
+      "Spike ShellExecute=NO_EFFECT（预期可失败，不影响 Phase2）"
+    ],
+    "mustOk": true,
+    "agentOk": true,
+    "docBridgeOk": true,
+    "spikeOk": true
+  },
+  "results": [
+    {
+      "name": "sidecar.healthz",
+      "ok": true,
+      "detail": "pid=88092"
+    },
+    {
+      "name": "wpsjs.debug.boot",
+      "ok": true,
+      "detail": "skipped"
+    },
+    {
+      "name": "agent.online",
+      "ok": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "addon.selftest.report",
+      "ok": true,
+      "detail": "source=addon-auto; ws=OPEN_OK; shell=NO_EFFECT"
+    },
+    {
+      "name": "mcp.initialize",
+      "ok": true,
+      "detail": "0.4.0"
+    },
+    {
+      "name": "mcp.tools/list",
+      "ok": true,
+      "detail": "25 tools"
+    },
+    {
+      "name": "mcp.wps_status",
+      "ok": true,
+      "detail": "agentOnline=true; L2=true"
+    },
+    {
+      "name": "mcp.confirm.proofread_apply",
+      "ok": true,
+      "detail": "CONFIRMATION_REQUIRED"
+    },
+    {
+      "name": "mcp.confirm.document_add_comment",
+      "ok": true,
+      "detail": "CONFIRMATION_REQUIRED"
+    },
+    {
+      "name": "mcp.document_get_text",
+      "ok": true,
+      "detail": "chars=30"
+    },
+    {
+      "name": "mcp.document_ensure_open",
+      "ok": true,
+      "detail": "18ms alreadyOpen=true"
+    },
+    {
+      "name": "mcp.wps_launch",
+      "ok": true,
+      "detail": "launched=false"
+    },
+    {
+      "name": "mcp.document_meta",
+      "ok": true,
+      "detail": "chars=30 estChunks=1"
+    },
+    {
+      "name": "mcp.document_chunks",
+      "ok": true,
+      "detail": "total=1 page=1 hasMore=false"
+    },
+    {
+      "name": "mcp.document_locate",
+      "ok": true,
+      "detail": "matches=1"
+    },
+    {
+      "name": "mcp.document_replace.preview",
+      "ok": true,
+      "detail": "requiresConfirmation"
+    },
+    {
+      "name": "mcp.proofread_run.dryRun",
+      "ok": true,
+      "detail": "issues=0 taskId=task_1786273403346_qrgknb3"
+    }
+  ],
+  "addonReport": {
+    "source": "addon-auto",
+    "protocolVersion": 1,
+    "status": {
+      "agentRunning": true,
+      "agentId": "wps-mslox8rh-b0wm2q",
+      "tokenPresent": false,
+      "sidecar": {
+        "online": true,
+        "ok": true,
+        "name": "chayuan-wps",
+        "version": "0.1.0",
+        "url": "http://127.0.0.1:62588/mcp",
+        "healthz": "http://127.0.0.1:62588/healthz",
+        "dataDir": "C:\\Users\\zhgyu\\AppData\\Local\\chayuan-wps\\mcp",
+        "protocolVersion": 1,
+        "uptimeMs": 337191,
+        "pid": 88092,
+        "agent": {
+          "agentOnline": true,
+          "agentCount": 1,
+          "agents": [
+            {
+              "agentId": "wps-mslox8rh-b0wm2q",
+              "protocolVersion": 1,
+              "addonVersion": "3.0.12",
+              "windowId": "ribbon",
+              "lastSeen": 1786273173970,
+              "online": true
+            }
+          ],
+          "pendingJobs": 0,
+          "inflightJobs": 0,
+          "protocolVersion": 1
+        }
+      },
+      "mcpUrl": "http://127.0.0.1:62588/mcp",
+      "protocolVersion": 1
+    },
+    "spikes": {
+      "at": 1786273179077,
+      "ws": {
+        "id": "ws",
+        "pageProtocol": "file:",
+        "pageHref": "file:///C:/Users/zhgyu/AppData/Roaming/Kingsoft/wps/jsaddons/chayuan_3.0.12/index.html#/",
+        "wsUrl": "ws://127.0.0.1:62588/agent-ws",
+        "elapsedMs": 10,
+        "ok": true,
+        "verdict": "OPEN_OK",
+        "note": "WebSocket 可从当前页面连到 127.0.0.1 → Phase 3 可评估切 WS"
+      },
+      "shell": {
+        "id": "shell",
+        "ok": false,
+        "verdict": "NO_EFFECT",
+        "hasApi": true,
+        "launchedPath": "mcp-sidecar\\spike-shell-marker.cmd",
+        "markerId": "spike-msloxbib",
+        "markerHit": false,
+        "broughtOnline": false,
+        "healthBefore": true,
+        "healthAfter": true,
+        "elapsedMs": 8525,
+        "note": "ShellExecute 调用无可见效果（新版 WPS 常见）→ 放弃 WPS 内 spawn 为主路径"
+      },
+      "alive": {
+        "id": "alive",
+        "ok": false,
+        "verdict": "EARLY",
+        "firstAt": 1786273168024,
+        "lastAt": 1786273168024,
+        "ticks": 0,
+        "aliveMs": 0,
+        "aliveMinutes": 0,
+        "sinceLastMs": 11053,
+        "stale": false,
+        "note": "已连续记录约 0 分钟；请保持 WPS 空闲观察是否被回收"
+      },
+      "summary": {
+        "useLongPoll": false,
+        "allowWpsSpawn": false,
+        "ribbonSurvival": "EARLY"
+      }
+    },
+    "page": {
+      "href": "file:///C:/Users/zhgyu/AppData/Roaming/Kingsoft/wps/jsaddons/chayuan_3.0.12/index.html#/",
+      "protocol": "file:"
+    },
+    "receivedAt": 1786273179098,
+    "agent": {
+      "agentOnline": true,
+      "agentCount": 1,
+      "agents": [
+        {
+          "agentId": "wps-mslox8rh-b0wm2q",
+          "protocolVersion": 1,
+          "addonVersion": "3.0.12",
+          "windowId": "ribbon",
+          "lastSeen": 1786273173970,
+          "online": true
+        }
+      ],
+      "pendingJobs": 0,
+      "inflightJobs": 0,
+      "protocolVersion": 1
+    },
+    "savedAt": 1786273179098
+  }
+}
