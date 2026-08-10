@@ -17,7 +17,10 @@ import {
   mapNormalizedRangeToRaw,
   normalizeTextWithIndexMap
 } from './documentPositionUtils.js'
-import { resolveAbsoluteAnchorFromChunkRange } from './documentAnchorResolve.js'
+import {
+  addCommentPinnedToExactText,
+  resolveAbsoluteAnchorFromChunkRange
+} from './documentAnchorResolve.js'
 
 /** WPS ShowDialog 内可能无 Application，从 opener/parent 获取（不赋值 window.Application，避免只读属性报错） */
 function getApplication() {
@@ -915,38 +918,52 @@ export function addCommentAtText(doc, chunkStart, issue, chunkText, commentText,
     return { ok: false, reasonCode: 'missing_anchor', reasonLabel: '缺少定位片段' }
   }
   const match = findIssueRangeDetailed(chunkText, issue)
-  if (!match?.ok || !match.range) {
-    return match || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
+  // chunk 内匹配只用于 hint；真正落点一律走 Find + Scope 复核（表格必须如此）
+  let hintStart = Number(chunkStart) || 0
+  let preferredStart = null
+  let preferredEnd = null
+  if (match?.ok && match.range) {
+    const resolved = resolveAbsoluteAnchorFromChunkRange(doc, {
+      chunkStart,
+      chunkEnd: anchorOpts?.chunkEnd,
+      chunkText,
+      relativeRangeMap: anchorOpts?.relativeRangeMap,
+      relativeStart: match.range.start,
+      relativeEnd: match.range.end,
+      expectedText: issue.text,
+      prefix: issue.prefix,
+      suffix: issue.suffix,
+      sentence: issue.sentence,
+      matchReasonCode: match.reasonCode,
+      matchReasonLabel: match.reasonLabel
+    })
+    if (resolved?.ok) {
+      hintStart = resolved.start
+      preferredStart = resolved.start
+      preferredEnd = resolved.end
+    } else {
+      hintStart = Number(chunkStart) + Number(match.range.start || 0)
+    }
   }
-  const resolved = resolveAbsoluteAnchorFromChunkRange(doc, {
-    chunkStart,
-    chunkEnd: anchorOpts?.chunkEnd,
-    chunkText,
-    relativeRangeMap: anchorOpts?.relativeRangeMap,
-    relativeStart: match.range.start,
-    relativeEnd: match.range.end,
-    expectedText: issue.text,
+
+  const pinned = addCommentPinnedToExactText(doc, issue.text, commentText, {
+    hintStart,
     prefix: issue.prefix,
     suffix: issue.suffix,
-    matchReasonCode: match.reasonCode,
-    matchReasonLabel: match.reasonLabel
+    sentence: issue.sentence,
+    preferredStart,
+    preferredEnd
   })
-  if (!resolved?.ok) {
-    return resolved || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
+  if (!pinned?.ok) {
+    return pinned || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
   }
-  try {
-    const range = doc.Range(resolved.start, resolved.end)
-    doc.Comments.Add(range, commentText)
-    return {
-      ok: true,
-      reasonCode: resolved.reasonCode || match.reasonCode,
-      reasonLabel: resolved.reasonLabel || match.reasonLabel,
-      range: { start: resolved.start, end: resolved.end },
-      matchedBy: resolved.matchedBy
-    }
-  } catch (e) {
-    console.warn('addCommentAtText failed:', e)
-    return { ok: false, reasonCode: 'wps_comment_failed', reasonLabel: 'WPS 批注写入失败' }
+  return {
+    ok: true,
+    reasonCode: pinned.reasonCode || match?.reasonCode || 'word_find_exact',
+    reasonLabel: pinned.reasonLabel || match?.reasonLabel || '已精确批注到原文',
+    range: { start: pinned.start, end: pinned.end },
+    matchedBy: pinned.matchedBy,
+    warning: pinned.warning
   }
 }
 

@@ -490,11 +490,45 @@ export async function handleDocumentAddComment(params = {}) {
     err.code = 'INVALID_PARAMS'
     throw err
   }
-  const hasAnchor =
-    params.originalText ||
-    params.expectedText ||
-    params.anchorText ||
-    (Number.isFinite(Number(params.start)) && Number.isFinite(Number(params.end)))
+  const anchorText = String(
+    params.originalText || params.expectedText || params.anchorText || ''
+  ).trim()
+  // 表格精确批注：有原文时走 Find + Select + Scope 复核，避免 Comments.Add 挂到整格
+  if (anchorText) {
+    const { addCommentPinnedToExactText } = await import('../../utils/documentAnchorResolve.js')
+    const pinned = addCommentPinnedToExactText(doc, anchorText, text, {
+      hintStart: Number(params.hintStart) || Number(params.start) || 0,
+      prefix: String(params.prefix || ''),
+      suffix: String(params.suffix || ''),
+      sentence: String(params.sentence || ''),
+      preferredStart: Number(params.start),
+      preferredEnd: Number(params.end)
+    })
+    if (!pinned?.ok) {
+      const err = new Error(pinned?.reasonLabel || '无法精确批注到原文')
+      err.code = pinned?.reasonCode || 'ANCHOR_FAILED'
+      throw err
+    }
+    return {
+      ok: true,
+      action: 'comment',
+      charCount: text.length,
+      message: pinned.reasonLabel || '已添加批注',
+      matchedBy: pinned.matchedBy,
+      warning: pinned.warning || null,
+      range: { start: pinned.start, end: pinned.end },
+      scope: pinned.scope || null,
+      writeTargets: [{
+        action: 'comment',
+        start: pinned.start,
+        end: pinned.end,
+        originalText: anchorText,
+        outputText: text
+      }],
+      document: docInfo(doc)
+    }
+  }
+  const hasAnchor = Number.isFinite(Number(params.start)) && Number.isFinite(Number(params.end))
   const options = { title: params.title || '察元 MCP 批注' }
   if (hasAnchor) {
     const resolved = resolveWritableRange(doc, params)

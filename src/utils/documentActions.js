@@ -1,6 +1,7 @@
 import { ensureDir, getEffectiveDataDir, pathJoin, pathSep } from './dataPathSettings.js'
 import { parseMarkdownBlocks, markdownHasRichContent, renderMarkdownBlocksToDocument } from './markdownDocumentRenderer.js'
 import { findIssueRangeDetailed } from './spellCheckService.js'
+import { trimDocumentRangeEndMarks } from './documentAnchorResolve.js'
 import {
   ANALYSIS_SECRET_KEYWORD_EXTRACT_ID,
   ANALYSIS_SECURITY_CHECK_ID,
@@ -202,7 +203,27 @@ function addCommentToRange(range, text) {
   if (!doc?.Comments || !range) {
     throw new Error('无法添加批注')
   }
-  doc.Comments.Add(range, text)
+  // 表格内：先裁掉格尾/段尾标记，再 Select 后添加，避免挂到整格或行尾
+  let start = Number(range.Start)
+  let end = Number(range.End)
+  try {
+    const trimmed = trimDocumentRangeEndMarks(doc, start, end)
+    start = trimmed.start
+    end = trimmed.end
+  } catch { /* ignore */ }
+  if (!(end > start)) {
+    start = Number(range.Start)
+    end = Number(range.End)
+  }
+  const target = doc.Range(start, end)
+  try { target.Select?.() } catch { /* ignore */ }
+  try {
+    if (target.Comments && typeof target.Comments.Add === 'function') {
+      target.Comments.Add(target, text)
+      return
+    }
+  } catch { /* fall through */ }
+  doc.Comments.Add(target, text)
 }
 
 function createLocateKey(start, end, paragraphIndex = null) {
