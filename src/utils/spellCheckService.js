@@ -68,8 +68,19 @@ if (typeof window !== 'undefined' && !window.__ndSpellCheckStopListenerBound) {
   window.__ndSpellCheckStopListenerBound = true
 }
 
-// WPS/Office 宿主中的文档批注写入属于重操作，串行更稳定，也能避免长时间占用 UI 线程。
-const CONCURRENCY = 1
+// 校对逐段调模型是最主要的耗时。MCP proofread_run 走 dryRun，分块只调模型、不写文档，
+// 彼此独立、可安全并发（processSpellCheckChunks 里仅在 documentAction==='none' 时启用并发）。
+// 并发度从全局设置 spellCheckConcurrency 读取，默认 3，范围 [1,8]；自托管/本地代理可调高，
+// 云端有速率限制时调低。内联写批注的 UI 校对仍串行：WPS 批注写入是重操作，串行更稳定、
+// 也不会长时间占用 UI 线程。
+function getSpellCheckConcurrency() {
+  try {
+    const raw = loadGlobalSettings()?.spellCheckConcurrency
+    const n = Math.floor(Number(raw))
+    if (Number.isFinite(n) && n >= 1 && n <= 8) return n
+  } catch { /* ignore */ }
+  return 3
+}
 const UI_YIELD_EVERY = 3
 const SPELL_CHECK_PROMPT = `你是一位专业的文字校对专家。请对以下文本进行拼写与语法检查。
 
@@ -1211,6 +1222,8 @@ async function processSpellCheckChunks({
   activeSpellCheckRuns.set(taskId, runState)
   const liveItems = [...initialItems]
   let liveCommentCount = 0
+  // 并发分块时用「已完成块数」单调推进进度，避免旧的 current=i+1（块开始下标）在并发下乱跳。
+  let chunksCompleted = 0
 
   function updateLiveTaskItem(itemIndex, itemData) {
     liveItems[itemIndex] = itemData
@@ -1257,9 +1270,8 @@ async function processSpellCheckChunks({
         }
         onChunkContent?.(input.trim().slice(0, 200) + (input.trim().length > 200 ? '...' : ''))
         const prevTaskData = getTaskById(taskId)?.data || {}
+        // 仅更新「当前块预览」数据；current/progress 改为在块完成时按已完成数单调推进（见 finally）。
         updateTask(taskId, {
-          current: i + 1,
-          progress: Math.round(((i + 1) / filteredChunks.length) * 100),
           data: {
             ...prevTaskData,
             documentAction,
@@ -1271,7 +1283,6 @@ async function processSpellCheckChunks({
             commentCount: liveCommentCount
           }
         })
-        onProgress?.(i + 1, filteredChunks.length)
         await yieldToUI()
         throwIfCancelled(runState)
 
@@ -1359,10 +1370,19 @@ async function processSpellCheckChunks({
           })
         }
         throw error
+      } finally {
+        // 并发安全：用「已完成块数」单调推进进度，成功/失败/取消都计数，避免进度卡住或乱跳。
+        chunksCompleted += 1
+        const pct = Math.round((chunksCompleted / filteredChunks.length) * 100)
+        updateTask(taskId, { current: chunksCompleted, progress: pct })
+        onProgress?.(chunksCompleted, filteredChunks.length)
+        await yieldToUI()
       }
     })
 
-    const results = await pLimit(chunkFns, CONCURRENCY)
+    // 仅 dryRun（不写文档）路径并发；内联写批注的 UI 校对仍串行（documentAction!=='none'）。
+    const concurrency = documentAction === 'none' ? getSpellCheckConcurrency() : 1
+    const results = await pLimit(chunkFns, concurrency)
     const totalComments = results.reduce((sum, r) => sum + (r.ok ? r.value?.added ?? 0 : 0), 0)
     const completedCount = results.filter(r => r.ok).length
     const finalItems = results.map((r, i) => {
