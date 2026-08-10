@@ -5226,11 +5226,24 @@ export default {
           signal: ctrl?.signal,
           onProgress: (step, steps) => {
             assistantMsg.mcpSteps = steps.slice()
-            this.updateAssistantLoadingProgress(assistantMsg, {
-              label: step.label || '文档智能体处理中…',
-              detail: step.detail || '',
-              percent: Math.min(90, 20 + steps.length * 8)
-            })
+            const realPercent = Number(step?.progress)
+            if (Number.isFinite(realPercent)) {
+              // 长任务（proofread）实时进度：钉住百分比、覆盖标签，定时器不再上爬
+              this.updateAssistantLoadingProgress(assistantMsg, {
+                label: step.label || '文档智能体处理中…',
+                detail: step.detail || '',
+                percent: realPercent,
+                pinned: true
+              })
+            } else {
+              // 普通步骤：按步数估算、解除钉住，让定时器继续向上爬
+              this.updateAssistantLoadingProgress(assistantMsg, {
+                label: step.label || '文档智能体处理中…',
+                detail: step.detail || '',
+                percent: Math.min(90, 20 + steps.length * 8),
+                pinned: false
+              })
+            }
             this.saveHistory()
           }
         })
@@ -5370,6 +5383,9 @@ export default {
           this.stopAssistantLoadingProgress(message, { keepState: true })
           return
         }
+        // 真实进度（校对 X/Y 段）时由 updateAssistantLoadingProgress 钉住百分比，定时器
+        // 停止上爬，避免把真实进度压回 93% 上限。
+        if (message.loadingState?.pinned) return
         const current = Number(message.loadingState?.percent || 0)
         const delta = current < 24 ? 3 : current < 48 ? 2 : current < 72 ? 1 : 0.4
         const next = Math.min(93, Math.round((current + delta) * 10) / 10)
@@ -5383,6 +5399,9 @@ export default {
       if (!message) return
       const currentPercent = Number(message.loadingState?.percent || 0)
       const nextPercent = Number(patch.percent)
+      let pinned = message.loadingState?.pinned
+      if (patch.pinned === true) pinned = true
+      else if (patch.pinned === false) pinned = false
       message.loadingState = {
         ...(message.loadingState || {
           label: '已发送，正在思考...',
@@ -5390,6 +5409,7 @@ export default {
           percent: 0
         }),
         ...patch,
+        pinned,
         percent: Number.isFinite(nextPercent)
           ? Math.max(currentPercent, Math.min(99, nextPercent))
           : currentPercent

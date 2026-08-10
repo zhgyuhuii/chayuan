@@ -18,8 +18,12 @@ import {
   listUpstreamTools,
   syncUpstreamAllowlist
 } from './mcpHttpClient.js'
+import { getActiveTask } from '../../utils/taskListStore.js'
 
-const MAX_ROUNDS = 8
+// 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
+// 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
+// 走 proofread_run 单次调用，根本用不到这么多轮。
+const MAX_ROUNDS = 16
 
 const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_add_comment|document_save|document_new|proofread_apply_comments)$/
 
@@ -66,8 +70,9 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent }) {
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
     '禁止调用 declassify_*。写文档前先 dryRun/预览；需要 confirmed=true 的写回交给用户确认，不要自行编造 confirmed=true。',
-    '检查错别字：chayuan__proofread_run(dryRun:true) → 汇总 issues，等待用户选择「写成批注」或「直接改正正文」。',
-    '修改/改正错别字：同样先 proofread_run(dryRun)，完成后说明将改正正文，不要只用批注交差。',
+    '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
+    '【改正正文】proofread_run 返回后，汇总问题并说明将直接改正正文（不要只用批注交差），再按用户选择走「写成批注」或「改正正文」出口。',
+    '【需要通读全文（翻译 / 改写 / 摘要）才用 document_chunks】每次 limit:8 尽量多读，cursor 只前进、不回退、不重读已读段落；读够立即停，把轮次留给写作工具，而不是反复分页。',
     hasSel
       ? `当前有选区（约 ${sel.charCount || '?'} 字）。用户提到「这段/选中」时，scope 用 selection。选区摘要：${String(sel.preview || '').slice(0, 240)}`
       : '当前无选区，默认 scope=document。',
@@ -161,6 +166,41 @@ function extractProofreadCard(toolName, args, result) {
 }
 
 /**
+ * proofread_run 是长任务（大文档逐块调模型，常需数十秒）。期间本页 dispatchMcpJob
+ * 在同一 JS 上下文里跑，会写一条 type:'spell-check' 的实时任务（含 current/total/
+ * progress）。这里在调用期间每 ~700ms 读一次 getActiveTask()，原地更新一条
+ * 「校对中 X/Y 段 (Z%)」进度步骤，经 onProgress 透传给加载条，避免一直死卡 93%。
+ */
+async function callLocalToolWithProofreadProgress(name, args, { signal, pushProgress } = {}) {
+  let timer = null
+  if (typeof pushProgress === 'function') {
+    let lastSignature = ''
+    timer = setInterval(() => {
+      if (signal?.aborted) return
+      let task = null
+      try { task = getActiveTask() } catch { task = null }
+      if (!task || task.type !== 'spell-check') return
+      const cur = Number(task.current || 0)
+      const total = Number(task.total || 0)
+      const pct = Math.max(0, Math.min(100, Math.round(Number(task.progress || 0))))
+      const signature = `${cur}/${total}/${pct}`
+      if (signature === lastSignature) return
+      lastSignature = signature
+      pushProgress({
+        label: total > 0 ? `校对中 ${cur}/${total} 段` : '校对中…',
+        detail: `${pct}%`,
+        progress: pct
+      })
+    }, 700)
+  }
+  try {
+    return await callLocalTool(name, args, { signal })
+  } finally {
+    if (timer) clearInterval(timer)
+  }
+}
+
+/**
  * @returns {Promise<{
  *   ok: boolean,
  *   fallback?: boolean,
@@ -187,6 +227,21 @@ export async function runMcpChatOrchestrator({
     const step = { at: Date.now(), label, detail }
     steps.push(step)
     onProgress?.(step, steps.slice())
+  }
+  // 长任务（proofread）实时进度：原地更新同一条进度步骤，避免在步骤列表里堆积重复行。
+  const pushProgress = (info) => {
+    const last = steps[steps.length - 1]
+    if (last && last.__progress) {
+      last.label = info.label
+      last.detail = info.detail
+      last.progress = info.progress
+      last.at = Date.now()
+      onProgress?.(last, steps.slice())
+    } else {
+      const step = { at: Date.now(), label: info.label, detail: info.detail, progress: info.progress, __progress: true }
+      steps.push(step)
+      onProgress?.(step, steps.slice())
+    }
   }
 
   const hz = await healthz({ signal })
@@ -382,7 +437,11 @@ export async function runMcpChatOrchestrator({
           if (!isChayuanToolAllowed(toolName)) {
             throw Object.assign(new Error('TOOL_NOT_ALLOWED'), { code: 'TOOL_NOT_ALLOWED' })
           }
-          result = await callLocalTool(toolName, args, { signal })
+          if (toolName === 'proofread_run') {
+            result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })
+          } else {
+            result = await callLocalTool(toolName, args, { signal })
+          }
         } else {
           result = await callUpstreamTool(serverId, toolName, args, { signal })
         }
