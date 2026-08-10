@@ -45,6 +45,10 @@ if [[ -d "$MCP_SRC" ]]; then
 	MCP_HOME="$USER_HOME/.config/chayuan-wps/mcp"
 	/bin/mkdir -p "$MCP_HOME/runtime"
 	/bin/cp -R "$MCP_SRC/." "$MCP_HOME/runtime/"
+	# 确保 sidecar 单文件二进制可执行（cp 可能丢位）
+	if [[ -d "$MCP_HOME/runtime/bin" ]]; then
+		/bin/chmod +x "$MCP_HOME/runtime/bin/"* 2>/dev/null || true
+	fi
 	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$MCP_HOME" 2>/dev/null || true
 	if [[ -x "$MCP_HOME/runtime/autostart/install-macos-launchagent.sh" ]]; then
 		/usr/bin/su - "$CONSOLE_USER" -c "bash $MCP_HOME/runtime/autostart/install-macos-launchagent.sh" 2>/dev/null \

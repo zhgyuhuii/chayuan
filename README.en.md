@@ -8,6 +8,10 @@
 
 </div>
 
+**Chayuan AI — WPS Writer AI add-in / WPS document agent.** In-editor AI chat, review, forms & body write-back; a **built-in local MCP document-agent** lets **Claude Code, OpenAI Codex, Cursor** read & write your WPS docs and **proofread multiple documents**; **offline / intranet LLM first** (Ollama, LM Studio, Xinference…).
+
+> **Keywords:** WPS add-in · WPS Writer AI · **document agent** · **WPS agent** · **multi-document proofreading** · spell & grammar check · **MCP / Model Context Protocol** · offline document AI · local LLM · KB RAG · 察元 AI.
+
 ---
 
 ## What's new in v3.0 — Remote Knowledge Base RAG
@@ -91,9 +95,77 @@ Then the Desktop/Network sidecar does the embedding / retrieval / reranking, and
 
 ---
 
+## 🤖 Document Agent (MCP) — let external AI agents read & write your WPS documents
+
+Chayuan ships a **local MCP (Model Context Protocol) document-agent service** that exposes **26 tools** for reading, locating, replacing, commenting, proofreading, and KB retrieval over your WPS documents as a standard **Streamable HTTP MCP** endpoint. Any MCP-capable agent — **Claude Code, OpenAI Codex, Cursor, Hermes, OpenClaw, Cline** — can point at a single URL and **work directly inside your WPS document**: open it, read the body, flag typos as comments, batch-replace text, cross-proofread multiple documents.
+
+- **No auth:** listens on `127.0.0.1` only — the localhost is the trust boundary; connection needs just a URL (no token / command / stdio).
+- **Fully offline:** the sidecar is co-located with WPS; documents and keys never leave your machine — suited for offline / intranet / air-gapped deployment.
+- **Auto-starts on install:** installers register an OS-level autostart (Windows `HKCU\…\Run` / macOS LaunchAgent / Linux systemd --user); **no Node.js required**.
+- **26 tools** cover document status / launch / open / metadata / paragraph + chunk reads / locate / replace / insert / comments / batch write-back (≤200 ops) / new / save / **declassify & restore** / **KB retrieval** / **spelling & grammar proofread (as comments or direct text fixes)** / assistant search & export. Full list: [docs/mcp-connection.md](docs/mcp-connection.md).
+
+### One-line connection (works for any MCP agent)
+
+Install Chayuan and open WPS; the service is ready. Endpoint:
+
+```
+http://127.0.0.1:62588/mcp
+```
+
+Health check: `GET http://127.0.0.1:62588/healthz` (expect `online`).
+
+### Claude Code
+
+```bash
+claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+```
+
+or in a project / user `.mcp.json`:
+
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### OpenAI Codex (codex CLI)
+
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.chayuan-wps]
+url = "http://127.0.0.1:62588/mcp"
+```
+
+### Cursor
+
+`.cursor/mcp.json` (or Settings → MCP → Add):
+
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### Hermes / OpenClaw
+
+Create an MCP service of type **HTTP / Streamable HTTP** pointing at `http://127.0.0.1:62588/mcp` (no token / command / stdio).
+
+### Claude Desktop / other JSON-config clients
+
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### Verify with MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector   # pick Streamable HTTP, paste the URL, Connect
+```
+
+> **Troubleshooting:** if a client can't connect, make sure WPS is open and the Chayuan add-in is loaded (`GET /healthz` returns `online`). The server binds `127.0.0.1:62588`; remote machines need a local proxy or a custom `CHAYUAN_MCP_PORT`. Full connection guide & tool params: [docs/mcp-connection.md](docs/mcp-connection.md).
+
+---
+
 ## 4.1 Version 2.0.0: major refactor and stability release
 
-**Current version: `2.0.0`.** This release consolidates the architecture and documentation work described across all Markdown planning/status files in this repository: v2 evolution planning, P0-P6 execution reports, workflow orchestration W1-W7, task-system redesign, runtime gap closure, assistant form layout, and the project status index.
+**Current version: `3.0.13`.** Below is the historical **v2.0** refactor note; v2.0 consolidated the architecture and documentation work described across all Markdown planning/status files in this repository: v2 evolution planning, P0-P6 execution reports, workflow orchestration W1-W7, task-system redesign, runtime gap closure, assistant form layout, and the project status index.
 
 Highlights:
 
@@ -205,6 +277,16 @@ npm run build:wps-online
 npm run build:wps-offline
 npm run lint
 npm run format
+
+# — cross-build all three platform installers from one machine —
+npm run build:wps-all        # front-end build + release/install-staging (shared)
+npm run build:wps-exe        # Windows SFX      release/chayuan-<ver>-windows-x64.exe
+npm run build:wps-pkg-macos  # macOS package    release/chayuan-<ver>-macos-<arch>.pkg
+npm run build:wps-deb        # Linux deb        release/chayuan-<ver>-linux-<arch>.deb
+
+# — local MCP document-agent service —
+npm run mcp:sidecar          # dev: node server.mjs (127.0.0.1:62588)
+npm run mcp:build-binary     # cross-compile 5-platform single-file binaries (needs Bun)
 ```
 
 Use **`wpsjs debug`** to attach the add-in to dev server or build output.

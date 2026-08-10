@@ -82,7 +82,7 @@ WPS 加载项：
 ## 产品事实基线（脚本统一口径）
 
 - 产品名：察元 AI（Chayuan AI）；出品：北京智灵鸟科技中心；官网 https://aidooo.com
-- 开源：Apache 2.0；WPS 加载项 v3.0.12
+- 开源：Apache 2.0；WPS 加载项 v3.0.13
 - 开源地址：github.com/zhgyuhuii/chayuan-wps-releases（WPS）、chayuan-desktop-releases（桌面/网络）
 - 四档 SKU：WPS 加载项 / 桌面版 / 服务版 / 至臻版（一套引擎）
 - 五类知识源：文档 doc: / 结构化 src: / 向量 src: / 办公 office: / 图像

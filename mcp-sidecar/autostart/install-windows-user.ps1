@@ -1,5 +1,6 @@
-﻿# Install chayuan-mcp user autostart via HKCU Run (Phase 3 lite — no Inno/NSIS).
-# Requires Node.js 18+ on PATH.
+# Install chayuan-mcp user autostart via HKCU Run — binary variant (no Node.js).
+# Uses the single-file sidecar binary in mcp-sidecar/bin/; falls back to node server.mjs
+# only if the binary is absent (protects dev / legacy installs).
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File install-windows-user.ps1
 #   powershell -ExecutionPolicy Bypass -File install-windows-user.ps1 -Uninstall
@@ -14,29 +15,18 @@ $RuntimeDir = Join-Path $DataDir 'runtime'
 $RunName = 'ChayuanWpsMcp'
 $RegPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-function Refresh-PathFromRegistry {
+function Find-Node {
   try {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($machine, $user, $env:Path) | Where-Object { $_ }) -join ';'
   } catch { }
-}
-
-function Find-Node {
-  Refresh-PathFromRegistry
   $cmd = Get-Command node -ErrorAction SilentlyContinue
   if ($cmd -and $cmd.Source) { return $cmd.Source }
   try {
     $where = (& where.exe node 2>$null | Select-Object -First 1)
     if ($where -and (Test-Path -LiteralPath $where)) { return $where }
   } catch { }
-  foreach ($candidate in @(
-    "$env:ProgramFiles\nodejs\node.exe",
-    "${env:ProgramFiles(x86)}\nodejs\node.exe",
-    "$env:LOCALAPPDATA\Programs\node\node.exe"
-  )) {
-    if (Test-Path -LiteralPath $candidate) { return $candidate }
-  }
   return $null
 }
 
@@ -46,21 +36,25 @@ if ($Uninstall) {
   exit 0
 }
 
-$node = Find-Node
-if (-not $node) {
-  Write-Error 'Node.js not found in PATH. Install Node 18+ then re-run.'
-}
-
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 Copy-Item -Path (Join-Path $Root '*') -Destination $RuntimeDir -Recurse -Force
-$server = Join-Path $RuntimeDir 'server.mjs'
-if (-not (Test-Path $server)) {
-  Write-Error "Missing $server after copy"
+
+# 优先单文件二进制（无需 Node）；缺失则回落 node server.mjs
+$exe = Join-Path $RuntimeDir 'bin\chayuan-mcp-windows-x64.exe'
+if (Test-Path -LiteralPath $exe) {
+  $runValue = "`"$exe`""
+  Write-Host "[chayuan-mcp] Run → native binary: $exe"
+} else {
+  $node = Find-Node
+  $server = Join-Path $RuntimeDir 'server.mjs'
+  if (-not $node -or -not (Test-Path -LiteralPath $server)) {
+    Write-Error "Neither sidecar binary ($exe) nor node+server.mjs available."
+  }
+  $cmdPath = Join-Path $RuntimeDir 'start-mcp.cmd'
+  $runValue = "`"$cmdPath`""
+  Write-Host "[chayuan-mcp] Run → node server.mjs (binary not found at $exe)" -ForegroundColor Yellow
 }
 
-$cmdPath = Join-Path $RuntimeDir 'start-mcp.cmd'
-# Quote-safe Run value: cmd /c start minimized hidden-ish via start-mcp.cmd
-$runValue = "`"$cmdPath`""
 New-Item -Path $RegPath -Force | Out-Null
 Set-ItemProperty -Path $RegPath -Name $RunName -Value $runValue -Type String
 
@@ -76,6 +70,10 @@ try {
   $null = Invoke-WebRequest -Uri 'http://127.0.0.1:62588/healthz' -UseBasicParsing -TimeoutSec 2
   Write-Host 'Sidecar already running on :62588'
 } catch {
-  Start-Process -FilePath $cmdPath -WindowStyle Minimized
+  if (Test-Path -LiteralPath $exe) {
+    Start-Process -FilePath $exe -WindowStyle Minimized
+  } else {
+    Start-Process -FilePath (Join-Path $RuntimeDir 'start-mcp.cmd') -WindowStyle Minimized
+  }
   Write-Host 'Started sidecar (minimized).'
 }

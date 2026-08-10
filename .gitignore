@@ -6,6 +6,11 @@ dist/
 .vite/
 wps-addon-build/
 
+# MCP sidecar compiled binaries & esbuild intermediate
+# (rebuild: npm run mcp:build-binary → 5 平台单文件二进制)
+mcp-sidecar/bin/
+mcp-sidecar/build/
+
 # Local / secrets
 .env
 .env.*

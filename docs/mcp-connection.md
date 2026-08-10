@@ -40,19 +40,58 @@ Windows 也可双击 `mcp-sidecar/start-mcp.cmd`（需 PATH 中有 Node 18+）�
 http://127.0.0.1:62588/mcp
 ```
 
-### Claude Code / Cursor / Codex（Streamable HTTP）
+### Claude Code
+
+用 CLI 一键注册（`--transport http`，`streamable-http` 为同义别名）：
+
+```bash
+claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+```
+
+或在项目 / 用户级 `.mcp.json` 写入：
 
 ```json
 {
   "mcpServers": {
-    "chayuan-wps": {
-      "url": "http://127.0.0.1:62588/mcp"
-    }
+    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```
 
-Hermes、OpenClaw 等同样选择 HTTP MCP，填入同一 URL。
+### OpenAI Codex（codex CLI）
+
+编辑 `~/.codex/config.toml`，加入一个 Streamable HTTP MCP server：
+
+```toml
+[mcp_servers.chayuan-wps]
+url = "http://127.0.0.1:62588/mcp"
+```
+
+### Cursor
+
+项目级 `.cursor/mcp.json`（或 设置 → MCP → Add）：
+
+```json
+{
+  "mcpServers": {
+    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
+  }
+}
+```
+
+### Hermes / OpenClaw
+
+新建 MCP 服务，类型选 **HTTP / Streamable HTTP**，URL 填 `http://127.0.0.1:62588/mcp`（无需 Token / 命令 / stdio）。
+
+### Claude Desktop / 其它 JSON 配置型客户端
+
+```json
+{
+  "mcpServers": {
+    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
+  }
+}
+```
 
 ### 口语使用示例
 
@@ -68,26 +107,38 @@ npx @modelcontextprotocol/inspector
 
 连接上述 URL 即可（鉴权已关闭；服务仅监听 `127.0.0.1`）。
 
-## 4. 工具（v0.4：外部 LLM + 长文分块）
+## 4. 工具（v0.5.0：26 个工具 · 外部 LLM 推理 + 长文分块）
 
-推理在客户端 LLM；WPS 只做读/定位/写/Export。不把 ~4500 助手注册成 MCP tools。
+推理在客户端 LLM；WPS 只做读/定位/写/Export。不把 ~4500 助手注册成 MCP tools（改用 `assistants_search/get` 检索导出）。
 
 | Tool | 说明 |
 |------|------|
-| `wps_status` / `wps_launch` | 服务状态 / OS 冷启动 WPS |
-| `document_open` / `document_ensure_open` | 打开 / 确保打开 |
-| `document_meta` | 字数、段数、是否建议分块 |
+| `wps_status` | 分层健康：sidecar / Agent / 活动文档 / 可见窗口 |
+| `wps_launch` | OS 冷启动 WPS 文字并等待 Agent 连接 |
+| `document_open` | 打开本地 .docx 为活动文档（可见窗口） |
+| `document_ensure_open` | 与活动文档一致则 no-op，否则打开 |
+| `document_meta` | 轻量元信息：名称 / 字数 / 段数 / 是否建议分块 |
+| `document_list_paragraphs` | 分页段落文本（含 start/end 锚点，逐段工作流） |
 | `document_chunks` | **长文分页分块**（`cursor`/`limit`，含 `start`/`end`） |
-| `document_get_text` | 短文全文；超约 80k 需 `force:true` 或改用 chunks |
-| `document_locate` | 定位字词/句，返回多命中 |
-| `document_replace` / `document_insert` | 替换 / 插入（段前段后/append）；未 confirm=preview |
-| `document_add_comment` | 批注（可选锚点）；**必须** `confirmed: true` |
-| `document_apply_ops` | 批量 ops；preview → confirm |
-| `document_new` / `document_save` | 新建 / 保存 |
-| `declassify_status` / `preview` / `apply` / `restore` | 脱密（apply/restore 需 confirm+password） |
-| `kb_retrieve` | 知识库片段（推理仍在外部 LLM） |
-| `proofread_*` | 插件内错别字快捷通道（可选） |
-| `assistants_search` / `get` | 助手目录 Export（不 run） |
+| `document_get_text` | 文档/选区纯文本；超约 80k 需 `force:true` 或改用 chunks |
+| `document_locate` | 定位字词/句，返回多命中用于锚点 |
+| `document_replace` | 替换锚点文本段（未 confirm=preview） |
+| `document_insert` | 相对锚点/文末插入（after/before/append/prepend/insert） |
+| `document_add_comment` | 加 WPS 批注；**必须** `confirmed: true` |
+| `document_apply_ops` | 批量写回（replace/comment/comment-replace/insert-after，≤200 ops） |
+| `document_new` | 新建空白文档或以模板路径开副本 |
+| `document_save` | 保存活动文档（可选另存为路径） |
+| `declassify_status` | 查询是否处于脱密/遮蔽态 |
+| `declassify_preview` | 由关键词构建遮蔽预览（不写盘） |
+| `declassify_apply` | 应用脱密（需 confirm+password+keywords） |
+| `declassify_restore` | 用密码复原脱密文档 |
+| `kb_retrieve` | 检索知识库片段供 LLM 推理 |
+| `proofread_run` | 跑错别字/语法校对（dryRun 默认仅返回 issues） |
+| `proofread_apply_comments` | 把 issues 转成 WPS 批注（需 confirm） |
+| `proofread_job_poll` | 轮询异步校对任务进度 |
+| `assistants_list_domains` | 列出助手领域目录（Agent 离线也可用） |
+| `assistants_search` | 按查询/领域检索约数千个察元助手 |
+| `assistants_get` | 导出单个助手完整定义/提示词 |
 
 ### 写操作 confirmed 策略
 
@@ -143,15 +194,25 @@ npx @modelcontextprotocol/inspector
 | `MODEL_NOT_CONFIGURED` | 未配置拼写检查模型 |
 | `CONFIRMATION_REQUIRED` | 写操作未传 `confirmed: true` |
 
-## 6. 明确不做 / 后置
+## 6. 安装器与自启（已实现）
 
-- WebView `ShellExecute` 拉起 sidecar / WPS → 不做主路径（Spike=`NO_EFFECT`）；`wps_launch` 用 sidecar OS spawn
-- Windows：可用 `mcp-sidecar/autostart/install-windows-user.ps1` 写 HKCU Run（需 Node）；完整 Inno/NSIS 安装器仍后置
-- Linux/macOS：`mcp-sidecar/autostart/` + deb/pkg postinst
-- Agent 传输：WebSocket 在 WPS `file://` 下已验证 OPEN_OK，首期仍用长轮询
-- 4000+ 助手各注册为 MCP tool → 不做
-- 依赖 chayuan-desktop（62581）→ 不做
-- `WpsInvoke` 门面 → 二期
+- **三平台安装器**（可在一台机器上交叉构建）：
+  - `npm run build:wps-exe` → Windows 自解压 SFX（`release/chayuan-<ver>-windows-x64.exe`）
+  - `npm run build:wps-pkg-macos` → macOS 安装包（`release/chayuan-<ver>-macos-<arch>.pkg`）
+  - `npm run build:wps-deb` → Linux deb（`release/chayuan-<ver>-linux-<arch>.deb`）
+- **随安装注册 OS 级自启**（开机即常驻，不经插件 JS、零弹窗）：
+  - Windows：自解压 `copy.bat` 写 `HKCU\…\Run\ChayuanWpsMcp`，释放 sidecar 二进制到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\` 并立即启动。
+  - macOS：LaunchAgent `com.chayuan.mcp`（`RunAtLoad` + `KeepAlive`）。
+  - Linux：systemd --user 单元 `chayuan-mcp.service`（`Restart=on-failure`）。
+- **无需 Node.js**：sidecar 已交叉编译为单文件二进制（`chayuan-mcp-<plat>-<arch>`，5 平台）；二进制缺失时 autostart 脚本回落 `node server.mjs`。
+
+### 明确不做 / 后置
+
+- WebView `ShellExecute` 拉起 sidecar / WPS → 不做主路径（Spike=`NO_EFFECT`）；`wps_launch` 用 sidecar OS spawn。
+- Agent 传输：WebSocket 在 WPS `file://` 下已验证 OPEN_OK，首期仍用长轮询。
+- 4000+ 助手各注册为 MCP tool → 不做（改用 `assistants_search/get` 导出）。
+- 依赖 chayuan-desktop（62581）→ 不做。
+- `WpsInvoke` 门面 → 二期。
 
 ## 7. 自启动 / 自发现 / 自测试
 

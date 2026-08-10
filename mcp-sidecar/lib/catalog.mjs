@@ -1,20 +1,14 @@
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+// 静态 JSON import：编译为单文件二进制（esbuild bundle → pkg）时不再依赖脚本旁的
+// 文件路径（无 import.meta.url / __dirname）。Node 22+ 原生支持 import attributes；
+// esbuild 会把 JSON 内联进 bundle；pkg 拿到的是已内联产物。开发态 node server.mjs
+// 同样可用（JSON 文件在磁盘上）。
+import domainIndexRaw from '../data/domain-index.json' with { type: 'json' }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const INDEX_PATH = path.join(__dirname, '..', 'data', 'domain-index.json')
-
-let cached = null
+const FALLBACK = { domainCount: 0, assistantTotal: 0, domains: [] }
 
 export function loadDomainIndex() {
-  if (cached) return cached
-  try {
-    cached = JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8'))
-  } catch {
-    cached = { domainCount: 0, assistantTotal: 0, domains: [] }
-  }
-  return cached
+  const idx = (domainIndexRaw && typeof domainIndexRaw === 'object') ? domainIndexRaw : FALLBACK
+  return idx
 }
 
 export function listDomains() {

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install chayuan-mcp as a systemd --user service (Phase 2).
+# Install chayuan-mcp as a systemd --user service (chayuan-mcp.service).
+# 优先用 mcp-sidecar/bin 下的单文件二进制（无需本机 Node）；二进制缺失时回落 node server.mjs。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
@@ -11,11 +12,34 @@ mkdir -p "$UNIT_DIR" "$DATA_DIR"
 SIDECAR_DIR="${CHAYUAN_MCP_HOME:-$DATA_DIR/runtime}"
 mkdir -p "$SIDECAR_DIR"
 cp -a "$ROOT/." "$SIDECAR_DIR/" 2>/dev/null || true
-# Keep using repo/runtime path that has server.mjs
-if [[ -f "$ROOT/server.mjs" ]]; then
+# Run dir = 装好 sidecar 的目录（同时含 server.mjs 与 bin/）
+if [[ -f "$SIDECAR_DIR/server.mjs" ]]; then
+  RUN_DIR="$SIDECAR_DIR"
+elif [[ -f "$ROOT/server.mjs" ]]; then
   RUN_DIR="$ROOT"
 else
   RUN_DIR="$SIDECAR_DIR"
+fi
+
+# 选当前架构二进制
+case "$(uname -m)" in
+  x86_64|amd64) BIN_ARCH="x64" ;;
+  arm64|aarch64) BIN_ARCH="arm64" ;;
+  *) BIN_ARCH="$(uname -m)" ;;
+esac
+BIN_PATH="$RUN_DIR/bin/chayuan-mcp-linux-$BIN_ARCH"
+NODE_BIN="$(command -v node || true)"
+
+# 优先二进制；缺失则回落 node server.mjs
+if [[ -x "$BIN_PATH" ]]; then
+  EXEC_START="$BIN_PATH"
+  echo "[chayuan-mcp] systemd → native binary: $BIN_PATH" >&2
+elif [[ -n "$NODE_BIN" && -f "$RUN_DIR/server.mjs" ]]; then
+  EXEC_START="$NODE_BIN $RUN_DIR/server.mjs"
+  echo "[chayuan-mcp] systemd → node server.mjs (binary not found at $BIN_PATH)" >&2
+else
+  echo "[chayuan-mcp] Neither binary nor node available; service not installed." >&2
+  exit 0
 fi
 
 cat > "$UNIT" <<EOF
@@ -25,7 +49,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=$(command -v node) $RUN_DIR/server.mjs
+ExecStart=$EXEC_START
 Restart=on-failure
 RestartSec=3
 Environment=CHAYUAN_MCP_DATA_DIR=$DATA_DIR

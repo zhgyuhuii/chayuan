@@ -6,7 +6,7 @@
 ## 一、产品事实基线（口径统一，禁止编造不存在的功能）
 
 - 产品名：**察元 AI（Chayuan AI）**；出品：**北京智灵鸟科技中心**；官网 **https://aidooo.com**
-- 形态：**WPS 加载项 v3.0.12**（运行在 WPS 文字侧边栏/功能区）+ 桌面版/服务版/至臻版（一套引擎四档形态）
+- 形态：**WPS 加载项 v3.0.13**（运行在 WPS 文字侧边栏/功能区）+ 桌面版/服务版/至臻版（一套引擎四档形态）
 - 开源：**Apache 2.0**；WPS 加载项 github.com/zhgyuhuii/chayuan-wps-releases，桌面/网络版 github.com/zhgyuhuii/chayuan-desktop-releases
 - 五类知识源：文档库 / 结构化数据 / 外部向量库 / 办公私库 / 图像
 - 本地推理：Ollama / LM Studio / Xinference / LocalAI / FastChat + OpenAI 兼容网关；云端 170+ 模型

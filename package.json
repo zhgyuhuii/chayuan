@@ -1,14 +1,31 @@
 {
 	"name": "chayuan",
 	"addonType": "wps",
-	"version": "3.0.12",
+	"version": "3.0.13",
+	"description": "察元 AI 文档助手 · Chayuan AI — WPS 文字智能加载项 / WPS 文档智能体。内置本机 MCP（Model Context Protocol）文档智能体服务，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用读写 WPS 文档；支持多文档错别字校对与批量修正、拼写语法检查、知识库 RAG；优先支持离线 / 内网大模型（Ollama、LM Studio、Xinference 等 OpenAI 兼容端点）。",
+	"keywords": [
+		"wps", "wps-office", "wps-addin", "wps-js-addon",
+		"document-ai", "document-agent", "ai-assistant",
+		"mcp", "model-context-protocol", "mcp-server",
+		"proofreading", "spell-check", "grammar-check",
+		"offline-llm", "local-llm", "rag",
+		"chayuan", "察元", "文档智能体", "wps智能体", "多文档校对", "错别字检查"
+	],
+	"author": "北京智灵鸟科技中心 (Beijing Zhilingniao Technology Center) <support@aidooo.com>",
+	"license": "Apache-2.0",
+	"homepage": "https://aidooo.com",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/zhgyuhuii/chayuan.git"
+	},
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port 3889",
+		"dev": "vite --port 3890",
 		"build": "vite build",
 		"preview": "vite preview",
 		"mcp:sidecar": "node mcp-sidecar/server.mjs",
+		"mcp:build-binary": "node scripts/build-mcp-binary.mjs",
 		"mcp:gen-index": "node scripts/gen-mcp-domain-index.mjs",
 		"mcp:register": "node scripts/register-mcp-server.mjs",
 		"mcp:selftest": "node scripts/mcp-wps-selftest.mjs",

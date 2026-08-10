@@ -24,6 +24,56 @@ WPS エディター内で企業 / チーム / 個人ナレッジベースを直�
 
 ---
 
+## 🤖 文書エージェント (MCP) — 外部 AI エージェントに WPS 文書の読み書きを任せる
+
+察元は**ローカル MCP（Model Context Protocol）文書エージェントサービス**を同梱しており、WPS 文書に対する読み取り・検索・置換・コメント・校正・ナレッジベース取得のための **26 個のツール**を、標準的な **Streamable HTTP MCP** エンドポイントとして公開します。MCP 対応のエージェント — **Claude Code、OpenAI Codex、Cursor、Hermes、OpenClaw、Cline** — は単一の URL を指定するだけで WPS 文書の内部を直接操作でき、文書を開く・本文を読む・誤字をコメントで指摘・テキストの一括置換・複数文書の相互校正などが行えます。
+
+- **認証不要:** `127.0.0.1` のみでリッスン — 信頼境界は localhost であり、接続に必要なのは URL だけ（トークン / コマンド / stdio は不要）。
+- **完全オフライン:** sidecar は WPS と同じマシンで稼働。文書やキーがマシン外に漏れることはなく、オフライン・イントラネット・エアギャップ環境に適しています。
+- **インストール時に自動起動:** インストーラが OS レベルの自動起動を登録します（Windows `HKCU\…\Run` / macOS LaunchAgent / Linux systemd --user）。Node.js は不要です。
+- **26 個のツール**は、文書ステータス / 起動 / オープン / メタデータ、段落およびチャンク読み取り / 検索 / 置換 / 挿入 / コメント / 一括書き戻し / 新規作成 / 保存 / 脱秘と復元 / KB 取得 / スペル・文法校正（コメントまたは本文直接修正）/ アシスタント検索・エクスポートをカバーします。完全なリスト: [docs/mcp-connection.md](docs/mcp-connection.md)。
+
+### 1 行接続（すべての MCP エージェントで動作）
+
+エンドポイント: `http://127.0.0.1:62588/mcp`  ·  ヘルスチェック: `GET http://127.0.0.1:62588/healthz`（`online` が返ります）。
+
+### Claude Code
+```bash
+claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+```
+または `.mcp.json`:
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### OpenAI Codex (codex CLI) — `~/.codex/config.toml`
+```toml
+[mcp_servers.chayuan-wps]
+url = "http://127.0.0.1:62588/mcp"
+```
+
+### Cursor — `.cursor/mcp.json`
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### Hermes / OpenClaw
+**HTTP / Streamable HTTP** タイプの MCP サービスを `http://127.0.0.1:62588/mcp` に向けて作成します（トークン / コマンド / stdio は不要）。
+
+### Claude Desktop / その他の JSON 設定クライアント
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### MCP Inspector で確認
+```bash
+npx @modelcontextprotocol/inspector   # Streamable HTTP を選択、URL を貼り付け、Connect
+```
+
+> **トラブルシューティング:** クライアントが接続できない場合は、WPS が開いていて察元アドインが読み込まれていることを確認してください（`GET /healthz` が `online` を返します）。サーバーは `127.0.0.1:62588` でバインドします。リモートマシンから利用するにはローカルプロキシまたはカスタム `CHAYUAN_MCP_PORT` が必要です。完全なガイド: [docs/mcp-connection.md](docs/mcp-connection.md)。
+
+---
+
 ## 1. 著作権とライセンス
 
 **正式名称：** 察元 AI 文档助手（日本語表記は文脈により **察元 AI 文書アシスタント**、英名 **Chayuan AI Document Assistant**、npm パッケージ名 **`chayuan`**）。
@@ -62,7 +112,7 @@ Apache 2.0 に基づくソースコード改変自体は妨げませんが、**�
 
 ## 4.1 バージョン 2.0.0：大規模リファクタリングと安定化
 
-**現在のバージョン：`2.0.0`。** 本リリースは、リポジトリ内の計画・状態 Markdown（v2 計画、P0-P6 実行報告、Workflow W1-W7、タスクシステム再設計、実行時ギャップ解消など）を踏まえたメジャーアップデートです。
+**現在のバージョン：`3.0.13`。** 以下は v2.0.0 リリースの歴史的な変更履歴です。同リリースは、リポジトリ内の計画・状態 Markdown（v2 計画、P0-P6 実行報告、Workflow W1-W7、タスクシステム再設計、実行時ギャップ解消など）を踏まえたメジャーアップデートでした。
 
 - AI アシスタント画面の知識庫ボタンをアイコン化。
 - 実行時パラメータが必要なアシスタントは、実行前に確認フォームを表示。

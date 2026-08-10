@@ -111,6 +111,10 @@ if test -d "$MCP_SRC" && test -n "$TARGET_USER" && test "$TARGET_USER" != "root"
 	MCP_HOME="$USER_HOME/.config/chayuan-wps/mcp"
 	mkdir -p "$MCP_HOME/runtime"
 	cp -a "$MCP_SRC/." "$MCP_HOME/runtime/" 2>/dev/null || true
+	# 确保 sidecar 单文件二进制可执行（cp 可能丢位）
+	if test -d "$MCP_HOME/runtime/bin"; then
+		chmod 0755 "$MCP_HOME/runtime/bin/"* 2>/dev/null || true
+	fi
 	chown -R "$TARGET_USER:$TARGET_USER" "$MCP_HOME" 2>/dev/null || true
 	if test -x "$MCP_HOME/runtime/autostart/install-linux-user.sh"; then
 		su - "$TARGET_USER" -c "CHAYUAN_MCP_HOME=$MCP_HOME/runtime bash $MCP_HOME/runtime/autostart/install-linux-user.sh" 2>/dev/null \

@@ -5150,11 +5150,15 @@ export default {
     },
     async refreshMcpHealthBundle(options = {}) {
       try {
+        // 被动路径（打开对话框 / 展开智能体下拉 / 切换开关 / 发送消息 / 点「刷新」）只做健康探活，
+        // 绝不在此自动 ShellExecute 启动本机 sidecar。否则会触发 WPS「可执行文件安全风险」弹窗，
+        // 且在未装 Node.js 的部署机上 sidecar 永远起不来 → 每次交互都重复弹出。
+        // 只有显式入口（options.startSidecar=true，即设置页「启动本机服务」）才允许尝试拉起进程。
         const bundle = await probeMcpHealthBundle({
           deep: options.deep === true,
-          ensureSidecar: async () => {
-            await startSidecarBestEffort()
-          }
+          ensureSidecar: options.startSidecar === true
+            ? async () => { await startSidecarBestEffort() }
+            : undefined
         })
         this.mcpHealthLevel = bundle.level || 'gray'
         if (!bundle.anyOk) {
@@ -5232,6 +5236,24 @@ export default {
         })
 
         if (result.fallback) {
+          // 模型调用失败时不要静默回落旧链路：旧链路用的是同一个模型，必然同样失败，
+          // 只会让用户看到「已停止本次文档修订」这类误导性二次失败，并吞掉真实原因。
+          // 直接把模型错误呈现出来（已连接 MCP 但本轮模型请求未成功 → 未执行任何工具）。
+          if (result.reason === 'model_error') {
+            const errMsg = String(result.content || '模型调用失败')
+            // eslint-disable-next-line no-console
+            console.error('[mcp] orchestrator model error:', errMsg)
+            assistantMsg.content = `文档智能体调用模型失败：${errMsg}\n（MCP 已连接 · ${(result.usedServers || []).length} 个服务、${(result.steps || []).length} 步，但本轮模型请求未成功，未执行任何工具。请检查模型 API 地址/密钥，或换一个模型重试。）`
+            assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
+            this.stopAssistantLoadingProgress(assistantMsg)
+            assistantMsg.isLoading = false
+            this.isStreaming = false
+            this.activeMcpTurnContext = null
+            this.saveHistory()
+            this.$nextTick(() => this.scrollToBottom())
+            return { handled: true }
+          }
+          // 仅「基础设施未就绪」（sidecar 离线 / 无启用服务 / 无工具）才回落内置助手
           this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false

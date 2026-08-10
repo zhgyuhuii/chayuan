@@ -22,6 +22,10 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
+// 从 package.json 派生 name/version，避免每次发版手改本文件（曾经硬编码 chayuan_3.0.12）。
+const PKG = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+const NAME = PKG.name
+const VERSION = PKG.version
 const PORT = Number(process.env.CHAYUAN_MCP_PORT || 62588)
 const BASE = `http://127.0.0.1:${PORT}`
 const args = new Set(process.argv.slice(2))
@@ -147,7 +151,7 @@ function syncToJsaddons() {
     return
   }
   const jsaddons = path.join(appData, 'Kingsoft', 'wps', 'jsaddons')
-  const dest = path.join(jsaddons, 'chayuan_3.0.12')
+  const dest = path.join(jsaddons, `${NAME}_${VERSION}`)
   const dist = path.join(root, 'dist')
   if (!fs.existsSync(dist)) {
     fail('jsaddons.sync', 'dist/ missing')
@@ -173,7 +177,7 @@ function syncToJsaddons() {
   const publish = path.join(jsaddons, 'publish.xml')
   const xml =
     `<jsplugins>\n` +
-    `    <jsplugin name="chayuan" type="wps" url="chayuan_3.0.12" version="3.0.12" enable="enable_dev" install="null" customDomain=""/>\n` +
+    `    <jsplugin name="${NAME}" type="wps" url="${NAME}_${VERSION}" version="${VERSION}" enable="enable_dev" install="null" customDomain=""/>\n` +
     `</jsplugins>\n`
   fs.writeFileSync(publish, xml, 'utf8')
   pass('jsaddons.sync', dest)

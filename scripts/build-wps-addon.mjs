@@ -1,6 +1,6 @@
 /**
  * Non-interactive WPS JS add-in packager (replaces `wpsjs build` prompts).
- * Web 资源各平台相同；离线包为 7z（与 wpsjs 一致）。Windows 自解压 exe 需在本机执行 wpsjs build --exe（仅 Windows，且 package name 须 ASCII）。
+ * Web 资源各平台相同；离线包为 7z（与 wpsjs 一致）。Windows 自解压 exe 由 scripts/run-wpsjs-exe.mjs 自建 SFX（跨平台字节拼接，无需 wpsjs --exe，也不要求 ASCII package name）。
  */
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
@@ -119,13 +119,32 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 		if (skip.has(file)) continue
 		fsEx.copySync(path.join(distDir, file), path.join(nested, file))
 	}
-	// Bundle MCP sidecar (HTTP server + start script) next to addon for settings/manual start
+	// Bundle MCP sidecar (HTTP server + start script) next to addon for settings/manual start.
+	// 排除 bin/（5 个平台二进制合计 ~400MB）与 build/（中间 bundle），仅单独拷当前平台二进制。
 	const mcpSidecarSrc = path.join(root, 'mcp-sidecar')
 	if (fs.existsSync(mcpSidecarSrc)) {
 		const mcpDest = path.join(nested, 'mcp-sidecar')
+		const sep = path.sep
 		fsEx.copySync(mcpSidecarSrc, mcpDest, {
-			filter: (src) => !src.includes(`${path.sep}node_modules${path.sep}`)
+			filter: (src) =>
+				!src.includes(`${sep}node_modules${sep}`) &&
+				!src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`) &&
+				!src.includes(`${sep}build${sep}`) && !src.endsWith(`${sep}build`)
 		})
+		// 仅暂存当前构建平台的 sidecar 二进制；autostart 据此启动，缺失时安装后回落 node server.mjs
+		const triple = currentReleaseTriple()
+		const binName = `chayuan-mcp-${triple.platform}-${triple.arch}${triple.platform === 'windows' ? '.exe' : ''}`
+		const binSrc = path.join(mcpSidecarSrc, 'bin', binName)
+		if (fs.existsSync(binSrc)) {
+			const binDestDir = path.join(mcpDest, 'bin')
+			fsEx.ensureDirSync(binDestDir)
+			fsEx.copySync(binSrc, path.join(binDestDir, binName))
+			if (triple.platform !== 'windows') {
+				try { fs.chmodSync(path.join(binDestDir, binName), 0o755) } catch { /* ignore */ }
+			}
+		} else {
+			console.warn(`[staging] 当前平台 sidecar 二进制缺失：mcp-sidecar/bin/${binName}（先跑 npm run mcp:build-binary；缺失时安装后回落 node server.mjs）`)
+		}
 	}
 	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
 	const meta = {

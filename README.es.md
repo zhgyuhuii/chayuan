@@ -24,6 +24,56 @@ Notas de versión completas: [RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md)
 
 ---
 
+## 🤖 Agente documental (MCP) — agentes de IA externos leen y escriben sus documentos WPS
+
+Chayuan incluye un **servicio local de agente documental MCP (Model Context Protocol)** que expone **26 herramientas** para leer, localizar, reemplazar, comentar, revisar y recuperar información de bases de conocimiento (KB) sobre sus documentos WPS mediante un endpoint **MCP Streamable HTTP** estándar. Cualquier agente compatible con MCP — **Claude Code, OpenAI Codex, Cursor, Hermes, OpenClaw, Cline** — puede apuntar a una sola URL y trabajar directamente dentro de su documento WPS: abrirlo, leer el cuerpo, marcar erratas como comentarios, reemplazar texto por lotes y revisar varios documentos de forma cruzada.
+
+- **Sin autenticación:** escucha únicamente en `127.0.0.1`; el *localhost* es la frontera de confianza. Para conectarse basta con una URL (sin token, comando ni stdio).
+- **Totalmente offline:** el *sidecar* se ejecuta junto con WPS; los documentos y las claves nunca salen de su máquina — ideal para despliegues offline, de intranet o aislados (*air-gapped*).
+- **Inicio automático al instalar:** los instaladores registran un autostart a nivel de sistema operativo (Windows `HKCU\…\Run` / macOS LaunchAgent / Linux systemd --user); no requiere Node.js.
+- Las **26 herramientas** cubren estado del documento / lanzamiento / apertura / metadatos / lectura de párrafos y fragmentos / localización / reemplazo / inserción / comentarios / escritura por lotes / nuevo / guardar / desclasificar y restaurar / recuperación KB / revisión ortográfica y gramatical (como comentarios o correcciones directas en el texto) / búsqueda y exportación del asistente. Lista completa: [docs/mcp-connection.md](docs/mcp-connection.md).
+
+### Conexión en una línea (válida para cualquier agente MCP)
+
+Endpoint: `http://127.0.0.1:62588/mcp`  ·  Salud: `GET http://127.0.0.1:62588/healthz` (se espera `online`).
+
+### Claude Code
+```bash
+claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+```
+o `.mcp.json`:
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### OpenAI Codex (codex CLI) — `~/.codex/config.toml`
+```toml
+[mcp_servers.chayuan-wps]
+url = "http://127.0.0.1:62588/mcp"
+```
+
+### Cursor — `.cursor/mcp.json`
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### Hermes / OpenClaw
+Cree un servicio MCP de tipo **HTTP / Streamable HTTP** que apunte a `http://127.0.0.1:62588/mcp` (sin token, comando ni stdio).
+
+### Claude Desktop / otros clientes con configuración JSON
+```json
+{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+```
+
+### Verificación con MCP Inspector
+```bash
+npx @modelcontextprotocol/inspector   # pick Streamable HTTP, paste the URL, Connect
+```
+
+> **Solución de problemas:** si un cliente no puede conectarse, asegúrese de que WPS esté abierto y de que el complemento Chayuan esté cargado (`GET /healthz` devuelve `online`). El servidor se vincula a `127.0.0.1:62588`; las máquinas remotas necesitan un proxy local o un `CHAYUAN_MCP_PORT` personalizado. Guía completa: [docs/mcp-connection.md](docs/mcp-connection.md).
+
+---
+
 ## 1. Derechos de autor y licencia
 
 **Nombre del software:** Chayuan AI Document Assistant (nombre de producto en chino **察元 AI 文档助手**, paquete npm **`chayuan`**). Código bajo **[Apache License 2.0](LICENSE)**. Se permite el uso comercial si se cumple la licencia. Los contratos adicionales prevalecen donde apliquen.
@@ -52,7 +102,7 @@ Complemento para **WPS Writer** (**Vue 3 + Vite**): chat de IA, resumen, anális
 
 ## 4.1 Versión 2.0.0: gran refactorización y estabilidad
 
-**Versión actual: `2.0.0`.** Esta versión resume y actualiza el trabajo descrito en los Markdown de planificación y ejecución: plan v2, P0-P6, workflow W1-W7, rediseño del sistema de tareas, cierre de brechas de ejecución y diseño de formularios de asistentes.
+**Versión actual: `3.0.13`.** Lo que sigue es el registro histórico de la versión `2.0.0`, conservado como referencia: esta versión resumió y actualizó el trabajo descrito en los Markdown de planificación y ejecución — plan v2, P0-P6, workflow W1-W7, rediseño del sistema de tareas, cierre de brechas de ejecución y diseño de formularios de asistentes.
 
 - Los asistentes con parámetros muestran un formulario antes de ejecutarse: idioma de destino para traducción; relación de aspecto, duración y estilo de voz para imagen, vídeo y audio.
 - La selección de modelos es segura por tipo: el chat solo muestra modelos conversacionales; los ajustes agrupan y filtran por tipo de modelo.
