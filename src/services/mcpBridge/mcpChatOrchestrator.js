@@ -136,6 +136,11 @@ function summarizeToolResult(result) {
 
 function extractProofreadCard(toolName, args, result) {
   if (toolName !== 'proofread_run') return null
+  // An error/timeout envelope (e.g. AGENT_HANDLER_TIMEOUT) is structuredContent
+  // too — building a card from it yields taskId='' + no issues, which then renders
+  // dead 批注/改正正文 buttons ("缺少校对 taskId" / "0 处替换"). Skip it so the
+  // model's own failure text is shown instead.
+  if (result?.isError) return null
   const sc = result?.structuredContent || result
   if (!sc || typeof sc !== 'object') return null
   const taskId = sc.taskId || sc.task_id || ''
@@ -143,6 +148,8 @@ function extractProofreadCard(toolName, args, result) {
   const issueCount = Array.isArray(issues)
     ? issues.reduce((n, it) => n + (Array.isArray(it?.issues) ? it.issues.length : 1), 0)
     : Number(sc.issueCount || sc.count || 0)
+  // Don't surface a card we can't act on (no taskId for comments AND no issues to fix)
+  if (!taskId && issueCount === 0) return null
   return {
     taskId: String(taskId || ''),
     issueCount,

@@ -98,7 +98,7 @@ export async function healthz({ signal } = {}) {
 let localSessionId = ''
 let localRpcId = 1
 
-async function localRpc(method, params = {}, { signal } = {}) {
+async function localRpc(method, params = {}, { signal, timeoutMs } = {}) {
   const headers = {}
   if (localSessionId) headers['Mcp-Session-Id'] = localSessionId
   const id = localRpcId++
@@ -107,7 +107,7 @@ async function localRpc(method, params = {}, { signal } = {}) {
     id,
     method,
     params
-  }, { headers, signal })
+  }, { headers, signal, ...(timeoutMs ? { timeoutMs } : {}) })
   if (res.sessionId) localSessionId = res.sessionId
   if (!res.ok) {
     const err = new Error(res.json?.error?.message || `MCP HTTP ${res.status}`)
@@ -150,12 +150,33 @@ export async function listLocalTools({ signal } = {}) {
   return Array.isArray(result?.tools) ? result.tools : []
 }
 
+/**
+ * Per-local-tool HTTP timeout (ms). The sidecar's proofread/apply/etc. handlers
+ * already allow minutes (proofread.run=600s), but this in-app client defaulted
+ * every tools/call to 60s — which killed big-document 校对 mid-flight. Mirror the
+ * agent-client per-method caps so the HTTP leg doesn't time out before the work
+ * finishes. Underscore-form keys (match the tool names callLocalTool is called with).
+ */
+const LOCAL_TOOL_TIMEOUT_MS = {
+  proofread_run: 320_000,
+  proofread_apply_comments: 320_000,
+  document_apply_ops: 200_000,
+  document_chunks: 200_000,
+  document_replace: 140_000,
+  document_insert: 140_000,
+  declassify_apply: 320_000,
+  declassify_restore: 140_000,
+  assistants_search: 140_000,
+  assistants_get: 200_000
+}
+
 export async function callLocalTool(name, args = {}, { signal } = {}) {
   if (!localSessionId) await initializeLocal({ signal })
+  const timeoutMs = LOCAL_TOOL_TIMEOUT_MS[String(name || '')]
   return localRpc('tools/call', {
     name: String(name || ''),
     arguments: args && typeof args === 'object' ? args : {}
-  }, { signal })
+  }, { signal, ...(timeoutMs ? { timeoutMs } : {}) })
 }
 
 export async function syncUpstreamAllowlist({ signal } = {}) {

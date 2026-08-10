@@ -197,6 +197,30 @@ async function postResult(jobId, ok, result, error) {
 }
 
 const JOB_HARD_TIMEOUT_MS = 55_000
+/**
+ * Per-method hard timeout (ms). The default 55s is a blunt safeguard against
+ * sync WPS API hangs that block the WebView event loop — but it is FAR too short
+ * for LLM-bound operations (proofread iterates chunks and calls the model per
+ * chunk; a large table doc of ~1700 entries easily exceeds 55s). Those ops are
+ * almost entirely `await` (model HTTP / chunked reads) and yield the event loop,
+ * so a longer cap is safe and is what unblocks big-document 校对/替换.
+ * Keep dot-form keys (match dispatchMcpJob's `job.method`, e.g. 'proofread.run').
+ */
+const JOB_TIMEOUT_BY_METHOD = {
+  'proofread.run': 300_000,
+  'proofread.apply_comments': 300_000,
+  'document.apply_ops': 180_000,
+  'document.chunks': 180_000,
+  'document.replace': 120_000,
+  'document.insert': 120_000,
+  'declassify.apply': 300_000,
+  'declassify.restore': 120_000,
+  'assistants.search': 120_000,
+  'assistants.get': 180_000
+}
+function timeoutForJob(method) {
+  return JOB_TIMEOUT_BY_METHOD[method] || JOB_HARD_TIMEOUT_MS
+}
 
 function withHardTimeout(promise, ms, label) {
   let timer
@@ -216,7 +240,7 @@ async function handleJob(job) {
     // Note: sync WPS API hangs still block the event loop; avoid Documents.Item etc.
     const result = await withHardTimeout(
       Promise.resolve().then(() => dispatchMcpJob({ method: job.method, params: job.params })),
-      JOB_HARD_TIMEOUT_MS,
+      timeoutForJob(job.method),
       job.method || 'job'
     )
     await postResult(job.jobId, true, result)
