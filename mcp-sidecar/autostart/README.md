@@ -16,4 +16,4 @@ powershell -ExecutionPolicy Bypass -File mcp-sidecar/autostart/install-windows-u
 powershell -ExecutionPolicy Bypass -File mcp-sidecar/autostart/install-windows-user.ps1 -Uninstall
 ```
 
-脚本会把 sidecar 复制到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\`，并写入用户 Run 键；登录后最小化启动 `start-mcp.cmd`。
+脚本会把 sidecar 复制到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\`，并写入用户 Run 键；登录后无窗口后台启动（Windows 二进制以 `--windows-hide-console` 编译）。

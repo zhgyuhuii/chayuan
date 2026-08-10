@@ -38,15 +38,43 @@ const TARGETS = [
 ]
 
 function findBun() {
-  const candidates = [process.env.BUN, process.env.BUN_INSTALL && path.join(process.env.BUN_INSTALL, 'bin', 'bun'), 'bun']
-    .filter(Boolean)
-  for (const c of candidates) {
+  // Windows 上 npm 全局装的 bun 常是 bun.cmd/bun.ps1 包装器，execFileSync('bun') 会失败；
+  // 需直接定位 bun.exe（BUN 环境变量、BUN_INSTALL、npm 全局 node_modules、where）。
+  const candidates = []
+  if (process.env.BUN) candidates.push(process.env.BUN)
+  if (process.env.BUN_INSTALL) {
+    candidates.push(path.join(process.env.BUN_INSTALL, 'bin', 'bun.exe'))
+    candidates.push(path.join(process.env.BUN_INSTALL, 'bin', 'bun'))
+  }
+  try {
+    const npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim()
+    candidates.push(path.join(npmRoot, 'bun', 'bin', 'bun.exe'))
+    candidates.push(path.join(npmRoot, 'bun', 'bin', 'bun'))
+  } catch { /* ignore */ }
+  if (process.platform === 'win32') {
     try {
+      const whereOut = execFileSync('where.exe', ['bun'], { encoding: 'utf8' })
+      for (const line of whereOut.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
+        if (/\.exe$/i.test(line)) candidates.push(line)
+        // bun.cmd 旁通常有 node_modules\bun\bin\bun.exe（见 npm 全局布局）
+        const npmStyle = path.join(path.dirname(line), 'node_modules', 'bun', 'bin', 'bun.exe')
+        candidates.push(npmStyle)
+      }
+    } catch { /* ignore */ }
+    candidates.push('bun.exe')
+  }
+  candidates.push('bun')
+
+  for (const c of candidates.filter(Boolean)) {
+    try {
+      if (c.includes(path.sep) || c.includes('/') || /\.exe$/i.test(c)) {
+        if (!fs.existsSync(c)) continue
+      }
       execFileSync(c, ['--version'], { stdio: 'ignore' })
       return c
     } catch { /* try next */ }
   }
-  console.error('未找到 bun。请先安装：curl -fsSL https://bun.sh/install | bash')
+  console.error('未找到 bun。请先安装：npm install -g bun  或  https://bun.sh')
   process.exit(1)
 }
 
@@ -63,12 +91,17 @@ function packOne(bunBin, target) {
   // windows 目标 Bun 会自动补 .exe，故 outfile 给不带扩展名的主干
   const stem = target.file.replace(/\.exe$/, '')
   const outfile = path.join(BIN_DIR, stem)
-  execFileSync(bunBin, [
+  const args = [
     'build', '--compile',
     '--target', target.bun,
     '--outfile', outfile,
-    ENTRY
-  ], { stdio: 'inherit', cwd: ROOT })
+  ]
+  // Windows 控制台子系统默认会弹黑窗；安装器/开机自启需要无窗口后台常驻。
+  if (target.bun.startsWith('bun-windows-')) {
+    args.push('--windows-hide-console')
+  }
+  args.push(ENTRY)
+  execFileSync(bunBin, args, { stdio: 'inherit', cwd: ROOT })
   const produced = path.join(BIN_DIR, target.file)
   if (!fs.existsSync(produced)) {
     throw new Error(`预期产物未生成：${produced}`)

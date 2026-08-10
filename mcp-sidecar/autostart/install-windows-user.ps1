@@ -71,9 +71,10 @@ try {
   Write-Host 'Sidecar already running on :62588'
 } catch {
   if (Test-Path -LiteralPath $exe) {
-    Start-Process -FilePath $exe -WindowStyle Minimized
+    # Binary is compiled with --windows-hide-console; no black console window.
+    Start-Process -FilePath $exe -WindowStyle Hidden
   } else {
-    Start-Process -FilePath (Join-Path $RuntimeDir 'start-mcp.cmd') -WindowStyle Minimized
+    Start-Process -FilePath (Join-Path $RuntimeDir 'start-mcp.cmd') -WindowStyle Hidden
   }
-  Write-Host 'Started sidecar (minimized).'
+  Write-Host 'Started sidecar (hidden).'
 }

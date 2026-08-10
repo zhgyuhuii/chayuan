@@ -85,16 +85,24 @@ function add7z(archivePath, inputPaths) {
 	})
 }
 
+function publishEnableMode(options = {}) {
+	// Windows 离线包与官方 wpsjs CreatePublishXml 一致用 enable_dev，否则本地 jsaddons 常不加载。
+	// Linux / 麒麟 / UOS / macOS 离线包用 enable（enable_dev 在这些环境可能不加载）。
+	if (options.enable) return options.enable
+	const platform = options.platform || currentReleaseTriple().platform
+	return platform === 'windows' ? 'enable_dev' : 'enable'
+}
+
 function publishXmlForPkg(pkg, options = {}) {
 	const type = pkg.addonType || 'wps'
 	// debug="code" 让 WPS 宿主显示自带调试按钮 / 启用远程调试。
 	// 只在 --debug build 里附带,默认发布包不带。
 	const debugAttr = options.debug ? ' debug="code"' : ''
-	// enable_dev 仅供本机 wpsjs debug；正式版 / 麒麟 / UOS 等环境需 enable，否则不加载离线包。
+	const enable = publishEnableMode(options)
 	return (
 		`<?xml version="1.0" encoding="UTF-8"?>\n` +
 		`<jsplugins>\n` +
-		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable" install="null" customDomain=""${debugAttr}/>\n` +
+		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>\n` +
 		`</jsplugins>\n`
 	)
 }

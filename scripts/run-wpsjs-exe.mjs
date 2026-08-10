@@ -8,6 +8,11 @@
  *
  * copy.bat 在目标机执行：装插件到 jsaddons + 释放 sidecar 二进制到 %LOCALAPPDATA% +
  * 写 HKCU\...\Run 自启 + 立即启动 → 零 Node 依赖、零弹窗、登录即常驻。
+ *
+ * 编码陷阱（已踩过）：Windows cmd 默认 OEM 代码页（中文系统 CP936），UTF-8 中文写进 .bat
+ * 会被拆坏换行/命令，表现为「脚本乱码」且 xcopy/copy 失败 → WPS 不加载插件。
+ * 因此 copy.bat 必须纯 ASCII；安装对话框文案走 SFX 的 UTF-8 配置段。
+ * publish.xml 与官方 wpsjs 离线包一致使用 enable_dev，否则 Windows 常不加载本地 jsaddons。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -40,43 +45,100 @@ function add7z(archivePath, inputPaths) {
 
 /** 自解压运行时配置（与 wpsjs 同结构：;!@Install@!UTF-8! … ;!@InstallEnd@!）。 */
 function sfxConfigBuffer(displayName) {
+	// 与官方 wpsjs/build.js 对齐：Title 用 ASCII，BeginPrompt 少量中文（SFX UTF-8 段可正确显示）
 	return Buffer.from(
-`\n  ;!@Install@!UTF-8!
-  Title="安装 ${displayName}"
-  BeginPrompt="确定要安装 ${displayName}？（将一并配置本机文档智能体服务为开机自启）"
+		`
+  ;!@Install@!UTF-8!
+  Title="Install WPS jsaddons"
+  BeginPrompt="确定要安装 ${displayName}？"
   RunProgram="copy.bat"
-  ;!@InstallEnd@!\n`,
+  ;!@InstallEnd@!
+`,
 		'utf-8'
 	)
 }
 
-/** 目标机执行的安装脚本：插件 + sidecar 二进制 + HKCU Run 自启 + 立即启动。 */
+/**
+ * Windows 离线包 publish.xml：必须用 enable_dev（与官方 wpsjs CreatePublishXml 一致）。
+ * enable=enable 在部分 Windows WPS 下不会加载本地 jsaddons 目录。
+ */
+function publishXmlForWindowsOffline(pkg) {
+	const type = pkg.addonType || 'wps'
+	return Buffer.from(
+		`<?xml version="1.0" encoding="UTF-8"?>\n` +
+			`<jsplugins>\n` +
+			`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable_dev" install="null" customDomain=""/>\n` +
+			`</jsplugins>\n`,
+		'utf-8'
+	)
+}
+
+/** 目标机执行的安装脚本：纯 ASCII，避免 CP936 下 UTF-8 中文拆坏命令。 */
 function buildCopyBat(pkg) {
 	const folder = `${pkg.name}_${pkg.version}`
-	const runtimeDir = '%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime'
-	const exePath = `${runtimeDir}\\${SIDECAR_EXE_NAME}`
+	// Keep every character ASCII. Chinese comments here WILL break cmd.exe on CP936.
 	return Buffer.from(
-`@echo off
-set source_folder=${folder}
-set destination_folder=%appdata%\\kingsoft\\wps\\jsaddons
-set sidecar_runtime=${runtimeDir}
-set sidecar_exe=${exePath}
+		`@echo off
+setlocal EnableExtensions
+set "LOG=%TEMP%\\chayuan-wps-install.log"
+set "source_folder=${folder}"
+set "destination_folder=%APPDATA%\\kingsoft\\wps\\jsaddons"
+set "sidecar_runtime=%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime"
+set "sidecar_exe=%sidecar_runtime%\\${SIDECAR_EXE_NAME}"
+
+echo [%DATE% %TIME%] install start> "%LOG%"
+echo source=%source_folder%>> "%LOG%"
+echo dest=%destination_folder%>> "%LOG%"
 
 if not exist "%destination_folder%" mkdir "%destination_folder%"
+if errorlevel 1 goto :fail_mkdir
 if not exist "%destination_folder%\\%source_folder%" mkdir "%destination_folder%\\%source_folder%"
-xcopy /E /I /Y /Q "%source_folder%" "%destination_folder%\\%source_folder%"
-copy /Y "publish.xml" "%destination_folder%\\publish.xml"
 
-rem --- 察元 MCP sidecar：释放单文件二进制 + 注册开机自启 + 立即启动（无需 Node.js）---
+echo copying addon...>> "%LOG%"
+xcopy /E /I /Y /Q "%source_folder%" "%destination_folder%\\%source_folder%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail_addon
+
+echo copying publish.xml...>> "%LOG%"
+copy /Y "publish.xml" "%destination_folder%\\publish.xml" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail_publish
+
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
 if not exist "%sidecar_runtime%\\bin" mkdir "%sidecar_runtime%\\bin"
-copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%"
-copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}"
-rem Wrapper so settings「启动本机服务」也能找到 start-mcp.cmd（优先调二进制）
+echo copying sidecar...>> "%LOG%"
+copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%" >> "%LOG%" 2>&1
+copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}" >> "%LOG%" 2>&1
 > "%sidecar_runtime%\\start-mcp.cmd" echo @echo off
 >> "%sidecar_runtime%\\start-mcp.cmd" echo start "" "%%~dp0${SIDECAR_EXE_NAME}"
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_exe%\\"" /f >nul 2>nul
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_exe%\\"" /f >> "%LOG%" 2>&1
 start "" "%sidecar_exe%"
+
+echo [%DATE% %TIME%] install ok>> "%LOG%"
+echo.
+echo Install OK. Please fully quit and restart WPS.
+echo Log: %LOG%
+ping -n 4 127.0.0.1 >nul
+exit /b 0
+
+:fail_mkdir
+echo FAILED: cannot create jsaddons dir>> "%LOG%"
+echo ERROR: cannot create %%APPDATA%%\\kingsoft\\wps\\jsaddons
+echo See log: %LOG%
+pause
+exit /b 1
+
+:fail_addon
+echo FAILED: xcopy addon>> "%LOG%"
+echo ERROR: failed to copy addon files
+echo See log: %LOG%
+pause
+exit /b 1
+
+:fail_publish
+echo FAILED: copy publish.xml>> "%LOG%"
+echo ERROR: failed to copy publish.xml
+echo See log: %LOG%
+pause
+exit /b 1
 `,
 		'utf-8'
 	)
@@ -119,7 +181,8 @@ async function main() {
 		// 排除 mcp-sidecar/bin（平台相关二进制由 copy.bat 单独释放到 %LOCALAPPDATA%）
 		filter: (src) => !src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`)
 	})
-	fsEx.copySync(path.join(staging, 'publish.xml'), path.join(tmp, 'publish.xml'))
+	// Windows exe 专用 publish.xml（enable_dev），不复用 staging 里可能给 Linux 用的 enable
+	fs.writeFileSync(path.join(tmp, 'publish.xml'), publishXmlForWindowsOffline(pkg))
 	fs.copyFileSync(SIDECAR_EXE, path.join(tmp, SIDECAR_EXE_NAME))
 	fs.writeFileSync(path.join(tmp, 'copy.bat'), buildCopyBat(pkg))
 
@@ -133,18 +196,18 @@ async function main() {
 		addonDst,
 	])
 
-	// 5. 拼接 SFX：7zSD.sfx + 配置 + 7z
+	// 5. 拼接 SFX：一次写完，避免 WriteStream 多次 write 大缓冲时截断
 	const arch = 'x64' // 当前仅产出 windows-x64 sidecar 二进制
 	const outExe = path.join(root, 'release', releaseArtifactFilename(name, version, 'windows', arch, '.exe'))
 	fsEx.ensureDirSync(path.dirname(outExe))
-	await new Promise((resolve, reject) => {
-		const out = fs.createWriteStream(outExe)
-		out.on('error', reject)
-		out.write(fs.readFileSync(SFX_STUB), () => {})
-		out.write(sfxConfigBuffer(displayName), () => {})
-		out.write(fs.readFileSync(archive7z), () => {})
-		out.end(resolve)
-	})
+	fs.writeFileSync(
+		outExe,
+		Buffer.concat([
+			fs.readFileSync(SFX_STUB),
+			sfxConfigBuffer(displayName),
+			fs.readFileSync(archive7z),
+		])
+	)
 	fsEx.removeSync(tmp)
 
 	const rel = path.relative(root, outExe).split(path.sep).join('/')
