@@ -14,8 +14,8 @@ export function getAddonVersion() {
     // __APP_VERSION__ 由 vite.config.js 从 package.json 注入（构建期替换为字面量）；
     // VITE_APP_VERSION 为历史兼容；最终回落到字面量。
     // eslint-disable-next-line no-undef
-    return String(__APP_VERSION__ || import.meta.env?.VITE_APP_VERSION || '3.0.13')
+    return String(__APP_VERSION__ || import.meta.env?.VITE_APP_VERSION || '4.0.0')
   } catch {
-    return '3.0.13'
+    return '4.0.0'
   }
 }
