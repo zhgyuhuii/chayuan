@@ -81,6 +81,20 @@ function getSpellCheckConcurrency() {
   } catch { /* ignore */ }
   return 3
 }
+
+// 校对分块长度：独立于翻译的 chunkLength，默认 6000 字/块（比翻译的 4000 大）。
+// 现代模型上下文普遍 ≥32k，6000 字留足系统提示 + JSON 输出余量，又把段数压到约 1/3，
+// 配合并发更快。可在全局设置 spellCheckChunkLength 覆盖，范围 [2000,16000]。
+// 说明：模型上下文上限未在设置里登记，无法按模型自动取值；这里给一个保守偏大的默认 +
+// 可调旋钮，部署到支持更大上下文的模型时调高即可。
+function getSpellCheckChunkLength() {
+  try {
+    const raw = loadGlobalSettings()?.spellCheckChunkLength
+    const n = Math.floor(Number(raw))
+    if (Number.isFinite(n) && n >= 2000 && n <= 16000) return n
+  } catch { /* ignore */ }
+  return 6000
+}
 const UI_YIELD_EVERY = 3
 const SPELL_CHECK_PROMPT = `你是一位专业的文字校对专家。请对以下文本进行拼写与语法检查。
 
@@ -1485,7 +1499,7 @@ async function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, o
     throw new Error('请先在设置中配置拼写与语法检查模型')
   }
 
-  const chunks = await getDocumentChunksWithPositionsAsync(doc, {}, { yieldEveryParagraphs: 5 })
+  const chunks = await getDocumentChunksWithPositionsAsync(doc, { chunkLength: getSpellCheckChunkLength() }, { yieldEveryParagraphs: 5 })
   const chunkSettings = getChunkSettings()
   if (chunks.filter(c => (c.text || '').trim().length > 0).length === 0) {
     console.warn('spellCheck: 文档分块为空或全部为空白')
@@ -1518,7 +1532,7 @@ async function prepareSpellCheckSelectionArgs({ onProgress, onChunkContent, onEr
     throw new Error(msg)
   }
 
-  const chunks = await getSelectionChunksWithPositionsAsync(doc, selection, {}, { yieldEveryParagraphs: 5 })
+  const chunks = await getSelectionChunksWithPositionsAsync(doc, selection, { chunkLength: getSpellCheckChunkLength() }, { yieldEveryParagraphs: 5 })
   const chunkSettings = getChunkSettings()
   if (chunks.filter(c => (c.text || '').trim().length > 0).length === 0) {
     onError?.('请先选中要检查的文本，选区内容不能为空')
