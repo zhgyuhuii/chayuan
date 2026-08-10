@@ -161,6 +161,37 @@ npx @modelcontextprotocol/inspector   # pick Streamable HTTP, paste the URL, Con
 
 > **Troubleshooting:** if a client can't connect, make sure WPS is open and the Chayuan add-in is loaded (`GET /healthz` returns `online`). The server binds `127.0.0.1:62588`; remote machines need a local proxy or a custom `CHAYUAN_MCP_PORT`. Full connection guide & tool params: [docs/mcp-connection.md](docs/mcp-connection.md).
 
+### Common prompts & scenarios (cheat sheet)
+
+After connecting **Claude Code / Codex / Cursor / Hermes / OpenClaw** to `chayuan-wps-mcp`, try prompts like these on the **active WPS document**. Prefer dry-run / preview before writing comments or replacing body text. The exhaustive Chinese catalogue lives in [README.md](README.md)（常用使用场景与提示词）.
+
+| Goal | Example prompt |
+|------|----------------|
+| Typos | Check the document for typos; add WPS comments with original text and suggested fix |
+| Typos in tables | Proofread table cells; pin each comment on the exact wrong characters |
+| Punctuation | Check punctuation (CN/EN mix, quotes pairing); comment on issues |
+| Overall correctness | Verify correctness: typos, punctuation, grammar, and contradictions; comment all findings |
+| Preview then comment | Run proofread dry-run first; list issues; only write comments after I confirm |
+| Direct fix | Find typos and replace in body (preview list first, apply after confirm) |
+| Grammar | Flag broken sentences / collocation errors with suggested rewrites as comments |
+| Numbers | Cross-check figures in tables vs body text |
+| Translate | Translate each paragraph into English and insert the translation after it |
+| Polish | Polish without changing meaning; comment on each change |
+| Summarize | Insert a ≤300-word summary at the top (preview first) |
+| Find/replace | Locate all “永鹅” and replace with “咏鹅” (preview then confirm) |
+| Secrecy assist | Flag possible sensitive data (IDs, phones); comment only — not an official classification |
+| Open file | Open this path as the active document, then proofread |
+
+Workflow snippet:
+
+```text
+You are a WPS proofreading agent via chayuan-wps-mcp on the active doc:
+1) proofread dry-run for typos, punctuation, obvious grammar;
+2) show me the issue list;
+3) after I say “confirm comments”, write WPS comments pinned to exact text (esp. tables);
+4) do not replace body text unless I say “confirm replace”.
+```
+
 ---
 
 ## 4.1 Version 2.0.0: major refactor and stability release
