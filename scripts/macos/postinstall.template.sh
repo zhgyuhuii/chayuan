@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # Installs Chayuan WPS add-in into the console user's jsaddons (no manual copy).
 set -e
 INSTALL_ROOT="__INSTALL_ROOT__"
@@ -7,8 +7,12 @@ if [[ ! -f "$META" ]]; then
 	echo "Chayuan WPS: missing $META" >&2
 	exit 1
 fi
-export CHAYUAN_META="$META"
-ADDON_FOLDER="$(/usr/bin/python3 -c 'import json,os; print(json.load(open(os.environ["CHAYUAN_META"]))["addonFolder"])')"
+# 用 sed 解析 addonFolder，避免依赖 python3（未装 Command Line Tools 的 Mac 没有 /usr/bin/python3）
+ADDON_FOLDER="$(/usr/bin/sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -1)"
+if [[ -z "$ADDON_FOLDER" ]]; then
+	echo "Chayuan WPS: cannot read addonFolder from $META" >&2
+	exit 1
+fi
 
 CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
 if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then

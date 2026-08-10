@@ -81,7 +81,16 @@ EOF
 
 sed "s|__INSTALL_ROOT__|/opt/chayuan-wps-addon|g" \
 	"$ROOT/scripts/linux/postinst.template.sh" >"$DEB_ROOT/DEBIAN/postinst"
+# 剥离可能的 UTF-8 BOM：BOM 会破坏 #! shebang，dpkg 执行 postinst 失败 → 安装中断。
+if [[ "$(head -c 3 "$DEB_ROOT/DEBIAN/postinst" | od -An -tx1 | tr -d ' ')" == "efbbbf" ]]; then
+	tail -c +4 "$DEB_ROOT/DEBIAN/postinst" > "$DEB_ROOT/DEBIAN/postinst.tmp" && mv "$DEB_ROOT/DEBIAN/postinst.tmp" "$DEB_ROOT/DEBIAN/postinst"
+fi
 chmod 0755 "$DEB_ROOT/DEBIAN/postinst"
+# 保险：渲染后确认首两字节为 '#!'，否则立即中止构建（绝不打包坏 shebang）
+if [[ "$(head -c 2 "$DEB_ROOT/DEBIAN/postinst")" != "#!" ]]; then
+	echo "ERROR: postinst shebang broken (expected '#!', got: $(head -c 6 "$DEB_ROOT/DEBIAN/postinst" | od -An -c | tr -d '\n'))" >&2
+	exit 1
+fi
 
 OUT_DEB="$ROOT/release/${NAME}-${VERSION}-linux-${ARCH_ID}.deb"
 # --root-owner-group：把包内文件属主统一为 root:root（非 Linux 构建机上是 501:20 之类，不规范）。

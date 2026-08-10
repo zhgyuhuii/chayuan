@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 # Copies add-in into the invoking user's jsaddons (typical: sudo dpkg -i).
 # 麒麟 / UOS 等环境下若用图形界面安装 .deb，可能没有 SUDO_USER，需额外推断登录用户。
 set -e
@@ -8,7 +8,12 @@ if ! test -f "$META"; then
 	echo "chayuan-wps-addon: missing $META" >&2
 	exit 1
 fi
-ADDON_FOLDER="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['addonFolder'])" "$META")"
+# 用 sed 解析 addonFolder，避免依赖 python3
+ADDON_FOLDER="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -1)"
+if test -z "$ADDON_FOLDER"; then
+	echo "chayuan-wps-addon: cannot read addonFolder from $META" >&2
+	exit 1
+fi
 
 merge_publish_online() {
 	PUBLISH_XML="$1"

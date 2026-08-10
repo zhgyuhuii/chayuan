@@ -47,7 +47,17 @@ cp -R "$STAGING/"* "$PAYLOAD/"
 mkdir -p "$SCRIPTS_DIR"
 sed "s|__INSTALL_ROOT__|/Library/Application Support/ChayuanWPS|g" \
 	"$ROOT/scripts/macos/postinstall.template.sh" >"$SCRIPTS_DIR/postinstall"
+# 剥离可能的 UTF-8 BOM：BOM 会让首字节变成 ef bb bf，内核识别不了 #! shebang，
+# macOS 安装器执行 postinstall 失败 → 双击安装报「安装器遇到一个错误」。
+if [[ "$(head -c 3 "$SCRIPTS_DIR/postinstall" | od -An -tx1 | tr -d ' ')" == "efbbbf" ]]; then
+	tail -c +4 "$SCRIPTS_DIR/postinstall" > "$SCRIPTS_DIR/postinstall.tmp" && mv "$SCRIPTS_DIR/postinstall.tmp" "$SCRIPTS_DIR/postinstall"
+fi
 chmod +x "$SCRIPTS_DIR/postinstall"
+# 保险：渲染后确认首两字节为 '#!'，否则立即中止构建（绝不打包坏 shebang）
+if [[ "$(head -c 2 "$SCRIPTS_DIR/postinstall")" != "#!" ]]; then
+	echo "ERROR: postinstall shebang broken (expected '#!', got: $(head -c 6 "$SCRIPTS_DIR/postinstall" | od -An -c | tr -d '\n'))" >&2
+	exit 1
+fi
 
 OUT_PKG="$ROOT/release/${NAME}-${VERSION}-macos-${ARCH_ID}.pkg"
 pkgbuild \
