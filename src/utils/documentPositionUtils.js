@@ -69,6 +69,29 @@ export function mapChunkRelativeRangeToAbsolute(chunk, start, end) {
   if (!Number.isFinite(relativeStart) || !Number.isFinite(relativeEnd) || relativeEnd <= relativeStart) {
     return null
   }
+
+  // 表格空段/单元格标记会造成 chunkStart+offset 漂移；优先用 relativeRangeMap 的绝对起点。
+  const map = Array.isArray(chunk?.relativeRangeMap) ? chunk.relativeRangeMap : []
+  if (map.length) {
+    const unit = map.find((entry) => {
+      const a = Number(entry?.chunkRelativeStart)
+      const b = Number(entry?.chunkRelativeEnd)
+      return Number.isFinite(a) && Number.isFinite(b) && relativeStart >= a && relativeStart < b
+    }) || map.find((entry) => {
+      const a = Number(entry?.chunkRelativeStart)
+      const b = Number(entry?.chunkRelativeEnd)
+      return Number.isFinite(a) && Number.isFinite(b) && relativeStart >= a && relativeStart <= b
+    })
+    if (unit && Number.isFinite(Number(unit.absoluteStart))) {
+      const unitRelStart = Number(unit.chunkRelativeStart) || 0
+      const absBase = Number(unit.absoluteStart)
+      return {
+        start: absBase + (relativeStart - unitRelStart),
+        end: absBase + (relativeEnd - unitRelStart)
+      }
+    }
+  }
+
   const chunkStart = Number(chunk?.start || 0)
   const rawChunkText = String(chunk?.text ?? chunk?.rawText ?? '')
   if (rawChunkText) {

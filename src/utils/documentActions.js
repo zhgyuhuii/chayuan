@@ -896,7 +896,8 @@ function buildStructuredOperationCommentText(operation, fallbackCommentText = ''
 // 坐标」的漂移(文档含表格  单元标记/域时尤甚)。找不到或出错返回 null(宁可跳过也不错放)。
 function findRangeByTextInDoc(doc, expectedText, hintStart = 0) {
   const needle = String(expectedText || '').trim()
-  if (!doc || needle.length < 2) return null
+  // 单字错别字在表格中常见，不可拒绝 length===1
+  if (!doc || needle.length < 1) return null
   try {
     const docEnd = Number(doc?.Content?.End || 0)
     if (!(docEnd > 0)) return null

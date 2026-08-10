@@ -17,6 +17,7 @@ import {
   mapNormalizedRangeToRaw,
   normalizeTextWithIndexMap
 } from './documentPositionUtils.js'
+import { resolveAbsoluteAnchorFromChunkRange } from './documentAnchorResolve.js'
 
 /** WPS ShowDialog 内可能无 Application，从 opener/parent 获取（不赋值 window.Application，避免只读属性报错） */
 function getApplication() {
@@ -566,7 +567,10 @@ function applyIssueCommentToParsedItems(doc, item, parsedItems, issueIndex) {
   }
   const chunkText = item?.chunkText ?? item?.input ?? ''
   const commentText = buildSpellCheckCommentText(issue)
-  const commentResult = addCommentAtText(doc, item.chunkStart, issue, chunkText, commentText)
+  const commentResult = addCommentAtText(doc, item.chunkStart, issue, chunkText, commentText, {
+    chunkEnd: item?.chunkEnd,
+    relativeRangeMap: item?.relativeRangeMap
+  })
   issue.anchorStatus = commentResult?.ok ? 'success' : 'failed'
   issue.anchorReasonCode = commentResult?.reasonCode || (commentResult?.ok ? 'matched' : 'unknown')
   issue.anchorReasonLabel = commentResult?.reasonLabel || (commentResult?.ok ? '定位成功' : '定位失败')
@@ -897,15 +901,16 @@ async function runStructuredSpellCheck(model, chunkText, requestOverride = null,
 }
 
 /**
- * 在文档指定范围添加批注
+ * 在文档指定范围添加批注。
+ * 表格场景禁止盲信 chunkStart+offset：必须 live 复核，失败则 Find 重定位。
  * @param {object} doc
  * @param {number} chunkStart - 该块在文档中的起始位置
  * @param {{ text: string, prefix?: string, suffix?: string }} issue - 要定位的问题
  * @param {string} chunkText - 该块的完整文本
  * @param {string} commentText - 批注内容
- * @returns {boolean}
+ * @param {{ chunkEnd?: number, relativeRangeMap?: Array }} [anchorOpts]
  */
-export function addCommentAtText(doc, chunkStart, issue, chunkText, commentText) {
+export function addCommentAtText(doc, chunkStart, issue, chunkText, commentText, anchorOpts = {}) {
   if (!doc?.Comments || !issue?.text) {
     return { ok: false, reasonCode: 'missing_anchor', reasonLabel: '缺少定位片段' }
   }
@@ -913,16 +918,31 @@ export function addCommentAtText(doc, chunkStart, issue, chunkText, commentText)
   if (!match?.ok || !match.range) {
     return match || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
   }
-  const start = chunkStart + match.range.start
-  const end = chunkStart + match.range.end
+  const resolved = resolveAbsoluteAnchorFromChunkRange(doc, {
+    chunkStart,
+    chunkEnd: anchorOpts?.chunkEnd,
+    chunkText,
+    relativeRangeMap: anchorOpts?.relativeRangeMap,
+    relativeStart: match.range.start,
+    relativeEnd: match.range.end,
+    expectedText: issue.text,
+    prefix: issue.prefix,
+    suffix: issue.suffix,
+    matchReasonCode: match.reasonCode,
+    matchReasonLabel: match.reasonLabel
+  })
+  if (!resolved?.ok) {
+    return resolved || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
+  }
   try {
-    const range = doc.Range(start, end)
+    const range = doc.Range(resolved.start, resolved.end)
     doc.Comments.Add(range, commentText)
     return {
       ok: true,
-      reasonCode: match.reasonCode,
-      reasonLabel: match.reasonLabel,
-      range: { start, end }
+      reasonCode: resolved.reasonCode || match.reasonCode,
+      reasonLabel: resolved.reasonLabel || match.reasonLabel,
+      range: { start: resolved.start, end: resolved.end },
+      matchedBy: resolved.matchedBy
     }
   } catch (e) {
     console.warn('addCommentAtText failed:', e)
@@ -933,7 +953,7 @@ export function addCommentAtText(doc, chunkStart, issue, chunkText, commentText)
 /**
  * 在定位到的原文范围内替换为建议文本（用于文档动作为「替换」等）
  */
-function replaceIssueTextInDocument(doc, chunkStart, issue, chunkText) {
+function replaceIssueTextInDocument(doc, chunkStart, issue, chunkText, anchorOpts = {}) {
   if (!doc?.Content || !issue?.text) {
     return { ok: false, reasonCode: 'missing_anchor', reasonLabel: '缺少定位片段' }
   }
@@ -945,16 +965,31 @@ function replaceIssueTextInDocument(doc, chunkStart, issue, chunkText) {
   if (!match?.ok || !match.range) {
     return match || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
   }
-  const start = chunkStart + match.range.start
-  const end = chunkStart + match.range.end
+  const resolved = resolveAbsoluteAnchorFromChunkRange(doc, {
+    chunkStart,
+    chunkEnd: anchorOpts?.chunkEnd,
+    chunkText,
+    relativeRangeMap: anchorOpts?.relativeRangeMap,
+    relativeStart: match.range.start,
+    relativeEnd: match.range.end,
+    expectedText: issue.text,
+    prefix: issue.prefix,
+    suffix: issue.suffix,
+    matchReasonCode: match.reasonCode,
+    matchReasonLabel: match.reasonLabel
+  })
+  if (!resolved?.ok) {
+    return resolved || { ok: false, reasonCode: 'anchor_not_found', reasonLabel: '未找到定位点' }
+  }
   try {
-    const range = doc.Range(start, end)
+    const range = doc.Range(resolved.start, resolved.end)
     range.Text = suggestion
     return {
       ok: true,
-      reasonCode: match.reasonCode,
-      reasonLabel: match.reasonLabel || '已替换',
-      range: { start, end }
+      reasonCode: resolved.reasonCode || match.reasonCode,
+      reasonLabel: resolved.reasonLabel || match.reasonLabel || '已替换',
+      range: { start: resolved.start, end: resolved.end },
+      matchedBy: resolved.matchedBy
     }
   } catch (e) {
     console.warn('replaceIssueTextInDocument failed:', e)
@@ -973,7 +1008,7 @@ function buildSpellCheckCommentBody(issue, documentAction) {
 /**
  * 按助手设置的文档动作写回单条问题（批注 / 替换 / 仅生成等）
  */
-function applySpellCheckIssueWrite(doc, chunkStart, rawChunkText, err, documentAction, reviewCommentPolicy) {
+function applySpellCheckIssueWrite(doc, chunkStart, rawChunkText, err, documentAction, reviewCommentPolicy, anchorOpts = {}) {
   const action = String(documentAction || 'comment').trim()
   if (action === 'none') {
     err.anchorStatus = 'skipped'
@@ -991,11 +1026,11 @@ function applySpellCheckIssueWrite(doc, chunkStart, rawChunkText, err, documentA
       return { ok: false }
     }
     const commentText = buildSpellCheckCommentBody(err, action)
-    return addCommentAtText(doc, chunkStart, err, rawChunkText, commentText)
+    return addCommentAtText(doc, chunkStart, err, rawChunkText, commentText, anchorOpts)
   }
 
   if (action === 'replace') {
-    return replaceIssueTextInDocument(doc, chunkStart, err, rawChunkText)
+    return replaceIssueTextInDocument(doc, chunkStart, err, rawChunkText, anchorOpts)
   }
 
   if (action === 'comment-replace') {
@@ -1006,13 +1041,13 @@ function applySpellCheckIssueWrite(doc, chunkStart, rawChunkText, err, documentA
       return { ok: false }
     }
     const ctext = buildSpellCheckCommentText(err)
-    const c1 = addCommentAtText(doc, chunkStart, err, rawChunkText, ctext)
+    const c1 = addCommentAtText(doc, chunkStart, err, rawChunkText, ctext, anchorOpts)
     err.anchorStatus = c1?.ok ? 'success' : 'failed'
     err.anchorReasonCode = c1?.reasonCode || 'unknown'
     err.anchorReasonLabel = c1?.reasonLabel || ''
     if (c1?.range) err.anchorRange = c1.range
     if (!c1?.ok) return c1
-    const r2 = replaceIssueTextInDocument(doc, chunkStart, err, rawChunkText)
+    const r2 = replaceIssueTextInDocument(doc, chunkStart, err, rawChunkText, anchorOpts)
     if (r2?.ok) {
       err.writebackMode = 'comment-replace'
       return { ok: true, ...r2 }
@@ -1021,7 +1056,7 @@ function applySpellCheckIssueWrite(doc, chunkStart, rawChunkText, err, documentA
     return { ok: true, partialReplace: false, commentOk: true }
   }
 
-  return addCommentAtText(doc, chunkStart, err, rawChunkText, buildSpellCheckCommentText(err))
+  return addCommentAtText(doc, chunkStart, err, rawChunkText, buildSpellCheckCommentText(err), anchorOpts)
 }
 
 /**
@@ -1275,8 +1310,10 @@ async function processSpellCheckChunks({
             parsedOutput: '{"issues":[]}',
             parsedItems: [],
             chunkStart: chunk.start,
+            chunkEnd: chunk.end,
             chunkText: rawChunkText,
             chunkNormalizedText: input,
+            relativeRangeMap: Array.isArray(chunk.relativeRangeMap) ? chunk.relativeRangeMap : [],
             commentCount: 0
           }
           updateLiveTaskItem(i, emptyItem)
@@ -1313,12 +1350,18 @@ async function processSpellCheckChunks({
           throw new Error('模型返回空内容')
         }
 
+        const anchorOpts = {
+          chunkEnd: chunk.end,
+          relativeRangeMap: Array.isArray(chunk.relativeRangeMap) ? chunk.relativeRangeMap : []
+        }
         const errors = (result.parsedItems || []).map(err => ({ ...err }))
         let added = 0
         for (let errIndex = 0; errIndex < errors.length; errIndex++) {
           throwIfCancelled(runState)
           const err = errors[errIndex]
-          const writeResult = applySpellCheckIssueWrite(doc, chunk.start, rawChunkText, err, documentAction, reviewCommentPolicy)
+          const writeResult = applySpellCheckIssueWrite(
+            doc, chunk.start, rawChunkText, err, documentAction, reviewCommentPolicy, anchorOpts
+          )
           if (err.anchorStatus !== 'skipped') {
             err.anchorStatus = writeResult?.ok ? 'success' : 'failed'
             err.anchorReasonCode = writeResult?.reasonCode || (writeResult?.ok ? 'matched' : 'unknown')
@@ -1347,8 +1390,10 @@ async function processSpellCheckChunks({
           parseError: result.parseError,
           diagnostic,
           chunkStart: chunk.start,
+          chunkEnd: chunk.end,
           chunkText: rawChunkText,
-          chunkNormalizedText: input
+          chunkNormalizedText: input,
+          relativeRangeMap: anchorOpts.relativeRangeMap
         }
         liveCommentCount += added
         updateLiveTaskItem(i, {
@@ -1360,8 +1405,10 @@ async function processSpellCheckChunks({
           parseError: successItem.parseError,
           diagnostic: successItem.diagnostic,
           chunkStart: successItem.chunkStart,
+          chunkEnd: successItem.chunkEnd,
           chunkText: successItem.chunkText,
           chunkNormalizedText: successItem.chunkNormalizedText,
+          relativeRangeMap: successItem.relativeRangeMap,
           commentCount: successItem.added
         })
         return successItem
@@ -1371,8 +1418,10 @@ async function processSpellCheckChunks({
             request,
             output: null,
             chunkStart: chunk.start,
+            chunkEnd: chunk.end,
             chunkText: rawChunkText,
             chunkNormalizedText: input,
+            relativeRangeMap: Array.isArray(chunk.relativeRangeMap) ? chunk.relativeRangeMap : [],
             error: error?.message || String(error || ''),
             diagnostic: buildDiagnosticInfo({
               stage: 'request-error',
@@ -1412,8 +1461,10 @@ async function processSpellCheckChunks({
           parseError: r.value.parseError,
           diagnostic: r.value.diagnostic,
           chunkStart: r.value.chunkStart,
+          chunkEnd: r.value.chunkEnd ?? c?.end,
           chunkText: r.value.chunkText,
           chunkNormalizedText: r.value.chunkNormalizedText,
+          relativeRangeMap: r.value.relativeRangeMap || c?.relativeRangeMap || [],
           commentCount: r.value.added
         }
       }
@@ -1422,8 +1473,10 @@ async function processSpellCheckChunks({
         request: defaultRequest,
         output: null,
         chunkStart: c?.start ?? 0,
+        chunkEnd: c?.end,
         chunkText: c?.text ?? '',
         chunkNormalizedText: c?.normalizedText ?? c?.text ?? '',
+        relativeRangeMap: Array.isArray(c?.relativeRangeMap) ? c.relativeRangeMap : [],
         error: cancelledError ? '任务已停止' : r.error?.message,
         diagnostic: buildDiagnosticInfo({
           stage: cancelledError ? 'cancelled' : 'request-error',
@@ -1697,9 +1750,15 @@ export async function retrySpellCheckChunk(taskId, itemIndex, requestOverride = 
 
   const errors = (result.parsedItems || []).map(err => ({ ...err }))
   let added = 0
+  const anchorOpts = {
+    chunkEnd: item?.chunkEnd,
+    relativeRangeMap: item?.relativeRangeMap
+  }
   for (let errIndex = 0; errIndex < errors.length; errIndex++) {
     const err = errors[errIndex]
-    const writeResult = applySpellCheckIssueWrite(doc, item.chunkStart, chunkText, err, documentAction, reviewCommentPolicy)
+    const writeResult = applySpellCheckIssueWrite(
+      doc, item.chunkStart, chunkText, err, documentAction, reviewCommentPolicy, anchorOpts
+    )
     if (err.anchorStatus !== 'skipped') {
       err.anchorStatus = writeResult?.ok ? 'success' : 'failed'
       err.anchorReasonCode = writeResult?.reasonCode || (writeResult?.ok ? 'matched' : 'unknown')

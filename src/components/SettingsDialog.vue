@@ -4056,7 +4056,7 @@ export default {
       const start = await launcher.startSidecarBestEffort()
       if (start?.ok) return start
       const msg = start?.message
-        || '本机 MCP sidecar（127.0.0.1:62588）未运行。请先点击「启动本机服务」，或在仓库根目录执行：npm run mcp:sidecar'
+        || '本机 MCP sidecar（127.0.0.1:62588）未运行。请先点击「启动本机服务」，或运行安装目录中的 chayuan-mcp 二进制（无需 Node）。'
       this.mcpManual = start?.manual || launcher.getManualStartCommand()
       const err = new Error(msg)
       err.code = start?.code || 'SIDECAR_NOT_RUNNING'

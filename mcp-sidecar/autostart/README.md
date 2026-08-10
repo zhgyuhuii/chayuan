@@ -4,9 +4,9 @@
 |------|------|
 | Linux | `install-linux-user.sh` → systemd --user `chayuan-mcp.service` |
 | macOS | `install-macos-launchagent.sh` → LaunchAgent `com.chayuan.mcp` |
-| Windows | `install-windows-user.ps1` → `HKCU\...\Run\ChayuanWpsMcp`（需本机 Node；完整静默安装器仍待 Inno/NSIS） |
+| Windows | `install-windows-user.ps1` → `HKCU\...\Run\ChayuanWpsMcp`（优先 `bin/chayuan-mcp-*.exe`；无二进制时回落 Node） |
 
-前置：本机已安装 Node.js 18+。
+前置：打包安装优先使用 `mcp-sidecar/bin` 下单文件二进制（无需 Node）；开发态无二进制时需 Node.js 18+。
 
 ## Windows
 

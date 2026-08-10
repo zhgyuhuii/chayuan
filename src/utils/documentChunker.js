@@ -200,8 +200,11 @@ function chunkParagraphRanges(paragraphs, { chunkLength, overlapLength, splitStr
     if (currentChunk.texts.length === 0) return
     const rawText = currentChunk.texts.map(t => t.rawText).join('')
     const text = currentChunk.texts.map(t => t.text).join('')
+    // chunkRelative* 必须按 rawText 长度累计：findIssueRangeDetailed / 批注写入使用 raw 下标。
+    // 若按 normalized 长度累计，表格中 \\r↔\\n 之外的错位会放大为批注漂移。
     let relativeCursor = 0
     const relativeRangeMap = currentChunk.texts.map((unit) => {
+      const rawLen = String(unit.rawText || '').length
       const entry = {
         paragraphIndex: Number(unit.paragraphIndex || 0),
         paragraphOrder: Number(unit.paragraphOrder || 0),
@@ -215,7 +218,7 @@ function chunkParagraphRanges(paragraphs, { chunkLength, overlapLength, splitStr
         normalizedRelativeStart: Number(unit.normalizedStart || 0),
         normalizedRelativeEnd: Number(unit.normalizedEnd || 0),
         chunkRelativeStart: relativeCursor,
-        chunkRelativeEnd: relativeCursor + String(unit.text || '').length,
+        chunkRelativeEnd: relativeCursor + rawLen,
         textPreview: String(unit.text || '').trim()
       }
       relativeCursor = entry.chunkRelativeEnd
@@ -269,12 +272,12 @@ function chunkParagraphRanges(paragraphs, { chunkLength, overlapLength, splitStr
       const rawText = String(rng.Text || '')
       const start = Number(rng.Start)
       const end = Number(rng.End)
-      const normalizedText = normalizeRangeText(rawText)
-      if (splitStrategy === 'paragraph' && normalizedText === '\n') continue
+      // 保留空段/单元格标记段：跳过会在表格中制造绝对坐标空洞，导致批注偏移
+      if (!rawText) continue
 
       const units = splitRangeIntoUnits(rawText, start, { splitStrategy, chunkLength })
       for (const unit of units) {
-        if (!unit.text.trim() && currentChunk.texts.length === 0) continue
+        if (!String(unit.rawText || '').length && currentChunk.texts.length === 0) continue
         const enrichedUnit = {
           ...unit,
           paragraphIndex: i - 1,
@@ -285,8 +288,9 @@ function chunkParagraphRanges(paragraphs, { chunkLength, overlapLength, splitStr
         }
         currentChunk.texts.push(enrichedUnit)
         if (currentChunk.start == null) currentChunk.start = unit.start
-        currentChunk.end = unit.end
-        currentChunk.len += unit.text.length
+        // 段落 COM End 可能大于 Text.length；块终点取真实 End，避免低估范围
+        currentChunk.end = Math.max(Number(unit.end || 0), end)
+        currentChunk.len += unit.text.length || String(unit.rawText || '').length
         pushParagraphRef(currentChunk, {
           paragraphIndex: i - 1,
           paragraphOrder: i,
@@ -338,8 +342,10 @@ async function chunkParagraphRangesAsync(paragraphs, { chunkLength, overlapLengt
     if (currentChunk.texts.length === 0) return
     const rawText = currentChunk.texts.map(t => t.rawText).join('')
     const text = currentChunk.texts.map(t => t.text).join('')
+    // chunkRelative* 按 rawText 累计，与批注/Find 使用的 raw 下标一致
     let relativeCursor = 0
     const relativeRangeMap = currentChunk.texts.map((unit) => {
+      const rawLen = String(unit.rawText || '').length
       const entry = {
         paragraphIndex: Number(unit.paragraphIndex || 0),
         paragraphOrder: Number(unit.paragraphOrder || 0),
@@ -353,7 +359,7 @@ async function chunkParagraphRangesAsync(paragraphs, { chunkLength, overlapLengt
         normalizedRelativeStart: Number(unit.normalizedStart || 0),
         normalizedRelativeEnd: Number(unit.normalizedEnd || 0),
         chunkRelativeStart: relativeCursor,
-        chunkRelativeEnd: relativeCursor + String(unit.text || '').length,
+        chunkRelativeEnd: relativeCursor + rawLen,
         textPreview: String(unit.text || '').trim()
       }
       relativeCursor = entry.chunkRelativeEnd
@@ -411,12 +417,12 @@ async function chunkParagraphRangesAsync(paragraphs, { chunkLength, overlapLengt
       const rawText = String(rng.Text || '')
       const start = Number(rng.Start)
       const end = Number(rng.End)
-      const normalizedText = normalizeRangeText(rawText)
-      if (splitStrategy === 'paragraph' && normalizedText === '\n') continue
+      // 保留空段/单元格标记段：跳过会在表格中制造绝对坐标空洞，导致批注偏移
+      if (!rawText) continue
 
       const units = splitRangeIntoUnits(rawText, start, { splitStrategy, chunkLength })
       for (const unit of units) {
-        if (!unit.text.trim() && currentChunk.texts.length === 0) continue
+        if (!String(unit.rawText || '').length && currentChunk.texts.length === 0) continue
         const enrichedUnit = {
           ...unit,
           paragraphIndex: i - 1,
@@ -427,8 +433,9 @@ async function chunkParagraphRangesAsync(paragraphs, { chunkLength, overlapLengt
         }
         currentChunk.texts.push(enrichedUnit)
         if (currentChunk.start == null) currentChunk.start = unit.start
-        currentChunk.end = unit.end
-        currentChunk.len += unit.text.length
+        // 段落 COM End 可能大于 Text.length；块终点取真实 End，避免低估范围
+        currentChunk.end = Math.max(Number(unit.end || 0), end)
+        currentChunk.len += unit.text.length || String(unit.rawText || '').length
         pushParagraphRef(currentChunk, {
           paragraphIndex: i - 1,
           paragraphOrder: i,

@@ -69,7 +69,12 @@ copy /Y "publish.xml" "%destination_folder%\\publish.xml"
 
 rem --- 察元 MCP sidecar：释放单文件二进制 + 注册开机自启 + 立即启动（无需 Node.js）---
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
+if not exist "%sidecar_runtime%\\bin" mkdir "%sidecar_runtime%\\bin"
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%"
+copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}"
+rem Wrapper so settings「启动本机服务」也能找到 start-mcp.cmd（优先调二进制）
+> "%sidecar_runtime%\\start-mcp.cmd" echo @echo off
+>> "%sidecar_runtime%\\start-mcp.cmd" echo start "" "%%~dp0${SIDECAR_EXE_NAME}"
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_exe%\\"" /f >nul 2>nul
 start "" "%sidecar_exe%"
 `,

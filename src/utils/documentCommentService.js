@@ -354,7 +354,10 @@ async function executeDocumentCommentTask(options = {}) {
       }
       for (let issueIndex = 0; issueIndex < issues.length; issueIndex++) {
         const issue = issues[issueIndex]
-        const result = addCommentAtText(doc, chunk.start, issue, chunkText, issue.comment)
+        const result = addCommentAtText(doc, chunk.start, issue, chunkText, issue.comment, {
+          chunkEnd: chunk.end,
+          relativeRangeMap: chunk.relativeRangeMap
+        })
         if (result?.ok) {
           totalComments += 1
           addedComments.push({

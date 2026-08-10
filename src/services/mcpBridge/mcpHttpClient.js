@@ -19,7 +19,7 @@ function abortError(signal) {
 }
 
 const SIDECAR_OFFLINE_HINT =
-  '本机 MCP sidecar（127.0.0.1:62588）未运行。请先在设置页点击「启动本机服务」，或在仓库根目录执行：npm run mcp:sidecar'
+  '本机 MCP sidecar（127.0.0.1:62588）未运行。请先在设置页点击「启动本机服务」，或运行安装目录中的 chayuan-mcp 二进制（无需 Node）。开发态可执行：npm run mcp:sidecar'
 
 function networkErrorMessage(err) {
   const raw = String(err?.message || err || '')
