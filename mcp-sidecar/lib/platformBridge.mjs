@@ -210,7 +210,7 @@ export function isDocumentVisibleInWindows(filePath, windows = listVisibleWpsWin
 
 export function defaultMcpServerJson(dataDir, port) {
   return {
-    name: 'chayuan-wps',
+    name: 'chayuan-wps-mcp',
     version: '0.4.0',
     url: `http://127.0.0.1:${port}/mcp`,
     port,

@@ -153,7 +153,7 @@ function acquireLock() {
 
 function getServerMeta() {
   return {
-    name: 'chayuan-wps',
+    name: 'chayuan-wps-mcp',
     version: '0.1.0',
     url: `http://127.0.0.1:${port}${MCP_PATH}`,
     healthz: `http://127.0.0.1:${port}${HEALTHZ_PATH}`,

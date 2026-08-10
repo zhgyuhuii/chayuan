@@ -259,7 +259,7 @@ async function main() {
 
   const outDir = path.join(
     process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
-    'chayuan-wps',
+    'chayuan-wps-mcp',
     'mcp'
   )
   fs.mkdirSync(outDir, { recursive: true })

@@ -2929,7 +2929,7 @@ export default {
         'Claude Code / Cursor / Codex 等（Streamable HTTP）示例：',
         '{',
         '  "mcpServers": {',
-        '    "chayuan-wps": {',
+        '    "chayuan-wps-mcp": {',
         `      "url": "${url}"`,
         '    }',
         '  }',

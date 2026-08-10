@@ -39,22 +39,22 @@ Endpoint: `http://127.0.0.1:62588/mcp`  ·  Salud: `GET http://127.0.0.1:62588/h
 
 ### Claude Code
 ```bash
-claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+claude mcp add --transport http chayuan-wps-mcp http://127.0.0.1:62588/mcp
 ```
 o `.mcp.json`:
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 ### OpenAI Codex (codex CLI) — `~/.codex/config.toml`
 ```toml
-[mcp_servers.chayuan-wps]
+[mcp_servers.chayuan-wps-mcp]
 url = "http://127.0.0.1:62588/mcp"
 ```
 
 ### Cursor — `.cursor/mcp.json`
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 ### Hermes / OpenClaw
@@ -62,7 +62,7 @@ Cree un servicio MCP de tipo **HTTP / Streamable HTTP** que apunte a `http://127
 
 ### Claude Desktop / otros clientes con configuración JSON
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 ### Verificación con MCP Inspector

@@ -15,7 +15,7 @@ function tool(def) {
   return def
 }
 
-export const SERVER_INFO = { name: 'chayuan-wps', version: '0.5.0' }
+export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.5.0' }
 
 export const SERVER_INSTRUCTIONS = [
   'You are connected to 察元 WPS MCP. End users speak natural Chinese/English only — they never name tools.',

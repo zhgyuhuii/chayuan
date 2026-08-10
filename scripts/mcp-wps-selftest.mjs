@@ -303,7 +303,7 @@ async function runMcpSuite(agentOnline) {
     capabilities: {},
     clientInfo: { name: 'chayuan-selftest', version: '0.1.0' }
   }, 1)
-  if (init.ok && init.data?.result?.serverInfo?.name === 'chayuan-wps') {
+  if (init.ok && init.data?.result?.serverInfo?.name === 'chayuan-wps-mcp') {
     pass('mcp.initialize', init.data.result.serverInfo.version)
   } else {
     fail('mcp.initialize', JSON.stringify(init.data).slice(0, 200))

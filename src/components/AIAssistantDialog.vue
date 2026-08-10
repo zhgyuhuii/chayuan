@@ -4072,7 +4072,7 @@ export default {
       return [
         '{',
         '  "mcpServers": {',
-        '    "chayuan-wps": {',
+        '    "chayuan-wps-mcp": {',
         `      "url": "${url}"`,
         '    }',
         '  }',

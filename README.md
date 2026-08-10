@@ -82,7 +82,7 @@ http://127.0.0.1:62588/mcp
 [Claude Code](https://code.claude.com/docs/en/mcp) 支持 Streamable HTTP。用 CLI 一键注册（`--transport http`，`streamable-http` 为同义别名）：
 
 ```bash
-claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+claude mcp add --transport http chayuan-wps-mcp http://127.0.0.1:62588/mcp
 ```
 
 或在项目根目录 / 用户级 `.mcp.json` 中写入：
@@ -90,7 +90,7 @@ claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
 ```json
 {
   "mcpServers": {
-    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```
@@ -100,7 +100,7 @@ claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
 编辑 `~/.codex/config.toml`，加入一个 Streamable HTTP MCP server：
 
 ```toml
-[mcp_servers.chayuan-wps]
+[mcp_servers.chayuan-wps-mcp]
 url = "http://127.0.0.1:62588/mcp"
 ```
 
@@ -111,7 +111,7 @@ url = "http://127.0.0.1:62588/mcp"
 ```json
 {
   "mcpServers": {
-    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```
@@ -131,7 +131,7 @@ http://127.0.0.1:62588/mcp
 ```json
 {
   "mcpServers": {
-    "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" }
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```

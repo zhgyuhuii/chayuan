@@ -29,13 +29,13 @@ http://127.0.0.1:62588/mcp
 ### 1.2 Claude Code
 
 ```bash
-claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
+claude mcp add --transport http chayuan-wps-mcp http://127.0.0.1:62588/mcp
 ```
 
 或在项目 / 用户级 `.mcp.json`：
 
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 对接后可在 Claude Code 中自然语言指挥：打开文档、分段翻译并插到段后、错别字批注、批量改正正文等。
@@ -45,7 +45,7 @@ claude mcp add --transport http chayuan-wps http://127.0.0.1:62588/mcp
 编辑 `~/.codex/config.toml`：
 
 ```toml
-[mcp_servers.chayuan-wps]
+[mcp_servers.chayuan-wps-mcp]
 url = "http://127.0.0.1:62588/mcp"
 ```
 
@@ -56,7 +56,7 @@ Codex 即可调用察元文档工具，在 WPS 正文上完成校对与改写闭
 项目级 `.cursor/mcp.json`（或 Settings → MCP → Add）：
 
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 ### 1.5 Hermes / OpenClaw
@@ -72,7 +72,7 @@ http://127.0.0.1:62588/mcp
 ### 1.6 其它 JSON 配置型客户端（含 Claude Desktop 等）
 
 ```json
-{ "mcpServers": { "chayuan-wps": { "url": "http://127.0.0.1:62588/mcp" } } }
+{ "mcpServers": { "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" } } }
 ```
 
 验证可用 MCP Inspector：
