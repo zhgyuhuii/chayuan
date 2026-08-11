@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "chayuan-wps-mcp": {
+      "url": "http://127.0.0.1:62588/mcp"
+    }
+  }
+}

@@ -18,3 +18,5 @@
 | 14 | [14-confirm-security-localhost.md](./14-confirm-security-localhost.md) | confirmed 确认策略与 localhost 信任边界 |
 | 15 | [15-errors-troubleshooting-handbook.md](./15-errors-troubleshooting-handbook.md) | 察元 WPS MCP 错误码与排错手册 |
 | — | [hot-gov-intranet-agent-review.md](./hot-gov-intranet-agent-review.md) | 智能体进机关：内网不上传，国产 WPS 里把公文自动审查做完 |
+| — | [hot-shared-ollama-intranet-engine.md](./hot-shared-ollama-intranet-engine.md) | 一台内网 GPU，全科室共用：察元 + Ollama 校对引擎怎么搭，密钥不出科室 |
+| — | [hot-wps-skills-doc-proofread.md](./hot-wps-skills-doc-proofread.md) | 别再把大模型当聊天框校对稿子了：WPS「技能」才是文档审查该有的样子 |
