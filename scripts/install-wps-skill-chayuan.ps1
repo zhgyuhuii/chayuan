@@ -53,7 +53,7 @@ function Get-MirrorUrls {
     return ($j.sources | ForEach-Object { $_.url -replace '\$\{version\}', $Version })
   }
   return @(
-    "https://gitee.com/zhgyuhuii/chayuan/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip",
+    "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip",
     "https://aidooo.com/dl/wps-skill-chayuan/$Version/wps-skill-chayuan-$Version-portable.zip",
     "https://github.com/zhgyuhuii/chayuan/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip"
   )

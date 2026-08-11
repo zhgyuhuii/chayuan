@@ -8,7 +8,7 @@
 ### 1. 镜像源填实（国内 GitHub 被墙的核心解法）
 三源在 `release/mirrors.json`（也在安装器内置默认 + packager 内联）。当前状态：
 - **github** ✅ 已设为真实仓库 `zhgyuhuii/chayuan`（remote 就是它）。
-- **gitee** ⚠️ 占位 `gitee.com/zhgyuhuii/chayuan`——需确认你的 Gitee 账号，建同名镜像仓库，把 Release 同步上去。
+- **gitee** ✅ 已设为真实仓库 `gitee.com/cloudshd/chayuan-wps-releases`（releases 仓库；需上传 `wps-skill-chayuan-<ver>-portable.zip` + `.zip.sha256` 到对应 tag）。
 - **aidooo** ⚠️ 占位 `aidooo.com/dl/wps-skill-chayuan/<ver>/`——需往官网放静态文件。
 
 每个源**必须同时提供 `<archive>.sha256`**（安装器 `--fetch` 下载后强校验依赖它；缺 .sha256 的源会被跳过）。

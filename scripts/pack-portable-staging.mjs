@@ -124,7 +124,7 @@ const mirrors = {
   package: 'wps-skill-chayuan',
   note: 'URL 中的 ${version} 在下载时替换为实际版本。每个源都应提供同名 .sha256；安装器下载后强校验，任一源被篡改都不会通过。',
   sources: [
-    { name: 'gitee',  url: 'https://gitee.com/zhgyuhuii/chayuan/releases/download/v${version}/wps-skill-chayuan-${version}-portable.zip' },
+    { name: 'gitee',  url: 'https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v${version}/wps-skill-chayuan-${version}-portable.zip' },
     { name: 'aidooo', url: 'https://aidooo.com/dl/wps-skill-chayuan/${version}/wps-skill-chayuan-${version}-portable.zip' },
     { name: 'github', url: 'https://github.com/zhgyuhuii/chayuan/releases/download/v${version}/wps-skill-chayuan-${version}-portable.zip' },
   ],
