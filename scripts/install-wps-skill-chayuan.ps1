@@ -1,4 +1,4 @@
-# install-wps-skill-chayuan.ps1 —— wps-skill-chayuan 直装脚本（Windows）
+﻿# install-wps-skill-chayuan.ps1 —— wps-skill-chayuan 直装脚本（Windows）
 # 不跑 .exe 安装器外壳，直接：① 加载项+publish.xml(enable_dev) 写 jsaddons ② 调 install-windows-user.ps1 注册 HKCU Run 并启动
 #   ③ 四级 healthz  ④ 自动检测已装 agent（Claude Code/Cursor/Codex）→ 注册 MCP + 按各自格式投放技能文件
 #   OpenClaw/Hermes 为 GUI 打印指引；GitHub 被墙时 -Fetch 多源回退（Gitee/aidooo）+ sha256 强校验
@@ -26,6 +26,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# ── Windows 中文/编码坑（重点，踩过多次）──────────────────────────────────
+# PS 5.1（Windows 自带 powershell.exe）默认按 ANSI/GBK 解码 .ps1 与输出：
+#  ① 本文件保存为 UTF-8 + BOM（首字节 EF BB BF）——PS 5.1 据此按 UTF-8 解析中文，否则乱码；
+#  ② 控制台输出统一 UTF-8（现代 Windows Terminal 原生支持；旧 conhost 不影响功能，仅显示）；
+#  ③ 写 JSON/XML 数据文件用「无 BOM UTF-8」——Set-Content -Encoding UTF8 在 PS 5.1 会带 BOM，
+#     Node 的 JSON.parse、Cursor/Claude 读 mcp.json、WPS 读 publish.xml 都可能被 BOM 噎。
+#     故数据文件一律走 Write-FileUtf8NoBom（.NET WriteAllText + UTF8Encoding($false)）。
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+$OutputEncoding = [System.Text.Encoding]::UTF8
+function Write-FileUtf8NoBom([string]$Path, [string]$Content) {
+  [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+}
 $Repo = Split-Path -Parent $PSScriptRoot
 $McpName = 'chayuan-wps-mcp'
 $McpPort = 62588
@@ -54,7 +66,7 @@ function Get-MirrorUrls {
   }
   return @(
     "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip",
-    "https://aidooo.com/dl/wps-skill-chayuan/$Version/wps-skill-chayuan-$Version-portable.zip",
+    "https://aidooo.com/downloads/skill/wps-skill-chayuan-$Version-portable.zip",
     "https://github.com/zhgyuhuii/chayuan/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip"
   )
 }
@@ -150,7 +162,7 @@ function Install-Addon {
             '<jsplugins>' + "`n" +
             "    <jsplugin name=`"$($Meta.name)`" type=`"$($Meta.addonType)`" url=`"$AddonFolder`" version=`"$Version2`" enable=`"enable_dev`" install=`"null`" customDomain=`"`"/>" + "`n" +
             '</jsplugins>' + "`n"
-  Set-Content -LiteralPath (Join-Path $jsaddons 'publish.xml') -Value $pubXml -Encoding UTF8 -NoNewline
+  Write-FileUtf8NoBom (Join-Path $jsaddons 'publish.xml') $pubXml
   Write-Host "  ✓ 加载项 → $destAddon（publish.xml 用 enable_dev，Windows 必需）"
 }
 
@@ -214,9 +226,9 @@ function Merge-McpJson([string]$Path) {
     if ($j.mcpServers -and $j.mcpServers.$McpName) { return }   # 已存在
     if (-not $j.mcpServers) { $j | Add-Member -NotePropertyName mcpServers -NotePropertyValue (New-Object PSObject) }
     $j.mcpServers | Add-Member -NotePropertyName $McpName -NotePropertyValue $entry -Force
-    $j | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
+    Write-FileUtf8NoBom $Path ($j | ConvertTo-Json -Depth 10)
   } else {
-    @{ mcpServers = @{ $McpName = $entry } } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
+    Write-FileUtf8NoBom $Path (@{ mcpServers = @{ $McpName = $entry } } | ConvertTo-Json -Depth 10)
   }
 }
 function Test-Claude { [bool](Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path (Join-Path $env:USERPROFILE '.claude')) }

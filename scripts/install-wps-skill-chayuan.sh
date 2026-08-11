@@ -106,7 +106,7 @@ mirror_urls() {
   fi
   cat <<EOF
 https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v${ver}/wps-skill-chayuan-${ver}-portable.zip
-https://aidooo.com/dl/wps-skill-chayuan/${ver}/wps-skill-chayuan-${ver}-portable.zip
+https://aidooo.com/downloads/skill/wps-skill-chayuan-${ver}-portable.zip
 https://github.com/zhgyuhuii/chayuan/releases/download/v${ver}/wps-skill-chayuan-${ver}-portable.zip
 EOF
 }

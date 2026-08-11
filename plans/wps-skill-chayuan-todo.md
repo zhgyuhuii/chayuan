@@ -1,6 +1,6 @@
 # wps-skill-chayuan 待办与续接清单
 
-> 最近一次状态（2026-08-11）：L1 unix 直装 + agent 自动部署 + 多源分发已在本机（macOS/arm64）真机跑通。
+> 最近一次状态（2026-08-11）：L1 直装 + agent 自动部署 + 多源分发本机跑通；**官网（aidooo.com）已接入技能**：新增 `/skill` 介绍+安装页（按智能体分 Tab）、首页「察元AI文档助手」下载区并排「下载技能」按钮、`npm run publish:skill` 一键发布脚本；aidooo 镜像源已对齐真实路径 `/downloads/skill/...`。两个仓库改动均**未提交**（等确认）。
 > 设计源：`plans/wps-skill-chayuan-design.md`。本文件只列「还没做 / 还没验」的事，按优先级排。
 
 ## P0 · 发布前必做
@@ -9,7 +9,7 @@
 三源在 `release/mirrors.json`（也在安装器内置默认 + packager 内联）。当前状态：
 - **github** ✅ 已设为真实仓库 `zhgyuhuii/chayuan`（remote 就是它）。
 - **gitee** ✅ 已设为真实仓库 `gitee.com/cloudshd/chayuan-wps-releases`（releases 仓库；需上传 `wps-skill-chayuan-<ver>-portable.zip` + `.zip.sha256` 到对应 tag）。
-- **aidooo** ⚠️ 占位 `aidooo.com/dl/wps-skill-chayuan/<ver>/`——需往官网放静态文件。
+- **aidooo** ✅ 已对齐真实路径 `https://aidooo.com/downloads/skill/wps-skill-chayuan-<ver>-portable.zip`；官网 `public/downloads/skill/` 已放 4.0.0 包（zip+7z+各自 sha256）+ `skill-releases.json` 清单。`npm run publish:skill` 一键从 chayuan-wps 发布到官网目录。
 
 每个源**必须同时提供 `<archive>.sha256`**（安装器 `--fetch` 下载后强校验依赖它；缺 .sha256 的源会被跳过）。
 
