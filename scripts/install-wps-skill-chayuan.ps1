@@ -91,7 +91,12 @@ function Invoke-FetchPayload {
 
 # ───────── 载荷解析（本地 + 可选下载回落）─────────
 if (-not $Payload) { $Payload = $env:WPS_SKILL_PAYLOAD }
-if (-not $Payload) { $Payload = Join-Path $Repo 'release\install-staging' }
+if (-not $Payload) {
+  $devStaging = Join-Path $Repo 'release\install-staging'   # 开发仓库
+  $pkgStaging = Join-Path $Repo 'install-staging'           # portable 包根（下载解压即用）
+  if (Test-Path -LiteralPath $devStaging) { $Payload = $devStaging }
+  elseif (Test-Path -LiteralPath $pkgStaging) { $Payload = $pkgStaging }
+}
 if (-not (Test-Path -LiteralPath $Payload)) {
   if ($Fetch) {
     Write-Host "[wps-skill-chayuan] 本地无载荷，启用多源下载（GitHub 被墙自动回退 Gitee / aidooo）"

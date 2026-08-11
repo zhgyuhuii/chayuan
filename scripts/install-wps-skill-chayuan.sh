@@ -157,7 +157,8 @@ fetch_payload() {
 resolve_payload() {
   if [[ -n "$PAYLOAD_FLAG" ]]; then echo "$PAYLOAD_FLAG"; return; fi
   if [[ -n "${WPS_SKILL_PAYLOAD:-}" ]]; then echo "$WPS_SKILL_PAYLOAD"; return; fi
-  if [[ -d "$REPO/release/install-staging" ]]; then echo "$REPO/release/install-staging"; return; fi
+  if [[ -d "$REPO/release/install-staging" ]]; then echo "$REPO/release/install-staging"; return; fi  # 开发仓库
+  if [[ -d "$REPO/install-staging" ]]; then echo "$REPO/install-staging"; return; fi                  # portable 包根（下载解压即用）
   echo ""
 }
 PAYLOAD="$(resolve_payload)"
@@ -365,7 +366,7 @@ merge_mcp_json() {
   if command -v node >/dev/null 2>&1; then
     node -e 'const fs=require("fs"),p=process.argv[1],n=process.argv[2],u=process.argv[3];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch(e){j={}}j.mcpServers=j.mcpServers||{};j.mcpServers[n]={url:u};fs.writeFileSync(p,JSON.stringify(j,null,2))' "$f" "$MCP_NAME" "$MCP_URL" && return 0
   fi
-  echo "  · 无 jq/node，未能自动合并 $f；请手工加入：\"$MCP_NAME\":{\"url\":\"$MCP_URL\"}" >&2
+  echo "  · 无 jq/node，未能自动合并 ${f}；请手工加入：\"${MCP_NAME}\":{\"url\":\"${MCP_URL}\"}" >&2
 }
 
 detect_claude() { command -v claude >/dev/null 2>&1 || [[ -d "$HOME/.claude" ]]; }
@@ -405,7 +406,7 @@ deploy_cursor() {
 deploy_codex() {
   local f="$HOME/.codex/config.toml"; mkdir -p "$(dirname "$f")"
   if [[ -f "$f" ]] && grep -q "$MCP_NAME" "$f"; then
-    echo "  · Codex MCP 已存在 $MCP_NAME，跳过"
+    echo "  · Codex MCP 已存在 ${MCP_NAME}，跳过"
   else
     printf '\n[mcp_servers.%s]\nurl = "%s"\n' "$MCP_NAME" "$MCP_URL" >> "$f"
     echo "  ✓ Codex MCP → $f"
