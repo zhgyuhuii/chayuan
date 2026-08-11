@@ -1,6 +1,6 @@
 # wps-skill-chayuan 待办与续接清单
 
-> 最近一次状态（2026-08-11）：L1 直装 + agent 自动部署 + 多源分发本机跑通；**官网（aidooo.com）已接入技能**：新增 `/skill` 介绍+安装页（按智能体分 Tab）、首页「察元AI文档助手」下载区并排「下载技能」按钮、`npm run publish:skill` 一键发布脚本；aidooo 镜像源已对齐真实路径 `/downloads/skill/...`。两个仓库改动均**未提交**（等确认）。
+> 最近一次状态（2026-08-11）：L1 直装 + agent 自动部署 + 多源分发本机跑通；**官网（aidooo.com）已接入技能**：新增 `/skill` 介绍+安装页（按智能体分 Tab）、首页「察元AI文档助手」下载区并排「下载技能」按钮、`npm run publish:skill` 一键发布脚本；aidooo 镜像源已对齐真实路径 `/downloads/skill/...`。两个仓库**已提交推送**（chayuan-wps `5c87a3e` / website `bd81690b`）。
 > 设计源：`plans/wps-skill-chayuan-design.md`。本文件只列「还没做 / 还没验」的事，按优先级排。
 
 ## P0 · 发布前必做

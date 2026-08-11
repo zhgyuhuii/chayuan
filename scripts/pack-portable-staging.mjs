@@ -132,6 +132,94 @@ const mirrors = {
 fs.writeFileSync(path.join(PKG, 'mirrors.json'), JSON.stringify(mirrors, null, 2) + '\n')
 fs.writeFileSync(path.join(RELEASE, 'mirrors.json'), JSON.stringify(mirrors, null, 2) + '\n')
 
+// 5c) 安装说明.txt —— 解压后用户第一眼看到的离线说明。
+//     Windows 记事本(尤其 Win7/8/旧 Win10)对无 BOM 的 UTF-8 会按 GBK 解码导致中文乱码，
+//     所以这里强制写 UTF-8 BOM(EF BB BF) + CRLF 行尾，保证双击即正确显示中文。
+const readmeBody = `
+═══════════════════════════════════════════════════════════
+  察元 · wps-skill-chayuan  技能包   v${meta.version}
+  让 AI 编程智能体直接操作 WPS 文档 · 离线一键安装
+═══════════════════════════════════════════════════════════
+
+【这是什么】
+本包让 Claude Code / Cursor / Codex 等 AI 编程智能体直接读写 WPS 文档。
+一条命令同时装好三样东西：
+  1. WPS 加载项（察元AI文档助手）
+  2. MCP sidecar（本地常驻 127.0.0.1:62588，无需 Token）
+  3. 各智能体的技能文件（自动检测已装的 Claude / Cursor / Codex 并按各自格式投放）
+
+【一分钟安装】
+解压后进入 wps-skill-chayuan 目录，按你的系统运行一条命令：
+
+  · macOS / Linux（终端里执行）：
+      bash scripts/install-wps-skill-chayuan.sh
+
+  · Windows（PowerShell 里执行）：
+      powershell -ExecutionPolicy Bypass -File scripts\\install-wps-skill-chayuan.ps1
+
+安装器会自动完成：
+  ✓ 检测并部署技能到 Claude Code / Cursor / Codex
+  ✓ 把加载项装进 WPS jsaddons（装完需重启 WPS）
+  ✓ 启动 MCP 并设置开机自启
+  ✓ 跑四级自检：加载项 / sidecar / MCP / agent 投放
+
+装完后，在智能体里对当前 WPS 文档说一句即可验证：
+    用察元打开当前文档，检查保密风险
+
+【只拿到脚本、需要补下载载荷？】
+本包是离线整包，正常安装不联网。若只拿到安装脚本，加 --fetch / -Fetch
+会从多源（官网 / Gitee / GitHub）回退下载，并用 sha256 强校验整包：
+    bash scripts/install-wps-skill-chayuan.sh --fetch
+    powershell -ExecutionPolicy Bypass -File scripts\\install-wps-skill-chayuan.ps1 -Fetch
+
+【按智能体的精确位置（手工兜底；正常一键安装无需看）】
+  · Claude Code    ~/.claude/skills/wps-skill-chayuan/SKILL.md
+  · Cursor         ~/.cursor/rules/wps-skill-chayuan.mdc
+  · Codex CLI      ~/.codex/prompts/wps-skill-chayuan.md
+                   + ~/.codex/config.toml 里的 [mcp_servers.chayuan-wps-mcp]
+  · 其它 GUI 智能体（OpenClaw / Hermes 等）
+                   走 MCP HTTP：http://127.0.0.1:62588/mcp
+
+【安全说明】
+  · MCP 仅监听本机 127.0.0.1:62588，不对外、无需 Token。
+  · 涉密文档建议使用离线模型，正文不出本机。
+  · 保密检查 / AI 痕迹检查结果仅作辅助参考，不替代人工定密，不构成司法结论。
+  · 离线整包发布带 sha256 强校验，防供应链篡改。
+
+【本包目录】
+  install-staging/         WPS 加载项
+  mcp-sidecar/             MCP 服务（含各平台二进制）
+  skill-chayuan/           各智能体技能模板
+  scripts/                 安装脚本 install-wps-skill-chayuan.{sh,ps1}
+  portable.manifest.json   版本 / 端口 / 启动命令
+  checksums.sha256         逐文件校验值
+  mirrors.json             多源下载地址（--fetch 用）
+
+【常用选项】
+  --with-all / -WithAll      强制部署到 Claude + Cursor + Codex
+  --no-agent / -NoAgent      跳过 agent 投放，只装加载项 + MCP
+  --skill-only / -SkillOnly  只装运行时技能，不动加载项
+  -h / -Help                 查看完整帮助
+
+【卸载（手动）】
+本包暂未提供一键卸载。手动清理：
+  · 技能文件：~/.claude/skills/wps-skill-chayuan、~/.cursor/rules/wps-skill-chayuan.mdc、
+              ~/.codex/prompts/wps-skill-chayuan.md（删对应条目即可）
+  · WPS 加载项：
+      Windows  %APPDATA%\\kingsoft\\wps\\jsaddons\\chayuan_<版本> 与同目录 publish.xml
+      macOS    ~/Library/Application Support/Kingsoft/wps/jsaddons/chayuan_<版本>
+  · MCP 自启：
+      macOS    launchctl bootout gui/<uid>/com.chayuan.mcp（或删除 ~/Library/LaunchAgents/com.chayuan.mcp.plist 后 kill 62588 进程）
+      Windows  删除注册表 HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run 下的 ChayuanWpsMcp 值后结束 62588 进程
+
+完整介绍与按智能体的图文安装指南：
+    https://aidooo.com/skill
+
+—— 察元 · 使文档智能且安全
+`.replace(/^\r?\n/, '').replace(/\r?\n/g, '\r\n')   // 去掉首行空行 + 统一 CRLF，Windows 记事本友好
+fs.writeFileSync(path.join(PKG, '安装说明.txt'), '﻿' + readmeBody, 'utf8')   // ﻿ = UTF-8 BOM
+fs.writeFileSync(path.join(RELEASE, '安装说明.txt'), '﻿' + readmeBody, 'utf8')   // 同步一份到 release/ 便于单独取用
+
 // 6) checksums（递归算 staging 内所有文件 sha256）
 const hashes = []
 const walk = async (dir, base = '') => {
