@@ -77,7 +77,7 @@ function listReleaseAssets(version, pkgName, currentOnly) {
 
 const { version, name: pkgName } = readPkgMeta()
 const { tag: tagArg, dryRun, currentOnly } = parseArgs(process.argv)
-const tag = tagArg || `v${version}`
+const tag = tagArg || version // 发布标签用裸版本号（如 4.1.0），不带 v 前缀；与 install 脚本 download URL 对齐
 
 const assets = listReleaseAssets(version, pkgName, currentOnly)
 if (assets.length === 0) {

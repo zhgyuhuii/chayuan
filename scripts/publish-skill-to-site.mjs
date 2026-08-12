@@ -197,8 +197,8 @@ async function publishLegacy() {
 
   // 镜像 URL:新通路回填的优先;否则用与 release/mirrors.json 一致的 tag 模板 URL
   const finalMirrors = mirrors || {
-    gitee: `https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v${version}/${zipName}`,
-    github: `https://github.com/zhgyuhuii/chayuan/releases/download/v${version}/${zipName}`,
+    gitee: `https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/${version}/${zipName}`,
+    github: `https://github.com/zhgyuhuii/chayuan/releases/download/${version}/${zipName}`,
   }
 
   // upsert skill-releases.json(同 version 替换;note 空时保留旧 notes)

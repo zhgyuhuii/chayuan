@@ -66,9 +66,9 @@ function Get-MirrorUrls {
     return ($j.sources | ForEach-Object { $_.url -replace '\$\{version\}', $Version })
   }
   return @(
-    "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip",
+    "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip",
     "https://aidooo.com/downloads/skill/wps-skill-chayuan-$Version-portable.zip",
-    "https://github.com/zhgyuhuii/chayuan/releases/download/v$Version/wps-skill-chayuan-$Version-portable.zip"
+    "https://github.com/zhgyuhuii/chayuan/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip"
   )
 }
 function Print-Mirrors {
