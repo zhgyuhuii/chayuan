@@ -61,6 +61,8 @@ npm run build:wps    # WPS add-in bundle
 
 `wps-skill-chayuan` 是察元的**便携技能包**：一份技能定义（`SKILL.md`）+ 一条 4 步闭环安装脚本，让 **Claude Code / Cursor / OpenAI Codex** 开箱即用察元的 46 个文档工具。**跑一次脚本，三件事同时就绪** —— WPS 加载项、MCP 自启服务、AI 客户端技能文件。
 
+> 📖 **从安装到使用的完整图文指南**（安装 → 配置 → 验证 → 使用 + 46 工具功能清单 + 使用场景）：见 [`docs/wps-skill-chayuan-guide.md`](docs/wps-skill-chayuan-guide.md)。
+
 ### 双向自启：从哪端装都行
 
 | 从哪开始 | 跑安装脚本后得到 |
