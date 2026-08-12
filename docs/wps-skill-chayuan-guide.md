@@ -20,8 +20,8 @@
 **一条命令（任选一条，粘贴到终端即可）：**
 
 ```powershell
-# Windows（PowerShell）
-& ([scriptblock]::Create((iwr -UseBasicParsing 'https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1'))) -Fetch
+# Windows（PowerShell）—— 不能直接 iwr | iex：PS 5.1 会按 GBK 解码导致乱码，必须显式 UTF-8 下载
+& {[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$w=New-Object Net.WebClient;$w.Encoding=[Text.Encoding]::UTF8;$s=$w.DownloadString('https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1');if($s.Length -and $s[0]-eq[char]0xFEFF){$s=$s.Substring(1)};& ([scriptblock]::Create($s)) -Fetch}
 ```
 
 ```bash

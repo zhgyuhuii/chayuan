@@ -39,7 +39,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 function Write-FileUtf8NoBom([string]$Path, [string]$Content) {
   [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
-$Repo = Split-Path -Parent $PSScriptRoot
+# 远程「一行命令」把本脚本下成 scriptblock 调用时 $PSScriptRoot 为空（无文件归属），
+# 此时无本地仓库可言：$Repo 留空，载荷改由 -Fetch 多源下载兜底，不走 $Repo 相对路径。
+$Repo = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
 $McpName = 'chayuan-wps-mcp'
 $McpPort = 62588
 $McpUrl = "http://127.0.0.1:$McpPort/mcp"
@@ -110,14 +112,14 @@ if (-not $Payload) {
   if (Test-Path -LiteralPath $devStaging) { $Payload = $devStaging }
   elseif (Test-Path -LiteralPath $pkgStaging) { $Payload = $pkgStaging }
 }
-if (-not (Test-Path -LiteralPath $Payload)) {
+if (-not $Payload -or -not (Test-Path -LiteralPath $Payload)) {
   if ($Fetch) {
     Write-Host "[wps-skill-chayuan] 本地无载荷，启用多源下载（GitHub 被墙自动回退 Gitee / aidooo）"
     $fetched = Invoke-FetchPayload
     if ($fetched) { $Payload = $fetched }
   }
 }
-if (-not (Test-Path -LiteralPath $Payload)) {
+if (-not $Payload -or -not (Test-Path -LiteralPath $Payload)) {
   Write-Error "找不到载荷。请：① npm run build:wps-all；② -Payload C:\path\to\staging；③ `$env:WPS_SKILL_PAYLOAD=...；④ 加 -Fetch 自动下载"
   Print-Mirrors
   exit 1

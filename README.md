@@ -79,8 +79,10 @@ npm run build:wps    # WPS add-in bundle
 **Windows（PowerShell）：**
 
 ```powershell
-& ([scriptblock]::Create((iwr -UseBasicParsing 'https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1'))) -Fetch
+& {[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$w=New-Object Net.WebClient;$w.Encoding=[Text.Encoding]::UTF8;$s=$w.DownloadString('https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1');if($s.Length -and $s[0]-eq[char]0xFEFF){$s=$s.Substring(1)};& ([scriptblock]::Create($s)) -Fetch}
 ```
+
+> 为什么不直接 `iwr | iex`？Windows PowerShell 5.1 默认按 GBK 解码 `iwr` 返回体，会把脚本的 UTF-8+BOM 首字节解成乱码 `???`、并因 `scriptblock` 无 `$PSScriptRoot` 而报错。这里改用 `WebClient` + 显式 UTF-8 解码（去 BOM）再建 scriptblock，既绕过执行策略、又不会乱码。
 
 **macOS / Linux：**
 
