@@ -17,17 +17,16 @@
 
 ---
 
-## v3.0 新增 — 远程知识库 RAG 集成
+## v4.1 新增 — 表格结构写回 · 技能与加载项双向自启
 
-> WPS 编辑器内直接消费企业 / 团队 / 个人知识库,问答自动检索、拼上下文、带引用,并支持引用气泡内一键下载原文附件。
+> 本次主线两条:**文档智能体不仅能读表格、改表格里的字,还能按口语「在哪插」插入行 / 列、合并单元格**;新增 `wps-skill-chayuan` 技能,**一条命令同时装好 WPS 加载项 + MCP 自启服务 + AI 客户端技能**——装技能即装加载项,装加载项即带技能。
 
-- **双模认证连接**(JWT 用户 / HMAC 应用),凭据 AES-GCM 加密落盘
-- **多源检索编排**(services/kb):问题改写 → 多查询批量召回 → 去重 → 重排 → 拼引用 prompt
-- **引用展示与原文下载**(KbSourceStrip):信任度星级 + 一键下载,文档 / 结构化 / 向量 / 办公源分类显示
-- **失效自愈**:KB 被删 / 被收回权限时静默清缓存、不再弹红字"检索失败"
-- **一键灰度**:`kbRemoteIntegration` flag 出问题立即关停
+- **表格结构写回**:`table` 域 9 → **12 个 action**,新增 `row_insert` / `column_insert`(按「在哪插」定位锚点行/列)、`cell_merge`(同行=合并列、同列=合并行);AI 先 `header_read`/`column_read` 找锚点,工具只按显式坐标执行
+- **文档智能体工具 26 → 46**:新增 `caption`(题注枚举)、`field`(域 list + 构造 SEQ/TOC)聚合域,`image.list` 增补 alt/wrap/前后文;MCP 目录升至 `0.10.0`
+- **wps-skill-chayuan 技能 + 双向自启**:`install-wps-skill-chayuan.{ps1,sh}` 一个脚本四步闭环——装加载项 + MCP 自启 + 四级体检 + 投放技能(Claude/Cursor/Codex)
+- **保留并兼容**:v4.0 的 MCP 多 Agent 对接、离线/内网部署、知识库 RAG、多文档校对全部不变,外部客户端配置无需改动
 
-完整发布说明:[RELEASE_NOTES_v3.0.md](RELEASE_NOTES_v3.0.md)
+完整发布说明:[RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) ｜ 历史版本:[v4.0.0](RELEASE_NOTES_v4.0.md) · [v3.0(RAG)](RELEASE_NOTES_v3.0.md)
 
 ---
 
