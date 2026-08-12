@@ -70,21 +70,36 @@ npm run build:wps    # WPS add-in bundle
 
 **装技能 = 装加载项，装加载项 = 带技能。** 两种入口殊途同归：跑完一次脚本，**WPS 加载项 + MCP 自启服务 + AI 客户端技能**三者全部到位，无需分别配置。
 
-### 一条命令安装
+### 一行命令安装（终端用户，无需克隆仓库）
+
+直接从 **Gitee（国内优先）** 拉取安装脚本，脚本自动下载便携包并完成四步安装：
 
 **Windows（PowerShell）：**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch -Version 4.1.0
+& ([scriptblock]::Create((iwr -UseBasicParsing 'https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1'))) -Fetch
 ```
 
-**macOS / Linux（bash）：**
+**macOS / Linux：**
 
 ```bash
-bash scripts/install-wps-skill-chayuan.sh --fetch --version 4.1.0
+curl -fsSL https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.sh | bash -s -- --fetch
 ```
 
-`-Fetch` / `--fetch`：本地无载荷时自动从镜像源（Gitee / aidooo / GitHub，带 sha256 校验）下载便携包。`-SkillOnly` 只投放技能文件，不动加载项 / 服务。
+> 海外 / GitHub 直连：把 URL 换成 `https://raw.githubusercontent.com/zhgyuhuii/chayuan/main/scripts/install-wps-skill-chayuan.{ps1,sh}`。
+>
+> 脚本自动：多源回退下载便携包（Gitee→aidooo→GitHub，**sha256 强校验**）→ 装加载项 + MCP 自启 + 投放技能到 Claude/Cursor/Codex。
+
+**已克隆本仓库** 也可直接跑本地脚本（等价）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch
+```
+```bash
+bash scripts/install-wps-skill-chayuan.sh --fetch
+```
+
+`-SkillOnly` 只投放技能文件，不动加载项 / 服务；`-Version 4.1.0` 可指定版本。
 
 ### 脚本干的四步（同一个脚本）
 
