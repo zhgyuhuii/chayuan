@@ -8,7 +8,7 @@
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Version](https://img.shields.io/badge/version-3.0.13-purple.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-4.1.0-purple.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
@@ -58,14 +58,54 @@ npm run build:wps    # WPS add-in bundle
 
 ---
 
+## 🧩 wps-skill-chayuan 技能 —— 一条命令，双向自启（加载项 ↔ MCP ↔ 技能）
+
+`wps-skill-chayuan` 是察元的**便携技能包**：一份技能定义（`SKILL.md`）+ 一条 4 步闭环安装脚本，让 **Claude Code / Cursor / OpenAI Codex** 开箱即用察元的 46 个文档工具。**跑一次脚本，三件事同时就绪** —— WPS 加载项、MCP 自启服务、AI 客户端技能文件。
+
+### 双向自启：从哪端装都行
+
+| 从哪开始 | 跑安装脚本后得到 |
+| --- | --- |
+| **装技能**（想给 AI 客户端接 WPS） | ✅ 技能文件投放进 Claude/Cursor/Codex　＋　✅ WPS 加载项自动安装　＋　✅ MCP 开机自启 |
+| **装加载项**（WPS 里装了察元） | ✅ 加载项就位　＋　✅ MCP 开机自启　＋　✅ 一键把技能投放到本机 AI 客户端 |
+
+**装技能 = 装加载项，装加载项 = 带技能。** 两种入口殊途同归：跑完一次脚本，**WPS 加载项 + MCP 自启服务 + AI 客户端技能**三者全部到位，无需分别配置。
+
+### 一条命令安装
+
+**Windows（PowerShell）：**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch -Version 4.1.0
+```
+
+**macOS / Linux（bash）：**
+
+```bash
+bash scripts/install-wps-skill-chayuan.sh --fetch --version 4.1.0
+```
+
+`-Fetch` / `--fetch`：本地无载荷时自动从镜像源（Gitee / aidooo / GitHub，带 sha256 校验）下载便携包。`-SkillOnly` 只投放技能文件，不动加载项 / 服务。
+
+### 脚本干的四步（同一个脚本）
+
+1. **装加载项** —— 释放到 jsaddons 目录 + 写 `publish.xml`，WPS 打开即加载察元。
+2. **MCP 自启** —— 释放 `chayuan-mcp` 二进制 + 注册开机自启（Win `HKCU\Run` / macOS LaunchAgent / Linux systemd --user），**无需 Node.js**。
+3. **四级体检** —— jsaddons → `/healthz` → `initialize` 握手 → 桥接工具，装完即验证可用。
+4. **投放技能** —— 自动探测 Claude / Cursor / Codex，投放技能文件，AI 客户端立刻拥有察元技能。
+
+> 完整安装逻辑、镜像源、参数与排障见 [`plans/wps-skill-chayuan-design.md`](plans/wps-skill-chayuan-design.md) §16，发布说明见 [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md)。
+
+---
+
 ## 🤖 文档智能体（MCP）—— 让外部 AI 智能体直接读写本机 WPS 文档
 
-察元内置一个**本机 MCP（Model Context Protocol）文档智能体服务**：把 WPS 文档的读取、定位、替换、批注、校对、知识库检索等 **26 个工具**暴露为标准 **Streamable HTTP MCP** 接口。任何支持 MCP 的 AI 智能体——**Claude Code、OpenAI Codex、Cursor、Hermes、OpenClaw、Cline** 等——只要填入一个 URL，就能**直接在你的 WPS 文档里干活**：打开文档、读取正文、圈出错别字批注、批量替换、多文档交叉校对。
+察元内置一个**本机 MCP（Model Context Protocol）文档智能体服务**：把 WPS 文档的读取、定位、替换、批注、校对、知识库检索、**表格切片与结构写回**、**题注 / 域枚举**等 **46 个工具**暴露为标准 **Streamable HTTP MCP** 接口。任何支持 MCP 的 AI 智能体——**Claude Code、OpenAI Codex、Cursor、Hermes、OpenClaw、Cline** 等——只要填入一个 URL，就能**直接在你的 WPS 文档里干活**：打开文档、读取正文、圈出错别字批注、批量替换、**按口语"在哪插"插入表格行 / 列、合并单元格**、多文档交叉校对。
 
 - **无需鉴权**：仅监听 `127.0.0.1`，本机即信任边界，连接只用一个 URL，无需 Token / 命令 / stdio。
 - **完全离线**：sidecar 与 WPS 同机，文档与密钥不出域，适配离线 / 内网 / 县级部署。
 - **随安装自启**：安装包自动注册开机自启（Windows 注册表 `HKCU\…\Run` / macOS LaunchAgent / Linux systemd --user），开机即常驻，**无需 Node.js**。
-- **26 个工具**覆盖：文档状态 / 启动 / 打开 / 元信息 / 段落与分块读取 / 定位 / 替换 / 插入 / 批注 / 批量写回（≤200 ops）/ 新建 / 保存 / **脱密与复原** / **知识库检索** / **拼写语法校对（可写成批注，也可直接改正文）** / 助手检索与导出。完整工具清单与参数见 [docs/mcp-connection.md](docs/mcp-connection.md)。
+- **46 个工具**覆盖：文档状态 / 启动 / 打开 / 元信息 / 段落与分块读取 / 定位 / 替换 / 插入 / 批注 / 批量写回（≤200 ops）/ 新建 / 保存 / **脱密与复原** / **知识库检索** / **拼写语法校对（可写成批注，也可直接改正文）** / 助手检索与导出 / **表格 12 action（切片读 + 插入行/列 + 合并单元格 + 列宽/重复表头 + 导出）** / **题注 caption.list** / **域 field.list+add** / 图片增强。完整工具清单与参数见 [docs/mcp-connection.md](docs/mcp-connection.md)。
 
 ### 一行连接（所有 MCP 智能体通用）
 
@@ -415,7 +455,7 @@ npx @modelcontextprotocol/inspector
 
 ### 4.1 本次 2.0.0 重大更新（重大重构 / 稳定性版本）
 
-**当前版本：`3.0.13`。** 下面是 **v2.0** 的重构说明（历史归档）；v2.0 定位为面向政企文档生产场景的重大重构：围绕 AI 助手对话框、模型分类、默认模型、助手参数收集、任务执行与 README 文档体系进行了系统性梳理。更新内容参考并归纳了仓库内全部 Markdown 规划与执行文档，包括架构深度分析、v2 演进计划、P0-P6 执行报告、工作流编排、任务系统重设计、运行性缺口闭合、助手表单布局与状态索引等。
+**当前版本：`4.1.0`**（MCP 目录版本 `0.10.0` · 46 工具）。 下面是 **v2.0** 的重构说明（历史归档）；v2.0 定位为面向政企文档生产场景的重大重构：围绕 AI 助手对话框、模型分类、默认模型、助手参数收集、任务执行与 README 文档体系进行了系统性梳理。更新内容参考并归纳了仓库内全部 Markdown 规划与执行文档，包括架构深度分析、v2 演进计划、P0-P6 执行报告、工作流编排、任务系统重设计、运行性缺口闭合、助手表单布局与状态索引等。v4.1 的最新能力（表格结构写回、技能双向自启）见上方 [`🧩 wps-skill-chayuan 技能`](#-wps-skill-chayuan-技能-一条命令双向自启加载项--mcp--技能) 与 [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md)。
 
 **本次版本重点：**
 
@@ -437,7 +477,7 @@ npx @modelcontextprotocol/inspector
 
 下列产品均为市场上与「文档 + AI」相关的**代表性名称**；**豆包 / 文心一言 / 通义千问 / Kimi** 等并列时，在表中概括为「**通用大模型网页或 App**」——指主要交互在浏览器或独立应用内、与 WPS 本地 doc 无原生一体化写回链路的形态（各家仍可能提供插件或合作入口，以官方为准）。
 
-| 对比项 | 察元 AI 文档助手（v3.0.13） | **WPS AI**（金山办公 WPS 内置） | **Microsoft 365 Copilot**（Word 等） | **Google Workspace** 侧 **Gemini**（文档等，以 Google 当前命名为准） | **飞书** 云文档 + **智能伙伴**（字节） | **腾讯文档** 智能助手等 | **Notion AI** | **通用大模型网页 / App**（豆包、通义、文心、Kimi 等） |
+| 对比项 | 察元 AI 文档助手（v4.1.0） | **WPS AI**（金山办公 WPS 内置） | **Microsoft 365 Copilot**（Word 等） | **Google Workspace** 侧 **Gemini**（文档等，以 Google 当前命名为准） | **飞书** 云文档 + **智能伙伴**（字节） | **腾讯文档** 智能助手等 | **Notion AI** | **通用大模型网页 / App**（豆包、通义、文心、Kimi 等） |
 |--------|------------------------|-----------------------------------|----------------------------------------|------------------------------------------------------------------------|----------------------------------------|-------------------------|----------------|------------------------------------------------------------------|
 | **产品形态** | 第三方 **WPS 文字**智能加载项；可自建分发 | WPS 套件**原生**能力，与 WPS 版本 / 会员体系绑定 | Microsoft 365 订阅内 **Word** 等组件的 Copilot 体验 | Google 账号体系下 **Docs** 等在线编辑器内的 Gemini 能力 | **飞书** 云文档与 IM / 工作台内的 AI 能力 | **腾讯文档** 在线协作编辑器内的智能功能 | **Notion** 页面 / 数据库工作区内的 AI | 独立对话或写作页；与 WPS 本地文档**无**同一套原生 JSAPI 写回 |
 | **离线 / 内网自有推理** | **优先**：Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点 | 消费级常见形态依赖**联网与金山服务**；政企私有化部署以**金山官方方案**为准，不等同于用户随意换任意后端 | 主流形态为**微软云端**能力；本地私有化以微软**官方企业方案**为准 | 依赖 **Google 云**与账户体系 | 依赖**飞书云服务** | 依赖**腾讯云服务** | 依赖 **Notion 云服务** | 依赖各**厂商云 API**；纯离线非典型主路径 |
@@ -452,7 +492,7 @@ npx @modelcontextprotocol/inspector
 
 #### 4.2.2 六十维细项（察元 vs 常见办公 AI / 文档 AI 工具）
 
-| # | 对比维度 | 察元 AI 文档助手（v3.0.13） | 常见竞品 / 通用办公 AI |
+| # | 对比维度 | 察元 AI 文档助手（v4.1.0） | 常见竞品 / 通用办公 AI |
 |---:|---|---|---|
 | 1 | WPS 文字深度集成 | 直接作为 WPS 加载项运行，贴近编辑、批注、写回 | 多数是网页端或浏览器插件，文档写回弱 |
 | 2 | 离线 / 内网部署 | 优先支持 Ollama、LM Studio、Xinference、OneAPI 等 | 常依赖云端账号和公网 API |

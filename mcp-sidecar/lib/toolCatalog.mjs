@@ -9,25 +9,38 @@
  *   5) EXAMPLE — minimal JSON args
  *
  * Annotations follow MCP 2025-03-26 hints (advisory for clients).
+ *
+ * Architecture: domain-aggregated tools + action (see aggregateTools.mjs).
+ * Fine-grained P1/P2 names are not advertised; legacy aliases still resolve in tools/call.
  */
+
+import {
+  AGGREGATE_TOOLS,
+  REPLACED_FINE_GRAINED
+} from './aggregateTools.mjs'
 
 function tool(def) {
   return def
 }
 
-export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.5.0' }
+export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.10.0' }
 
 export const SERVER_INSTRUCTIONS = [
   'You are connected to 察元 WPS MCP. End users speak natural Chinese/English only — they never name tools.',
-  'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE).',
+  'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export). Do not invent fine-grained tool names.',
+  'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE). Prefer resource chayuan://guide/tool-routing for layer routing.',
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
-  'Destructive or document-mutating writes usually need confirmed=true after a preview call.',
+  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → proofread_*/declassify_*/kb_*/assistants_*.',
+  'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
+  'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply.',
+  'Multi-span edits: one format_apply_ops or document_apply_ops — never N×(locate+single write).',
+  'For「翻译每一段并插到段后」: document_list_paragraphs → translate yourself → document_apply_ops(insert-after) from last paragraph upward.',
+  'Switch docs: document_list_open then document_activate (query/name/path).',
   'If the user cannot see the document window, prefer document_open with viaOs=true and force=true; check ui fields in the response.',
-  'For「翻译每一段并插到段后」: document_list_paragraphs → translate yourself → document_apply_ops(action=insert-after) or document_insert(position=after), writing from the last paragraph upward.',
   'Read resource chayuan://guide/user-intents or prompt para_translate_insert_after when unsure.'
 ].join(' ')
 
-export const TOOLS = [
+const CORE_TOOLS = [
   tool({
     name: 'wps_status',
     description: [
@@ -103,7 +116,7 @@ export const TOOLS = [
     description: [
       'WHAT: No-op if ActiveDocument already matches path; otherwise open that path.',
       'WHEN: Pipeline guard before edits — 「确保年度战略规划报告是当前文档」.',
-      'NOT: Prefer document_open(viaOs/force) when the user reports they cannot see the window.',
+      'NOT: Prefer document_open(viaOs/force) when the user reports they cannot see the window. To switch among already-open docs use document_activate.',
       'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\工作文档\\\\年度战略规划报告.docx"}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -113,6 +126,51 @@ export const TOOLS = [
       required: ['path'],
       properties: {
         path: { type: 'string', description: 'Absolute path that must be the active document.' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'document_list_open',
+    description: [
+      'WHAT: List documents currently open in this WPS instance (name/path/active flag).',
+      'WHEN: 「现在开了几个文档」「有哪些窗口」「list open docs」 before switching.',
+      'NOT: Does not open files (document_open). Does not switch (document_activate).',
+      'EXAMPLE: {} or {"query":"妈妈"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        query: { type: 'string', description: 'Optional filter on name/path substring.' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'document_activate',
+    description: [
+      'WHAT: Switch the active editing document among already-open WPS windows/docs.',
+      'WHEN: 「切换到爱唠叨的妈妈」「编辑另一个文档」「activate 合同.docx」「把当前文档切到xxx」.',
+      'NOT: Prefer this over re-opening when the file is already open. Use document_open/document_ensure_open to open from disk. Use document_list_open if unsure which titles exist.',
+      'HOW: Pass name (file name), path (full path), query (fuzzy title), or index (1-based from list_open). openIfMissing=true + path will Open if not already loaded.',
+      'EXAMPLE: {"query":"爱唠叨的妈妈"} or {"name":"合同.docx"} or {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\a.docx"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Document Name, e.g. 爱唠叨的妈妈.docx' },
+        path: { type: 'string', description: 'Absolute FullName path.' },
+        query: { type: 'string', description: 'Fuzzy match against open doc titles/paths.' },
+        title: { type: 'string', description: 'Alias of query.' },
+        index: { type: 'number', description: '1-based index from document_list_open.' },
+        openIfMissing: {
+          type: 'boolean',
+          description: 'If true and path given but not open, Documents.Open then activate.'
+        }
       }
     }
   }),
@@ -225,7 +283,7 @@ export const TOOLS = [
     description: [
       'WHAT: Replace an anchored span of text in the active document.',
       'WHEN: 「把A改成B」「替换错别字」「replace this sentence」.',
-      'NOT: For inserting translations after a paragraph use document_insert(position=after) or document_apply_ops(insert-after), not replace.',
+      'NOT: Not for changing bold/color/size (use format_run). Not for alignment/line-spacing (format_para). Not for heading styles (style_apply). For inserting translations after a paragraph use document_insert(position=after) or document_apply_ops(insert-after), not replace.',
       'HOW: Call once with confirmed=false for preview; then confirmed=true to commit. Anchor with originalText and/or start/end.',
       'EXAMPLE: {"originalText":"永鹅","newText":"咏鹅","confirmed":true}'
     ].join(' '),
@@ -278,7 +336,7 @@ export const TOOLS = [
     description: [
       'WHAT: Add a WPS comment anchored to text or a range.',
       'WHEN: 「加批注」「标注敏感信息」「comment on this sentence」.',
-      'NOT: Does not change body text. For proofread batch comments prefer proofread_apply_comments after proofread_run.',
+      'NOT: Does not change body text (use document_replace for wording). Does not set bold/color (format_run). For proofread batch comments prefer proofread_apply_comments after proofread_run. Prefer comment_list first when user asks what comments already exist.',
       'HOW: confirmed must be true. Anchor with originalText and/or start/end/hintStart.',
       'EXAMPLE: {"text":"【涉密】疑似身份证号","originalText":"412724198012084832","confirmed":true}'
     ].join(' '),
@@ -609,7 +667,827 @@ export const TOOLS = [
         domain: { type: 'string', description: 'Optional domain to speed loading.' }
       }
     }
+  }),
+
+  // ─── P0: format / comment review / revision / nav / breaks ───────────────
+  tool({
+    name: 'comment_list',
+    description: [
+      'WHAT: List comments in the active document (author, body, anchor snippet, index).',
+      'WHEN: 「有哪些批注」「列出全文批注」「show all comments」.',
+      'NOT: Does not add comments (document_add_comment). Does not return full body text (document_get_text).',
+      'EXAMPLE: {"limit":50}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'number', description: 'Max comments to return (default 100, max 300).' },
+        author: { type: 'string', description: 'Optional author filter (substring match).' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'format_run',
+    description: [
+      'WHAT: Change character LOOK of anchored text: bold/italic/underline/strike, font name/size/sizeDelta, color, highlight, phonetic guide.',
+      'WHEN: 「加粗这段」「字号加大」「改成宋体」「标红」「加删除线」「给这两个字加拼音」「bold / enlarge font / red text」.',
+      'NOT: Not for changing wording (document_replace). Not for paragraph align/line-spacing (format_para). Not for Heading styles (style_apply). Not for page orientation (layout_page).',
+      'HOW: Set only fields in changes{}. Anchor with originalText and/or start/end, or scope=selection|paragraph|document. Preview confirmed=false; commit confirmed=true. Multi-span → format_apply_ops.',
+      'EXAMPLE: {"originalText":"重点工作","changes":{"bold":true,"color":"#FF0000"},"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['changes'],
+      properties: {
+        changes: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            bold: { type: 'boolean' },
+            italic: { type: 'boolean' },
+            underline: { type: 'boolean' },
+            strike: { type: 'boolean' },
+            name: { type: 'string', description: 'Font family; prefer system_fonts_list names.' },
+            size: { type: 'number', description: 'Absolute font size in pt.' },
+            sizeDelta: { type: 'number', description: 'Relative pt change, e.g. 2 or -1.' },
+            color: { type: 'string', description: 'Text color hex or Chinese color name.' },
+            highlight: { type: 'string', description: 'Highlight / background color.' },
+            phonetic: { type: 'string', description: 'PhoneticGuide text (拼音).' }
+          }
+        },
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        hintStart: { type: 'number' },
+        scope: { type: 'string', enum: ['selection', 'paragraph', 'document'] },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'format_para',
+    description: [
+      'WHAT: Change paragraph LOOK: alignment, line spacing, space before/after, first-line indent.',
+      'WHEN: 「这段居中」「行距1.5」「段前段后」「两端对齐」.',
+      'NOT: Not for bold/color (format_run). Not for wording (document_replace). Not for paper orientation (layout_page).',
+      'HOW: changes{align,lineSpacing,spaceBefore,spaceAfter,firstLineIndent}. Anchor or scope. confirmed preview/commit.',
+      'EXAMPLE: {"originalText":"第一章 总则","changes":{"align":"center","lineSpacing":1.5},"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['changes'],
+      properties: {
+        changes: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
+            lineSpacing: { type: 'number', description: 'e.g. 1 / 1.5 / 2, or host-specific rule value.' },
+            spaceBefore: { type: 'number' },
+            spaceAfter: { type: 'number' },
+            firstLineIndent: { type: 'number', description: 'First-line indent in character units when supported.' }
+          }
+        },
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        hintStart: { type: 'number' },
+        scope: { type: 'string', enum: ['selection', 'paragraph', 'document'] },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'format_apply_ops',
+    description: [
+      'WHAT: Apply many format_run/format_para style ops in one call (batch).',
+      'WHEN: 「把文中所有“注意”标红加粗」「多处同时改字号」.',
+      'NOT: Not for wording batch (document_apply_ops replace). Do not loop locate+format_run.',
+      'HOW: operations[{originalText|start|end, changes, kind?:run|para}]. confirmed=false preview; true commit. Max 100 ops.',
+      'EXAMPLE: {"confirmed":true,"operations":[{"originalText":"注意","changes":{"bold":true,"color":"#FF0000"}}]}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['operations'],
+      properties: {
+        operations: {
+          type: 'array',
+          maxItems: 100,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['changes'],
+            properties: {
+              kind: { type: 'string', enum: ['run', 'para'], description: 'Default run.' },
+              changes: { type: 'object' },
+              originalText: { type: 'string' },
+              start: { type: 'number' },
+              end: { type: 'number' },
+              hintStart: { type: 'number' }
+            }
+          }
+        },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'system_fonts_list',
+    description: [
+      'WHAT: List available font family names on this machine / host.',
+      'WHEN: 「有哪些字体」「系统字体列表」「before setting 仿宋 check fonts」.',
+      'NOT: Does not change document. To apply a font use format_run changes.name.',
+      'EXAMPLE: {"limit":80,"query":"宋"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'number', description: 'Max names (default 100, max 400).' },
+        query: { type: 'string', description: 'Optional substring filter.' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'style_list',
+    description: [
+      'WHAT: List paragraph/character styles in the active document.',
+      'WHEN: 「有哪些样式」「列出标题样式」「style list」.',
+      'NOT: Does not apply styles (style_apply).',
+      'EXAMPLE: {"headingOnly":true,"limit":60}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'number' },
+        headingOnly: { type: 'boolean', description: 'If true, prefer heading-like style names.' },
+        query: { type: 'string' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'style_apply',
+    description: [
+      'WHAT: Apply a named style (e.g. Heading 1 / 标题 1) to anchored text or scope.',
+      'WHEN: 「设为一级标题」「应用标题2样式」「set heading style」.',
+      'NOT: Not a substitute for mere bold (format_run). Not for changing words (document_replace).',
+      'HOW: styleName required. Anchor or scope. confirmed preview/commit.',
+      'EXAMPLE: {"styleName":"标题 1","originalText":"第一章 总则","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['styleName'],
+      properties: {
+        styleName: { type: 'string' },
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        hintStart: { type: 'number' },
+        scope: { type: 'string', enum: ['selection', 'paragraph', 'document'] },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'nav_location',
+    description: [
+      'WHAT: Get page number / line number information for an anchor or selection.',
+      'WHEN: 「这段在第几页」「行号是多少」「where is this on the page」.',
+      'NOT: Does not insert page-number fields. Does not open navigation pane (nav_pane_set).',
+      'EXAMPLE: {"originalText":"执行摘要"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        hintStart: { type: 'number' },
+        scope: { type: 'string', enum: ['selection', 'paragraph'] }
+      }
+    }
+  }),
+
+  tool({
+    name: 'break_insert',
+    description: [
+      'WHAT: Insert a break at selection or after an anchor (page / section / column).',
+      'WHEN: 「插入分页符」「分节」「分栏符」.',
+      'NOT: Not blank-page helper (page_blank_insert). Not for inserting paragraphs of text (document_insert).',
+      'HOW: kind=page|section|column. confirmed required to write.',
+      'EXAMPLE: {"kind":"page","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'confirmed'],
+      properties: {
+        kind: { type: 'string', enum: ['page', 'section', 'column'] },
+        originalText: { type: 'string', description: 'Optional: insert after this anchor.' },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'page_blank_insert',
+    description: [
+      'WHAT: Insert a blank page (page break + empty content) at cursor or after anchor.',
+      'WHEN: 「插入空白页」「加一页空白」.',
+      'NOT: Not a mere page break without blank intent (break_insert kind=page may suffice).',
+      'EXAMPLE: {"confirmed":true,"position":"after","originalText":"附录"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        position: { type: 'string', enum: ['atSelection', 'after'], description: 'Default atSelection.' },
+        originalText: { type: 'string' },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'revision_mode',
+    description: [
+      'WHAT: Turn track-changes (修订模式) on or off; optionally show/hide revisions.',
+      'WHEN: 「打开修订」「关闭修订模式」「track changes on」.',
+      'NOT: Does not accept/reject revisions (revision_apply). Does not list them (revision_list).',
+      'EXAMPLE: {"enabled":true,"show":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['enabled'],
+      properties: {
+        enabled: { type: 'boolean' },
+        show: { type: 'boolean', description: 'ShowRevisions when supported.' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'revision_list',
+    description: [
+      'WHAT: List track-change revisions in the document.',
+      'WHEN: 「有哪些修订」「列出修改痕迹」.',
+      'NOT: Does not accept/reject (revision_apply).',
+      'EXAMPLE: {"limit":50}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'revision_apply',
+    description: [
+      'WHAT: Accept or reject revisions (all or by index).',
+      'WHEN: 「全部接受修订」「拒绝这些修改」「accept all changes」.',
+      'NOT: Does not toggle track-changes mode (revision_mode).',
+      'HOW: action=accept|reject; scope=all|indexes; confirmed=true required.',
+      'EXAMPLE: {"action":"accept","scope":"all","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action', 'confirmed'],
+      properties: {
+        action: { type: 'string', enum: ['accept', 'reject'] },
+        scope: { type: 'string', enum: ['all', 'indexes'], description: 'Default all.' },
+        indexes: {
+          type: 'array',
+          items: { type: 'number' },
+          description: '1-based revision indexes when scope=indexes.'
+        },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'nav_pane_set',
+    description: [
+      'WHAT: Show or hide the navigation / document-map pane (UI only; does not change document bytes).',
+      'WHEN: 「打开导航窗格」「显示文档结构图」「hide navigation pane」.',
+      'NOT: Does not return outline data (future nav_outline). Does not jump to a heading.',
+      'EXAMPLE: {"visible":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['visible'],
+      properties: {
+        visible: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'layout_page',
+    description: [
+      'WHAT: Set page setup: orientation (portrait/landscape) and optional margins.',
+      'WHEN: 「横向打印纸」「竖向」「改页边距」.',
+      'NOT: Not paragraph alignment (format_para). Not columns (layout_columns when available). Not TOC (toc_insert).',
+      'HOW: orientation=portrait|landscape. confirmed=true to apply.',
+      'EXAMPLE: {"orientation":"landscape","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        orientation: { type: 'string', enum: ['portrait', 'landscape'] },
+        marginTop: { type: 'number' },
+        marginBottom: { type: 'number' },
+        marginLeft: { type: 'number' },
+        marginRight: { type: 'number' },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'toc_insert',
+    description: [
+      'WHAT: Insert an automatic table of contents (TOC) field based on heading styles.',
+      'WHEN: 「插入目录」「生成目录」「加个自动目录」.',
+      'NOT: Not for typing a fake “目录” list by hand (document_insert). Not blank page (page_blank_insert). Prefer style_apply Heading first so TOC has entries.',
+      'HOW: confirmed=true to write. Optional originalText/position to place TOC; title defaults to 目录; upperLevel/lowerLevel default 1–3.',
+      'EXAMPLE: {"confirmed":true,"title":"目录","upperLevel":1,"lowerLevel":3,"originalText":"爱唠叨的妈妈","position":"before"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        title: { type: 'string', description: 'Heading text before TOC; default 目录; empty/false to skip.' },
+        upperLevel: { type: 'number', description: 'Highest heading level included (default 1).' },
+        lowerLevel: { type: 'number', description: 'Lowest heading level included (default 3).' },
+        originalText: { type: 'string', description: 'Anchor text; insert before/after this span.' },
+        position: { type: 'string', enum: ['before', 'after'], description: 'Relative to originalText; default after.' },
+        start: { type: 'number' },
+        hintStart: { type: 'number' },
+        includePageNumbers: { type: 'boolean' },
+        rightAlignPageNumbers: { type: 'boolean' },
+        useHyperlinks: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'toc_update',
+    description: [
+      'WHAT: Refresh an existing TOC field (entries/page numbers).',
+      'WHEN: 「更新目录」「刷新目录页码」 after headings changed.',
+      'NOT: Does not create a TOC (toc_insert).',
+      'HOW: confirmed=true. Optional index (1-based, default 1).',
+      'EXAMPLE: {"confirmed":true,"index":1}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        index: { type: 'number', description: '1-based TOC index; default 1.' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'comment_delete',
+    description: [
+      'WHAT: Delete comment(s) by index, matching anchor text, or all.',
+      'WHEN: 「删除这条批注」「清空批注」.',
+      'NOT: Does not add comments (document_add_comment). List first with comment_list.',
+      'HOW: confirmed=true. Provide index OR originalText OR all:true.',
+      'EXAMPLE: {"index":1,"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        index: { type: 'number' },
+        originalText: { type: 'string' },
+        all: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'layout_columns',
+    description: [
+      'WHAT: Set page text columns (分栏).',
+      'WHEN: 「两栏排版」「三栏」「取消分栏」.',
+      'NOT: Not table columns (table_insert). Not column break (break_insert kind=column).',
+      'HOW: count=1..10; confirmed=true. Optional lineBetween, spacing.',
+      'EXAMPLE: {"count":2,"lineBetween":true,"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        count: { type: 'number' },
+        lineBetween: { type: 'boolean' },
+        spacing: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'nav_outline',
+    description: [
+      'WHAT: Return heading outline tree (level + text + offsets).',
+      'WHEN: 「文档大纲」「有哪些标题」「outline」.',
+      'NOT: Does not show nav pane (nav_pane_set). Does not insert TOC (toc_insert).',
+      'EXAMPLE: {"maxLevel":3,"limit":100}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        maxLevel: { type: 'number' },
+        limit: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'bookmark_list',
+    description: [
+      'WHAT: List bookmarks in the active document.',
+      'WHEN: 「有哪些书签」「bookmark list」.',
+      'NOT: Does not jump (bookmark_goto).',
+      'EXAMPLE: {"limit":50,"query":"字段"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        limit: { type: 'number' },
+        query: { type: 'string' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'bookmark_goto',
+    description: [
+      'WHAT: Select/jump to a bookmark by name or index.',
+      'WHEN: 「跳到书签」「定位书签」.',
+      'NOT: Does not create bookmarks.',
+      'EXAMPLE: {"name":"字段_1"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string' },
+        index: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'table_insert',
+    description: [
+      'WHAT: Insert a table at selection or after an anchor.',
+      'WHEN: 「插入表格」「加一个3行4列表格」.',
+      'NOT: Not page columns (layout_columns).',
+      'HOW: rows/columns required-ish (default 2x2). confirmed=true.',
+      'EXAMPLE: {"rows":3,"columns":4,"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        rows: { type: 'number' },
+        columns: { type: 'number' },
+        originalText: { type: 'string' },
+        pageNumber: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'image_list',
+    description: [
+      'WHAT: List inline and floating pictures.',
+      'WHEN: 「文档里有几张图」「列出图片」.',
+      'NOT: Does not export (image_export) or delete (image_delete).',
+      'EXAMPLE: {"limit":50}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { limit: { type: 'number' } }
+    }
+  }),
+
+  tool({
+    name: 'image_insert',
+    description: [
+      'WHAT: Insert a local image file as InlineShape.',
+      'WHEN: 「插入图片」「把这张图插进来」.',
+      'HOW: path absolute; confirmed=true; optional originalText anchor.',
+      'EXAMPLE: {"path":"C:\\\\Users\\\\me\\\\Desktop\\\\a.png","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['path', 'confirmed'],
+      properties: {
+        path: { type: 'string' },
+        confirmed: { type: 'boolean' },
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'image_delete',
+    description: [
+      'WHAT: Delete one picture by index/kind or all pictures.',
+      'WHEN: 「删掉这张图」「清空图片」.',
+      'HOW: confirmed=true; index+kind=inline|floating OR all:true.',
+      'EXAMPLE: {"index":1,"kind":"inline","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        index: { type: 'number' },
+        kind: { type: 'string', enum: ['inline', 'floating'] },
+        all: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'image_export',
+    description: [
+      'WHAT: Export inline pictures to a folder via SaveAsPicture when supported.',
+      'WHEN: 「导出所有图片」.',
+      'HOW: folder path; confirmed=true.',
+      'EXAMPLE: {"folder":"C:\\\\Users\\\\me\\\\Desktop\\\\imgs","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['folder', 'confirmed'],
+      properties: {
+        folder: { type: 'string' },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'hyperlink_list',
+    description: [
+      'WHAT: List hyperlinks in the document.',
+      'WHEN: 「有哪些超链接」.',
+      'EXAMPLE: {"limit":50}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { limit: { type: 'number' } }
+    }
+  }),
+
+  tool({
+    name: 'hyperlink_add',
+    description: [
+      'WHAT: Add a hyperlink on anchored text or selection.',
+      'WHEN: 「加超链接」「链接到官网」.',
+      'HOW: address required; confirmed=true; optional text/originalText.',
+      'EXAMPLE: {"address":"https://aidooo.com","text":"察元","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['address', 'confirmed'],
+      properties: {
+        address: { type: 'string' },
+        confirmed: { type: 'boolean' },
+        text: { type: 'string' },
+        originalText: { type: 'string' },
+        subAddress: { type: 'string' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'hyperlink_delete',
+    description: [
+      'WHAT: Delete hyperlink by index or all.',
+      'WHEN: 「删除超链接」.',
+      'HOW: confirmed=true; index or all:true.',
+      'EXAMPLE: {"index":1,"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        index: { type: 'number' },
+        all: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'headerfooter_get',
+    description: [
+      'WHAT: Read header/footer text of a section.',
+      'WHEN: 「页眉是什么」「看页脚」.',
+      'EXAMPLE: {"section":1,"which":"both"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        section: { type: 'number' },
+        which: { type: 'string', enum: ['header', 'footer', 'both'] }
+      }
+    }
+  }),
+
+  tool({
+    name: 'headerfooter_set',
+    description: [
+      'WHAT: Set header and/or footer text.',
+      'WHEN: 「设置页眉」「改页脚」.',
+      'HOW: confirmed=true; provide header and/or footer strings.',
+      'EXAMPLE: {"header":"内部资料","footer":"第 页","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        section: { type: 'number' },
+        header: { type: 'string' },
+        footer: { type: 'string' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'watermark_set',
+    description: [
+      'WHAT: Insert a text watermark (header shape) tagged ChayuanWatermark*.',
+      'WHEN: 「加水印」「保密水印」.',
+      'HOW: confirmed=true; text default 保密.',
+      'EXAMPLE: {"text":"机密","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        text: { type: 'string' },
+        rotation: { type: 'number' },
+        fontSize: { type: 'number' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'watermark_clear',
+    description: [
+      'WHAT: Remove Chayuan-tagged watermarks (or all header shapes if all:true).',
+      'WHEN: 「去掉水印」「清除水印」.',
+      'EXAMPLE: {"confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirmed'],
+      properties: {
+        confirmed: { type: 'boolean' },
+        all: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'document_export',
+    description: [
+      'WHAT: Export active document to docx or pdf path.',
+      'WHEN: 「导出PDF」「另存为docx」.',
+      'NOT: Prefer document_save for simple save-in-place.',
+      'HOW: format=docx|pdf; path required; confirmed=true.',
+      'EXAMPLE: {"format":"pdf","path":"C:\\\\Users\\\\me\\\\Desktop\\\\out.pdf","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['path', 'confirmed'],
+      properties: {
+        path: { type: 'string' },
+        format: { type: 'string', enum: ['docx', 'pdf', 'doc'] },
+        confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'style_audit',
+    description: [
+      'WHAT: Audit styles — usage stats, unused list, or purge unused custom styles.',
+      'WHEN: 「样式统计」「清理未使用样式」.',
+      'NOT: Not style_apply / style_list alone.',
+      'HOW: action=stats|unused|purge_unused; purge needs confirmed=true.',
+      'EXAMPLE: {"action":"unused"} or {"action":"purge_unused","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: { type: 'string', enum: ['stats', 'unused', 'purge_unused'] },
+        confirmed: { type: 'boolean' },
+        limit: { type: 'number' }
+      }
+    }
   })
+]
+
+export const TOOLS = [
+  ...CORE_TOOLS.filter((t) => !REPLACED_FINE_GRAINED.has(t.name)),
+  ...AGGREGATE_TOOLS
 ]
 
 export default { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS }

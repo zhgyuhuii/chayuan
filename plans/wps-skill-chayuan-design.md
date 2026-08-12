@@ -175,7 +175,7 @@ wps-skill-chayuan/
 - 加载项：把 `payload/addon/<version>/` 拷入 `%AppData%\Kingsoft\wps\jsaddons\`，并写 `publish.xml`（`<jsplugins>` + `enable_dev`，与官方 wpsjs 离线包一致——否则本地 jsaddons 常不加载）。
   - 复用 `scripts/run-wpsjs-exe.mjs` 生成的 `copy.bat` 逻辑。
 - MCP：二进制释放到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\`，写 `HKCU\...\Run\ChayuanWpsMcp`（用户级，免管理员）。
-  - 复用 `mcp-sidecar/autostart/install-windows-user.ps1`。
+  - 复用 `mcp-sidecar/autostart/install-windows-user.cmd`（勿用 `.ps1`：易被杀软误报为 TrojanDownloader/PS.*）。
   - Windows 二进制以 `--windows-hide-console` 启动，无黑窗。
 - 发现：写 `mcp-server.json`（含 port + wpsExecutable）。
   - 复用 `scripts/register-mcp-server.mjs` / `platformBridge.writeMcpServerJson`。
@@ -450,7 +450,7 @@ wps-skill-chayuan（一个品牌、三层、按需启用）
 
 | 平台 | jsaddons 目标 | 关键约束 | 自启（复用） |
 |---|---|---|---|
-| Windows | `%AppData%\kingsoft\wps\jsaddons\<addonFolder>\` + 同级 `publish.xml` | **`enable_dev` 不能省**（否则拷了不加载）；对齐 `run-wpsjs-exe.mjs` 的 copy.bat | `install-windows-user.ps1`（HKCU Run + 启动） |
+| Windows | `%AppData%\kingsoft\wps\jsaddons\<addonFolder>\` + 同级 `publish.xml` | **`enable_dev` 不能省**（否则拷了不加载）；对齐 `run-wpsjs-exe.mjs` 的 copy.bat | `install-windows-user.cmd`（HKCU Run + 启动；技能直装 STEP 2 已内联） |
 | macOS | 沙盒 `~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons/` **与** 非沙盒 `~/Library/Application Support/Kingsoft/wps/jsaddons/` **两处都写** | 先拷临时目录再替换（防 WPS 占用半截拷贝） | `install-macos-launchagent.sh`（com.chayuan.mcp） |
 | Linux | `~/.local/share/Kingsoft/wps/jsaddons/`（含 kingsoft 小写变体）；**不默认写 `/opt`** | `--system` 显式要求才尝试提权 | `install-linux-user.sh`（systemd --user） |
 

@@ -1,0 +1,722 @@
+{
+  "at": "2026-08-12T21:15:55.284Z",
+  "doc": "爱唠叨的妈妈.docx",
+  "readTable": 2,
+  "writeTable": 1,
+  "passed": 17,
+  "failed": 0,
+  "total": 17,
+  "results": [
+    {
+      "feature": "table.list",
+      "tool": "table",
+      "args": {
+        "action": "list",
+        "limit": 20
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "3 tables: T1=3x3 T2=5x4 T3=5x4",
+      "sc": {
+        "ok": true,
+        "total": 3,
+        "returned": 3,
+        "items": [
+          {
+            "tableIndex": 1,
+            "rows": 3,
+            "cols": 3,
+            "range": {
+              "start": 258,
+              "end": 318
+            },
+            "headerSnippet": "",
+            "captionSnippet": "",
+            "hasMerged": false
+          },
+          {
+            "tableIndex": 2,
+            "rows": 5,
+            "cols": 4,
+            "range": {
+              "start": 664,
+              "end": 701
+            },
+            "headerSnippet": "序号 名称 地址 备注",
+            "captionSnippet": "",
+            "hasMerged": false
+          },
+          {
+            "tableIndex": 3,
+            "rows": 5,
+            "cols": 4,
+            "range": {
+              "start": 703,
+              "end": 740
+            },
+            "headerSnippet": "序号 名称 地址 备注",
+            "captionSnippet": "",
+            "hasMerged": false
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.header_read",
+      "tool": "table",
+      "args": {
+        "action": "header_read",
+        "tableIndex": 2
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "cells=[序号|名称|地址|备注] repeat=false",
+      "sc": {
+        "ok": true,
+        "tableIndex": 2,
+        "row": 1,
+        "cells": [
+          {
+            "col": 1,
+            "text": "序号"
+          },
+          {
+            "col": 2,
+            "text": "名称"
+          },
+          {
+            "col": 3,
+            "text": "地址"
+          },
+          {
+            "col": 4,
+            "text": "备注"
+          }
+        ],
+        "range": {
+          "start": 664,
+          "end": 677
+        },
+        "repeatHeader": false,
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.row_read",
+      "tool": "table",
+      "args": {
+        "action": "row_read",
+        "tableIndex": 2,
+        "row": 1
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "row1 cells=[序号|名称|地址|备注]",
+      "sc": {
+        "ok": true,
+        "tableIndex": 2,
+        "row": 1,
+        "cells": [
+          {
+            "col": 1,
+            "text": "序号"
+          },
+          {
+            "col": 2,
+            "text": "名称"
+          },
+          {
+            "col": 3,
+            "text": "地址"
+          },
+          {
+            "col": 4,
+            "text": "备注"
+          }
+        ],
+        "range": {
+          "start": 664,
+          "end": 677
+        },
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.column_read",
+      "tool": "table",
+      "args": {
+        "action": "column_read",
+        "tableIndex": 2,
+        "col": 1
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "col1 cells=[序号|1|2|5|6]",
+      "sc": {
+        "ok": true,
+        "tableIndex": 2,
+        "col": 1,
+        "rows": 5,
+        "cells": [
+          {
+            "row": 1,
+            "text": "序号"
+          },
+          {
+            "row": 2,
+            "text": "1"
+          },
+          {
+            "row": 3,
+            "text": "2"
+          },
+          {
+            "row": 4,
+            "text": "5"
+          },
+          {
+            "row": 5,
+            "text": "6"
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.cell_read",
+      "tool": "table",
+      "args": {
+        "action": "cell_read",
+        "tableIndex": 2,
+        "row": 2,
+        "col": 2
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "cell(2,2)=\"\" range=679-680",
+      "sc": {
+        "ok": true,
+        "tableIndex": 2,
+        "row": 2,
+        "col": 2,
+        "text": "",
+        "range": {
+          "start": 679,
+          "end": 680
+        },
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.export(md)",
+      "tool": "table",
+      "args": {
+        "action": "export",
+        "format": "md",
+        "limit": 3
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "serialized 3 tables (md)",
+      "sc": {
+        "ok": true,
+        "total": 3,
+        "returned": 3,
+        "format": "md",
+        "tables": [
+          {
+            "tableIndex": 1,
+            "rows": 3,
+            "cols": 3,
+            "format": "md",
+            "content": "|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |"
+          },
+          {
+            "tableIndex": 2,
+            "rows": 5,
+            "cols": 4,
+            "format": "md",
+            "content": "| 序号 | 名称 | 地址 | 备注 |\n| --- | --- | --- | --- |\n| 1 |  |  |  |\n| 2 |  |  |  |\n| 5 |  |  |  |\n| 6 |  |  |  |"
+          },
+          {
+            "tableIndex": 3,
+            "rows": 5,
+            "cols": 4,
+            "format": "md",
+            "content": "| 序号 | 名称 | 地址 | 备注 |\n| --- | --- | --- | --- |\n| 1 |  |  |  |\n| 2 |  |  |  |\n| 5 |  |  |  |\n| 6 |  |  |  |"
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "caption.list",
+      "tool": "caption",
+      "args": {
+        "action": "list",
+        "limit": 50
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "2 captions: 图1(SEQ) 图2(SEQ)",
+      "sc": {
+        "ok": true,
+        "total": 127,
+        "returned": 2,
+        "items": [
+          {
+            "paragraphIndex": 124,
+            "kind": "图",
+            "numberText": "1",
+            "fullText": "图 1",
+            "isSeqField": true,
+            "range": {
+              "start": 745,
+              "end": 769
+            }
+          },
+          {
+            "paragraphIndex": 127,
+            "kind": "图",
+            "numberText": "2",
+            "fullText": "图 2",
+            "isSeqField": true,
+            "range": {
+              "start": 772,
+              "end": 796
+            }
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "field.list",
+      "tool": "field",
+      "args": {
+        "action": "list",
+        "limit": 50
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "2 fields: SEQ",
+      "sc": {
+        "ok": true,
+        "total": 2,
+        "returned": 2,
+        "items": [
+          {
+            "index": 1,
+            "type": "SEQ",
+            "code": "SEQ 图 \\* ARABIC",
+            "resultText": "1",
+            "range": {
+              "start": null,
+              "end": null
+            }
+          },
+          {
+            "index": 2,
+            "type": "SEQ",
+            "code": "SEQ 图 \\* ARABIC",
+            "resultText": "2",
+            "range": {
+              "start": null,
+              "end": null
+            }
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "image.list",
+      "tool": "image",
+      "args": {
+        "action": "list",
+        "limit": 20
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "2 images (wrap=inline)",
+      "sc": {
+        "ok": true,
+        "returned": 2,
+        "items": [
+          {
+            "kind": "inline",
+            "index": 1,
+            "type": 3,
+            "width": 414.9818115234375,
+            "height": 259.52728271484375,
+            "start": 743,
+            "end": 744,
+            "wrap": "inline",
+            "precedingText": "注 1 2 5 6",
+            "followingText": "图 1 / 图"
+          },
+          {
+            "kind": "inline",
+            "index": 2,
+            "type": 3,
+            "width": 414.9818115234375,
+            "height": 234.654541015625,
+            "start": 770,
+            "end": 771,
+            "wrap": "inline",
+            "precedingText": "/ 图 1",
+            "followingText": "图 2"
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": true,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.header_repeat",
+      "tool": "table",
+      "args": {
+        "action": "header_repeat",
+        "tableIndex": 1,
+        "repeat": true,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "repeatHeader=true",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "repeatHeader": true,
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.column_set_width",
+      "tool": "table",
+      "args": {
+        "action": "column_set_width",
+        "tableIndex": 1,
+        "allCols": true,
+        "widthPt": 60,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "set all col(s) → avg 60.0pt",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "applied": {
+          "allCols": true,
+          "col": null,
+          "widthPt": 60
+        },
+        "widths": [
+          {
+            "col": 1,
+            "width": 60
+          },
+          {
+            "col": 2,
+            "width": 60
+          },
+          {
+            "col": 3,
+            "width": 60
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.row_insert",
+      "tool": "table",
+      "args": {
+        "action": "row_insert",
+        "tableIndex": 1,
+        "row": 1,
+        "where": "after",
+        "count": 1,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "inserted 1 row(s) after row 1 → now 4 rows",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "insertedRows": 1,
+        "where": "after",
+        "atRow": 1,
+        "rows": 4,
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.column_insert",
+      "tool": "table",
+      "args": {
+        "action": "column_insert",
+        "tableIndex": 1,
+        "col": 1,
+        "where": "after",
+        "count": 1,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "inserted 1 col(s) after col 1 → now 4 cols",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "insertedColumns": 1,
+        "where": "after",
+        "atCol": 1,
+        "cols": 4,
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.cell_merge(行)",
+      "tool": "table",
+      "args": {
+        "action": "cell_merge",
+        "tableIndex": 1,
+        "row1": 3,
+        "col1": 1,
+        "row2": 4,
+        "col2": 1,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "merged (3,1)-(4,1) dir=rows",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "merged": {
+          "top": 3,
+          "left": 1,
+          "bottom": 4,
+          "right": 1
+        },
+        "direction": "rows",
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.cell_merge(列)",
+      "tool": "table",
+      "args": {
+        "action": "cell_merge",
+        "tableIndex": 1,
+        "row1": 4,
+        "col1": 2,
+        "row2": 4,
+        "col2": 3,
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "merged (4,2)-(4,3) dir=columns",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "tableIndex": 1,
+        "merged": {
+          "top": 4,
+          "left": 2,
+          "bottom": 4,
+          "right": 3
+        },
+        "direction": "columns",
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "field.add(SEQ图)",
+      "tool": "field",
+      "args": {
+        "action": "add",
+        "kind": "seq",
+        "label": "图",
+        "confirmed": true
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "how=seq result=\"1\"",
+      "sc": {
+        "ok": true,
+        "preview": false,
+        "how": "seq",
+        "kind": "seq",
+        "label": "图",
+        "resultText": "1",
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    },
+    {
+      "feature": "table.list(final)",
+      "tool": "table",
+      "args": {
+        "action": "list",
+        "limit": 20
+      },
+      "ok": true,
+      "code": "OK",
+      "summary": "T1=4x4(merged) T2=5x4 T3=5x4",
+      "sc": {
+        "ok": true,
+        "total": 3,
+        "returned": 3,
+        "items": [
+          {
+            "tableIndex": 1,
+            "rows": 4,
+            "cols": 4,
+            "range": {
+              "start": 258,
+              "end": 361
+            },
+            "headerSnippet": "",
+            "captionSnippet": "",
+            "hasMerged": true
+          },
+          {
+            "tableIndex": 2,
+            "rows": 5,
+            "cols": 4,
+            "range": {
+              "start": 707,
+              "end": 744
+            },
+            "headerSnippet": "序号 名称 地址 备注",
+            "captionSnippet": "",
+            "hasMerged": false
+          },
+          {
+            "tableIndex": 3,
+            "rows": 5,
+            "cols": 4,
+            "range": {
+              "start": 746,
+              "end": 783
+            },
+            "headerSnippet": "序号 名称 地址 备注",
+            "captionSnippet": "",
+            "hasMerged": false
+          }
+        ],
+        "document": {
+          "open": true,
+          "name": "爱唠叨的妈妈.docx",
+          "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+          "saved": false,
+          "addonType": "wps"
+        }
+      }
+    }
+  ]
+}

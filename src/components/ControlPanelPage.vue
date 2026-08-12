@@ -103,20 +103,23 @@
           每日均可免费使用对话与执行助手。购买授权后不限次数,并解锁脱密/脱密还原。
         </p>
 
-        <!-- 购买入口:二维码 + 链接 -->
+        <!-- 支持入口:二维码 + 链接 -->
         <div v-if="!isPaid" class="cp-buy-section">
-          <h3 class="cp-sub-h">扫码购买</h3>
+          <h3 class="cp-sub-h">支持我们</h3>
           <div class="cp-buy-row">
             <div class="cp-buy-qr">
-              <img v-if="buyQrDataUrl" :src="buyQrDataUrl" alt="扫码购买" width="148" height="148" />
+              <img v-if="buyQrDataUrl" :src="buyQrDataUrl" alt="支持我们" width="148" height="148" />
               <div v-else class="cp-buy-qr-ph">生成中…</div>
             </div>
             <div class="cp-buy-info">
               <p class="cp-buy-fp">
                 本机指纹:<code>{{ fingerprint || '获取中…' }}</code>
               </p>
-              <p class="cp-buy-hint">用手机扫码购买,或</p>
-              <a class="cp-buy-link" :href="buyUrl" target="_blank" rel="noopener noreferrer">在浏览器中打开购买页</a>
+              <p class="cp-buy-hint">用手机扫码支持我们，或</p>
+              <a class="cp-buy-link" :href="buyUrl" target="_blank" rel="noopener noreferrer">在浏览器中打开</a>
+              <p class="cp-buy-hint" style="margin-top: 8px;">
+                <SourceCodeLinks />
+              </p>
             </div>
           </div>
         </div>
@@ -243,6 +246,7 @@ import {
 } from '../utils/telemetryPipeline.js'
 import { getBadge } from '../utils/referralEngine.js'
 import toast from '../utils/toastService.js'
+import SourceCodeLinks from './common/SourceCodeLinks.vue'
 // services/index 暴露聚合 API,本页用其 perf / evolution 状态做诊断信息
 import services from '../services/index.js'
 
@@ -257,6 +261,7 @@ const TABS = [
 
 export default {
   name: 'ControlPanelPage',
+  components: { SourceCodeLinks },
   data() {
     return {
       activeTab: 'flags',

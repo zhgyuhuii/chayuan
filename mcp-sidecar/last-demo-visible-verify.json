@@ -1,0 +1,413 @@
+{
+  "at": "2026-08-12T10:59:50.155Z",
+  "docPath": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+  "parasHint": {
+    "paragraphs": [
+      {
+        "index": 1,
+        "start": 0,
+        "end": 21,
+        "text": "爱唠叨的妈妈",
+        "charCount": 6
+      },
+      {
+        "index": 2,
+        "start": 21,
+        "end": 62,
+        "text": "我的妈妈今年39岁。她中等身材，细细的眉毛下嵌着一双和善的眼睛。",
+        "charCount": 32
+      },
+      {
+        "index": 3,
+        "start": 62,
+        "end": 234,
+        "text": "平时，妈妈总是唠唠叨叨的。每当晚上，我看电视不爱睡觉的时候，妈妈就唠叨的说：“别看了，明天还要上学呢！”每当我写字的时候，耳边又是一声：“写字姿势要正确，预防近视眼！”还有什么上课要注意听见啦，要认真写作业啦，要诚实啦，自己的事情自己做啦……一天唠叨得没完没了。一听到妈妈的唠叨声我就心烦。可后来我对妈妈的唠叨却有了新的认识。",
+        "charCount": 163
+      },
+      {
+        "index": 4,
+        "start": 234,
+        "end": 559,
+        "text": "那是临近期中考试的时候。头几天妈妈就把考试要注意的事项对我说了好几遍。等到考试的那天，妈妈又唠叨着对我说：“考试时别慌张，要认真审题，字迹要工整，做完题要仔细检查。”我听了不耐烦的说：“知道了。”心想，妈妈真能唠叨！到了考场，等卷子发下来的时候，我一看试题很简单，就飞快地写起来。不一会儿，卷子就答完了，我刚想交卷，看见别的同学仍然在认真地写着，我的耳旁忽然想起了妈妈的唠叨声，于是我就认真地检查起来。当检查到第四题时，发现第一小题因为马虎答错了。我急忙把它改过来。为了防止再出错，我又重新检查了一遍，直到认为没有一点儿错的地方我才交了卷。宣布成绩了，我得了100分。我高兴极了。是妈妈的唠叨声使我的满分，也是我克服了马虎的坏毛病。",
+        "charCount": 316
+      },
+      {
+        "index": 5,
+        "start": 559,
+        "end": 602,
+        "text": "我感谢妈妈的唠叨，正是因为这唠叨声，千百次地督促我，使我健康的成长！",
+        "charCount": 34
+      }
+    ],
+    "totalParagraphs": 5,
+    "returned": 5,
+    "nextCursor": null,
+    "hasMore": false,
+    "document": {
+      "open": true,
+      "name": "爱唠叨的妈妈.docx",
+      "fullName": "C:\\Users\\zhgyu\\Desktop\\爱唠叨的妈妈.docx",
+      "saved": true,
+      "addonType": "wps"
+    },
+    "hint": "用户说「翻译每一段并插到段后」时：对本页每段由模型生成译文，再调用 document_apply_ops(action=insert-after) 或 document_insert(position=after)；从文档末段往前写以免锚点漂移。"
+  },
+  "results": [
+    {
+      "name": "wps_status",
+      "ok": true,
+      "ms": 1002,
+      "detail": "{\"server\":{\"name\":\"chayuan-wps-mcp\",\"version\":\"0.1.0\",\"url\":\"http://127.0.0.1:62588/mcp\",\"healthz\":\"http://127.0.0.1:62588/healthz\",\"dataDir\":\"C:\\\\Users\\\\zhgyu\\\\AppData\\\\Local\\\\cha…"
+    },
+    {
+      "name": "document_open",
+      "ok": true,
+      "ms": 3285,
+      "detail": "{\"ok\":true,\"opened\":false,\"alreadyOpen\":true,\"path\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨…"
+    },
+    {
+      "name": "document_meta",
+      "ok": true,
+      "ms": 17,
+      "detail": "{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":true,\"addonType\":\"wps\",\"charCount\":602,\"paragraphCount\":5,\"chunkSettings\":{\"chunkLengt…"
+    },
+    {
+      "name": "document_list_paragraphs",
+      "ok": true,
+      "ms": 29,
+      "detail": "{\"paragraphs\":[{\"index\":1,\"start\":0,\"end\":21,\"text\":\"爱唠叨的妈妈\",\"charCount\":6},{\"index\":2,\"start\":21,\"end\":62,\"text\":\"我的妈妈今年39岁。她中等身材，细细的眉毛下嵌着一双和善的眼睛。\",\"charCount\":32},{\"index\":3,\"sta…"
+    },
+    {
+      "name": "document_insert",
+      "ok": true,
+      "ms": 29,
+      "detail": "{\"preview\":false,\"ok\":true,\"action\":\"append\",\"message\":\"已追加到文末\",\"writeTargets\":[{\"action\":\"append\",\"start\":844,\"end\":844,\"paragraphIndex\":null,\"originalText\":\"\",\"outputText\":\"\\n———…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 108,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":36,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":602,\"end\":637},\"scope\":{\"start\":602,\"end\":637,\"text\":\"——…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 119,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"加粗\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":639,\"end\":652,\"how\":\"originalText\"}],\"document\":{\"open\":true,\"n…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":22,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":639,\"end\":652},\"scope\":{\"start\":639,\"end\":652,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 32,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"删除线\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":654,\"end\":671,\"how\":\"originalText\"}],\"document\":{\"open\":true,\"…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 45,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":23,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":654,\"end\":671},\"scope\":{\"start\":654,\"end\":671,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 40,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"字体改为楷体\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":673,\"end\":688,\"how\":\"originalText\"}],\"document\":{\"open\":tru…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 59,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":28,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":673,\"end\":688},\"scope\":{\"start\":673,\"end\":688,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 38,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"字号改为18 磅\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":690,\"end\":705,\"how\":\"originalText\"}],\"document\":{\"open\":t…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 57,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":32,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":690,\"end\":705},\"scope\":{\"start\":690,\"end\":705,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 36,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"文字颜色改为#FF0000\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":707,\"end\":722,\"how\":\"originalText\"}],\"document\":{\"op…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":26,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":707,\"end\":722},\"scope\":{\"start\":707,\"end\":722,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 36,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"斜体\",\"添加下划线\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":724,\"end\":741,\"how\":\"originalText\"}],\"document\":{\"open\"…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 47,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":26,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":724,\"end\":741},\"scope\":{\"start\":724,\"end\":741,\"text\":\"【样…"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "ms": 28,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"背景色改为yellow\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":743,\"end\":759,\"how\":\"originalText\"}],\"document\":{\"open…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 41,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":22,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":743,\"end\":759},\"scope\":{\"start\":743,\"end\":759,\"text\":\"【样…"
+    },
+    {
+      "name": "format_para",
+      "ok": true,
+      "ms": 36,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"行间距改为1.5倍\",\"居中对齐\"],\"applied\":{\"size\":null,\"phonetic\":false},\"anchors\":[{\"start\":761,\"end\":777,\"how\":\"originalText\"}],\"document\":{…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":34,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":761,\"end\":777},\"scope\":{\"start\":761,\"end\":777,\"text\":\"【样…"
+    },
+    {
+      "name": "style_list",
+      "ok": true,
+      "ms": 148,
+      "detail": "{\"ok\":true,\"total\":478,\"returned\":20,\"styles\":[{\"index\":3,\"name\":\"标题 1\"},{\"index\":4,\"name\":\"标题 2\"},{\"index\":5,\"name\":\"标题 3\"},{\"index\":6,\"name\":\"标题 4\"},{\"index\":7,\"name\":\"标题 5\"},{\"i…"
+    },
+    {
+      "name": "style_apply",
+      "ok": true,
+      "ms": 39,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"willChange\":[\"style=标题 1\"],\"anchors\":[{\"start\":779,\"end\":796}],\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Deskt…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 58,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":33,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":779,\"end\":796},\"scope\":{\"start\":779,\"end\":796,\"text\":\"【样…"
+    },
+    {
+      "name": "format_apply_ops",
+      "ok": true,
+      "ms": 46,
+      "detail": "{\"ok\":true,\"preview\":false,\"hits\":1,\"results\":[{\"ok\":true,\"hits\":1}],\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 53,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":40,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":798,\"end\":816},\"scope\":{\"start\":798,\"end\":816,\"text\":\"【样…"
+    },
+    {
+      "name": "system_fonts_list",
+      "ok": true,
+      "ms": 104,
+      "detail": "{\"ok\":true,\"total\":296,\"returned\":6,\"fonts\":[\"仿宋\",\"华文中宋\",\"华文仿宋\",\"华文宋体\",\"宋体\",\"新宋体\"]}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 49,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":37,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":673,\"end\":688},\"scope\":{\"start\":673,\"end\":688,\"text\":\"【样…"
+    },
+    {
+      "name": "nav_location",
+      "ok": true,
+      "ms": 30,
+      "detail": "{\"ok\":true,\"page\":1,\"line\":21,\"start\":639,\"end\":652,\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 49,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":210,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":639,\"end\":652},\"scope\":{\"start\":639,\"end\":652,\"text\":\"【…"
+    },
+    {
+      "name": "document_replace",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"preview\":false,\"ok\":true,\"action\":\"replace\",\"message\":\"已按替换原文模式安全写回文档\",\"writeTargets\":[{\"action\":\"replace\",\"start\":820,\"end\":820,\"paragraphIndex\":null,\"originalText\":\"【样本·替换前】原文将…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":35,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":820,\"end\":838},\"scope\":{\"start\":820,\"end\":838,\"text\":\"【样…"
+    },
+    {
+      "name": "document_insert",
+      "ok": true,
+      "ms": 38,
+      "detail": "{\"preview\":false,\"ok\":true,\"action\":\"insert-after\",\"message\":\"已插入到选中段落后面\",\"writeTargets\":[{\"action\":\"insert-after\",\"start\":858,\"end\":858,\"paragraphIndex\":null,\"originalText\":\"【样本·插…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 51,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":44,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":859,\"end\":908},\"scope\":{\"start\":859,\"end\":908,\"text\":\"【样…"
+    },
+    {
+      "name": "comment_list",
+      "ok": true,
+      "ms": 49,
+      "detail": "{\"ok\":true,\"total\":15,\"returned\":15,\"items\":[{\"index\":1,\"author\":\"扬帆破浪\",\"text\":\"实现了MCP工具-document_insert功能：文末追加验证样本区\",\"anchorText\":\"———————— MCP 工具可见验证（请对照批注） ————————\",\"start\":602…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 51,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":34,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":602,\"end\":637},\"scope\":{\"start\":602,\"end\":637,\"text\":\"——…"
+    },
+    {
+      "name": "revision_mode",
+      "ok": true,
+      "ms": 14,
+      "detail": "{\"ok\":true,\"enabled\":true,\"show\":true,\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"}}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 50,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":199,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":656,\"end\":673},\"scope\":{\"start\":656,\"end\":673,\"text\":\"【…"
+    },
+    {
+      "name": "document_replace",
+      "ok": true,
+      "ms": 39,
+      "detail": "{\"preview\":false,\"ok\":true,\"action\":\"replace\",\"message\":\"已按替换原文模式安全写回文档\",\"writeTargets\":[{\"action\":\"replace\",\"start\":656,\"end\":696,\"paragraphIndex\":null,\"originalText\":\"【样本·删除线】这句话…"
+    },
+    {
+      "name": "revision_mode",
+      "ok": true,
+      "ms": 12,
+      "detail": "{\"ok\":true,\"enabled\":false,\"show\":true,\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"}}"
+    },
+    {
+      "name": "revision_list",
+      "ok": true,
+      "ms": 15,
+      "detail": "{\"ok\":true,\"total\":2,\"returned\":2,\"items\":[{\"index\":1,\"author\":\"扬帆破浪\",\"type\":1,\"date\":\"Thu Aug 13 2026 02:59:49 GMT+0800 (中国标准时间)\",\"text\":\"【样本·删除线】这句话将被划掉样式（修订痕迹）\"},{\"index\":2,\"aut…"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 85,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":206,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":717,\"end\":732},\"scope\":{\"start\":717,\"end\":732,\"text\":\"【…"
+    },
+    {
+      "name": "nav_pane_set",
+      "ok": true,
+      "ms": 8,
+      "detail": "{\"ok\":true,\"visible\":true,\"uiOnly\":true}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 50,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":32,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":735,\"end\":750},\"scope\":{\"start\":735,\"end\":750,\"text\":\"【样…"
+    },
+    {
+      "name": "layout_page",
+      "ok": true,
+      "ms": 34,
+      "detail": "{\"ok\":true,\"preview\":false,\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"}}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 47,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":194,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":753,\"end\":770},\"scope\":{\"start\":753,\"end\":770,\"text\":\"【…"
+    },
+    {
+      "name": "break_insert",
+      "ok": true,
+      "ms": 43,
+      "detail": "{\"ok\":true,\"kind\":\"page\",\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"}}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 62,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":43,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":868,\"end\":886},\"scope\":{\"start\":868,\"end\":886,\"text\":\"【样…"
+    },
+    {
+      "name": "document_locate",
+      "ok": true,
+      "ms": 49,
+      "detail": "{\"needle\":\"妈妈\",\"matchCount\":3,\"matches\":[{\"start\":18,\"end\":20,\"text\":\"妈妈\",\"charCount\":2,\"distance\":18,\"matchIndex\":0},{\"start\":31,\"end\":33,\"text\":\"妈妈\",\"charCount\":2,\"distance\":31,\"…"
+    },
+    {
+      "name": "document_chunks",
+      "ok": true,
+      "ms": 64,
+      "detail": "{\"scope\":\"document\",\"cursor\":0,\"limit\":1,\"totalChunks\":4,\"hasMore\":true,\"nextCursor\":1,\"truncated\":false,\"chunkSettings\":{\"chunkLength\":500,\"overlapLength\":200,\"splitStrategy\":\"par…"
+    },
+    {
+      "name": "document_get_text",
+      "ok": true,
+      "ms": 11,
+      "detail": "{\"text\":\"              爱唠叨的妈妈\\n        我的妈妈今年39岁。她中等身材，细细的眉毛下嵌着一双和善的眼睛。\\n        平时，妈妈总是唠唠叨叨的。每当晚上，我看电视不爱睡觉的时候，妈妈就唠叨的说：“别看了，明天还要上学呢！”每当我写字的时候，耳边又是一声：“写字姿势要正确，预防近视眼！”还有什么上课要注意听见啦，要认…"
+    },
+    {
+      "name": "kb_retrieve",
+      "ok": true,
+      "ms": 10,
+      "detail": "{\"query\":\"妈妈\",\"context\":\"\",\"notice\":\"未绑定知识库,无法对比;请先在对话侧栏选择知识库后重试。\",\"sourceCount\":0,\"sources\":[],\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\…"
+    },
+    {
+      "name": "assistants_list_domains",
+      "ok": true,
+      "ms": 2,
+      "detail": "{\"domainCount\":228,\"assistantTotal\":4526,\"domains\":[{\"id\":\"catering\",\"label\":\"餐饮 / 食品\",\"count\":24,\"packs\":[\"Catering\",\"CateringExt\"]},{\"id\":\"crossborder\",\"label\":\"跨境电商\",\"count\":24,…"
+    },
+    {
+      "name": "assistants_search",
+      "ok": true,
+      "ms": 106,
+      "detail": "{\"mode\":\"agent\",\"query\":\"校对\",\"domain\":null,\"total\":17,\"items\":[{\"id\":\"analysis.pub-proofread\",\"key\":\"analysis.pub-proofread\",\"label\":\"深度校对\",\"description\":\"出版级深度校对:错别字、语病、标点、数字、专名、前…"
+    },
+    {
+      "name": "declassify_status",
+      "ok": true,
+      "ms": 20,
+      "detail": "{\"isDeclassified\":false,\"state\":null,\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"saved\":false,\"addonType\":\"wps\"}}"
+    },
+    {
+      "name": "proofread_job_poll",
+      "ok": true,
+      "ms": 8,
+      "detail": "{\"jobId\":\"demo-nonexistent\",\"status\":\"not_found\"}"
+    },
+    {
+      "name": "document_add_comment",
+      "ok": true,
+      "ms": 59,
+      "detail": "{\"ok\":true,\"action\":\"comment\",\"charCount\":83,\"message\":\"Word查找精确定位\",\"matchedBy\":\"word-find\",\"warning\":null,\"range\":{\"start\":773,\"end\":789},\"scope\":{\"start\":773,\"end\":789,\"text\":\"【样…"
+    },
+    {
+      "name": "document_save",
+      "ok": true,
+      "ms": 186,
+      "detail": "{\"ok\":true,\"path\":\"C:/Users/zhgyu/Desktop/爱唠叨的妈妈.docx\",\"fileName\":\"爱唠叨的妈妈.docx\",\"document\":{\"open\":true,\"name\":\"爱唠叨的妈妈.docx\",\"fullName\":\"C:\\\\Users\\\\zhgyu\\\\Desktop\\\\爱唠叨的妈妈.docx\",\"sa…"
+    }
+  ],
+  "pass": 59,
+  "fail": 0
+}

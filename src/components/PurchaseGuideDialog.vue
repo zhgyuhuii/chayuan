@@ -18,14 +18,14 @@
         <!-- 说明文案 -->
         <p class="purchase-guide-desc">{{ desc }}</p>
 
-        <!-- 二维码 tab:默认「扫码购买」,另一个「分享」,只显示一个(参考 chayuan-desktop) -->
+        <!-- 二维码 tab:默认「支持我们」,另一个「分享」,只显示一个(参考 chayuan-desktop) -->
         <div class="purchase-guide-qr-tabs">
           <button
             type="button"
             class="purchase-guide-qr-tab"
             :class="{ active: qrTab === 'buy' }"
             @click="qrTab = 'buy'"
-          >扫码购买</button>
+          >支持我们</button>
           <button
             type="button"
             class="purchase-guide-qr-tab"
@@ -40,7 +40,7 @@
             <img
               v-if="qrDataUrl"
               :src="qrDataUrl"
-              alt="扫码购买"
+              alt="支持我们"
               class="purchase-guide-qr-img"
               width="160"
               height="160"
@@ -55,7 +55,7 @@
               <span>加载中...</span>
             </div>
           </div>
-          <p class="purchase-guide-qr-hint">扫码购买（解除次数限制），或</p>
+          <p class="purchase-guide-qr-hint">支持我们，或</p>
           <a
             class="purchase-guide-link"
             :href="buyUrl"

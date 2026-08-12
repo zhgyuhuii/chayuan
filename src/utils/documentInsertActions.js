@@ -67,9 +67,24 @@ export function insertPageBreakAtPosition(options = {}) {
 }
 
 export function insertBlankPageAtPosition(options = {}) {
-  const result = insertPageBreakAtPosition(options)
+  const app = getApplication()
+  const range = getPageInsertRange(options.pageNumber)
+  const wdPageBreak = app?.Enum?.wdPageBreak ?? 7
+  if (typeof range?.InsertBreak !== 'function') {
+    throw new Error('当前环境不支持插入空白页')
+  }
+  // 两个分页符中间夹一个空段，才会在正文中间形成一整页空白（单次分页符只是“从此另起页”）。
+  range.InsertBreak(wdPageBreak)
+  try {
+    const mid = getSelectionRange() || range
+    mid.InsertParagraphAfter?.()
+  } catch (_) {
+    /* optional empty paragraph */
+  }
+  const after = getSelectionRange() || getPageInsertRange(options.pageNumber)
+  after?.InsertBreak?.(wdPageBreak)
   return {
-    ...result,
+    pageNumber: Number(options.pageNumber || 0),
     mode: 'blank-page'
   }
 }

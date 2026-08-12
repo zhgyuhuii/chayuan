@@ -1,0 +1,109 @@
+{
+  "at": "2026-08-12T13:13:29.067Z",
+  "version": "0.10.0",
+  "passed": 20,
+  "failed": 0,
+  "softs": 0,
+  "results": [
+    {
+      "name": "catalog.has_new_domains",
+      "ok": true,
+      "detail": "total=46"
+    },
+    {
+      "name": "agent.online",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "fixture.document_meta",
+      "ok": true,
+      "detail": "chars=45"
+    },
+    {
+      "name": "fixture.table.insert",
+      "ok": true,
+      "detail": "3x3"
+    },
+    {
+      "name": "fixture.caption_text",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table.list",
+      "ok": true,
+      "detail": "tables=1 last=3x3"
+    },
+    {
+      "name": "table.header_read",
+      "ok": true,
+      "detail": "cells=3 repeat=true"
+    },
+    {
+      "name": "table.row_read",
+      "ok": true,
+      "detail": "cells=3"
+    },
+    {
+      "name": "table.column_read",
+      "ok": true,
+      "detail": "cells=3"
+    },
+    {
+      "name": "table.cell_read",
+      "ok": true,
+      "detail": "text=\"1\""
+    },
+    {
+      "name": "table.export.md",
+      "ok": true,
+      "detail": "4 lines"
+    },
+    {
+      "name": "table.export.csv",
+      "ok": true,
+      "detail": "3x3"
+    },
+    {
+      "name": "caption.list",
+      "ok": true,
+      "detail": "items=4 kinds=图,表"
+    },
+    {
+      "name": "caption.list.kind",
+      "ok": true,
+      "detail": "图-only=2"
+    },
+    {
+      "name": "field.add",
+      "ok": true,
+      "detail": "how=seq result=\"2\""
+    },
+    {
+      "name": "field.list",
+      "ok": true,
+      "detail": "fields=2 types=SEQ"
+    },
+    {
+      "name": "table.header_repeat",
+      "ok": true,
+      "detail": "repeatHeader=true"
+    },
+    {
+      "name": "table.column_set_width",
+      "ok": true,
+      "detail": "cols=3 avgWidth=60.0pt"
+    },
+    {
+      "name": "fixture.image.insert",
+      "ok": true,
+      "detail": "D:\\code\\chayuan\\chayuan-wps\\dist\\logo.png"
+    },
+    {
+      "name": "image.list.enriched",
+      "ok": true,
+      "detail": "items=1 wrap=inline alt=y"
+    }
+  ]
+}

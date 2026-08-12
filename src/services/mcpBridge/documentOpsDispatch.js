@@ -696,6 +696,262 @@ export async function handleDocumentSave(params = {}) {
   }
 }
 
+function normalizeDocPath(p) {
+  return String(p || '').trim().replace(/\//g, '\\').toLowerCase()
+}
+
+function pathOrNameMatches(docMeta, needle) {
+  const q = normalizeDocPath(needle)
+  if (!q) return false
+  const name = String(docMeta?.name || '').toLowerCase()
+  const full = normalizeDocPath(docMeta?.fullName)
+  const base = q.split('\\').filter(Boolean).pop() || q
+  if (full && full === q) return true
+  if (name && (name === q || name === base)) return true
+  if (full && base && full.endsWith('\\' + base)) return true
+  // fuzzy: substring on name / full path / basename without extension
+  const nameNoExt = name.replace(/\.docx?$/i, '')
+  const baseNoExt = base.replace(/\.docx?$/i, '')
+  if (name.includes(q) || full.includes(q) || name.includes(base) || nameNoExt.includes(baseNoExt)) return true
+  return false
+}
+
+/**
+ * Collect open docs. Prefer Windows collection; fall back to Documents.
+ * Each Item access is try/caught (some WPS builds hang on bad Items — skip failures).
+ */
+function collectOpenDocuments(app) {
+  const items = []
+  const seen = new Set()
+  const pushDoc = (doc, extra = {}) => {
+    if (!doc) return
+    try {
+      const fullName = String(doc.FullName || '')
+      const name = String(doc.Name || '')
+      const key = normalizeDocPath(fullName || name)
+      if (!key || seen.has(key)) return
+      seen.add(key)
+      items.push({
+        index: items.length + 1,
+        name,
+        fullName,
+        saved: !!doc.Saved,
+        ...extra
+      })
+    } catch { /* skip */ }
+  }
+
+  try {
+    const windows = app?.Windows
+    const n = Number(windows?.Count || 0)
+    for (let i = 1; i <= n; i++) {
+      try {
+        const w = windows.Item(i)
+        pushDoc(w?.Document, { windowIndex: i })
+      } catch { /* skip window */ }
+    }
+  } catch { /* ignore */ }
+
+  if (!items.length) {
+    try {
+      const docs = app?.Documents
+      const n = Number(docs?.Count || 0)
+      for (let i = 1; i <= n; i++) {
+        try {
+          pushDoc(docs.Item(i), { documentIndex: i })
+        } catch { /* skip */ }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Always include ActiveDocument even if enumeration failed
+  try {
+    pushDoc(app?.ActiveDocument, { fromActive: true })
+  } catch { /* ignore */ }
+
+  return items
+}
+
+function markActive(items, app) {
+  let activeName = ''
+  let activeFull = ''
+  try {
+    activeName = String(app?.ActiveDocument?.Name || '')
+    activeFull = String(app?.ActiveDocument?.FullName || '')
+  } catch { /* ignore */ }
+  return items.map((it) => ({
+    ...it,
+    active:
+      (!!activeFull && normalizeDocPath(it.fullName) === normalizeDocPath(activeFull)) ||
+      (!!activeName && String(it.name) === activeName)
+  }))
+}
+
+export async function handleDocumentListOpen(params = {}) {
+  const app = window.Application
+  if (!app) {
+    const err = new Error('WPS Application unavailable')
+    err.code = 'WPS_API_UNAVAILABLE'
+    throw err
+  }
+  const items = markActive(collectOpenDocuments(app), app)
+  const query = String(params.query || '').trim()
+  const filtered = query ? items.filter((it) => pathOrNameMatches(it, query)) : items
+  return {
+    ok: true,
+    total: items.length,
+    returned: filtered.length,
+    items: filtered,
+    active: docInfo(getActiveDocument())
+  }
+}
+
+/**
+ * Switch ActiveDocument among already-open windows/docs.
+ * Does not open from disk unless openIfMissing+path.
+ */
+export async function handleDocumentActivate(params = {}) {
+  const app = window.Application
+  if (!app?.Documents) {
+    const err = new Error('Documents API unavailable')
+    err.code = 'WPS_API_UNAVAILABLE'
+    throw err
+  }
+
+  const path = String(params.path || '').trim()
+  const name = String(params.name || '').trim()
+  const query = String(params.query || params.title || '').trim()
+  const index = Number(params.index)
+  const needle = path || name || query
+
+  const before = docInfo(getActiveDocument())
+
+  // Already the active document?
+  if (needle && before.open && pathOrNameMatches(before, needle)) {
+    try {
+      app.ActiveDocument?.Activate?.()
+    } catch { /* ignore */ }
+    try {
+      if (app && typeof app.Visible !== 'undefined') app.Visible = true
+      app.Activate?.()
+    } catch { /* ignore */ }
+    return {
+      ok: true,
+      switched: false,
+      alreadyActive: true,
+      document: before,
+      previous: before
+    }
+  }
+
+  let activated = null
+
+  // Direct Item lookup by path / name / basename (Word/WPS often supports this without full enum)
+  const tryActivateItem = (key) => {
+    if (!key) return null
+    try {
+      const d = app.Documents.Item(key)
+      if (d) {
+        d.Activate?.()
+        return d
+      }
+    } catch { /* ignore */ }
+    return null
+  }
+
+  if (path) activated = tryActivateItem(path)
+  if (!activated && name) activated = tryActivateItem(name)
+  if (!activated && needle) {
+    const base = needle.replace(/\//g, '\\').split('\\').filter(Boolean).pop()
+    if (base) activated = tryActivateItem(base)
+  }
+
+  // Enumerate open docs / windows and Activate match
+  if (!activated && (needle || Number.isFinite(index))) {
+    const open = collectOpenDocuments(app)
+    let hit = null
+    if (Number.isFinite(index) && index >= 1) {
+      hit = open[index - 1] || open.find((it) => it.documentIndex === index || it.windowIndex === index)
+    }
+    if (!hit && needle) {
+      const matches = open.filter((it) => pathOrNameMatches(it, needle))
+      if (matches.length === 1) hit = matches[0]
+      else if (matches.length > 1) {
+        // prefer exact name/fullName
+        hit =
+          matches.find((it) => normalizeDocPath(it.fullName) === normalizeDocPath(needle)) ||
+          matches.find((it) => String(it.name).toLowerCase() === needle.toLowerCase()) ||
+          matches[0]
+      }
+    }
+    if (hit) {
+      // Prefer window activate when we have windowIndex
+      if (hit.windowIndex != null) {
+        try {
+          app.Windows.Item(hit.windowIndex).Activate?.()
+          activated = app.ActiveDocument
+        } catch { /* fall through */ }
+      }
+      if (!activated) {
+        activated =
+          tryActivateItem(hit.fullName) ||
+          tryActivateItem(hit.name) ||
+          (hit.documentIndex != null ? tryActivateItem(hit.documentIndex) : null)
+      }
+    }
+  }
+
+  // Optional: open from disk if missing
+  if (!activated && params.openIfMissing === true && path) {
+    try {
+      let opened = null
+      try {
+        opened = app.Documents.Open(path, false, false, true)
+      } catch {
+        opened = app.Documents.Open(path)
+      }
+      opened?.Activate?.()
+      activated = opened || app.ActiveDocument
+    } catch (e) {
+      const err = new Error(e?.message || `无法打开并切换到: ${path}`)
+      err.code = 'DOCUMENT_ACTIVATE_FAILED'
+      throw err
+    }
+  }
+
+  const after = docInfo(getActiveDocument())
+  const matched =
+    !!activated ||
+    (needle ? pathOrNameMatches(after, needle) : Number.isFinite(index) && after.open)
+
+  if (!matched) {
+    const open = markActive(collectOpenDocuments(app), app)
+    const err = new Error(
+      needle
+        ? `未找到已打开的文档：${needle}。可用 document_list_open 查看当前窗口。`
+        : '请提供 path / name / query / index'
+    )
+    err.code = needle ? 'DOCUMENT_NOT_OPEN' : 'INVALID_PARAMS'
+    err.details = { openDocuments: open, active: after }
+    throw err
+  }
+
+  try {
+    if (app && typeof app.Visible !== 'undefined') app.Visible = true
+    app.Activate?.()
+    app.ActiveDocument?.Activate?.()
+  } catch { /* ignore */ }
+
+  return {
+    ok: true,
+    switched: normalizeDocPath(before.fullName || before.name) !== normalizeDocPath(after.fullName || after.name),
+    alreadyActive: false,
+    previous: before,
+    document: after,
+    openCount: collectOpenDocuments(app).length
+  }
+}
+
 export async function handleDeclassifyStatus() {
   return {
     ...getCurrentDeclassifyStatus(),

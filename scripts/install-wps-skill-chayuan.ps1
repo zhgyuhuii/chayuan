@@ -1,14 +1,15 @@
 ﻿# install-wps-skill-chayuan.ps1 —— wps-skill-chayuan 直装脚本（Windows）
-# 不跑 .exe 安装器外壳，直接：① 加载项+publish.xml(enable_dev) 写 jsaddons ② 调 install-windows-user.ps1 注册 HKCU Run 并启动
+# 不跑 .exe 安装器外壳，直接：① 加载项+publish.xml(enable_dev) 写 jsaddons ② 注册 HKCU Run 并启动 MCP
 #   ③ 四级 healthz  ④ 自动检测已装 agent（Claude Code/Cursor/Codex）→ 注册 MCP + 按各自格式投放技能文件
 #   OpenClaw/Hermes 为 GUI 打印指引；GitHub 被墙时 -Fetch 多源回退（Gitee/aidooo）+ sha256 强校验
+#   STEP 2 内联实现（不再依赖 autostart\*.ps1——部分 Defender 会隔离该目录下的 ps1）
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1                # 全量 + 自动检测 agent
 #   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -NoAgent
 #   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -SkillOnly
 #   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Payload C:\path\to\staging
 #   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -WithCursor -WithClaude   # 强制投放
-#   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch -Version 4.0.0
+#   powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch -Version 4.1.0
 # 详见 plans/wps-skill-chayuan-design.md §16。
 
 param(
@@ -44,7 +45,7 @@ $McpPort = 62588
 $McpUrl = "http://127.0.0.1:$McpPort/mcp"
 $Healthz = "http://127.0.0.1:$McpPort/healthz"
 $SidExe = 'chayuan-mcp-windows-x64.exe'
-$PkgVerDefault = '4.0.0'
+$PkgVerDefault = '4.1.0'
 
 if ($Help) { Get-Help $MyInvocation.MyCommand.Path -Detailed; exit 0 }
 if ($WithAll) { $WithClaude = $true; $WithCursor = $true; $WithCodex = $true }
@@ -142,21 +143,54 @@ function Get-SkillTmpl {
 
 Write-Host "[wps-skill-chayuan] 平台=windows 载荷=$Payload 加载项=$AddonFolder 版本=$Version2 MCP=$McpBin"
 
+# 清只读 / Mark-of-the-Web，避免 zip 解压后 Copy-Item「访问被拒绝」
+function Clear-TreeAttrs([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  Get-ChildItem -LiteralPath $Root -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    try { $_.Attributes = 'Archive' } catch {}
+    if (-not $_.PSIsContainer) {
+      try { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } catch {}
+    }
+  }
+}
+function Remove-TreeForce([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  Clear-TreeAttrs $Root
+  Remove-Item -LiteralPath $Root -Recurse -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $Root) {
+    cmd /c "attrib -R `"$Root\*`" /S /D >nul 2>nul"
+    Remove-Item -LiteralPath $Root -Recurse -Force
+  }
+}
+# 用 robocopy 拷目录：比 Copy-Item 更能扛只读/被锁文件；排除 autostart 下脚本
+# （MCP 自启由 STEP 2 从包根 mcp-sidecar 执行，无需进 jsaddons；.ps1 进 AppData 易被 Defender 拦）
+function Copy-AddonTree([string]$Src, [string]$Dst) {
+  Clear-TreeAttrs $Src
+  New-Item -ItemType Directory -Force -Path $Dst | Out-Null
+  $xd = @('autostart')
+  $xf = @('*.ps1')
+  $args = @($Src, $Dst, '/E', '/COPY:DAT', '/R:2', '/W:1', '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS', '/NP')
+  foreach ($d in $xd) { $args += '/XD'; $args += $d }
+  foreach ($f in $xf) { $args += '/XF'; $args += $f }
+  & robocopy @args | Out-Null
+  # robocopy: 0-7 = 成功类；≥8 失败
+  if ($LASTEXITCODE -ge 8) { throw "robocopy 复制加载项失败 (exit=$LASTEXITCODE)：$Src → $Dst" }
+}
+
 # ───────── STEP 1: 加载项 → jsaddons ─────────
 function Install-Addon {
   Write-Host '[wps-skill-chayuan] STEP 1 加载项 → jsaddons'
   $srcAddon = Join-Path $Payload $AddonFolder
-  $srcPublish = Join-Path $Payload 'publish.xml'
   if (-not (Test-Path -LiteralPath $srcAddon)) { Write-Error "缺加载项目录 $srcAddon" }
   $jsaddons = Join-Path $env:APPDATA 'kingsoft\wps\jsaddons'
   New-Item -ItemType Directory -Force -Path $jsaddons | Out-Null
   $destAddon = Join-Path $jsaddons $AddonFolder
   # 原子替换：先装到 .installing 再覆盖
   $staging = Join-Path $jsaddons ".$AddonFolder.installing"
-  if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
-  Copy-Item -Recurse -Force $srcAddon $staging
-  if (Test-Path $destAddon) { Remove-Item -Recurse -Force $destAddon }
-  Move-Item $staging $destAddon
+  Remove-TreeForce $staging
+  Copy-AddonTree $srcAddon $staging
+  Remove-TreeForce $destAddon
+  Move-Item -LiteralPath $staging -Destination $destAddon
   # F12：Windows 必须 enable_dev，否则本地 jsaddons 常不加载。生成而非照搬 staging 的 enable 版。
   $pubXml = '<?xml version="1.0" encoding="UTF-8"?>' + "`n" +
             '<jsplugins>' + "`n" +
@@ -166,12 +200,34 @@ function Install-Addon {
   Write-Host "  ✓ 加载项 → $destAddon（publish.xml 用 enable_dev，Windows 必需）"
 }
 
-# ───────── STEP 2: MCP 自启 ─────────
+# ───────── STEP 2: MCP 自启（内联；避免调用易被 Defender 隔离的 autostart\*.ps1）─────────
 function Install-Runtime {
-  Write-Host '[wps-skill-chayuan] STEP 2 MCP 自启（调 install-windows-user.ps1，启动即写 mcp-server.json）'
-  $script = Join-Path $Sidecar 'autostart\install-windows-user.ps1'
-  if (-not (Test-Path -LiteralPath $script)) { Write-Error "缺自启脚本 $script" }
-  & powershell -ExecutionPolicy Bypass -File $script
+  Write-Host '[wps-skill-chayuan] STEP 2 MCP 自启（HKCU Run + 启动二进制）'
+  if (-not (Test-Path -LiteralPath $McpBin)) { Write-Error "MCP 二进制缺失: $McpBin"; return }
+  $runtimeDir = Join-Path $env:LOCALAPPDATA 'chayuan-wps\mcp\runtime'
+  $exeDst = Join-Path $runtimeDir $SidExe
+  $exeDstBin = Join-Path $runtimeDir "bin\$SidExe"
+  New-Item -ItemType Directory -Force -Path (Join-Path $runtimeDir 'bin') | Out-Null
+  try { Unblock-File -LiteralPath $McpBin -ErrorAction SilentlyContinue } catch {}
+  # 运行中的 sidecar 会锁住 exe，覆盖前先停掉（随后再拉起）
+  Get-Process -Name 'chayuan-mcp-windows-x64' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 800
+  try {
+    Copy-Item -LiteralPath $McpBin -Destination $exeDst -Force
+    Copy-Item -LiteralPath $McpBin -Destination $exeDstBin -Force
+  } catch {
+    Write-Host "  ⚠ 覆盖二进制失败（可能仍被占用），沿用已有 runtime：$($_.Exception.Message)" -ForegroundColor Yellow
+    if (-not (Test-Path -LiteralPath $exeDst)) { Write-Error "runtime 无可用二进制: $exeDst"; return }
+  }
+  $startCmd = "@echo off`r`nstart `"`" `"%~dp0$SidExe`"`r`n"
+  [System.IO.File]::WriteAllText((Join-Path $runtimeDir 'start-mcp.cmd'), $startCmd, [System.Text.Encoding]::ASCII)
+  $runValue = "`"$exeDst`""
+  $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  New-Item -Path $regPath -Force | Out-Null
+  Set-ItemProperty -Path $regPath -Name 'ChayuanWpsMcp' -Value $runValue -Type String
+  Write-Host "  ✓ Run → $exeDst"
+  Start-Process -FilePath $exeDst -WindowStyle Hidden
+  Write-Host '  ✓ Started sidecar (hidden)'
 }
 
 if ($DoAddon)  { Install-Addon }
@@ -246,9 +302,19 @@ function Test-Deploy([string]$which) {
 function Deploy-Claude {
   $claude = Get-Command claude -ErrorAction SilentlyContinue
   if ($claude) {
-    & claude mcp add --transport http $McpName $McpUrl 2>$null
-    if ($LASTEXITCODE -eq 0) { Write-Host '  ✓ Claude Code MCP（claude mcp add）' }
-    else { Merge-McpJson (Join-Path $env:USERPROFILE '.mcp.json'); Write-Host '  · Claude Code MCP → ~/.mcp.json（claude mcp add 失败回落）' }
+    # PS 在 ErrorActionPreference=Stop 时会把 native stderr 当终止错误；「already exists」应视为成功
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $claudeOut = $null
+    try { $claudeOut = & claude mcp add --transport http $McpName $McpUrl 2>&1 } catch { $claudeOut = $_ }
+    $ErrorActionPreference = $prevEap
+    $msg = "$claudeOut"
+    if (($LASTEXITCODE -eq 0) -or ($msg -match 'already exists')) {
+      Write-Host '  ✓ Claude Code MCP（claude mcp add）'
+    } else {
+      Merge-McpJson (Join-Path $env:USERPROFILE '.mcp.json')
+      Write-Host '  · Claude Code MCP → ~/.mcp.json（claude mcp add 失败回落）'
+    }
   } else { Merge-McpJson (Join-Path $env:USERPROFILE '.mcp.json'); Write-Host '  · Claude Code MCP → ~/.mcp.json（无 claude CLI）' }
   $tmpl = Get-SkillTmpl
   if (Test-Path -LiteralPath (Join-Path $tmpl 'SKILL.md')) {
@@ -292,10 +358,10 @@ function Print-GuiHint {
 
 if (-not $NoAgent) {
   Write-Host '[wps-skill-chayuan] STEP 4 agent 自动检测 + 技能投放（按各自格式；-NoAgent 跳过）'
-  if (Test-Deploy 'claude') { Deploy-Claude }
-  if (Test-Deploy 'cursor') { Deploy-Cursor }
-  if (Test-Deploy 'codex')  { Deploy-Codex }
-  Print-GuiHint
+  try { if (Test-Deploy 'claude') { Deploy-Claude } } catch { Write-Host "  ⚠ Claude 投放异常：$($_.Exception.Message)" -ForegroundColor Yellow }
+  try { if (Test-Deploy 'cursor') { Deploy-Cursor } } catch { Write-Host "  ⚠ Cursor 投放异常：$($_.Exception.Message)" -ForegroundColor Yellow }
+  try { if (Test-Deploy 'codex')  { Deploy-Codex } }  catch { Write-Host "  ⚠ Codex 投放异常：$($_.Exception.Message)" -ForegroundColor Yellow }
+  try { Print-GuiHint } catch {}
 }
 
 # ───────── 收尾 ─────────

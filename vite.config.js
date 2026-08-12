@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { copyFile } from "wpsjs/vite_plugins"
 import { readFileSync } from 'node:fs'
+import { syncUserManual } from './scripts/sync-user-manual.mjs'
 
 // 版本真源:package.json(打包脚本 build-linux-deb / build-macos-pkg 也从这里取)。
 // 注入到前端 __APP_VERSION__,供心跳(runtimeSync)上报真实版本,避免硬编码漂移。
@@ -78,6 +79,18 @@ function createDashscopeDevProxy() {
   }
 }
 
+function createUserManualSyncPlugin() {
+  return {
+    name: 'sync-user-manual',
+    buildStart() {
+      syncUserManual()
+    },
+    configureServer() {
+      syncUserManual()
+    }
+  }
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   base:'./',
@@ -85,6 +98,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkgVersion),
   },
   plugins: [
+    createUserManualSyncPlugin(),
     copyFile({
       src: 'manifest.xml',
       dest: 'manifest.xml',
@@ -97,6 +111,7 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
+  assetsInclude: ['**/*.md'],
   build: {
     target: 'es2018',
     rollupOptions: {

@@ -1,0 +1,238 @@
+{
+  "at": "2026-08-12T12:50:33.969Z",
+  "version": "0.10.0",
+  "ok": 46,
+  "fail": 0,
+  "rows": [
+    {
+      "name": "wps_status",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "wps_launch",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_open",
+      "ok": true,
+      "detail": "FILE_NOT_FOUND"
+    },
+    {
+      "name": "document_ensure_open",
+      "ok": true,
+      "detail": "DOCUMENT_OPEN_MISMATCH"
+    },
+    {
+      "name": "document_list_open",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_activate",
+      "ok": true,
+      "detail": "DOCUMENT_NOT_OPEN"
+    },
+    {
+      "name": "document_meta",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_list_paragraphs",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_chunks",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_get_text",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_locate",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_replace",
+      "ok": true,
+      "detail": "LOCATE_NOT_FOUND"
+    },
+    {
+      "name": "document_insert",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_apply_ops",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "document_new",
+      "ok": true,
+      "detail": "skipped"
+    },
+    {
+      "name": "document_save",
+      "ok": true,
+      "detail": "DOCUMENT_SAVE_FAILED"
+    },
+    {
+      "name": "declassify_status",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "declassify_preview",
+      "ok": true,
+      "detail": "INVALID_PARAMS"
+    },
+    {
+      "name": "declassify_apply",
+      "ok": true,
+      "detail": "CONFIRMATION_REQUIRED"
+    },
+    {
+      "name": "declassify_restore",
+      "ok": true,
+      "detail": "CONFIRMATION_REQUIRED"
+    },
+    {
+      "name": "kb_retrieve",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "proofread_run",
+      "ok": true,
+      "detail": "AGENT_JOB_FAILED"
+    },
+    {
+      "name": "proofread_apply_comments",
+      "ok": true,
+      "detail": "CONFIRMATION_REQUIRED"
+    },
+    {
+      "name": "proofread_job_poll",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "assistants_list_domains",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "assistants_search",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "assistants_get",
+      "ok": true,
+      "detail": "ASSISTANT_NOT_FOUND"
+    },
+    {
+      "name": "format_run",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "format_para",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "format_apply_ops",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "system_fonts_list",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "comment",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "revision",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "layout",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "nav",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "toc",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "bookmark",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "table",
+      "ok": true,
+      "detail": "METHOD_NOT_FOUND"
+    },
+    {
+      "name": "caption",
+      "ok": true,
+      "detail": "METHOD_NOT_FOUND"
+    },
+    {
+      "name": "field",
+      "ok": true,
+      "detail": "METHOD_NOT_FOUND"
+    },
+    {
+      "name": "image",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "hyperlink",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "headerfooter",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "watermark",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "style",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "export",
+      "ok": true,
+      "detail": "ok"
+    }
+  ]
+}

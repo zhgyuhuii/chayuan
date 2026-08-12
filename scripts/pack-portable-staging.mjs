@@ -21,12 +21,14 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import crypto from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const _7z = require('node-7z')
 const _7zBin = require('7zip-bin')
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+// Windows 上 URL.pathname 会带前导 /（/D:/...），path.resolve 会变成 D:\D:\...；必须用 fileURLToPath。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const RELEASE = path.join(ROOT, 'release')
 const STAGING_ROOT = path.join(RELEASE, '.portable-staging')
 const PKG = path.join(STAGING_ROOT, 'wps-skill-chayuan')
@@ -46,23 +48,37 @@ const ALL_BINS = [
   'chayuan-mcp-macos-arm64', 'chayuan-mcp-macos-x64',
   'chayuan-mcp-linux-x64', 'chayuan-mcp-linux-arm64',
 ]
-const selectedBins = platforms.length
-  ? ALL_BINS.filter(b => platforms.some(p => b.includes(p.replace('-', '-'))))
+const requestedBins = platforms.length
+  ? ALL_BINS.filter(b => platforms.some(p => b.includes(p)))
   : ALL_BINS
-if (!selectedBins.length) { console.error('未选中任何二进制，检查 --platform'); process.exit(1) }
+if (!requestedBins.length) { console.error('未选中任何二进制，检查 --platform'); process.exit(1) }
 
 // ── 校验前置 ──
 const installStaging = path.join(RELEASE, 'install-staging')
 const installJson = path.join(installStaging, 'install.json')
 if (!fs.existsSync(installJson)) {
-  console.error('缺少 release/install-staging/install.json，请先 npm run build:wps-all'); process.exit(1)
+  console.error('缺少 release/install-staging/install.json，请先 npm run build:wps-all')
+  console.error(`(resolved ROOT=${ROOT})`)
+  process.exit(1)
 }
 const meta = JSON.parse(fs.readFileSync(installJson, 'utf8'))
 const sidecarDir = path.join(ROOT, 'mcp-sidecar')
-for (const b of selectedBins) {
-  if (!fs.existsSync(path.join(sidecarDir, 'bin', b))) {
-    console.error(`缺少 mcp-sidecar/bin/${b}（跑 scripts/build-mcp-binary.mjs）`); process.exit(1)
+const missingBins = requestedBins.filter(b => !fs.existsSync(path.join(sidecarDir, 'bin', b)))
+let selectedBins = requestedBins
+if (missingBins.length) {
+  if (platforms.length) {
+    // 显式 --platform 时缺文件仍硬失败，避免误发残包
+    for (const b of missingBins) console.error(`缺少 mcp-sidecar/bin/${b}（跑 scripts/build-mcp-binary.mjs）`)
+    process.exit(1)
   }
+  // 未指定平台：只打本机已有二进制（常见于 Windows 只编了 windows-x64）
+  selectedBins = requestedBins.filter(b => !missingBins.includes(b))
+  if (!selectedBins.length) {
+    console.error('mcp-sidecar/bin/ 下没有任何目标二进制（跑 scripts/build-mcp-binary.mjs）')
+    process.exit(1)
+  }
+  console.warn(`[pack] 警告：缺 ${missingBins.length} 个平台二进制，仅打包已有：${selectedBins.join(', ')}`)
+  console.warn(`[pack] 需要全平台时先：npm run mcp:build-binary，或加 --platform windows-x64 等显式选择`)
 }
 
 // ── 准备 staging 目录 ──
@@ -86,8 +102,35 @@ for (const b of selectedBins) {
 for (const entry of fs.readdirSync(sidecarDir)) {
   const s = path.join(sidecarDir, entry)
   if (entry === 'bin' || entry === 'build' || entry === 'data' || entry === 'node_modules') continue
-  if (fs.statSync(s).isDirectory()) await copy(s, path.join(pkgSidecar, entry))
-  else await fsp.copyFile(s, path.join(pkgSidecar, entry))
+  if (fs.statSync(s).isDirectory()) {
+    // Windows：部分杀软会把 autostart/*.ps1 误报为 TrojanDownloader/PS.* 并隔离；
+    // 自启改用 .cmd，打包时显式跳过该目录下任何 .ps1，避免用户解压即中招。
+    if (entry === 'autostart') {
+      const destAuto = path.join(pkgSidecar, 'autostart')
+      fs.mkdirSync(destAuto, { recursive: true })
+      for (const f of fs.readdirSync(s)) {
+        if (/\.ps1$/i.test(f)) {
+          console.warn(`[pack] 跳过易误报文件 mcp-sidecar/autostart/${f}`)
+          continue
+        }
+        await fsp.copyFile(path.join(s, f), path.join(destAuto, f))
+      }
+    } else {
+      await copy(s, path.join(pkgSidecar, entry))
+    }
+  } else {
+    await fsp.copyFile(s, path.join(pkgSidecar, entry))
+  }
+}
+// install-staging 内嵌的 mcp-sidecar/autostart/*.ps1 同样剔除
+const nestedAuto = path.join(PKG, 'install-staging', meta.addonFolder, 'mcp-sidecar', 'autostart')
+if (fs.existsSync(nestedAuto)) {
+  for (const f of fs.readdirSync(nestedAuto)) {
+    if (/\.ps1$/i.test(f)) {
+      fs.rmSync(path.join(nestedAuto, f), { force: true })
+      console.warn(`[pack] 已从 install-staging 剔除 mcp-sidecar/autostart/${f}`)
+    }
+  }
 }
 
 // 3) skill-chayuan 模板

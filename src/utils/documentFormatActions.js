@@ -260,6 +260,7 @@ export function normalizeDocumentFormatIntent(rawIntent = {}) {
       bold: normalizeBooleanValue(styleSource.bold ?? rawIntent.bold),
       italic: normalizeBooleanValue(styleSource.italic ?? rawIntent.italic),
       underline: normalizeBooleanValue(styleSource.underline ?? rawIntent.underline),
+      strike: normalizeBooleanValue(styleSource.strike ?? styleSource.strikeThrough ?? rawIntent.strike ?? rawIntent.strikeThrough),
       fontName,
       fontSize: safeNumber(styleSource.fontSize ?? rawIntent.fontSize),
       fontColor: normalizeColorValue(styleSource.fontColor ?? styleSource.color ?? rawIntent.fontColor ?? rawIntent.color),
@@ -289,6 +290,7 @@ function hasAnyStyleChanges(styleChanges = {}) {
   return styleChanges.bold != null ||
     styleChanges.italic != null ||
     styleChanges.underline != null ||
+    styleChanges.strike != null ||
     !!styleChanges.fontName ||
     safeNumber(styleChanges.fontSize) != null ||
     !!styleChanges.fontColor ||
@@ -593,6 +595,14 @@ function applyCharacterStyle(range, styleChanges) {
     if (styleChanges.bold != null) font.Bold = styleChanges.bold ? 1 : 0
     if (styleChanges.italic != null) font.Italic = styleChanges.italic ? 1 : 0
     if (styleChanges.underline != null) font.Underline = styleChanges.underline ? 1 : 0
+    if (styleChanges.strike != null || styleChanges.strikeThrough != null) {
+      const strikeOn = styleChanges.strike != null ? styleChanges.strike : styleChanges.strikeThrough
+      try {
+        font.StrikeThrough = strikeOn ? 1 : 0
+      } catch (_) {
+        // Some hosts may not expose StrikeThrough.
+      }
+    }
     if (styleChanges.fontName) {
       font.Name = styleChanges.fontName
       try {
@@ -683,6 +693,8 @@ export function describeDocumentFormatChanges(styleChanges = {}) {
   if (styleChanges.italic === false) parts.push('取消斜体')
   if (styleChanges.underline === true) parts.push('添加下划线')
   if (styleChanges.underline === false) parts.push('取消下划线')
+  if (styleChanges.strike === true) parts.push('删除线')
+  if (styleChanges.strike === false) parts.push('取消删除线')
   if (styleChanges.fontName) parts.push(`字体改为${styleChanges.fontName}`)
   if (safeNumber(styleChanges.fontSize) != null) parts.push(`字号改为${Number(styleChanges.fontSize)} 磅`)
   if (styleChanges.fontColor) parts.push(`文字颜色改为${styleChanges.fontColor}`)

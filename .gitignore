@@ -6,6 +6,12 @@ dist/
 .vite/
 wps-addon-build/
 
+# Vite temp / scratch (timestamped)
+vite.config.js.timestamp-*
+
+# Local scratch files
+.tmp-*
+
 # MCP sidecar compiled binaries & esbuild intermediate
 # (rebuild: npm run mcp:build-binary → 5 平台单文件二进制)
 mcp-sidecar/bin/

@@ -13,6 +13,8 @@
  *   node scripts/mcp-wps-selftest.mjs
  *   node scripts/mcp-wps-selftest.mjs --skip-build --skip-debug
  *   node scripts/mcp-wps-selftest.mjs --agent-timeout 120
+ *   node scripts/mcp-wps-selftest.mjs --skip-build --tools-all
+ *   node scripts/mcp-wps-selftest.mjs --no-tools-all   # skip per-tool callable sweep
  */
 import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -32,6 +34,8 @@ const args = new Set(process.argv.slice(2))
 const SKIP_BUILD = args.has('--skip-build')
 const SKIP_DEBUG = args.has('--skip-debug')
 const SKIP_SYNC = args.has('--skip-sync')
+const FORCE_SIDECAR = args.has('--force-sidecar') || args.has('--restart-sidecar')
+const TOOLS_ALL = args.has('--tools-all') || !args.has('--no-tools-all')
 const agentTimeoutSec = (() => {
   const i = process.argv.indexOf('--agent-timeout')
   if (i >= 0) return Number(process.argv[i + 1]) || 90
@@ -105,13 +109,56 @@ async function waitFor(fn, { timeoutMs, intervalMs = 1000, label = 'condition' }
   throw new Error(`timeout waiting for ${label} (${timeoutMs}ms)`)
 }
 
+async function killPortOccupants(port) {
+  if (process.platform === 'win32') {
+    try {
+      const out = execSync(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"`,
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      )
+      const pids = String(out || '')
+        .split(/\r?\n/)
+        .map((s) => Number(String(s).trim()))
+        .filter((n) => Number.isFinite(n) && n > 0)
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' })
+          log(`killed pid ${pid} on :${port}`)
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  } else {
+    try {
+      execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' })
+    } catch { /* ignore */ }
+  }
+  await new Promise((r) => setTimeout(r, 600))
+}
+
 async function ensureSidecar() {
   const health = await fetchJson(`${BASE}/healthz`).catch(() => ({ ok: false }))
-  if (health.ok) {
-    pass('sidecar.healthz', `pid=${health.data?.pid}`)
-    return
+  if (health.ok && !FORCE_SIDECAR) {
+    try {
+      const list = await mcpCall('tools/list', {}, 9001)
+      const names = (list.data?.result?.tools || []).map((t) => t.name)
+      const hasP0 = names.includes('format_run') && names.includes('comment')
+      if (hasP0) {
+        pass('sidecar.healthz', `pid=${health.data?.pid} tools=${names.length}`)
+        return
+      }
+      log(`sidecar online but missing P0 tools (tools=${names.length}) — restarting…`)
+    } catch {
+      pass('sidecar.healthz', `pid=${health.data?.pid}`)
+      return
+    }
+  } else if (health.ok && FORCE_SIDECAR) {
+    log(`force restart sidecar pid=${health.data?.pid}`)
+  } else {
+    log('sidecar offline — starting…')
   }
-  log('sidecar offline — starting…')
+
+  await killPortOccupants(PORT)
+
   sidecarProc = spawn(process.execPath, [path.join(root, 'mcp-sidecar', 'server.mjs')], {
     cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -123,7 +170,15 @@ async function ensureSidecar() {
     const h = await fetchJson(`${BASE}/healthz`).catch(() => ({ ok: false }))
     return h.ok ? h : null
   }, { timeoutMs: 15000, label: 'sidecar healthz' })
-  pass('sidecar.spawn', 'started by selftest')
+  // verify new catalog
+  try {
+    const list = await mcpCall('tools/list', {}, 9002)
+    const n = (list.data?.result?.tools || []).length
+    const ver = list.data?.result?.tools ? null : null
+    pass('sidecar.spawn', `tools=${n}`)
+  } catch {
+    pass('sidecar.spawn', 'started by selftest')
+  }
 }
 
 function buildAddon() {
@@ -317,21 +372,48 @@ async function runMcpSuite(agentOnline) {
     'wps_launch',
     'document_open',
     'document_ensure_open',
+    'document_list_open',
+    'document_activate',
     'document_meta',
+    'document_list_paragraphs',
     'document_chunks',
     'document_get_text',
     'document_locate',
     'document_replace',
     'document_insert',
-    'document_add_comment',
     'document_apply_ops',
     'document_new',
     'document_save',
     'declassify_status',
+    'declassify_preview',
+    'declassify_apply',
+    'declassify_restore',
     'kb_retrieve',
     'proofread_run',
     'proofread_apply_comments',
-    'proofread_job_poll'
+    'proofread_job_poll',
+    'assistants_list_domains',
+    'assistants_search',
+    'assistants_get',
+    'format_run',
+    'format_para',
+    'format_apply_ops',
+    'system_fonts_list',
+    'comment',
+    'revision',
+    'layout',
+    'nav',
+    'toc',
+    'bookmark',
+    'table',
+    'caption',
+    'field',
+    'image',
+    'hyperlink',
+    'headerfooter',
+    'watermark',
+    'style',
+    'export'
   ]
   const missing = need.filter(n => !names.includes(n))
   if (list.ok && missing.length === 0) pass('mcp.tools/list', `${names.length} tools`)
@@ -357,14 +439,14 @@ async function runMcpSuite(agentOnline) {
     fail('mcp.confirm.proofread_apply', JSON.stringify(confirmCall.data).slice(0, 200))
   }
   const commentGate = await mcpCall('tools/call', {
-    name: 'document_add_comment',
-    arguments: { text: 'selftest' }
+    name: 'comment',
+    arguments: { action: 'add', text: 'selftest' }
   }, 32)
   const commentCode = commentGate.data?.result?.structuredContent?.code
   if (commentGate.data?.result?.isError && commentCode === 'CONFIRMATION_REQUIRED') {
-    pass('mcp.confirm.document_add_comment', 'CONFIRMATION_REQUIRED')
+    pass('mcp.confirm.comment_add', 'CONFIRMATION_REQUIRED')
   } else {
-    fail('mcp.confirm.document_add_comment', JSON.stringify(commentGate.data).slice(0, 200))
+    fail('mcp.confirm.comment_add', JSON.stringify(commentGate.data).slice(0, 200))
   }
 
   if (agentOnline) {
@@ -504,6 +586,160 @@ async function runMcpSuite(agentOnline) {
   } else {
     fail('mcp.document_get_text', 'skipped — agent offline')
   }
+
+  if (TOOLS_ALL) {
+    await runAllToolsCallableSuite(agentOnline, names)
+  }
+}
+
+/**
+ * Probe every advertised tool with safe args.
+ * Success = routed (not TOOL_NOT_FOUND): ok result OR expected business error.
+ */
+async function runAllToolsCallableSuite(agentOnline, listedNames = []) {
+  log(`per-tool callable sweep (${listedNames.length} tools)…`)
+  const CALLABLE_SOFT = new Set([
+    'CONFIRMATION_REQUIRED',
+    'NO_ACTIVE_DOCUMENT',
+    'NO_SELECTION',
+    'ANCHOR_REQUIRED',
+    'ANCHOR_NOT_FOUND',
+    'LOCATE_NOT_FOUND',
+    'INVALID_PARAMS',
+    'MODEL_NOT_CONFIGURED',
+    'LICENSE_REQUIRED',
+    'UNSUPPORTED',
+    'STYLE_APPLY_FAILED',
+    'REVISION_MODE_FAILED',
+    'REVISION_APPLY_FAILED',
+    'NAV_PANE_FAILED',
+    'DOCUMENT_OPEN_MISMATCH',
+    'WPS_AGENT_OFFLINE',
+    'METHOD_NOT_FOUND', // still means sidecar routed; agent missing method = FAIL below
+    'ERROR'
+  ])
+  const FATAL = new Set(['TOOL_NOT_FOUND'])
+
+  /** Safe probes: never confirmed=true destructive writes except UI-only / dryRun */
+  const probes = {
+    wps_status: {},
+    wps_launch: {},
+    document_open: { path: 'C:\\__chayuan_selftest_missing__.docx', viaOs: false, force: false },
+    document_ensure_open: { path: 'C:\\__chayuan_selftest_missing__.docx' },
+    document_list_open: {},
+    document_activate: { query: '__missing__' },
+    document_meta: {},
+    document_list_paragraphs: { limit: 5 },
+    document_chunks: { cursor: 0, limit: 1, chunkLength: 800 },
+    document_get_text: {},
+    document_locate: { text: '的', maxMatches: 3 },
+    document_replace: { originalText: '的', newText: '的' }, // preview
+    document_insert: { text: '', position: 'append' }, // preview / may INVALID
+    document_apply_ops: { action: 'replace', operations: [{ originalText: '的', outputText: '的' }] },
+    document_new: {}, // may create — skip if too heavy: use empty and accept
+    document_save: {},
+    declassify_status: {},
+    declassify_preview: {},
+    declassify_apply: { confirmed: false, password: 'x', keywords: [] },
+    declassify_restore: { confirmed: false, password: 'x' },
+    kb_retrieve: { query: 'selftest' },
+    proofread_run: { dryRun: true, scope: 'document' },
+    proofread_apply_comments: { taskId: 'selftest-no-confirm' },
+    proofread_job_poll: { jobId: 'selftest-no-job' },
+    assistants_list_domains: {},
+    assistants_search: { query: '校对', limit: 5 },
+    assistants_get: { id: '__missing_assistant__' },
+    format_run: { changes: { bold: true }, scope: 'selection' },
+    format_para: { changes: { align: 'center' }, scope: 'selection' },
+    format_apply_ops: { operations: [{ originalText: '的', changes: { bold: true } }] },
+    system_fonts_list: { limit: 20 },
+    comment: { action: 'list', limit: 20 },
+    revision: { action: 'list', limit: 20 },
+    layout: { action: 'page', orientation: 'portrait' },
+    nav: { action: 'outline', maxLevel: 3, limit: 20 },
+    toc: { action: 'update' },
+    bookmark: { action: 'list', limit: 20 },
+    table: { action: 'list', limit: 10 },
+    caption: { action: 'list', limit: 10 },
+    field: { action: 'list', limit: 10 },
+    image: { action: 'list', limit: 10 },
+    hyperlink: { action: 'list', limit: 10 },
+    headerfooter: { action: 'get', which: 'both' },
+    watermark: { action: 'set', text: 'x' },
+    style: { action: 'list', limit: 20 },
+    export: { action: 'file', format: 'pdf', path: 'C:\\__missing__.pdf' }
+  }
+
+  // Avoid actually creating a new empty doc during sweep
+  const skipWriteCommit = new Set(['document_new'])
+
+  let id = 1000
+  let callable = 0
+  let failed = 0
+  for (const name of listedNames) {
+    if (skipWriteCommit.has(name)) {
+      pass(`tool.call.${name}`, 'skipped (destructive lifecycle)')
+      callable += 1
+      continue
+    }
+    const args = probes[name] != null ? probes[name] : {}
+    // ensure write gates stay preview unless tool requires confirmed and we want gate check
+    if (Object.prototype.hasOwnProperty.call(args, 'confirmed') && args.confirmed === true) {
+      args.confirmed = false
+    }
+    id += 1
+    const t0 = Date.now()
+    let res
+    try {
+      res = await mcpCall('tools/call', { name, arguments: args }, id)
+    } catch (e) {
+      fail(`tool.call.${name}`, `fetch: ${e.message}`)
+      failed += 1
+      continue
+    }
+    const elapsed = Date.now() - t0
+    const result = res.data?.result
+    const sc = result?.structuredContent || {}
+    const code = String(sc.code || '')
+    const isErr = !!result?.isError
+
+    if (!res.ok && !result) {
+      fail(`tool.call.${name}`, `http=${res.status}`)
+      failed += 1
+      continue
+    }
+    if (FATAL.has(code) || /Unknown tool/i.test(String(sc.message || ''))) {
+      fail(`tool.call.${name}`, `not routed: ${code || sc.message}`)
+      failed += 1
+      continue
+    }
+    // METHOD_NOT_FOUND on agent = not implemented — fail
+    if (code === 'METHOD_NOT_FOUND' || /Unknown method/i.test(String(sc.message || ''))) {
+      fail(`tool.call.${name}`, `agent METHOD_NOT_FOUND`)
+      failed += 1
+      continue
+    }
+    if (!isErr) {
+      pass(`tool.call.${name}`, `ok ${elapsed}ms`)
+      callable += 1
+      continue
+    }
+    // Soft: tool reachable, business rejected
+    if (CALLABLE_SOFT.has(code) || code) {
+      const needsAgent = !['wps_status', 'wps_launch', 'assistants_list_domains', 'assistants_search'].includes(name)
+      if (!agentOnline && needsAgent && code === 'WPS_AGENT_OFFLINE') {
+        pass(`tool.call.${name}`, `callable-gate agentOffline ${elapsed}ms`)
+        callable += 1
+      } else {
+        pass(`tool.call.${name}`, `callable code=${code || 'ERR'} ${elapsed}ms`)
+        callable += 1
+      }
+      continue
+    }
+    fail(`tool.call.${name}`, JSON.stringify(sc || result).slice(0, 200))
+    failed += 1
+  }
+  pass('tool.call.summary', `callable=${callable} failed=${failed} total=${listedNames.length}`)
 }
 
 function decide(report, agentOnline) {

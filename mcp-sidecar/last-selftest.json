@@ -1,26 +1,35 @@
 {
-  "at": "2026-08-10T02:40:27.678Z",
+  "at": "2026-08-12T10:48:47.915Z",
   "decision": {
-    "phase2": "NO_GO",
+    "phase2": "GO",
     "reasons": [
-      "WPS Agent 未上线（加载项未连上 sidecar）",
-      "仅 sidecar/MCP 通而 Agent 不通：先修加载项加载/debug，再进 Phase2"
+      "Spike ShellExecute=NO_EFFECT（预期可失败，不影响 Phase2）"
     ],
     "mustOk": true,
-    "agentOk": false,
-    "docBridgeOk": false,
-    "spikeOk": false
+    "agentOk": true,
+    "docBridgeOk": true,
+    "spikeOk": true
   },
   "results": [
     {
       "name": "sidecar.spawn",
       "ok": true,
-      "detail": "started by selftest"
+      "detail": "tools=41"
+    },
+    {
+      "name": "vite.build",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "jsaddons.sync",
+      "ok": true,
+      "detail": "C:\\Users\\zhgyu\\AppData\\Roaming\\Kingsoft\\wps\\jsaddons\\chayuan_4.0.0"
     },
     {
       "name": "wps.preflight",
       "ok": true,
-      "detail": "non-Windows — rely on wpsjs"
+      "detail": "C:\\Users\\zhgyu\\AppData\\Local\\Kingsoft\\WPS Office\\12.1.0.28022\\office6\\wps.exe"
     },
     {
       "name": "wpsjs.debug.boot",
@@ -29,23 +38,28 @@
     },
     {
       "name": "agent.online",
-      "ok": false,
-      "detail": "timeout waiting for agent online (90000ms)"
+      "ok": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "addon.selftest.report",
+      "ok": true,
+      "detail": "source=addon-auto; ws=OPEN_OK; shell=NO_EFFECT"
     },
     {
       "name": "mcp.initialize",
       "ok": true,
-      "detail": "0.5.0"
+      "detail": "0.6.0"
     },
     {
       "name": "mcp.tools/list",
       "ok": true,
-      "detail": "26 tools"
+      "detail": "41 tools"
     },
     {
       "name": "mcp.wps_status",
       "ok": true,
-      "detail": "agentOnline=false; L2=false"
+      "detail": "agentOnline=true; L2=true"
     },
     {
       "name": "mcp.confirm.proofread_apply",
@@ -59,9 +73,356 @@
     },
     {
       "name": "mcp.document_get_text",
-      "ok": false,
-      "detail": "skipped — agent offline"
+      "ok": true,
+      "detail": "chars=1"
+    },
+    {
+      "name": "mcp.document_ensure_open",
+      "ok": true,
+      "detail": "96ms alreadyOpen=true"
+    },
+    {
+      "name": "mcp.wps_launch",
+      "ok": true,
+      "detail": "launched=false"
+    },
+    {
+      "name": "mcp.document_meta",
+      "ok": true,
+      "detail": "chars=1 estChunks=1"
+    },
+    {
+      "name": "mcp.document_chunks",
+      "ok": true,
+      "detail": "total=1 page=1 hasMore=false"
+    },
+    {
+      "name": "mcp.document_locate.skip",
+      "ok": true,
+      "detail": "text too short"
+    },
+    {
+      "name": "mcp.proofread_run.dryRun.soft",
+      "ok": true,
+      "detail": "empty document"
+    },
+    {
+      "name": "tool.call.wps_status",
+      "ok": true,
+      "detail": "ok 1110ms"
+    },
+    {
+      "name": "tool.call.wps_launch",
+      "ok": true,
+      "detail": "ok 18ms"
+    },
+    {
+      "name": "tool.call.document_open",
+      "ok": true,
+      "detail": "callable code=FILE_NOT_FOUND 2ms"
+    },
+    {
+      "name": "tool.call.document_ensure_open",
+      "ok": true,
+      "detail": "callable code=DOCUMENT_OPEN_MISMATCH 1524ms"
+    },
+    {
+      "name": "tool.call.document_meta",
+      "ok": true,
+      "detail": "ok 15ms"
+    },
+    {
+      "name": "tool.call.document_list_paragraphs",
+      "ok": true,
+      "detail": "ok 18ms"
+    },
+    {
+      "name": "tool.call.document_chunks",
+      "ok": true,
+      "detail": "ok 35ms"
+    },
+    {
+      "name": "tool.call.document_get_text",
+      "ok": true,
+      "detail": "ok 16ms"
+    },
+    {
+      "name": "tool.call.document_locate",
+      "ok": true,
+      "detail": "ok 24ms"
+    },
+    {
+      "name": "tool.call.document_replace",
+      "ok": true,
+      "detail": "callable code=LOCATE_NOT_FOUND 19ms"
+    },
+    {
+      "name": "tool.call.document_insert",
+      "ok": true,
+      "detail": "callable code=INVALID_PARAMS 13ms"
+    },
+    {
+      "name": "tool.call.document_add_comment",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 3ms"
+    },
+    {
+      "name": "tool.call.document_apply_ops",
+      "ok": true,
+      "detail": "ok 30ms"
+    },
+    {
+      "name": "tool.call.document_new",
+      "ok": true,
+      "detail": "skipped (destructive lifecycle)"
+    },
+    {
+      "name": "tool.call.document_save",
+      "ok": true,
+      "detail": "callable code=DOCUMENT_SAVE_FAILED 14ms"
+    },
+    {
+      "name": "tool.call.declassify_status",
+      "ok": true,
+      "detail": "ok 30ms"
+    },
+    {
+      "name": "tool.call.declassify_preview",
+      "ok": true,
+      "detail": "callable code=INVALID_PARAMS 9ms"
+    },
+    {
+      "name": "tool.call.declassify_apply",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 2ms"
+    },
+    {
+      "name": "tool.call.declassify_restore",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 2ms"
+    },
+    {
+      "name": "tool.call.kb_retrieve",
+      "ok": true,
+      "detail": "ok 9ms"
+    },
+    {
+      "name": "tool.call.proofread_run",
+      "ok": true,
+      "detail": "callable code=AGENT_JOB_FAILED 19ms"
+    },
+    {
+      "name": "tool.call.proofread_apply_comments",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 3ms"
+    },
+    {
+      "name": "tool.call.proofread_job_poll",
+      "ok": true,
+      "detail": "ok 10ms"
+    },
+    {
+      "name": "tool.call.assistants_list_domains",
+      "ok": true,
+      "detail": "ok 24ms"
+    },
+    {
+      "name": "tool.call.assistants_search",
+      "ok": true,
+      "detail": "ok 86ms"
+    },
+    {
+      "name": "tool.call.assistants_get",
+      "ok": true,
+      "detail": "callable code=ASSISTANT_NOT_FOUND 12ms"
+    },
+    {
+      "name": "tool.call.comment_list",
+      "ok": true,
+      "detail": "ok 11ms"
+    },
+    {
+      "name": "tool.call.format_run",
+      "ok": true,
+      "detail": "ok 33ms"
+    },
+    {
+      "name": "tool.call.format_para",
+      "ok": true,
+      "detail": "ok 13ms"
+    },
+    {
+      "name": "tool.call.format_apply_ops",
+      "ok": true,
+      "detail": "ok 19ms"
+    },
+    {
+      "name": "tool.call.system_fonts_list",
+      "ok": true,
+      "detail": "ok 24ms"
+    },
+    {
+      "name": "tool.call.style_list",
+      "ok": true,
+      "detail": "ok 49ms"
+    },
+    {
+      "name": "tool.call.style_apply",
+      "ok": true,
+      "detail": "ok 13ms"
+    },
+    {
+      "name": "tool.call.nav_location",
+      "ok": true,
+      "detail": "ok 18ms"
+    },
+    {
+      "name": "tool.call.break_insert",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 8ms"
+    },
+    {
+      "name": "tool.call.page_blank_insert",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 11ms"
+    },
+    {
+      "name": "tool.call.revision_mode",
+      "ok": true,
+      "detail": "ok 14ms"
+    },
+    {
+      "name": "tool.call.revision_list",
+      "ok": true,
+      "detail": "ok 15ms"
+    },
+    {
+      "name": "tool.call.revision_apply",
+      "ok": true,
+      "detail": "callable code=CONFIRMATION_REQUIRED 10ms"
+    },
+    {
+      "name": "tool.call.nav_pane_set",
+      "ok": true,
+      "detail": "ok 17ms"
+    },
+    {
+      "name": "tool.call.layout_page",
+      "ok": true,
+      "detail": "ok 12ms"
+    },
+    {
+      "name": "tool.call.summary",
+      "ok": true,
+      "detail": "callable=41 failed=0 total=41"
     }
   ],
-  "addonReport": null
+  "addonReport": {
+    "source": "addon-auto",
+    "protocolVersion": 1,
+    "status": {
+      "agentRunning": true,
+      "agentId": "wps-mspys121-di7yoj",
+      "tokenPresent": false,
+      "sidecar": {
+        "online": true,
+        "ok": true,
+        "name": "chayuan-wps-mcp",
+        "version": "0.1.0",
+        "url": "http://127.0.0.1:62588/mcp",
+        "healthz": "http://127.0.0.1:62588/healthz",
+        "dataDir": "C:\\Users\\zhgyu\\AppData\\Local\\chayuan-wps\\mcp",
+        "protocolVersion": 1,
+        "uptimeMs": 49788,
+        "pid": 36628,
+        "agent": {
+          "agentOnline": true,
+          "agentCount": 1,
+          "agents": [
+            {
+              "agentId": "wps-mspys121-di7yoj",
+              "protocolVersion": 1,
+              "addonVersion": "4.0.0",
+              "windowId": "ribbon",
+              "lastSeen": 1786531591388,
+              "online": true
+            }
+          ],
+          "pendingJobs": 0,
+          "inflightJobs": 0,
+          "protocolVersion": 1
+        }
+      },
+      "mcpUrl": "http://127.0.0.1:62588/mcp",
+      "protocolVersion": 1
+    },
+    "spikes": {
+      "at": 1786531595221,
+      "ws": {
+        "id": "ws",
+        "pageProtocol": "file:",
+        "pageHref": "file:///C:/Users/zhgyu/AppData/Roaming/Kingsoft/wps/jsaddons/chayuan_4.0.0/index.html#/",
+        "wsUrl": "ws://127.0.0.1:62588/agent-ws",
+        "elapsedMs": 5,
+        "ok": true,
+        "verdict": "OPEN_OK",
+        "note": "WebSocket 可从当前页面连到 127.0.0.1 → Phase 3 可评估切 WS"
+      },
+      "shell": {
+        "id": "shell",
+        "ok": false,
+        "verdict": "NO_EFFECT",
+        "hasApi": true,
+        "launchedPath": "%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\spike-shell-marker.cmd",
+        "markerId": "spike-mspys3am",
+        "markerHit": false,
+        "broughtOnline": false,
+        "healthBefore": true,
+        "healthAfter": true,
+        "elapsedMs": 7728,
+        "note": "ShellExecute 调用无可见效果（新版 WPS 常见）→ 放弃 WPS 内 spawn 为主路径"
+      },
+      "alive": {
+        "id": "alive",
+        "ok": false,
+        "verdict": "EARLY",
+        "firstAt": 1786531584961,
+        "lastAt": 1786531584961,
+        "ticks": 0,
+        "aliveMs": 0,
+        "aliveMinutes": 0,
+        "sinceLastMs": 10260,
+        "stale": false,
+        "note": "已连续记录约 0 分钟；请保持 WPS 空闲观察是否被回收"
+      },
+      "summary": {
+        "useLongPoll": false,
+        "allowWpsSpawn": false,
+        "ribbonSurvival": "EARLY"
+      }
+    },
+    "page": {
+      "href": "file:///C:/Users/zhgyu/AppData/Roaming/Kingsoft/wps/jsaddons/chayuan_4.0.0/index.html#/",
+      "protocol": "file:"
+    },
+    "receivedAt": 1786531595235,
+    "agent": {
+      "agentOnline": true,
+      "agentCount": 1,
+      "agents": [
+        {
+          "agentId": "wps-mspys121-di7yoj",
+          "protocolVersion": 1,
+          "addonVersion": "4.0.0",
+          "windowId": "ribbon",
+          "lastSeen": 1786531591388,
+          "online": true
+        }
+      ],
+      "pendingJobs": 0,
+      "inflightJobs": 0,
+      "protocolVersion": 1
+    },
+    "savedAt": 1786531595235
+  }
 }

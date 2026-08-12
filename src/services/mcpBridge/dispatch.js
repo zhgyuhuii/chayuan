@@ -27,12 +27,68 @@ import {
   handleDocumentApplyOps,
   handleDocumentNew,
   handleDocumentSave,
+  handleDocumentListOpen,
+  handleDocumentActivate,
   handleDeclassifyStatus,
   handleDeclassifyPreview,
   handleDeclassifyApply,
   handleDeclassifyRestore,
   handleKbRetrieve
 } from './documentOpsDispatch.js'
+import {
+  handleCommentList,
+  handleCommentDelete,
+  handleFormatRun,
+  handleFormatPara,
+  handleFormatApplyOps,
+  handleSystemFontsList,
+  handleStyleList,
+  handleStyleApply,
+  handleNavLocation,
+  handleBreakInsert,
+  handlePageBlankInsert,
+  handleRevisionMode,
+  handleRevisionList,
+  handleRevisionApply,
+  handleNavPaneSet,
+  handleLayoutPage,
+  handleTocInsert,
+  handleTocUpdate
+} from './formatReviewDispatch.js'
+import {
+  handleLayoutColumns,
+  handleNavOutline,
+  handleBookmarkList,
+  handleBookmarkGoto,
+  handleTableInsert,
+  handleTableList,
+  handleTableHeaderRead,
+  handleTableRowRead,
+  handleTableColumnRead,
+  handleTableCellRead,
+  handleTableHeaderRepeat,
+  handleTableColumnSetWidth,
+  handleTableExport,
+  handleTableRowInsert,
+  handleTableColumnInsert,
+  handleTableCellMerge,
+  handleCaptionList,
+  handleFieldList,
+  handleFieldAdd,
+  handleImageList,
+  handleImageInsert,
+  handleImageDelete,
+  handleImageExport,
+  handleHyperlinkList,
+  handleHyperlinkAdd,
+  handleHyperlinkDelete,
+  handleHeaderFooterGet,
+  handleHeaderFooterSet,
+  handleWatermarkSet,
+  handleWatermarkClear,
+  handleDocumentExport,
+  handleStyleAudit
+} from './objectStructureDispatch.js'
 import { activateHostWindow } from '../../utils/windowActivation.js'
 
 /** Bring opened doc + WPS main window to foreground (Open alone often leaves UI hidden/behind). */
@@ -376,6 +432,10 @@ export async function dispatchMcpJob(job = {}) {
       return handleDocumentNew(params)
     case 'document.save':
       return handleDocumentSave(params)
+    case 'document.list_open':
+      return handleDocumentListOpen(params)
+    case 'document.activate':
+      return handleDocumentActivate(params)
     case 'declassify.status':
       return handleDeclassifyStatus(params)
     case 'declassify.preview':
@@ -458,6 +518,106 @@ export async function dispatchMcpJob(job = {}) {
     }
     case 'document.add_comment':
       return handleDocumentAddComment(params)
+    case 'comment.list':
+      return handleCommentList(params)
+    case 'comment.delete':
+      return handleCommentDelete(params)
+    case 'format.run':
+      return handleFormatRun(params)
+    case 'format.para':
+      return handleFormatPara(params)
+    case 'format.apply_ops':
+      return handleFormatApplyOps(params)
+    case 'system.fonts_list':
+      return handleSystemFontsList(params)
+    case 'style.list':
+      return handleStyleList(params)
+    case 'style.apply':
+      return handleStyleApply(params)
+    case 'nav.location':
+      return handleNavLocation(params)
+    case 'break.insert':
+      return handleBreakInsert(params)
+    case 'page.blank_insert':
+      return handlePageBlankInsert(params)
+    case 'revision.mode':
+      return handleRevisionMode(params)
+    case 'revision.list':
+      return handleRevisionList(params)
+    case 'revision.apply':
+      return handleRevisionApply(params)
+    case 'nav.pane_set':
+      return handleNavPaneSet(params)
+    case 'layout.page':
+      return handleLayoutPage(params)
+    case 'layout.columns':
+      return handleLayoutColumns(params)
+    case 'toc.insert':
+      return handleTocInsert(params)
+    case 'toc.update':
+      return handleTocUpdate(params)
+    case 'nav.outline':
+      return handleNavOutline(params)
+    case 'bookmark.list':
+      return handleBookmarkList(params)
+    case 'bookmark.goto':
+      return handleBookmarkGoto(params)
+    case 'table.insert':
+      return handleTableInsert(params)
+    case 'table.list':
+      return handleTableList(params)
+    case 'table.header_read':
+      return handleTableHeaderRead(params)
+    case 'table.row_read':
+      return handleTableRowRead(params)
+    case 'table.column_read':
+      return handleTableColumnRead(params)
+    case 'table.cell_read':
+      return handleTableCellRead(params)
+    case 'table.header_repeat':
+      return handleTableHeaderRepeat(params)
+    case 'table.column_set_width':
+      return handleTableColumnSetWidth(params)
+    case 'table.export':
+      return handleTableExport(params)
+    case 'table.row_insert':
+      return handleTableRowInsert(params)
+    case 'table.column_insert':
+      return handleTableColumnInsert(params)
+    case 'table.cell_merge':
+      return handleTableCellMerge(params)
+    case 'caption.list':
+      return handleCaptionList(params)
+    case 'field.list':
+      return handleFieldList(params)
+    case 'field.add':
+      return handleFieldAdd(params)
+    case 'image.list':
+      return handleImageList(params)
+    case 'image.insert':
+      return handleImageInsert(params)
+    case 'image.delete':
+      return handleImageDelete(params)
+    case 'image.export':
+      return handleImageExport(params)
+    case 'hyperlink.list':
+      return handleHyperlinkList(params)
+    case 'hyperlink.add':
+      return handleHyperlinkAdd(params)
+    case 'hyperlink.delete':
+      return handleHyperlinkDelete(params)
+    case 'headerfooter.get':
+      return handleHeaderFooterGet(params)
+    case 'headerfooter.set':
+      return handleHeaderFooterSet(params)
+    case 'watermark.set':
+      return handleWatermarkSet(params)
+    case 'watermark.clear':
+      return handleWatermarkClear(params)
+    case 'document.export':
+      return handleDocumentExport(params)
+    case 'style.audit':
+      return handleStyleAudit(params)
     case 'proofread.run':
       return handleProofreadRun(params)
     case 'proofread.apply_comments':

@@ -186,6 +186,7 @@
             >aidooo.com</a>
           </div>
           <div class="sidebar-footer-actions">
+            <button type="button" class="sidebar-footer-text-btn" @click="helpManualVisible = true">帮助</button>
             <button type="button" class="sidebar-footer-text-btn" @click="feedbackDialogVisible = true">反馈及建议</button>
           </div>
         </div>
@@ -287,16 +288,6 @@
       />
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
-        <div class="mcp-service-banner" role="note">
-          <span class="mcp-service-banner-label">MCP 服务地址</span>
-          <code class="mcp-service-banner-url" :title="mcpUrl">{{ mcpUrl }}</code>
-          <button type="button" class="mcp-service-banner-copy" @click="copyMcpServiceUrl">
-            {{ mcpUrlCopyHint || '复制' }}
-          </button>
-          <button type="button" class="mcp-service-banner-detail" @click="showMcpGuideDialog = true">
-            查看详情
-          </button>
-        </div>
         <div
           v-if="mcpEnabled && mcpSoftBanner"
           class="mcp-soft-banner"
@@ -474,43 +465,44 @@
                     <img
                       v-if="purchaseQrDataUrl"
                       :src="purchaseQrDataUrl"
-                      alt="扫码购买"
+                      alt="支持我们"
                       class="welcome-support-qr"
                       decoding="async"
                     />
                     <div v-else class="welcome-support-qr welcome-support-qr--placeholder">加载中…</div>
                   </div>
-                  <span class="welcome-support-label">扫码购买（解除次数限制）</span>
+                  <span class="welcome-support-label">支持我们</span>
                 </div>
               </div>
               <p v-else class="welcome-support-hint">
-                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与购买二维码在可用时将显示在上方。
+                欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
               </p>
+              <WelcomeAdSlots embedded />
               <div class="welcome-entitlement">
                 <template v-if="entitlementSummary.licensed">
                   <span class="welcome-entitlement-badge">已购买</span>
                   <span v-if="entitlementSummary.timeValid" class="welcome-entitlement-item">有效期至 {{ formatEntitlementDate(entitlementSummary.timeExpireAt) }}</span>
-                  <!-- 隐藏余额:不再显示「购买次数剩余 N 次」「对话今日剩余 X/Y」 -->
                 </template>
-                <!-- 已移除免费额度支持文案块 -->
               </div>
               <div class="welcome-foot">
-                <button type="button" class="welcome-foot-activate" @click="openActivateDialog">
-                  <span class="welcome-foot-activate-ic" aria-hidden="true">🔑</span>
-                  已购买？点此<span class="welcome-foot-activate-key">输入授权码</span>激活
-                </button>
-                <p class="welcome-foot-query">忘记授权码？关注公众号「智灵鸟科技」即可查询</p>
-                <div class="welcome-foot-divider" aria-hidden="true"></div>
-                <p class="welcome-foot-copyright">
-                  © 北京智灵鸟科技中心
-                  <a
-                    href="https://aidooo.com"
-                    target="_blank"
-                    rel="noreferrer"
-                    class="welcome-foot-link"
-                    @click.prevent="openExternalWebsite('https://aidooo.com')"
-                  >aidooo.com</a>
-                </p>
+                <div class="welcome-foot-bar">
+                  <SourceCodeLinks light />
+                  <p class="welcome-foot-copyright">
+                    © 北京智灵鸟科技中心
+                    <a
+                      href="https://aidooo.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="welcome-foot-link"
+                      @click.prevent="openExternalWebsite('https://aidooo.com')"
+                    >aidooo.com</a>
+                    <button
+                      type="button"
+                      class="welcome-foot-credential"
+                      @click="openActivateDialog"
+                    >获取支持凭证</button>
+                  </p>
+                </div>
               </div>
               <span class="welcome-support-floor" aria-hidden="true"></span>
             </div>
@@ -2192,6 +2184,13 @@
       @close="feedbackDialogVisible = false"
     />
 
+    <HelpManualDialog
+      :visible="helpManualVisible"
+      :mcp-url="mcpUrl"
+      @close="helpManualVisible = false"
+      @open-mcp-settings="openMcpSettingsFromHelp"
+    />
+
     <div
       v-if="showMcpGuideDialog"
       class="assistant-recommend-modal-overlay"
@@ -2501,8 +2500,11 @@ import { resolveExactToolRequest } from '../services/documentIntelligence/exactT
 import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import FeedbackDialog from './FeedbackDialog.vue'
+import HelpManualDialog from './HelpManualDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
 import ToolAssistantPanel from './ToolAssistantPanel.vue'
+import SourceCodeLinks from './common/SourceCodeLinks.vue'
+import WelcomeAdSlots from './common/WelcomeAdSlots.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
 import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
 import services from '../services/index.js'
@@ -3911,7 +3913,10 @@ export default {
     KbSelectorDialog,
     KbSourceStrip,
     FeedbackDialog,
-    ToolAssistantPanel
+    HelpManualDialog,
+    ToolAssistantPanel,
+    SourceCodeLinks,
+    WelcomeAdSlots
   },
   data() {
     return {
@@ -4019,7 +4024,8 @@ export default {
       assistantHighlightedKey: '',
       assistantHighlightTimer: null,
       desktopUnsub: null,
-      feedbackDialogVisible: false
+      feedbackDialogVisible: false,
+      helpManualVisible: false
     }
   },
   computed: {
@@ -4490,7 +4496,7 @@ export default {
         this._idleHandles.push(['timeout', window.setTimeout(run, 200)])
       }
     },
-    // 生成购买二维码(含本机指纹,离线本地生成);供欢迎区「扫码购买」展示。
+    // 生成支持二维码(含本机指纹,离线本地生成);供欢迎区「支持我们」展示。
     async loadPurchaseQr() {
       try {
         this.purchaseFingerprint = await getPurchaseFingerprint()
@@ -7567,6 +7573,12 @@ export default {
     },
     openMcpSettingsFromGuide() {
       this.showMcpGuideDialog = false
+      try {
+        openSettingsWindow({ menu: 'general-settings', sub: 'mcp' }, { title: 'MCP 服务管理' })
+      } catch (e) { /* noop */ }
+    },
+    openMcpSettingsFromHelp() {
+      this.helpManualVisible = false
       try {
         openSettingsWindow({ menu: 'general-settings', sub: 'mcp' }, { title: 'MCP 服务管理' })
       } catch (e) { /* noop */ }
@@ -18327,7 +18339,7 @@ export default {
 }
 
 .welcome {
-  padding: 40px 24px;
+  padding: 20px 16px 12px;
   color: var(--ai-text-muted);
   font-size: 14px;
   line-height: 1.6;
@@ -18371,10 +18383,10 @@ export default {
 }
 
 .welcome-support {
-  margin-top: 14px;
+  margin-top: 10px;
   position: relative;
-  padding: 13px 13px 11px;
-  overflow: hidden;
+  padding: 10px 10px 8px;
+  overflow: visible;
   border: 1px solid rgba(96, 165, 250, 0.24);
   border-radius: 13px;
   background:
@@ -18472,15 +18484,15 @@ export default {
 
 /* 精致化:welcome 态二维码卡片更紧凑、居中不撑满整行(仅作用于欢迎区) */
 .welcome-support-codes .welcome-support-card {
-  flex: 0 1 150px;
-  max-width: 158px;
+  flex: 0 1 128px;
+  max-width: 136px;
   min-height: 0;
-  padding: 10px 10px 8px;
-  gap: 6px;
+  padding: 8px 8px 6px;
+  gap: 5px;
   border-radius: 11px;
 }
 .welcome-support-codes .welcome-support-qr-wrap {
-  width: min(100%, 92px);
+  width: min(100%, 76px);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 .welcome-support-codes .welcome-support-label {
@@ -18637,7 +18649,8 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 6px 12px;
-  margin-top: 10px;
+  margin-top: 6px;
+  min-height: 0;
 }
 .welcome-entitlement-badge {
   padding: 1px 8px;
@@ -18759,49 +18772,13 @@ export default {
   line-height: 1.6;
 }
 
-/* 底部统一页脚:激活入口 + 找回提示 + 版权 */
+/* 底部统一页脚:版权 + 支持凭证 */
 .welcome-foot {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  margin-top: 14px;
-}
-.welcome-foot-activate {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 16px;
-  background: rgba(124, 108, 220, 0.08);
-  border: 1px solid rgba(124, 108, 220, 0.5);
-  border-radius: 10px;
-  color: rgba(226, 232, 240, 0.92);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
-}
-.welcome-foot-activate:hover {
-  background: rgba(124, 108, 220, 0.2);
-  border-color: rgba(124, 108, 220, 0.85);
-  transform: translateY(-1px);
-}
-.welcome-foot-activate-ic {
-  font-size: 12px;
-  filter: grayscale(0.1);
-}
-.welcome-foot-activate-key {
-  margin: 0 2px;
-  color: #facc15;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.welcome-foot-query {
-  margin: 9px 0 0;
-  color: rgba(226, 232, 240, 0.6);
-  font-size: 11.5px;
-  line-height: 1.6;
-  text-align: center;
+  margin-top: 8px;
 }
 .welcome-foot-divider {
   width: 60%;
@@ -18810,21 +18787,60 @@ export default {
   margin: 14px 0 10px;
   background: linear-gradient(90deg, rgba(148, 163, 184, 0) 0%, rgba(148, 163, 184, 0.28) 50%, rgba(148, 163, 184, 0) 100%);
 }
+.welcome-foot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 12px;
+  width: 100%;
+  margin-top: 0;
+  padding: 2px 2px 0;
+}
+.welcome-foot-bar :deep(.source-code-links-btn) {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+.welcome-foot-bar :deep(.source-code-links-btn svg) {
+  width: 14px;
+  height: 14px;
+}
 .welcome-foot-copyright {
   margin: 0;
   color: rgba(226, 232, 240, 0.45);
   font-size: 11px;
   line-height: 1.6;
-  text-align: center;
+  text-align: left;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 .welcome-foot-link {
-  margin-left: 5px;
+  margin-left: 0;
   color: rgba(125, 211, 252, 0.85);
   text-decoration: none;
 }
 .welcome-foot-link:hover {
   color: #7dd3fc;
   text-decoration: underline;
+}
+.welcome-foot-credential {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #facc15;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.welcome-foot-credential:hover {
+  color: #fde047;
 }
 
 .welcome-support-link {

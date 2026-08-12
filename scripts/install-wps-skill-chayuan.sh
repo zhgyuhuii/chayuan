@@ -18,7 +18,7 @@
 #   bash scripts/install-wps-skill-chayuan.sh --payload /path/staging
 #   bash scripts/install-wps-skill-chayuan.sh --with-cursor --with-claude --with-codex   # 强制投放
 #   bash scripts/install-wps-skill-chayuan.sh --fetch                # 本地无载荷时多源下载
-#   bash scripts/install-wps-skill-chayuan.sh --fetch --version 4.0.0
+#   bash scripts/install-wps-skill-chayuan.sh --fetch --version 4.1.0
 #
 # 详见 plans/wps-skill-chayuan-design.md §16。
 
@@ -30,7 +30,7 @@ MCP_NAME="chayuan-wps-mcp"
 MCP_PORT="62588"
 MCP_URL="http://127.0.0.1:${MCP_PORT}/mcp"
 HEALTHZ="http://127.0.0.1:${MCP_PORT}/healthz"
-PKG_VERSION_DEFAULT="4.0.0"
+PKG_VERSION_DEFAULT="4.1.0"
 
 # ─────────────────────── 参数解析 ───────────────────────
 DO_ADDON=1

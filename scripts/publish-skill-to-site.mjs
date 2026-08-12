@@ -30,8 +30,10 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+// Windows 上 URL.pathname 会带前导 /（/D:/...），path.resolve 会变成 D:\D:\...；必须用 fileURLToPath。
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const RELEASE = path.join(ROOT, 'release')
 
 // ── 参数 ──

@@ -1,7 +1,7 @@
 {
 	"name": "chayuan",
 	"addonType": "wps",
-	"version": "4.0.0",
+	"version": "4.1.0",
 	"description": "察元 AI 文档助手 · Chayuan AI — WPS 文字智能加载项 / WPS 文档智能体。内置本机 MCP（Model Context Protocol）文档智能体服务，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用读写 WPS 文档；支持多文档错别字校对与批量修正、拼写语法检查、知识库 RAG；优先支持离线 / 内网大模型（Ollama、LM Studio、Xinference 等 OpenAI 兼容端点）。",
 	"keywords": [
 		"wps",
@@ -37,7 +37,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port 3890",
+		"dev": "vite --port 3889",
 		"build": "vite build",
 		"preview": "vite preview",
 		"mcp:sidecar": "node mcp-sidecar/server.mjs",
@@ -45,8 +45,10 @@
 		"mcp:gen-index": "node scripts/gen-mcp-domain-index.mjs",
 		"mcp:register": "node scripts/register-mcp-server.mjs",
 		"mcp:selftest": "node scripts/mcp-wps-selftest.mjs",
-		"mcp:selftest:quick": "node scripts/mcp-wps-selftest.mjs --skip-build",
-		"prebuild": "node scripts/gen-mcp-domain-index.mjs",
+		"mcp:selftest:quick": "node scripts/mcp-wps-selftest.mjs --skip-build --force-sidecar",
+		"mcp:selftest:tools": "node scripts/mcp-wps-selftest.mjs --skip-build --force-sidecar --tools-all",
+		"mcp:tools-callable": "node scripts/mcp-tools-callable.mjs --start",
+		"prebuild": "node scripts/gen-mcp-domain-index.mjs && node scripts/sync-user-manual.mjs",
 		"verify:task-scope": "node scripts/verify-task-scope.mjs",
 		"doctor": "node scripts/chayuan-doctor.mjs",
 		"doctor:quick": "node scripts/chayuan-doctor.mjs --quick",
