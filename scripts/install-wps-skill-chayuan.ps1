@@ -48,7 +48,7 @@ $McpPort = 62588
 $McpUrl = "http://127.0.0.1:$McpPort/mcp"
 $Healthz = "http://127.0.0.1:$McpPort/healthz"
 $SidExe = 'chayuan-mcp-windows-x64.exe'
-$PkgVerDefault = '4.1.0'
+$PkgVerDefault = '4.1.1'
 
 if ($Help) { Get-Help $MyInvocation.MyCommand.Path -Detailed; exit 0 }
 if ($WithAll) { $WithClaude = $true; $WithCursor = $true; $WithCodex = $true }

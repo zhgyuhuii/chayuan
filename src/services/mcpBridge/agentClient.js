@@ -66,24 +66,36 @@ async function fetchJson(url, options = {}) {
     ...(options.headers || {})
   }
   // MCP/Agent: no token required (localhost-only sidecar)
-  const res = await fetch(url, { ...options, headers })
-  const text = await res.text()
-  let data = null
-  try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
-  if (!res.ok) {
-    const err = new Error(data?.error || `HTTP ${res.status}`)
-    err.status = res.status
-    err.data = data
-    throw err
+  // 客户端超时：sidecar 在 25s 长轮询中途被杀时，半死 TCP 连接会让 fetch 永久挂起，
+  // 卡死 loop() 的重连循环（catch 永远跑不到）。AbortController 到点必 abort → 抛错 → 退避重连。
+  const timeoutMs = Number(options.timeoutMs) || 0
+  let timer = null
+  const init = { ...options, headers }
+  if (timeoutMs > 0) {
+    const controller = new AbortController()
+    init.signal = controller.signal
+    timer = setTimeout(() => controller.abort(), timeoutMs)
   }
-  return data
+  try {
+    const res = await fetch(url, init)
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
+    if (!res.ok) {
+      const err = new Error(data?.error || `HTTP ${res.status}`)
+      err.status = res.status
+      err.data = data
+      throw err
+    }
+    return data
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export async function probeSidecar() {
   try {
-    const res = await fetch(MCP_HEALTHZ_URL, { method: 'GET' })
-    if (!res.ok) return { online: false }
-    const data = await res.json()
+    const data = await fetchJson(MCP_HEALTHZ_URL, { method: 'GET', timeoutMs: 6000 })
     return { online: true, ...data }
   } catch {
     return { online: false }
@@ -121,7 +133,8 @@ async function register() {
   const data = await fetchJson(`${MCP_BASE_URL}/agent/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    timeoutMs: 12000
   })
   _backoff = RECONNECT_BASE_MS
   try {
@@ -178,7 +191,9 @@ function scheduleAutoSelftest() {
 async function pollOnce() {
   const agentId = ensureAgentId()
   const url = `${MCP_BASE_URL}/agent/poll?agentId=${encodeURIComponent(agentId)}&timeout=${POLL_TIMEOUT_SEC}`
-  return fetchJson(url, { method: 'GET' })
+  // 客户端超时略大于服务端 25s 长轮询持有时间：健康轮询会在 25s 内正常返回；
+  // sidecar 中途死亡则到 30s 强制 abort → 抛错 → loop() 退避重连（不再永久挂起）。
+  return fetchJson(url, { method: 'GET', timeoutMs: (POLL_TIMEOUT_SEC + 5) * 1000 })
 }
 
 async function postResult(jobId, ok, result, error) {
@@ -192,7 +207,8 @@ async function postResult(jobId, ok, result, error) {
       ok,
       result: ok ? result : undefined,
       error: ok ? undefined : error
-    })
+    }),
+    timeoutMs: 30000
   })
 }
 
@@ -261,7 +277,8 @@ function startHeartbeat() {
       await fetchJson(`${MCP_BASE_URL}/agent/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: ensureAgentId() })
+        body: JSON.stringify({ agentId: ensureAgentId() }),
+        timeoutMs: 10000
       })
       try {
         const { recordAgentAliveTick } = await import('./spikes.js')
