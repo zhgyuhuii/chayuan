@@ -39,9 +39,10 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 function Write-FileUtf8NoBom([string]$Path, [string]$Content) {
   [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
-# 远程「一行命令」把本脚本下成 scriptblock 调用时 $PSScriptRoot 为空（无文件归属），
-# 此时无本地仓库可言：$Repo 留空，载荷改由 -Fetch 多源下载兜底，不走 $Repo 相对路径。
-$Repo = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
+# 远程「一行命令」把本脚本下成 scriptblock 调用时 $PSScriptRoot 为空（无文件归属）。
+# 不能给空串：下面 Join-Path $Repo 会拒绝空 Path 抛错。退而用 $PWD（当前目录）——
+# 它一定是合法路径；若用户恰好在仓库根跑，Test-Path 还能正确命中本地 staging，否则落 -Fetch。
+$Repo = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { $PWD.Path }
 $McpName = 'chayuan-wps-mcp'
 $McpPort = 62588
 $McpUrl = "http://127.0.0.1:$McpPort/mcp"
@@ -62,8 +63,8 @@ function Get-MirrorUrls {
   if ($env:WPS_SKILL_MIRRORS) {
     return ($env:WPS_SKILL_MIRRORS -split '\s+' | ForEach-Object { $_ -replace '\$\{version\}', $Version } | Where-Object { $_ })
   }
-  $mj = Join-Path $Payload 'mirrors.json'
-  if ($Payload -and (Test-Path -LiteralPath $mj)) {
+  if ($Payload -and (Test-Path -LiteralPath (Join-Path $Payload 'mirrors.json'))) {
+    $mj = Join-Path $Payload 'mirrors.json'
     $j = Get-Content -Raw -LiteralPath $mj | ConvertFrom-Json
     return ($j.sources | ForEach-Object { $_.url -replace '\$\{version\}', $Version })
   }
@@ -97,6 +98,8 @@ function Invoke-FetchPayload {
       Expand-Archive -Path $archive -DestinationPath $tmp -Force
       $ij = Get-ChildItem -Recurse -Filter 'install.json' -LiteralPath $tmp | Where-Object { $_.FullName -match 'install-staging' } | Select-Object -First 1
       if (-not $ij) { Write-Host "[wps-skill-chayuan] ✗ 解压后未找到 install-staging\install.json（包结构异常）"; return $null }
+      # install.json 在 <包根>/install-staging/install.json；取两层父目录 = 包根（wps-skill-chayuan/）。
+      # 调用方据此设 $Repo=包根、$Payload=包根/install-staging，与「解压进目录跑 scripts\.ps1」同构。
       return (Split-Path (Split-Path $ij.FullName))
     }
   } finally { $ProgressPreference = $oldProgress }
@@ -116,7 +119,12 @@ if (-not $Payload -or -not (Test-Path -LiteralPath $Payload)) {
   if ($Fetch) {
     Write-Host "[wps-skill-chayuan] 本地无载荷，启用多源下载（GitHub 被墙自动回退 Gitee / aidooo）"
     $fetched = Invoke-FetchPayload
-    if ($fetched) { $Payload = $fetched }
+    if ($fetched) {
+      # fetched 返回解压后的「包根」：install.json+加载项在 install-staging/，mcp-sidecar/skill-chayuan 在包根。
+      # 故 $Repo 指包根（让 mcp-sidecar/skill-chayuan 的 $Repo 回落命中），$Payload 指 install-staging。
+      $Repo = $fetched
+      $Payload = Join-Path $fetched 'install-staging'
+    }
   }
 }
 if (-not $Payload -or -not (Test-Path -LiteralPath $Payload)) {
