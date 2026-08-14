@@ -58,26 +58,64 @@ $DoAddon  = -not $RuntimeOnly
 $DoRuntime = -not $SkillOnly
 
 # ───────── 镜像源（GitHub 被墙时的备用地址）─────────
-# 优先级：$env:WPS_SKILL_MIRRORS → 包内 mirrors.json → 内置默认（GitHub→Gitee→aidooo）。下载后用随包 .sha256 强校验。
+# 镜像项是对象 @{ Url=<zip 地址>; Manifest=<bool> }：
+#   Manifest=$true  → sha256 从官网 releases.json manifest 校验（官网通道路径没有同级 .sha256 文件，
+#                     sha 由 publish API 写进 manifest；这是唯一保证实时更新的活源）。
+#   Manifest=$false → sha256 从 $Url.sha256 同级文件校验（gitee/github 发行版 attach_files 语义）。
+# 优先级：$env:WPS_SKILL_MIRRORS（空格分隔 URL，按 sibling）→ 包内 mirrors.json（sibling）→ 内置默认。
+# 内置默认把「官网通道路径」放第一：它是 publish API 实时写入、永远最新的源（国内可达）。
+$ManifestUrl = 'https://aidooo.com/downloads/releases.json'
 function Get-MirrorUrls {
   if ($env:WPS_SKILL_MIRRORS) {
-    return ($env:WPS_SKILL_MIRRORS -split '\s+' | ForEach-Object { $_ -replace '\$\{version\}', $Version } | Where-Object { $_ })
+    return ($env:WPS_SKILL_MIRRORS -split '\s+' | Where-Object { $_ } | ForEach-Object {
+      [pscustomobject]@{ Url = ($_ -replace '\$\{version\}', $Version); Manifest = $false }
+    })
   }
   if ($Payload -and (Test-Path -LiteralPath (Join-Path $Payload 'mirrors.json'))) {
     $mj = Join-Path $Payload 'mirrors.json'
     $j = Get-Content -Raw -LiteralPath $mj | ConvertFrom-Json
-    return ($j.sources | ForEach-Object { $_.url -replace '\$\{version\}', $Version })
+    return ($j.sources | ForEach-Object {
+      [pscustomobject]@{ Url = ($_.url -replace '\$\{version\}', $Version); Manifest = $false }
+    })
   }
   return @(
-    "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip",
-    "https://aidooo.com/downloads/skill/wps-skill-chayuan-$Version-portable.zip",
-    "https://github.com/zhgyuhuii/chayuan/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip"
+    [pscustomobject]@{ Url = "https://aidooo.com/downloads/chayuan/skill/universal/wps-skill-chayuan-$Version-portable.zip"; Manifest = $true },
+    [pscustomobject]@{ Url = "https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip"; Manifest = $false },
+    [pscustomobject]@{ Url = "https://github.com/zhgyuhuii/chayuan/releases/download/$Version/wps-skill-chayuan-$Version-portable.zip"; Manifest = $false }
   )
 }
 function Print-Mirrors {
-  Write-Host '  备用下载源（国内优先 Gitee / aidooo，任选其一）：' -ForegroundColor Yellow
-  Get-MirrorUrls | ForEach-Object { Write-Host "    - $_" }
-  Write-Host '  每个源都带 .sha256 强校验，被篡改的源不会通过。' -ForegroundColor Yellow
+  Write-Host '  备用下载源（国内优先 aidooo 通道路径 / Gitee，任选其一）：' -ForegroundColor Yellow
+  Get-MirrorUrls | ForEach-Object { Write-Host "    - $($_.Url)" }
+  Write-Host '  每个源都带 sha256 强校验（官网源从 manifest 校验，其余从同级 .sha256），被篡改的源不会通过。' -ForegroundColor Yellow
+}
+# 取某镜像的期望 sha256（小写 hex）；失败返 $null。
+# 注意:PS 5.1 下 Invoke-WebRequest 对 gzip 等响应会把 .Content 返回成 [byte[]] 而非字符串,
+# 直接喂给 ConvertFrom-Json 会得到空对象(线上机器必现)。这里统一按 UTF-8 解码。
+function Get-UrlText {
+  param([string]$Url)
+  try {
+    $c = (Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 20).Content
+    if ($c -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($c) }
+    return [string]$c
+  } catch { return $null }
+}
+function Get-MirrorExpectedSha {
+  param($Mirror)
+  if ($Mirror.Manifest) {
+    $body = Get-UrlText -Url $ManifestUrl
+    if (-not $body) { return $null }
+    try {
+      $j = $body | ConvertFrom-Json
+      # manifest 结构：chayuan.skill.universal[] = [{version,sha256,path,...}]
+      $ent = $j.chayuan.skill.universal | Where-Object { $_.version -eq $Version } | Select-Object -First 1
+      if ($ent -and $ent.sha256) { return $ent.sha256.ToString().Trim().ToLower() }
+    } catch { return $null }
+    return $null
+  }
+  $s = Get-UrlText -Url ($Mirror.Url + '.sha256')
+  if (-not $s) { return $null }
+  return (($s -split '\s')[0]).Trim().ToLower()
 }
 function Invoke-FetchPayload {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
@@ -85,15 +123,15 @@ function Invoke-FetchPayload {
   $archive = Join-Path $tmp 'portable.zip'
   $oldProgress = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
   try {
-    foreach ($url in (Get-MirrorUrls)) {
-      Write-Host "[wps-skill-chayuan] 尝试：$url"
-      try { Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing -TimeoutSec 60 }
+    foreach ($m in (Get-MirrorUrls)) {
+      Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+      Write-Host "[wps-skill-chayuan] 尝试：$($m.Url)"
+      try { Invoke-WebRequest -Uri $m.Url -OutFile $archive -UseBasicParsing -TimeoutSec 120 }
       catch { Write-Host "[wps-skill-chayuan] · 不可达，换源"; continue }
-      try { Invoke-WebRequest -Uri "$url.sha256" -OutFile "$archive.sha256" -UseBasicParsing -TimeoutSec 15 }
-      catch { Write-Host "[wps-skill-chayuan] ⚠ 该源无 .sha256，跳过（安全策略：离线整包必须强校验）"; continue }
-      $expected = ((Get-Content "$archive.sha256" | Select-Object -First 1) -split '\s')[0].Trim().ToLower()
+      $expected = Get-MirrorExpectedSha -Mirror $m
+      if (-not $expected) { Write-Host "[wps-skill-chayuan] ⚠ 该源取不到 sha256，跳过（安全策略：离线整包必须强校验）"; continue }
       $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLower()
-      if ($expected -ne $actual) { Write-Host "[wps-skill-chayuan] ✗ sha256 不匹配，换源"; continue }
+      if ($expected -ne $actual) { Write-Host "[wps-skill-chayuan] ✗ sha256 不匹配（期望 $expected），换源"; continue }
       Write-Host "[wps-skill-chayuan] ✓ sha256 校验通过"
       Expand-Archive -Path $archive -DestinationPath $tmp -Force
       $ij = Get-ChildItem -Recurse -Filter 'install.json' -LiteralPath $tmp | Where-Object { $_.FullName -match 'install-staging' } | Select-Object -First 1

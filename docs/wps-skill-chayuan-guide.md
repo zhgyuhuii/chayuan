@@ -1,6 +1,6 @@
 # wps-skill-chayuan 全方位指南：一条命令，让 AI 编程智能体直接读写你的 WPS 文档
 
-> 适用版本：技能包 **v4.1.0** ｜ MCP 目录 **v0.10.0** ｜ **46 个文档工具 · 15 个域**
+> 适用版本：技能包 **v4.1.1** ｜ MCP 目录 **v0.10.0** ｜ **46 个文档工具 · 15 个域**
 > 官网：<https://aidooo.com/skill> ｜ 开源：<https://github.com/zhgyuhuii/chayuan-wps-releases> ｜ 国内镜像：<https://gitee.com/cloudshd/chayuan-wps-releases>
 
 ---
@@ -77,7 +77,7 @@ curl -fsSL https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/in
 - `--fetch`（mac/linux）/ `-Fetch`（Windows）：只拿到脚本、需要联网补下载载荷时**必加**。一行命令场景下**已默认带上**。
 - `--with-all` / `-WithAll`：强制部署到 Claude + Cursor + Codex（默认只装检测到的）。
 - `--skill-only` / `-SkillOnly`：只投放技能文件，不动加载项 / 服务。
-- `-Version 4.1.0`：指定版本。
+- `-Version 4.1.1`：指定版本。
 
 > 已经克隆了本仓库？等价的本地写法：
 > ```powershell
@@ -89,7 +89,7 @@ curl -fsSL https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/in
 
 ### 2.2 离线整包（内网 / 无外网机器）
 
-从 [Gitee Releases](https://gitee.com/cloudshd/chayuan-wps-releases/releases) 或 [官网](https://aidooo.com/skill) 下载 `wps-skill-chayuan-4.1.0-portable.zip`，解压后进目录跑本地脚本（不带 `--fetch`，因为整包已在手）：
+从 [Gitee Releases](https://gitee.com/cloudshd/chayuan-wps-releases/releases) 或 [官网](https://aidooo.com/skill) 下载 `wps-skill-chayuan-4.1.1-portable.zip`，解压后进目录跑本地脚本（不带 `--fetch`，因为整包已在手）：
 
 ```bash
 bash scripts/install-wps-skill-chayuan.sh          # mac/linux
@@ -583,7 +583,7 @@ WPS 加载项里：设置 → 模型与供应商，填 OpenAI 兼容端点（本
 | Gitee（国内镜像 + Release） | <https://gitee.com/cloudshd/chayuan-wps-releases> |
 | 一条命令安装 | 见本文 §2.1 |
 
-**版本信息**：技能包 v4.1.0 ｜ MCP 目录 v0.10.0 ｜ 46 工具 / 15 域 ｜ Apache-2.0。
+**版本信息**：技能包 v4.1.1 ｜ MCP 目录 v0.10.0 ｜ 46 工具 / 15 域 ｜ Apache-2.0。
 出品：北京智灵鸟科技中心。
 
 ---

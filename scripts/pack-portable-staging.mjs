@@ -167,8 +167,9 @@ const mirrors = {
   package: 'wps-skill-chayuan',
   note: 'URL 中的 ${version} 在下载时替换为实际版本。每个源都应提供同名 .sha256；安装器下载后强校验，任一源被篡改都不会通过。',
   sources: [
+    // aidooo 通道路径 = publish API 实时写入、永远最新的活源(国内可达)。排第一。
+    { name: 'aidooo', url: 'https://aidooo.com/downloads/chayuan/skill/universal/wps-skill-chayuan-${version}-portable.zip' },
     { name: 'gitee',  url: 'https://gitee.com/cloudshd/chayuan-wps-releases/releases/download/${version}/wps-skill-chayuan-${version}-portable.zip' },
-    { name: 'aidooo', url: 'https://aidooo.com/downloads/skill/wps-skill-chayuan-${version}-portable.zip' },
     { name: 'github', url: 'https://github.com/zhgyuhuii/chayuan/releases/download/${version}/wps-skill-chayuan-${version}-portable.zip' },
   ],
 }

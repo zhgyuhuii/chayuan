@@ -43,6 +43,9 @@ let websiteBase = (process.env.WEBSITE_BASE || 'https://aidooo.com').replace(/\/
 let version = ''
 let note = ''
 let product = 'chayuan'   // 技能挂在哪个产品的 universal 形态(chayuan.forms[].key==='skill')
+let channel = 'skill'     // 交付通道:chayuan 的 skill form(kind=file, universal 平台)。
+                          // 不可省略:forms 注入后 resolveUploadChannel 无 channel 会回落到
+                          // primary form 'addon'(installer),universal 平台 → channel_platform_mismatch。
 let noLegacy = false
 let noApi = false
 for (let i = 0; i < args.length; i++) {
@@ -52,10 +55,11 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--version') version = args[++i]
   else if (a === '--note') note = args[++i]
   else if (a === '--product') product = args[++i]
+  else if (a === '--channel') channel = args[++i]
   else if (a === '--no-legacy') noLegacy = true
   else if (a === '--no-api') noApi = true
   else if (a === '-h' || a === '--help') {
-    console.log(`用法: node scripts/publish-skill-to-site.mjs [--version <ver>] [--note "..."] [--product chayuan] [--base <url>] [--site <path>] [--no-legacy] [--no-api]
+    console.log(`用法: node scripts/publish-skill-to-site.mjs [--version <ver>] [--note "..."] [--product chayuan] [--channel skill] [--base <url>] [--site <path>] [--no-legacy] [--no-api]
 环境: WEBSITE_ADMIN_COOKIE, WEBSITE_BASE, WEBSITE_REPO`)
     process.exit(0)
   }
@@ -121,7 +125,7 @@ async function publishViaApi() {
   // 分块上传:init → chunk* → finalize(universal,单文件替换)
   const init = await fetch(`${base}/api/admin/uploads/init`, {
     method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
-    body: JSON.stringify({ product, version, platform: 'universal', filename: zipName, size: zipSize, sha256: zipHash })
+    body: JSON.stringify({ product, version, channel, platform: 'universal', filename: zipName, size: zipSize, sha256: zipHash })
   })
   if (!init.ok) { console.error(`[publish:skill] init 失败 ${init.status}: ${await init.text()}`); process.exit(1) }
   const { uploadId, totalChunks } = await init.json()
