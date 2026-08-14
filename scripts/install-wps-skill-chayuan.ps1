@@ -49,6 +49,8 @@ $McpUrl = "http://127.0.0.1:$McpPort/mcp"
 $Healthz = "http://127.0.0.1:$McpPort/healthz"
 $SidExe = 'chayuan-mcp-windows-x64.exe'
 $PkgVerDefault = '4.1.1'
+# -Fetch 下载解压的临时根目录;主流程 try/finally 末尾 Clear-FetchedTemp 统一清理,避免每次残留整包 ≈290MB。
+$script:FetchedTempRoot = $null
 
 if ($Help) { Get-Help $MyInvocation.MyCommand.Path -Detailed; exit 0 }
 if ($WithAll) { $WithClaude = $true; $WithCursor = $true; $WithCodex = $true }
@@ -138,6 +140,7 @@ function Invoke-FetchPayload {
       if (-not $ij) { Write-Host "[wps-skill-chayuan] ✗ 解压后未找到 install-staging\install.json（包结构异常）"; return $null }
       # install.json 在 <包根>/install-staging/install.json；取两层父目录 = 包根（wps-skill-chayuan/）。
       # 调用方据此设 $Repo=包根、$Payload=包根/install-staging，与「解压进目录跑 scripts\.ps1」同构。
+      $script:FetchedTempRoot = $tmp   # 记下临时根,供末尾 Clear-FetchedTemp 清理
       return (Split-Path (Split-Path $ij.FullName))
     }
   } finally { $ProgressPreference = $oldProgress }
@@ -170,8 +173,10 @@ if (-not $Payload -or -not (Test-Path -LiteralPath $Payload)) {
   Print-Mirrors
   exit 1
 }
-$InstallJson = Join-Path $Payload 'install.json'
-if (-not (Test-Path -LiteralPath $InstallJson)) { Write-Error "缺少 $InstallJson"; exit 1 }
+# 主流程包进 try/finally:-Fetch 下载的整包临时目录无论成功/失败/exit 都由末尾 Clear-FetchedTemp 统一清理。
+try {
+  $InstallJson = Join-Path $Payload 'install.json'
+  if (-not (Test-Path -LiteralPath $InstallJson)) { Write-Error "缺少 $InstallJson"; exit 1 }
 $Meta = Get-Content -Raw -LiteralPath $InstallJson | ConvertFrom-Json
 $AddonFolder = $Meta.addonFolder
 $Version2 = $Meta.version
@@ -209,6 +214,14 @@ function Remove-TreeForce([string]$Root) {
     cmd /c "attrib -R `"$Root\*`" /S /D >nul 2>nul"
     Remove-Item -LiteralPath $Root -Recurse -Force
   }
+}
+# -Fetch 残留清理:删除 Invoke-FetchPayload 在 %TEMP%\<GUID> 解压的整包(zip+解压 ≈290MB/次)。
+function Clear-FetchedTemp {
+  if ($script:FetchedTempRoot -and (Test-Path -LiteralPath $script:FetchedTempRoot)) {
+    Remove-TreeForce $script:FetchedTempRoot
+    Write-Host "[wps-skill-chayuan] ✓ 清理临时下载目录 $script:FetchedTempRoot"
+  }
+  $script:FetchedTempRoot = $null
 }
 # 用 robocopy 拷目录：比 Copy-Item 更能扛只读/被锁文件；排除 autostart 下脚本
 # （MCP 自启由 STEP 2 从包根 mcp-sidecar 执行，无需进 jsaddons；.ps1 进 AppData 易被 Defender 拦）
@@ -420,4 +433,7 @@ if ($L1 -and $L2) {
 } else {
   Write-Host '  ⚠ 有级未通过：L1 查 jsaddons/publish.xml；L2 查 %LOCALAPPDATA%\chayuan-wps\mcp\runtime\ 与 HKCU Run'
   exit 1
+}
+} finally {
+  Clear-FetchedTemp
 }

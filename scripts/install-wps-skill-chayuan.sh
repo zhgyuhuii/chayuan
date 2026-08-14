@@ -166,6 +166,11 @@ if [[ -z "$PAYLOAD" || ! -d "$PAYLOAD" ]]; then
   if [[ "$DO_FETCH" -eq 1 ]]; then
     echo "[wps-skill-chayuan] 本地无载荷，启用多源下载（GitHub 被墙自动回退 Gitee / aidooo）"
     PAYLOAD="$(fetch_payload)" || PAYLOAD=""
+    # fetch_payload 解压到 mktemp 目录,PAYLOAD 是其下包根;脚本退出时统一清理整包 ≈290MB。
+    if [[ -n "$PAYLOAD" ]]; then
+      FETCH_TMP="$(dirname "$PAYLOAD")"
+      trap 'rm -rf "$FETCH_TMP"' EXIT
+    fi
   fi
 fi
 if [[ -z "$PAYLOAD" || ! -d "$PAYLOAD" ]]; then
