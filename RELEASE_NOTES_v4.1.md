@@ -140,3 +140,17 @@ v4.0 的 MCP 对接、多 Agent 连接、离线 / 内网部署、知识库 RAG�
 3. 用技能安装脚本时若 MCP 未拉起，重跑脚本（STEP 2 会注册自启），或手动启动安装目录中的 `chayuan-mcp`。
 4. 远端机器无法直连 `127.0.0.1`；需本机代理或自定义 `CHAYUAN_MCP_PORT`。
 5. 表格结构写回为**破坏性写**，AI 默认先 `confirmed=false` 预览，再 `confirmed=true` 落盘；涉密 / 定稿文档务必人工复核。
+
+---
+
+## 七、v4.1.1 补丁（2026-08-14）
+
+v4.1.1 在 v4.1.0 基础上集中修复**一行命令安装脚本**与**加载项 ↔ sidecar 重连**的稳定性问题（功能与工具集不变，仍为 46 工具 / catalog `0.10.0`）。已修复：
+
+- **PS 5.1 一行命令乱码 / 崩溃**：`iwr | iex` 在 Windows 自带 PowerShell 5.1 下按 GBK 解码返回体、且 scriptblock 无 `$PSScriptRoot` → 首字节乱码 + `Join-Path` 空串报错。改用 `WebClient` + 显式 UTF-8 解码（去 BOM）+ `$PWD` 回落，既绕过执行策略又不乱码。
+- **`-Fetch` 下载路径崩溃**：`install-staging` 定位三处空串 / 包根错位，导致解压后找不到 `install.json`。修正包根解析（取 `install.json` 两层父目录 = 包根）。
+- **`-Fetch` 走 aidooo 通道路径 + manifest 强校验**：首选源改为官网 `releases.json` 的 `chayuan.skill.universal` 条目（publish API 实时写入、国内可达），sha256 从 manifest 校验；Gitee / GitHub 为同级 `.sha256` 回退源。任一源被篡改都不会通过。
+- **sidecar 重启后加载项约 8s 自愈**：MCP sidecar 重启 / 升级时，WPS 加载项自动在约 8 秒内重连，无需重开 WPS。
+- **`-Fetch` 临时目录退出即清理**：安装脚本下载解压的 `%TEMP%\<GUID>` 整包（zip + 解压 ≈ 290 MB）此前每次残留、逐次累积；现 `.ps1` 主流程 `try/finally` 末尾 `Clear-FetchedTemp`、`.sh` 注册 `trap … EXIT`，成功 / 抛错 / 退出均清理，不再占用临时盘。
+
+> **升级**：已装 v4.0 / v4.1.0 / v4.1.1 的用户重跑一行命令（`-Fetch`）即可拿到最新脚本与整包；一行命令拉取的是 Gitee / GitHub raw 上的最新脚本，整包走 aidooo manifest 强校验。本机 MCP 端口仍为 `62588`，外部客户端配置无需改动。

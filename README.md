@@ -26,6 +26,8 @@
 - **wps-skill-chayuan 技能 + 双向自启**:`install-wps-skill-chayuan.{ps1,sh}` 一个脚本四步闭环——装加载项 + MCP 自启 + 四级体检 + 投放技能(Claude/Cursor/Codex)
 - **保留并兼容**:v4.0 的 MCP 多 Agent 对接、离线/内网部署、知识库 RAG、多文档校对全部不变,外部客户端配置无需改动
 
+> **v4.1.1 补丁(2026-08-14)**:一行命令安装脚本稳定性集中修复——PS 5.1 编码与空 `$PSScriptRoot` 崩溃、`-Fetch` 包根定位、aidooo manifest sha256 强校验、sidecar 重启后加载项约 8s 自愈、`-Fetch` 临时目录退出即清理(此前每次残留 ≈290 MB)。详见 [RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) §七。
+
 完整发布说明:[RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) ｜ 历史版本:[v4.0.0](RELEASE_NOTES_v4.0.md) · [v3.0(RAG)](RELEASE_NOTES_v3.0.md)
 
 ---
