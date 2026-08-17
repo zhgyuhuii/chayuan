@@ -154,3 +154,17 @@ v4.1.1 在 v4.1.0 基础上集中修复**一行命令安装脚本**与**加载�
 - **`-Fetch` 临时目录退出即清理**：安装脚本下载解压的 `%TEMP%\<GUID>` 整包（zip + 解压 ≈ 290 MB）此前每次残留、逐次累积；现 `.ps1` 主流程 `try/finally` 末尾 `Clear-FetchedTemp`、`.sh` 注册 `trap … EXIT`，成功 / 抛错 / 退出均清理，不再占用临时盘。
 
 > **升级**：已装 v4.0 / v4.1.0 / v4.1.1 的用户重跑一行命令（`-Fetch`）即可拿到最新脚本与整包；一行命令拉取的是 Gitee / GitHub raw 上的最新脚本，整包走 aidooo manifest 强校验。本机 MCP 端口仍为 `62588`，外部客户端配置无需改动。
+
+---
+
+## 八、v4.1.2 补丁（2026-08-17）
+
+v4.1.2 集中修复 **sidecar 启动黑窗**问题：此前多个启动路径会弹出常驻控制台窗口，用户关掉窗口即杀死 sidecar，导致 MCP 断连且「运行 Spike」无法自愈。功能与工具集不变（仍为 46 工具 / catalog `0.10.0`）。已修复：
+
+- **全部启动路径改隐藏启动**：`start-mcp.cmd`（仓库 / 便携包 / SFX 安装器生成版 / autostart 生成版）与安装器安装完成后的首次启动，统一改为 PowerShell `Start-Process -WindowStyle Hidden`——不再出现常驻黑窗，也不会因误关窗口杀死 sidecar。
+- **开机自启不再弹窗**：`HKCU Run` 自启动项从直启 exe 改为指向生成的 `start-mcp.cmd`（隐藏启动），此前每次登录都会弹出一个常驻控制台窗口。
+- **加载项「启动本机服务」不再直启 exe**：候选顺序改为隐藏启动脚本优先（exe 直启会经 ShellExecute 弹出控制台窗口），且不再记忆 exe 路径。
+- **「运行 Spike」自愈**：sidecar 掉线时 Spike 优先拉起 `start-mcp.cmd`（结果为 `SIDECAR_CAME_ONLINE`），而不是只跑标记脚本后报 `NO_EFFECT`。
+- **安装器批处理纯 ASCII 化回归**：`copy.bat` 模板恢复纯 ASCII（中文注释会在 CP936 cmd 下打乱解析、导致安装静默失败）。
+
+> **升级**：重跑安装器（或一行命令 `-Fetch`）即可。本机 MCP 端口仍为 `62588`，外部客户端配置无需改动。

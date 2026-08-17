@@ -280,13 +280,15 @@ function Install-Runtime {
     Write-Host "  ⚠ 覆盖二进制失败（可能仍被占用），沿用已有 runtime：$($_.Exception.Message)" -ForegroundColor Yellow
     if (-not (Test-Path -LiteralPath $exeDst)) { Write-Error "runtime 无可用二进制: $exeDst"; return }
   }
-  $startCmd = "@echo off`r`nstart `"`" `"%~dp0$SidExe`"`r`n"
+  # 隐藏启动：裸 start "" 会留常驻控制台窗口，关窗即杀 sidecar
+  $startCmd = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"Start-Process -FilePath '%~dp0$SidExe' -WindowStyle Hidden`"`r`n"
   [System.IO.File]::WriteAllText((Join-Path $runtimeDir 'start-mcp.cmd'), $startCmd, [System.Text.Encoding]::ASCII)
-  $runValue = "`"$exeDst`""
+  # Run 键指向 start-mcp.cmd（隐藏启动）；直启 exe 每次登录弹常驻控制台窗口
+  $runValue = "`"$runtimeDir\start-mcp.cmd`""
   $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
   New-Item -Path $regPath -Force | Out-Null
   Set-ItemProperty -Path $regPath -Name 'ChayuanWpsMcp' -Value $runValue -Type String
-  Write-Host "  ✓ Run → $exeDst"
+  Write-Host "  ✓ Run → $runtimeDir\start-mcp.cmd (hidden launch)"
   Start-Process -FilePath $exeDst -WindowStyle Hidden
   Write-Host '  ✓ Started sidecar (hidden)'
 }

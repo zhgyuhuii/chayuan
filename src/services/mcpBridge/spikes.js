@@ -155,16 +155,23 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
   let launchedPath = ''
   let launchError = ''
 
-  // Prefer spike marker cmd if present next to start-mcp.cmd
+  // sidecar 离线：优先 start-mcp.cmd（能拉起 sidecar，Spike 自愈为 SIDECAR_CAME_ONLINE）；
+  // 在线：优先 spike-shell-marker.cmd（只验证 ShellExecute 通路，不重复拉进程）。
   const spikeCmdCandidates = []
   for (const c of candidates) {
-    spikeCmdCandidates.push(c)
     if (/start-mcp\.cmd$/i.test(c.path)) {
+      if (!healthBefore.online) {
+        spikeCmdCandidates.unshift(c)
+        continue
+      }
+      spikeCmdCandidates.push(c)
       spikeCmdCandidates.unshift({
         raw: c.raw.replace(/start-mcp\.cmd$/i, 'spike-shell-marker.cmd'),
         path: c.path.replace(/start-mcp\.cmd$/i, 'spike-shell-marker.cmd')
       })
+      continue
     }
+    spikeCmdCandidates.push(c)
   }
 
   for (const c of spikeCmdCandidates) {

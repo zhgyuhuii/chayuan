@@ -27,10 +27,12 @@ if not exist "%RUNTIME%\bin" mkdir "%RUNTIME%\bin"
 copy /Y "%EXE_SRC%" "%EXE_DST%" >nul
 copy /Y "%EXE_SRC%" "%RUNTIME%\bin\%EXE_NAME%" >nul
 > "%RUNTIME%\start-mcp.cmd" echo @echo off
->> "%RUNTIME%\start-mcp.cmd" echo start "" "%%~dp0%EXE_NAME%"
+>> "%RUNTIME%\start-mcp.cmd" echo powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%%~dp0%EXE_NAME%' -WindowStyle Hidden"
 
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v %RUN_NAME% /t REG_SZ /d "\"%EXE_DST%\"" /f >nul
-echo [chayuan-mcp] Run -^> native binary: %EXE_DST%
+REM Run key points to the generated start-mcp.cmd (hidden launch); launching the exe
+REM directly would open a persistent console window at every logon
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v %RUN_NAME% /t REG_SZ /d "\"%RUNTIME%\start-mcp.cmd\"" /f >nul
+echo [chayuan-mcp] Run -^> hidden launcher: %RUNTIME%\start-mcp.cmd
 
 REM Start if not already listening
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri http://127.0.0.1:62588/healthz -UseBasicParsing -TimeoutSec 2 | Out-Null; Write-Host 'Sidecar already running on :62588' } catch { Start-Process -FilePath '%EXE_DST%' -WindowStyle Hidden; Write-Host 'Started sidecar (hidden).' }"

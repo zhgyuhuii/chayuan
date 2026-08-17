@@ -8,7 +8,7 @@
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Version](https://img.shields.io/badge/version-4.1.1-purple.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-4.1.2-purple.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
@@ -26,6 +26,8 @@
 - **wps-skill-chayuan 技能 + 双向自启**:`install-wps-skill-chayuan.{ps1,sh}` 一个脚本四步闭环——装加载项 + MCP 自启 + 四级体检 + 投放技能(Claude/Cursor/Codex)
 - **保留并兼容**:v4.0 的 MCP 多 Agent 对接、离线/内网部署、知识库 RAG、多文档校对全部不变,外部客户端配置无需改动
 
+> **v4.1.2 补丁(2026-08-17)**:sidecar 全面隐藏启动——修复黑窗常驻、关窗即断 MCP 的问题:安装器/开机自启/加载项「启动本机服务」全部改 PowerShell 隐藏启动,「运行 Spike」在 sidecar 掉线时可自愈拉起。详见 [RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) §八。
+>
 > **v4.1.1 补丁(2026-08-14)**:一行命令安装脚本稳定性集中修复——PS 5.1 编码与空 `$PSScriptRoot` 崩溃、`-Fetch` 包根定位、aidooo manifest sha256 强校验、sidecar 重启后加载项约 8s 自愈、`-Fetch` 临时目录退出即清理(此前每次残留 ≈290 MB)。详见 [RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) §七。
 
 完整发布说明:[RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) ｜ 历史版本:[v4.0.0](RELEASE_NOTES_v4.0.md) · [v3.0(RAG)](RELEASE_NOTES_v3.0.md)
@@ -105,7 +107,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -
 bash scripts/install-wps-skill-chayuan.sh --fetch
 ```
 
-`-SkillOnly` 只投放技能文件，不动加载项 / 服务；`-Version 4.1.1` 可指定版本。
+`-SkillOnly` 只投放技能文件，不动加载项 / 服务；`-Version 4.1.2` 可指定版本。
 
 ### 脚本干的四步（同一个脚本）
 
@@ -475,7 +477,7 @@ npx @modelcontextprotocol/inspector
 
 ### 4.1 本次 2.0.0 重大更新（重大重构 / 稳定性版本）
 
-**当前版本：`4.1.1`**（MCP 目录版本 `0.10.0` · 46 工具）。 下面是 **v2.0** 的重构说明（历史归档）；v2.0 定位为面向政企文档生产场景的重大重构：围绕 AI 助手对话框、模型分类、默认模型、助手参数收集、任务执行与 README 文档体系进行了系统性梳理。更新内容参考并归纳了仓库内全部 Markdown 规划与执行文档，包括架构深度分析、v2 演进计划、P0-P6 执行报告、工作流编排、任务系统重设计、运行性缺口闭合、助手表单布局与状态索引等。v4.1 的最新能力（表格结构写回、技能双向自启）见上方 [`🧩 wps-skill-chayuan 技能`](#-wps-skill-chayuan-技能-一条命令双向自启加载项--mcp--技能) 与 [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md)。
+**当前版本：`4.1.2`**（MCP 目录版本 `0.10.0` · 46 工具）。 下面是 **v2.0** 的重构说明（历史归档）；v2.0 定位为面向政企文档生产场景的重大重构：围绕 AI 助手对话框、模型分类、默认模型、助手参数收集、任务执行与 README 文档体系进行了系统性梳理。更新内容参考并归纳了仓库内全部 Markdown 规划与执行文档，包括架构深度分析、v2 演进计划、P0-P6 执行报告、工作流编排、任务系统重设计、运行性缺口闭合、助手表单布局与状态索引等。v4.1 的最新能力（表格结构写回、技能双向自启）见上方 [`🧩 wps-skill-chayuan 技能`](#-wps-skill-chayuan-技能-一条命令双向自启加载项--mcp--技能) 与 [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md)。
 
 **本次版本重点：**
 

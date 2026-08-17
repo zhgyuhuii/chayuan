@@ -108,9 +108,11 @@ echo copying sidecar...>> "%LOG%"
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%" >> "%LOG%" 2>&1
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}" >> "%LOG%" 2>&1
 > "%sidecar_runtime%\\start-mcp.cmd" echo @echo off
->> "%sidecar_runtime%\\start-mcp.cmd" echo start "" "%%~dp0${SIDECAR_EXE_NAME}"
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_exe%\\"" /f >> "%LOG%" 2>&1
-start "" "%sidecar_exe%"
+>> "%sidecar_runtime%\\start-mcp.cmd" echo powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%%~dp0${SIDECAR_EXE_NAME}' -WindowStyle Hidden"
+rem HKCU Run points to the generated start-mcp.cmd (hidden launch); launching the exe
+rem directly would open a persistent console window at every logon
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_runtime%\\start-mcp.cmd\\"" /f >> "%LOG%" 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%sidecar_exe%' -WindowStyle Hidden"
 
 echo [%DATE% %TIME%] install ok>> "%LOG%"
 echo.

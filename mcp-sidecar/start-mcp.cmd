@@ -7,18 +7,19 @@ if defined CHAYUAN_MCP_PORT (
 )
 
 rem Prefer packaged native binary (no Node.js required on target machines).
+rem Launch hidden via Start-Process: bare `start ""` leaves a persistent console window.
 set "BIN=%~dp0bin\chayuan-mcp-windows-x64.exe"
 if exist "%BIN%" (
-  echo [chayuan-mcp] starting native binary: %BIN%
-  start "" "%BIN%"
+  echo [chayuan-mcp] starting native binary hidden: %BIN%
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%BIN%' -WindowStyle Hidden"
   exit /b 0
 )
 
 rem Also accept binary next to this script (SFX runtime layout).
 set "BIN_FLAT=%~dp0chayuan-mcp-windows-x64.exe"
 if exist "%BIN_FLAT%" (
-  echo [chayuan-mcp] starting native binary: %BIN_FLAT%
-  start "" "%BIN_FLAT%"
+  echo [chayuan-mcp] starting native binary hidden: %BIN_FLAT%
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%BIN_FLAT%' -WindowStyle Hidden"
   exit /b 0
 )
 

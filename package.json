@@ -1,7 +1,7 @@
 {
 	"name": "chayuan",
 	"addonType": "wps",
-	"version": "4.1.1",
+	"version": "4.1.2",
 	"description": "察元 AI 文档助手 · Chayuan AI — WPS 文字智能加载项 / WPS 文档智能体。内置本机 MCP（Model Context Protocol）文档智能体服务，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用读写 WPS 文档；支持多文档错别字校对与批量修正、拼写语法检查、知识库 RAG；优先支持离线 / 内网大模型（Ollama、LM Studio、Xinference 等 OpenAI 兼容端点）。",
 	"keywords": [
 		"wps",

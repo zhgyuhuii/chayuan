@@ -111,7 +111,9 @@ function pushUnique(list, seen, value) {
 
 /**
  * Candidates for start binary / script — local filesystem / file:// / known install paths only.
- * Order: remembered → native binary (installer / addon) → legacy start-mcp.cmd.
+ * Order: remembered → hidden-launch .cmd (Windows) → native binary → legacy entries.
+ * Windows 上 ShellExecute 直启 .exe 会留下常驻控制台窗口（关窗即杀 sidecar），
+ * 因此 start-mcp.cmd（内部隐藏启动）排在 exe 之前，且不记忆 .exe 路径。
  */
 export function getSidecarStartCandidates() {
   const list = []
@@ -124,9 +126,23 @@ export function getSidecarStartCandidates() {
     : (platform === 'macos' && arch === 'x64' ? sidecarBinaryName('macos', 'arm64') : '')
 
   const remembered = pluginGet(START_CMD_STORAGE_KEY)
-  pushUnique(list, seen, remembered)
+  if (platform !== 'windows' || !/\.exe$/i.test(remembered)) {
+    pushUnique(list, seen, remembered)
+  }
 
   const root = resolveLocalAddonRootFileUrl()
+
+  if (platform === 'windows') {
+    if (root) {
+      pushUnique(list, seen, `${root}/mcp-sidecar/start-mcp.cmd`)
+    }
+    const local = guessWindowsUserLocalAppData()
+    if (local) {
+      pushUnique(list, seen, `${local}\\chayuan-wps\\mcp\\runtime\\start-mcp.cmd`)
+    }
+    pushUnique(list, seen, '%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\start-mcp.cmd')
+  }
+
   if (root && binName) {
     pushUnique(list, seen, `${root}/mcp-sidecar/bin/${binName}`)
     if (altBinName) pushUnique(list, seen, `${root}/mcp-sidecar/bin/${altBinName}`)
@@ -134,7 +150,6 @@ export function getSidecarStartCandidates() {
 
   if (platform === 'windows') {
     if (root) {
-      pushUnique(list, seen, `${root}/mcp-sidecar/start-mcp.cmd`)
       pushUnique(list, seen, `${root}/mcp-sidecar/spike-shell-marker.cmd`)
     }
     const local = guessWindowsUserLocalAppData()
@@ -143,12 +158,10 @@ export function getSidecarStartCandidates() {
       pushUnique(list, seen, `${local}\\chayuan-wps\\mcp\\runtime\\${binName}`)
       // autostart ps1: runtime\bin\chayuan-mcp-windows-x64.exe
       pushUnique(list, seen, `${local}\\chayuan-wps\\mcp\\runtime\\bin\\${binName}`)
-      pushUnique(list, seen, `${local}\\chayuan-wps\\mcp\\runtime\\start-mcp.cmd`)
     }
     // ShellExecute on Windows often expands env vars
     pushUnique(list, seen, `%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\${binName}`)
     pushUnique(list, seen, `%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\bin\\${binName}`)
-    pushUnique(list, seen, '%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\start-mcp.cmd')
   } else if (platform === 'macos') {
     const home = guessHomeDirFromUrls() || ''
     const runtime = home ? `${home}/.config/chayuan-wps/mcp/runtime` : ''
@@ -257,7 +270,10 @@ async function tryShellExecute(target) {
     const app = window.Application
     if (app?.OAAssist?.ShellExecute) {
       app.OAAssist.ShellExecute(pathLike)
-      pluginSet(START_CMD_STORAGE_KEY, pathLike)
+      // Windows 直启 .exe 弹常驻控制台窗口，下次启动别再走它
+      if (detectHostPlatform() !== 'windows' || !/\.exe$/i.test(pathLike)) {
+        pluginSet(START_CMD_STORAGE_KEY, pathLike)
+      }
       return true
     }
   } catch (e) {
