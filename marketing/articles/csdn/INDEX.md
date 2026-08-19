@@ -20,3 +20,14 @@
 | — | [hot-gov-intranet-agent-review.md](./hot-gov-intranet-agent-review.md) | 智能体进机关：内网不上传，国产 WPS 里把公文自动审查做完 |
 | — | [hot-shared-ollama-intranet-engine.md](./hot-shared-ollama-intranet-engine.md) | 一台内网 GPU，全科室共用：察元 + Ollama 校对引擎怎么搭，密钥不出科室 |
 | — | [hot-wps-skills-doc-proofread.md](./hot-wps-skills-doc-proofread.md) | 别再把大模型当聊天框校对稿子了：WPS「技能」才是文档审查该有的样子 |
+| — | [hot-black-window-killed-mcp.md](./hot-black-window-killed-mcp.md) | 察元AI文档助手 4.1.2：那个把 MCP 服务干掉的黑窗终于没了 |
+| — | [hot-one-line-harness-wps.md](./hot-one-line-harness-wps.md) | 察元AI文档助手：一行命令把 Claude Code 接进 WPS，行政岗十分钟搞定 |
+| — | [hot-midnight-report-proofread.md](./hot-midnight-report-proofread.md) | 察元AI文档助手实测：晚上十点接活，四十分钟交出十五页报告校对 |
+| — | [hot-contract-number-crosscheck.md](./hot-contract-number-crosscheck.md) | 察元AI文档助手交叉校对：三份合同核数字，法务第一次没加班 |
+| — | [hot-bid-doc-sequence-check.md](./hot-bid-doc-sequence-check.md) | 察元AI文档助手查标书：差一个序号就废标的事故，先让机器筛一遍 |
+| — | [hot-audit-report-figures.md](./hot-audit-report-figures.md) | 察元AI文档助手整理审计报告：散落的数字和结论，先聚拢再人工拍板 |
+| — | [hot-classified-doc-check.md](./hot-classified-doc-check.md) | 察元AI文档助手做脱密检查：材料上报前十分钟的本机筛查 |
+| — | [hot-intranet-offline-quiet-run.md](./hot-intranet-offline-quiet-run.md) | 察元AI文档助手离线跑：不联外网的电脑也能 AI 校对 |
+| — | [hot-thesis-term-unify.md](./hot-thesis-term-unify.md) | 察元AI文档助手改论文：开学前最后一周，术语统一交给机器 |
+| — | [hot-stop-paste-chatbox.md](./hot-stop-paste-chatbox.md) | 察元AI文档助手替代聊天框：稿子不出电脑的校对方式 |
+| — | [hot-table-figure-consistency.md](./hot-table-figure-consistency.md) | 察元AI文档助手核表格：正文说增长百分之十二，附表里是 11.8 |
