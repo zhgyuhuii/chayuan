@@ -1,66 +1,37 @@
 /**
  * In-page MCP chat orchestrator: merge multi-server tools, run tool loop.
+ *
+ * 2026-09-08 起内核切换为 chayuan-office 的 agent-core AgentLoop（vendor 于
+ * src/agent-core/）：自研循环的退避重试、退化熔断（同回合重复/全错误/坏入参）、
+ * no-FC 模型 JSON 协议等稳定性工事全部继承；本文件保留原有对外契约
+ * （入参/结果对象/steps 进度流/AbortError 取消语义），UI 无感。
+ * 领域语义（写确认闸门、proofread 进度与卡片）在 agentCoreSkill.js。
  */
-import { chatCompletionMessage } from '../../utils/chatApi.js'
+import { AgentLoop } from '../../agent-core/index'
 import {
   CHAYUAN_SERVER_ID,
   getEnabledMcpServers,
   isChayuanToolAllowed,
-  namespaceToolName,
-  parseNamespacedTool
+  namespaceToolName
 } from './mcpServerRegistry.js'
 import {
   callLocalTool,
-  callUpstreamTool,
   healthz,
   initializeLocal,
   listLocalTools,
   listUpstreamTools,
   syncUpstreamAllowlist
 } from './mcpHttpClient.js'
-import { getActiveTask } from '../../utils/taskListStore.js'
+import { createAgentCoreTransport } from './agentCoreTransport.js'
+import { createMcpDocumentSkill } from './agentCoreSkill.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
 // 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
 // 走 proofread_run 单次调用，根本用不到这么多轮。
 const MAX_ROUNDS = 16
 
-const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|document_new|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export)$/
-
-function isWriteTool(serverId, toolName) {
-  if (serverId === CHAYUAN_SERVER_ID) {
-    if (toolName === 'proofread_run') return false
-    return WRITE_TOOL_RE.test(toolName) || toolName.endsWith('_apply')
-  }
-  return false
-}
-
-function toolNeedsConfirm(serverId, toolName, toolMeta, args) {
-  if (serverId === CHAYUAN_SERVER_ID) {
-    if (toolName === 'proofread_apply_comments') return true
-    if (isWriteTool(serverId, toolName) && args?.confirmed !== true && args?.dryRun !== true) {
-      // allow dryRun / preview paths through; confirmed writes blocked for UI confirm
-      if (args && Object.prototype.hasOwnProperty.call(args, 'confirmed') && args.confirmed !== true) {
-        return true
-      }
-      if (WRITE_TOOL_RE.test(toolName)) return true
-    }
-    return false
-  }
-  if (toolMeta?.annotations?.readOnlyHint === true) return false
-  return true
-}
-
-function inferProofreadIntent(userText) {
-  const t = String(userText || '')
-  if (/(修改|改正|改掉|纠正|修正).{0,8}(错别字|别字|错字|拼写)|把.{0,6}(错别字|别字).{0,6}(改|修)/.test(t)) {
-    return 'fix'
-  }
-  if (/(检查|核对|查找|找出|看看|标出|批注).{0,8}(错别字|别字|错字|拼写|语法)/.test(t) || /错别字|校对/.test(t)) {
-    return 'check'
-  }
-  return 'unknown'
-}
+// 模型对 tools 参数报错的特征（与旧编排器同一正则；命中后整轮重跑 JSON 兼容协议）
+const TOOLS_UNSUPPORTED_RE = /tool|tools|function call|不支持/i
 
 function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent }) {
   const sel = selectionCtx || {}
@@ -88,120 +59,56 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent }) {
   return lines.filter(Boolean).join('\n')
 }
 
-function toOpenAiTools(mergedTools) {
-  return mergedTools.map(t => ({
-    type: 'function',
-    function: {
-      name: t.name,
-      description: String(t.description || '').slice(0, 1200),
-      parameters: t.inputSchema || { type: 'object', properties: {} }
-    }
-  }))
+function inferProofreadIntent(userText) {
+  const t = String(userText || '')
+  if (/(修改|改正|改掉|纠正|修正).{0,8}(错别字|别字|错字|拼写)|把.{0,6}(错别字|别字).{0,6}(改|修)/.test(t)) {
+    return 'fix'
+  }
+  if (/(检查|核对|查找|找出|看看|标出|批注).{0,8}(错别字|别字|错字|拼写|语法)/.test(t) || /错别字|校对/.test(t)) {
+    return 'check'
+  }
+  return 'unknown'
 }
 
-function parseJsonToolCallFallback(text) {
-  const raw = String(text || '').trim()
-  if (!raw) return null
-  const tryParse = (s) => {
-    try {
-      const obj = JSON.parse(s)
-      if (obj && (obj.tool || obj.name) && (obj.arguments || obj.args || obj.params)) {
-        return {
-          id: `fallback_${Date.now()}`,
-          type: 'function',
-          function: {
-            name: String(obj.tool || obj.name),
-            arguments: JSON.stringify(obj.arguments || obj.args || obj.params || {})
-          }
-        }
-      }
-    } catch { /* ignore */ }
-    return null
+/** agent-core 退避守卫的英文终态信息 → 中文（前缀匹配，未命中原样透出） */
+function localizeLoopError(message) {
+  const s = String(message || '')
+  if (s.startsWith('Tool input was unusable')) {
+    return '连续多次工具入参无法解析（截断或非法 JSON），已中止本次执行；请重试或把操作拆小。'
   }
-  const direct = tryParse(raw)
-  if (direct) return [direct]
-  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fence) {
-    const one = tryParse(fence[1].trim())
-    if (one) return [one]
+  if (s.startsWith('Every tool call failed')) {
+    return '连续多轮工具调用全部失败，已停止；请检查文档状态后重试。'
   }
-  const m = raw.match(/\{[\s\S]*"tool"\s*:[\s\S]*\}/)
-  if (m) {
-    const one = tryParse(m[0])
-    if (one) return [one]
+  if (s.startsWith('The model kept repeating')) {
+    return '模型连续重复相同操作且无进展，已停止；请换个说法或更换模型重试。'
   }
-  return null
+  return s
 }
 
-function summarizeToolResult(result) {
+function abortError() {
+  const err = new Error('已停止')
+  err.name = 'AbortError'
+  err.code = 'ABORTED'
+  return err
+}
+
+/** 失败工具结果的 output 是 JSON 信封，进度步骤里只展示 message 字段 */
+function toolErrorDetail(output) {
   try {
-    const sc = result?.structuredContent || result?.content || result
-    const text = typeof sc === 'string' ? sc : JSON.stringify(sc)
-    return text.length > 6000 ? `${text.slice(0, 6000)}…(truncated)` : text
+    const parsed = JSON.parse(output)
+    return String(parsed?.message || output)
   } catch {
-    return String(result)
+    return String(output || '')
   }
 }
 
-function extractProofreadCard(toolName, args, result) {
-  if (toolName !== 'proofread_run') return null
-  // An error/timeout envelope (e.g. AGENT_HANDLER_TIMEOUT) is structuredContent
-  // too — building a card from it yields taskId='' + no issues, which then renders
-  // dead 批注/改正正文 buttons ("缺少校对 taskId" / "0 处替换"). Skip it so the
-  // model's own failure text is shown instead.
-  if (result?.isError) return null
-  const sc = result?.structuredContent || result
-  if (!sc || typeof sc !== 'object') return null
-  const taskId = sc.taskId || sc.task_id || ''
-  const issues = sc.issues || sc.items || sc.results || []
-  const issueCount = Array.isArray(issues)
-    ? issues.reduce((n, it) => n + (Array.isArray(it?.issues) ? it.issues.length : 1), 0)
-    : Number(sc.issueCount || sc.count || 0)
-  // Don't surface a card we can't act on (no taskId for comments AND no issues to fix)
-  if (!taskId && issueCount === 0) return null
-  return {
-    taskId: String(taskId || ''),
-    issueCount,
-    dryRun: args?.dryRun !== false,
-    scope: args?.scope || 'document',
-    summary: String(sc.summary || sc.message || `发现 ${issueCount || 0} 处问题`).slice(0, 500),
-    raw: sc
-  }
-}
-
-/**
- * proofread_run 是长任务（大文档逐块调模型，常需数十秒）。期间本页 dispatchMcpJob
- * 在同一 JS 上下文里跑，会写一条 type:'spell-check' 的实时任务（含 current/total/
- * progress）。这里在调用期间每 ~700ms 读一次 getActiveTask()，原地更新一条
- * 「校对中 X/Y 段 (Z%)」进度步骤，经 onProgress 透传给加载条，避免一直死卡 93%。
- */
-async function callLocalToolWithProofreadProgress(name, args, { signal, pushProgress } = {}) {
-  let timer = null
-  if (typeof pushProgress === 'function') {
-    let lastSignature = ''
-    timer = setInterval(() => {
-      if (signal?.aborted) return
-      let task = null
-      try { task = getActiveTask() } catch { task = null }
-      if (!task || task.type !== 'spell-check') return
-      const cur = Number(task.current || 0)
-      const total = Number(task.total || 0)
-      const pct = Math.max(0, Math.min(100, Math.round(Number(task.progress || 0))))
-      const signature = `${cur}/${total}/${pct}`
-      if (signature === lastSignature) return
-      lastSignature = signature
-      pushProgress({
-        label: total > 0 ? `校对中 ${cur}/${total} 段` : '校对中…',
-        detail: `${pct}%`,
-        progress: pct
-      })
-    }, 700)
-  }
-  try {
-    return await callLocalTool(name, args, { signal })
-  } finally {
-    if (timer) clearInterval(timer)
-  }
+function seedHistoryFrom(historyMessages) {
+  return (historyMessages || [])
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+    .slice(-8)
+    .map(m => (m.role === 'user'
+      ? { role: 'user', text: String(m.content) }
+      : { role: 'assistant', text: String(m.content) }))
 }
 
 /**
@@ -259,7 +166,6 @@ export async function runMcpChatOrchestrator({
   }
 
   const mergedTools = []
-  const toolMetaByName = new Map()
   const usedServers = []
 
   for (const server of enabled) {
@@ -269,35 +175,23 @@ export async function runMcpChatOrchestrator({
         const tools = await listLocalTools({ signal })
         for (const t of tools) {
           if (!isChayuanToolAllowed(t.name)) continue
-          const name = namespaceToolName(CHAYUAN_SERVER_ID, t.name)
-          const entry = {
-            name,
+          mergedTools.push({
+            name: namespaceToolName(CHAYUAN_SERVER_ID, t.name),
             description: `[${server.name}] ${t.description || t.name}`,
-            inputSchema: t.inputSchema || { type: 'object', properties: {} },
-            annotations: t.annotations || {},
-            serverId: CHAYUAN_SERVER_ID,
-            toolName: t.name
-          }
-          mergedTools.push(entry)
-          toolMetaByName.set(name, entry)
+            inputSchema: t.inputSchema || { type: 'object', properties: {} }
+          })
         }
         usedServers.push(CHAYUAN_SERVER_ID)
-        pushStep('已连接察元 MCP', `${tools.length} 个工具（白名单后 ${mergedTools.filter(x => x.serverId === CHAYUAN_SERVER_ID).length}）`)
+        pushStep('已连接察元 MCP', `${tools.length} 个工具（白名单后 ${mergedTools.filter(x => x.name.startsWith(`${CHAYUAN_SERVER_ID}__`)).length}）`)
       } else {
         await syncUpstreamAllowlist({ signal })
         const tools = await listUpstreamTools(server.id, { signal })
         for (const t of tools) {
-          const name = namespaceToolName(server.id, t.name)
-          const entry = {
-            name,
+          mergedTools.push({
+            name: namespaceToolName(server.id, t.name),
             description: `[${server.name}] ${t.description || t.name}`,
-            inputSchema: t.inputSchema || { type: 'object', properties: {} },
-            annotations: t.annotations || {},
-            serverId: server.id,
-            toolName: t.name
-          }
-          mergedTools.push(entry)
-          toolMetaByName.set(name, entry)
+            inputSchema: t.inputSchema || { type: 'object', properties: {} }
+          })
         }
         usedServers.push(server.id)
         pushStep(`已连接 ${server.name}`, `${tools.length} 个工具`)
@@ -311,186 +205,89 @@ export async function runMcpChatOrchestrator({
     return { ok: false, fallback: true, reason: 'no_tools', steps }
   }
 
+  // 空/已取消请求直接按旧契约短路（loop.run 对空指令是 no-op，会悬挂）
+  if (!String(userText || '').trim()) {
+    return { ok: false, fallback: true, reason: 'model_error', content: '空请求', steps, usedServers }
+  }
+  if (signal?.aborted) throw abortError()
+
   const proofreadIntent = inferProofreadIntent(userText)
   const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent })
-  const messages = [
-    { role: 'system', content: system },
-    ...historyMessages.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-8),
-    { role: 'user', content: String(userText || '') }
-  ]
-
-  const openaiTools = toOpenAiTools(mergedTools)
-  let proofreadCard = null
+  const seed = seedHistoryFrom(historyMessages)
   const pendingConfirms = []
-  let toolsUnsupported = false
+  let proofreadCard = null
 
-  for (let round = 0; round < MAX_ROUNDS; round += 1) {
-    abortIf(signal)
-    pushStep(`模型思考（第 ${round + 1} 轮）`, model?.name || model?.modelId || '')
-
-    let assistantMsg
-    try {
-      const body = toolsUnsupported
-        ? {
-            providerId: model.providerId,
-            modelId: model.modelId,
-            ribbonModelId: model.id,
-            messages: [
-              ...messages,
-              {
-                role: 'system',
-                content: '若需调用工具，请仅输出 JSON：{"tool":"serverId__toolName","arguments":{...}}，不要其它文字。'
-              }
-            ],
-            signal
-          }
-        : {
-            providerId: model.providerId,
-            modelId: model.modelId,
-            ribbonModelId: model.id,
-            messages,
-            tools: openaiTools,
-            tool_choice: 'auto',
-            signal
-          }
-      assistantMsg = await chatCompletionMessage(body)
-    } catch (e) {
-      const msg = e?.message || String(e)
-      if (!toolsUnsupported && /tool|tools|function call|不支持/i.test(msg)) {
-        toolsUnsupported = true
-        pushStep('模型可能不支持 tools，改用 JSON 兼容层')
-        round -= 1
-        continue
+  // 跑一轮完整的 agent 循环。settle 为 { result }（onDone）或 { error: string }（onError）。
+  const runLoop = (forceDegraded) => new Promise((resolve) => {
+    let onAbort = null
+    const settle = (value) => {
+      if (onAbort) signal?.removeEventListener?.('abort', onAbort)
+      resolve(value)
+    }
+    const skill = createMcpDocumentSkill({
+      systemPrompt: system,
+      mergedTools,
+      pushProgress,
+      confirmHandler,
+      pendingConfirms,
+      onProofreadCard: (card) => {
+        proofreadCard = {
+          ...card,
+          intent: proofreadIntent === 'unknown' ? 'check' : proofreadIntent
+        }
       }
-      return { ok: false, fallback: true, reason: 'model_error', content: msg, steps, usedServers }
-    }
-
-    let toolCalls = Array.isArray(assistantMsg.tool_calls) ? assistantMsg.tool_calls : []
-    if (!toolCalls.length && toolsUnsupported) {
-      const fb = parseJsonToolCallFallback(assistantMsg.content)
-      if (fb) toolCalls = fb
-    }
-
-    if (!toolCalls.length) {
-      return {
-        ok: true,
-        content: String(assistantMsg.content || '已完成。'),
-        steps,
-        proofreadCard,
-        pendingConfirms,
-        usedServers,
-        proofreadIntent
-      }
-    }
-
-    messages.push({
-      role: 'assistant',
-      content: assistantMsg.content || null,
-      tool_calls: toolCalls
     })
+    const loop = new AgentLoop({
+      transport: createAgentCoreTransport({
+        model,
+        signal,
+        onTurnStart: (turnNo) => pushStep(`模型思考（第 ${turnNo} 轮）`, model?.name || model?.modelId || '')
+      }),
+      skill,
+      events: {
+        onToolStart: (call) => pushStep(`调用 ${call.name}`, JSON.stringify(call.input ?? {}).slice(0, 200)),
+        onToolExecuted: ({ call, execution }) => {
+          const detail = execution.isError ? toolErrorDetail(execution.output) : String(execution.output || '')
+          pushStep(`${execution.isError ? '失败' : '完成'} ${call.name}`, detail.slice(0, 160))
+        },
+        onDone: (result) => settle({ result }),
+        onError: (error) => settle({ error })
+      },
+      maxTurns: MAX_ROUNDS,
+      maxHistory: Infinity, // 单轮编排内不裁历史（与旧编排器一致；跨轮由调用方的 8 条滚动窗口控制）
+      compaction: false
+    })
+    if (forceDegraded) loop.degrade()
+    if (seed.length) loop.restore(seed)
+    onAbort = () => loop.cancel()
+    if (signal && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
+    loop.run(String(userText))
+  })
 
-    for (const call of toolCalls) {
-      abortIf(signal)
-      const nsName = call?.function?.name || call?.name || ''
-      let args = {}
-      try {
-        args = JSON.parse(call?.function?.arguments || call?.arguments || '{}')
-      } catch {
-        args = {}
-      }
-      const { serverId, toolName } = parseNamespacedTool(nsName)
-      const meta = toolMetaByName.get(nsName)
-      pushStep(`调用 ${nsName}`, JSON.stringify(args).slice(0, 200))
-
-      if (toolNeedsConfirm(serverId, toolName, meta, args)) {
-        if (typeof confirmHandler === 'function') {
-          const approved = await confirmHandler({
-            serverId,
-            toolName,
-            namespacedName: nsName,
-            args,
-            meta
-          })
-          if (!approved) {
-            messages.push({
-              role: 'tool',
-              tool_call_id: call.id || nsName,
-              content: JSON.stringify({ ok: false, error: 'USER_REJECTED', message: '用户拒绝执行该写操作' })
-            })
-            continue
-          }
-          args = { ...args, confirmed: true }
-        } else {
-          pendingConfirms.push({ serverId, toolName, namespacedName: nsName, args })
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id || nsName,
-            content: JSON.stringify({
-              ok: false,
-              error: 'CONFIRM_REQUIRED',
-              message: '需要用户确认后才能执行写操作；请先汇总结果并等待确认。'
-            })
-          })
-          continue
-        }
-      }
-
-      try {
-        let result
-        if (serverId === CHAYUAN_SERVER_ID) {
-          if (!isChayuanToolAllowed(toolName)) {
-            throw Object.assign(new Error('TOOL_NOT_ALLOWED'), { code: 'TOOL_NOT_ALLOWED' })
-          }
-          if (toolName === 'proofread_run') {
-            result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })
-          } else {
-            result = await callLocalTool(toolName, args, { signal })
-          }
-        } else {
-          result = await callUpstreamTool(serverId, toolName, args, { signal })
-        }
-        const card = extractProofreadCard(toolName, args, result)
-        if (card) {
-          proofreadCard = {
-            ...card,
-            intent: proofreadIntent === 'unknown' ? 'check' : proofreadIntent
-          }
-        }
-        const summary = summarizeToolResult(result)
-        pushStep(`完成 ${nsName}`, summary.slice(0, 160))
-        messages.push({
-          role: 'tool',
-          tool_call_id: call.id || nsName,
-          content: summary
-        })
-      } catch (e) {
-        pushStep(`失败 ${nsName}`, e.message || String(e))
-        messages.push({
-          role: 'tool',
-          tool_call_id: call.id || nsName,
-          content: JSON.stringify({ ok: false, error: e.code || 'TOOL_ERROR', message: e.message })
-        })
-      }
-    }
+  let out = await runLoop(false)
+  // 模型不支持 tools 协议：与旧编排器一样，识别报错特征后立即切 JSON 兼容层整轮重跑
+  if (out.error && !signal?.aborted && TOOLS_UNSUPPORTED_RE.test(String(out.error))) {
+    pushStep('模型可能不支持 tools，改用 JSON 兼容层')
+    out = await runLoop(true)
   }
 
+  if (typeof out.error === 'string' && out.error) {
+    if (signal?.aborted) throw abortError()
+    return { ok: false, fallback: true, reason: 'model_error', content: localizeLoopError(out.error), steps, usedServers }
+  }
+  const r = out.result || {}
+  if (r.cancelled || signal?.aborted) throw abortError()
+  const fallbackText = r.turnLimit
+    ? '已达到工具调用轮次上限，请根据上方步骤继续或重试。'
+    : '已完成。'
   return {
     ok: true,
-    content: '已达到工具调用轮次上限，请根据上方步骤继续或重试。',
+    content: String(r.text || '').trim() || fallbackText,
     steps,
     proofreadCard,
     pendingConfirms,
     usedServers,
     proofreadIntent
-  }
-}
-
-function abortIf(signal) {
-  if (signal?.aborted) {
-    const err = new Error('已停止')
-    err.name = 'AbortError'
-    err.code = 'ABORTED'
-    throw err
   }
 }
 
