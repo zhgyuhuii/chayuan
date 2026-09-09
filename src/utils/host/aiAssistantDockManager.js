@@ -59,7 +59,10 @@ const KEYS = {
 
 export const TIMING_DEFAULTS = {
   settleDelayMs: 400, // DockPosition→Width/Height 首设延迟（探针：≥~400ms 才不触发布局竞态）
-  verifyAttempts: 5, // 尺寸不匹配时有界重试（重设+轮询）次数
+  sizeTotalMs: 9000, // 尺寸观察总窗口（探针：赋值落地延迟 0.7~3.5s 且随重设变长，窗口要足够长）
+  sizeExactGraceMs: 3500, // 此窗口内坚持等精确匹配；过后接受健康默认尺寸（共识：不可设用默认）
+  sizeSetAttempts: 2, // 总赋值次数上限：频繁重设疑似推迟布局沉降（探针 round2 时间线）
+  sizePollMs: 300,
   verifyIntervalMs: 200,
   pollsPerAttempt: 2,
   readyTimeoutMs: 15000, // 面板页（重 Vue 应用）ready 握手超时；冷启动首载较慢，放宽到 15s
@@ -110,6 +113,13 @@ export function isAcceptableSizeReport(report, mode, target) {
   const dim = mode === 'bottom' ? Number(report.h) : Number(report.w)
   if (!Number.isFinite(dim) || dim < SIZE_LIMITS.minSupportedPx) return false
   return Math.abs(dim - target) <= SIZE_LIMITS.tolerancePx
+}
+
+/** 面板健康判定：回报尺寸 ≥50px（14px 坏死面板不算） */
+export function isHealthySizeReport(report, mode) {
+  if (!report) return false
+  const dim = mode === 'bottom' ? Number(report.h) : Number(report.w)
+  return Number.isFinite(dim) && dim >= SIZE_LIMITS.minSupportedPx
 }
 
 export function buildAIAssistantPaneUrl(mode, query = {}) {
@@ -300,28 +310,41 @@ export function createAIAssistantDockManager(deps = {}) {
     if (Number(report.updatedAt || 0) < createdAt - timing.markerClockSkewMs) return null
     return report
   }
+  // 尺寸设置规范（修订版，按计划共识 9「可设则记忆，不可设用 WPS 默认」）：
+  // - 目标：面板健康（回报尺寸 ≥50px，见 isHealthySizeReport）即接受；Width/Height
+  //   精确落地是 best-effort，落地了才写入尺寸记忆。探针 round2 只对 Height 证实过
+  //   延迟赋值生效；宽度赋值落地慢（0.7~3.5s）且频繁重设疑似推迟沉降，因此赋值
+  //   次数受限、精确匹配只等一个宽限期，之后按健康默认放行。
+  // - 只有始终无健康回报（页面没起来/14px 坏死）才判该方向不支持。
   async function applyAndVerifyPaneSize(pane, mode, createdAt) {
-    await delay(timing.settleDelayMs)
-    const target = resolveTargetSize(mode)
-    let sawReport = false
-    for (let attempt = 0; attempt < timing.verifyAttempts; attempt++) {
+  await delay(timing.settleDelayMs)
+  const target = resolveTargetSize(mode)
+  const startedAt = Date.now()
+  let setCount = 0
+  let sawReport = false
+  while (Date.now() - startedAt < timing.sizeTotalMs) {
+    if (setCount < timing.sizeSetAttempts) {
       try {
         if (target.axis === 'width') pane.Width = target.value
         else pane.Height = target.value
       } catch (_) {}
-      for (let poll = 0; poll < timing.pollsPerAttempt; poll++) {
-        await delay(timing.verifyIntervalMs)
-        const report = readSizeReport(createdAt)
-        if (report) sawReport = true
-        if (isAcceptableSizeReport(report, mode, target.value)) {
-          writeRaw(target.axis === 'width' ? KEYS.width : KEYS.height, String(target.value))
-          return { ok: true }
-        }
-      }
+      setCount += 1
     }
-    // sawReport=false 表示面板页始终没有回报（加载失败/极慢），非“方向坏死”实证
-    return { ok: false, sawReport }
+    await delay(timing.sizePollMs)
+    const report = readSizeReport(createdAt)
+    if (report) sawReport = true
+    if (isAcceptableSizeReport(report, mode, target.value)) {
+      writeRaw(target.axis === 'width' ? KEYS.width : KEYS.height, String(target.value))
+      return { ok: true, exact: true, sawReport }
+    }
+    const pastGrace = Date.now() - startedAt >= timing.sizeExactGraceMs
+    if (pastGrace && isHealthySizeReport(report, mode)) {
+      return { ok: true, exact: false, sawReport }
+    }
   }
+  // sawReport=false 表示面板页始终没有回报（加载失败/极慢），非”方向坏死”实证
+  return { ok: false, sawReport }
+}
 
   // -- ready 握手（面板页挂载即写 {bootId}，bootId 变化=新页面实例） --
   async function waitPaneReady(beforeMarker, createdAt) {

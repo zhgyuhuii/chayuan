@@ -138,6 +138,7 @@ function createFakeApp(behavior = {}) {
       Object.defineProperty(pane, 'Width', {
         get: () => width,
         set: (v) => {
+          if (behavior.widthIgnored) return // 模拟 WPS 忽略左右面板设宽（探针只证实过 Height 生效）
           width = Number(v)
           scheduleReport('width', width)
         }
@@ -175,9 +176,10 @@ function freshDock(behavior = {}) {
 
 const TEST_TIMING = {
   settleDelayMs: 15,
-  verifyAttempts: 4,
-  verifyIntervalMs: 8,
-  pollsPerAttempt: 2,
+  sizeTotalMs: 260,
+  sizeExactGraceMs: 90,
+  sizeSetAttempts: 2,
+  sizePollMs: 8,
   readyTimeoutMs: 400,
   readyPollMs: 5,
   closeGraceMs: 5
@@ -381,6 +383,18 @@ async function testDockManager(mod) {
     const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
     await dock.openAs('left')
     assert('记忆宽度钳制到上限', ctx.panes.get(1).Width === 720)
+  }
+
+  // T11 WPS 忽略左右面板设宽（探针只证实过 Height 延迟生效）→ 健康默认尺寸即接受，
+  // 不写宽度记忆、方向仍判可用（计划共识 9：可设则记忆，不可设用 WPS 默认）
+  {
+    const ctx = freshDock({ widthIgnored: true })
+    const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
+    const res = await dock.openAs('left')
+    assert('设宽被忽略时停靠仍成功', res.ok && res.mode === 'left')
+    assert('面板保留（不再因尺寸不精确删除）', ctx.panes.size === 1 && ctx.panes.get(1).deleted !== true)
+    assert('不写宽度记忆', ctx.storage.getItem('ai_assistant_dock_width') === null)
+    assert('方向仍判可用', dock.isDockSupported('left') === true)
   }
 
   // T10 默认面板 URL 构造（file:// 场景）
