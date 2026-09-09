@@ -5373,8 +5373,17 @@ export default {
         })
         this.mcpHealthLevel = bundle.level || 'gray'
         if (!bundle.anyOk) {
-          this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
-          this.mcpHealthHint = 'sidecar 不可用或无已启用 MCP'
+          // 三级分诊（2026-09-09）：WPS 安全层可拦环回 HTTP，须与「进程没起」区分，
+          // 否则用户按「服务未启动」排障方向全错。旁路判定见 webviewFsProbe.js
+          if (bundle.failReason === 'loopback_blocked') {
+            this.mcpSoftBanner = '本机服务在运行，但 WPS 安全层拦截了加载项的连接——请在 WPS 设置中信任察元加载项（或确认安全弹窗）后重启 WPS'
+            this.mcpHealthHint = `环回被拦截（sidecar 进程经心跳旁路判定存活）${bundle.blocklistEntries ? ` · 检测到 jsaddons 拦截表 ${bundle.blocklistEntries} 条` : ''}`
+          } else {
+            this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
+            this.mcpHealthHint = bundle.failReason === 'sidecar_down'
+              ? 'sidecar 未运行（心跳文件无响应）'
+              : 'sidecar 不可用或无已启用 MCP'
+          }
         } else if (bundle.level === 'yellow') {
           this.mcpSoftBanner = ''
           this.mcpHealthHint = `仅外服可用（${bundle.upstreamOkCount}/${bundle.upstreamTotal}），察元文档通道未就绪`

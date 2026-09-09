@@ -363,6 +363,28 @@ export async function probeMcpHealthBundle({ signal, ensureSidecar, deep = false
     } catch { /* ignore */ }
   }
 
+  // fetch 失败时的旁路分级（2026-09-09）：WPS jsaddons 安全层可拦环回 HTTP，
+  // 此时 sidecar 进程健在但页内 fetch 全灭。经 FileSystem 读 sidecar 心跳文件
+  // 区分「进程没起」(sidecar_down) 与「环回被掐」(loopback_blocked)，顺带读
+  // 拦截表条目数。仅 fetch 失败时才探测（成功路径零开销）。
+  let sidecarProcessAlive = null
+  let failReason = ''
+  let blocklistEntries = null
+  if (!health.online) {
+    try {
+      const { probeSidecarHeartbeat, readJsaddinBlocklist } = await import('./webviewFsProbe.js')
+      const hb = probeSidecarHeartbeat()
+      const bl = readJsaddinBlocklist()
+      if (hb) {
+        sidecarProcessAlive = hb.alive
+        failReason = hb.alive ? 'loopback_blocked' : 'sidecar_down'
+      } else {
+        failReason = 'sidecar_down'
+      }
+      if (bl && bl.entries > 0) blocklistEntries = bl.entries
+    } catch { /* best-effort */ }
+  }
+
   const enabled = getEnabledMcpServers()
   const chayuanEnabled = enabled.some(s => s.id === CHAYUAN_SERVER_ID)
   const upstreamEnabled = enabled.filter(s => s.id !== CHAYUAN_SERVER_ID)
@@ -411,6 +433,11 @@ export async function probeMcpHealthBundle({ signal, ensureSidecar, deep = false
     chayuanOk,
     agentOnline: !!health.agentOnline,
     sidecarOnline: !!health.online,
+    // fetch 失败时的旁路诊断（成功路径为空）：'sidecar_down' | 'loopback_blocked'
+    failReason,
+    sidecarProcessAlive,
+    // WPS jsaddons 拦截表（jsaddinblockhost.ini）条目数；null=读不到/无条目
+    blocklistEntries,
     upstreamOkCount,
     upstreamTotal: upstreamEnabled.length,
     upstreamErrors,

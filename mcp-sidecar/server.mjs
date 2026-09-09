@@ -551,3 +551,23 @@ server.on('error', (err) => {
   console.error(err)
   process.exit(1)
 })
+
+// ── 心跳文件 ────────────────────────────────────────────────────────────────
+// 供 WPS 加载项 webview 经 Application.FileSystem 读取（HTTP fetch 被 WPS
+// jsaddons 安全层拦截时，这是唯一能区分「sidecar 没起」vs「环回被掐」的旁路
+// 通道，见 2026-09-09 排障：jsaddinblockhost.ini 拉黑后 healthz fetch 全灭
+// 而进程健在）。3s 一写，开销可忽略；写失败静默（如目录被删）。
+const HEARTBEAT_FILE = path.join(dataDir, 'runtime', 'sidecar-heartbeat.json')
+function writeHeartbeat() {
+  try {
+    fs.mkdirSync(path.dirname(HEARTBEAT_FILE), { recursive: true })
+    fs.writeFileSync(HEARTBEAT_FILE, JSON.stringify({
+      at: Date.now(),
+      pid: process.pid,
+      port,
+      startedAt
+    }), 'utf-8')
+  } catch { /* best-effort */ }
+}
+writeHeartbeat()
+setInterval(writeHeartbeat, 3000).unref?.()

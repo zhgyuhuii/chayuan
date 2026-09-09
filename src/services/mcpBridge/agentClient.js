@@ -149,10 +149,49 @@ async function register() {
  * After first successful register: run spikes once and POST /selftest/report
  * so external `npm run mcp:selftest` can discover results without clicking UI.
  */
+/**
+ * WPS 版本比较：v 形如 '12.1.28492'，返回是否 >= (major, minor, build)。
+ */
+function wpsVersionAtLeast(major, minor, build) {
+  try {
+    const raw = String(window.Application?.Version || '').trim()
+    const m = raw.match(/(\d+)\.(\d+)\.(\d+)/)
+    if (!m) return false
+    const [a, b, c] = [Number(m[1]), Number(m[2]), Number(m[3])]
+    if (a !== major) return a > major
+    if (b !== minor) return b > minor
+    return c >= build
+  } catch {
+    return false
+  }
+}
+
+// 2026-09-09 实测：WPS ≥12.1.28492 的 jsaddons 安全层疑似被「首次注册后自动
+// Spike」（ShellExecute 进程探测 + WS 环回）触发，写 jsaddinblockhost.ini 拉黑
+// 环回后 agent/healthz 全灭。该版本起自动 Spike 只上报跳过标记，不再做进程/
+// 环回探测；手动 Spike（设置页）保留。
+const AUTO_SPIKE_BLOCKED_SINCE = [12, 1, 28492]
+
 function scheduleAutoSelftest() {
   if (_autoSpikeStarted) return
   _autoSpikeStarted = true
   setTimeout(async () => {
+    if (wpsVersionAtLeast(...AUTO_SPIKE_BLOCKED_SINCE)) {
+      console.info('[mcpAgent] auto spike skipped on WPS >= 12.1.28492 (jsaddons security gate)')
+      try {
+        await fetchJson(`${MCP_BASE_URL}/selftest/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source: 'addon-auto',
+            protocolVersion: MCP_PROTOCOL_VERSION,
+            skipped: 'wps-security-gate',
+            wpsVersion: String(window.Application?.Version || '')
+          })
+        })
+      } catch { /* 上报失败静默 */ }
+      return
+    }
     try {
       const spikes = await import('./spikes.js')
       const results = await spikes.runMcpSpikes()
