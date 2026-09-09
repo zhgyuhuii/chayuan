@@ -231,6 +231,9 @@
               @click.prevent="openExternalWebsite('https://aidooo.com')"
             >aidooo.com</a>
           </div>
+          <div v-if="starBadgeResolved" class="sidebar-footer-star-badge" title="感谢支持开源">
+            已点赞支持开源 ⭐
+          </div>
           <div class="sidebar-footer-actions">
             <button type="button" class="sidebar-footer-text-btn" @click="helpManualVisible = true">帮助</button>
             <button type="button" class="sidebar-footer-text-btn" @click="feedbackDialogVisible = true">反馈及建议</button>
@@ -340,6 +343,29 @@
           role="status"
         >
           {{ mcpSoftBanner }}
+        </div>
+        <!-- GitHub Star 提示：未点赞引导去点；已点赞后侧栏底部常驻微标 -->
+        <div v-if="starPromptVisible" class="star-prompt-card" role="dialog" aria-label="GitHub Star 提示">
+          <div class="star-prompt-emoji">⭐</div>
+          <div class="star-prompt-main">
+            <div class="star-prompt-title">
+              {{ starPromptChatOpens >= 5 ? `你已经和察元助手聊了 ${starPromptChatOpens} 次` : '觉得察元好用吗？' }}
+            </div>
+            <div class="star-prompt-body">
+              察元是免费开源的 WPS 文档智能助手。去 GitHub 点个 Star，是对我们持续更新最好的支持。
+            </div>
+          </div>
+          <div class="star-prompt-actions">
+            <button type="button" class="star-prompt-btn primary" @click="handleStarPromptGo">去点 Star ⭐</button>
+            <button type="button" class="star-prompt-btn" @click="handleStarPromptDone">已经点过了</button>
+            <button type="button" class="star-prompt-btn ghost" @click="handleStarPromptLater">以后再说</button>
+          </div>
+        </div>
+        <div v-else-if="starPromptThanks" class="star-prompt-card thanks" role="status">
+          <div class="star-prompt-emoji">🎉</div>
+          <div class="star-prompt-main">
+            <div class="star-prompt-title">已点赞加星，感谢支持开源！</div>
+          </div>
         </div>
         <div
           v-if="displayedWelcomePrompt"
@@ -2492,6 +2518,13 @@ import { exportDocumentImagesAsAssets } from '../utils/documentImageExportServic
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
 import { PANE_PROTOCOL_KEYS, getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
+import {
+  GITHUB_REPO_URL,
+  isStarredResolved,
+  markShown,
+  recordDialogOpen,
+  resolveStarPrompt
+} from '../utils/starPrompt.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { MCP_URL } from '../services/mcpBridge/config.js'
 import {
@@ -4012,6 +4045,10 @@ export default {
       dockMenuOpen: false,
       dockSwitching: false,
       dockUnsupportedMap: {},
+      starPromptVisible: false,
+      starPromptChatOpens: 0,
+      starPromptThanks: false,
+      starBadgeResolved: false,
       welcomePromptIndex: -1,
       displayedWelcomePrompt: '',
       fullWelcomePrompt: '',
@@ -4479,6 +4516,8 @@ export default {
     if (this.aiAssistantTaskPaneMode && Number(window.innerWidth || 0) <= 500) {
       this.sidebarCollapsed = true
     }
+    // 对话页打开即计入 Star 提示的价值门槛；达标且未解决时展示提示卡
+    this.tryOpenStarPrompt()
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
     // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
@@ -4597,6 +4636,37 @@ export default {
     // ------------------------------------------------------------------
     // 窗口形态（停靠）菜单：计划 §5.2 提交 B
     // ------------------------------------------------------------------
+    // ── GitHub Star 提示（移植 chayuan-office 语义：价值门槛后最多弹 2 次，
+    // 明确表态永久解决；点赞无法无 OAuth 检测，打开仓库页即视为已处理）──
+    tryOpenStarPrompt() {
+      const star = recordDialogOpen()
+      this.starBadgeResolved = isStarredResolved()
+      if (star.show) {
+        this.starPromptChatOpens = star.chatOpens
+        this.starPromptVisible = true
+        markShown()
+      }
+    },
+    handleStarPromptGo() {
+      this.openExternalWebsite(GITHUB_REPO_URL)
+      this.resolveStarPromptAndThank()
+    },
+    handleStarPromptDone() {
+      this.resolveStarPromptAndThank()
+    },
+    resolveStarPromptAndThank() {
+      resolveStarPrompt('starred')
+      this.starPromptVisible = false
+      this.starPromptThanks = true
+      this.starBadgeResolved = true
+      window.setTimeout(() => {
+        this.starPromptThanks = false
+      }, 6000)
+    },
+    handleStarPromptLater() {
+      resolveStarPrompt('dismissed')
+      this.starPromptVisible = false
+    },
     toggleDockMenu() {
       this.dockMenuOpen = !this.dockMenuOpen
       if (this.dockMenuOpen) {
@@ -18219,6 +18289,95 @@ export default {
   color: #7a5a14;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* GitHub Star 提示卡：未点赞引导 / 已点赞致谢（文案见 starPrompt.js 注释） */
+.star-prompt-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(254, 249, 195, 0.72), rgba(255, 255, 255, 0.9));
+  box-shadow: 0 2px 10px -4px rgba(202, 138, 4, 0.25);
+}
+
+.star-prompt-card.thanks {
+  border-color: rgba(110, 231, 183, 0.45);
+  background: linear-gradient(135deg, rgba(209, 250, 229, 0.7), rgba(255, 255, 255, 0.92));
+  box-shadow: none;
+}
+
+.star-prompt-emoji {
+  flex: 0 0 auto;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.star-prompt-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.star-prompt-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #78350f;
+}
+
+.star-prompt-card.thanks .star-prompt-title {
+  color: #065f46;
+}
+
+.star-prompt-body {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #92400e;
+}
+
+.star-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.star-prompt-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(202, 138, 4, 0.35);
+  background: #fff;
+  color: #92400e;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.star-prompt-btn.primary {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.star-prompt-btn.ghost {
+  border-color: transparent;
+  color: #a16207;
+  opacity: 0.85;
+}
+
+.star-prompt-btn:hover {
+  filter: brightness(0.97);
+}
+
+.sidebar-footer-star-badge {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #a16207;
+  opacity: 0.9;
 }
 .composer-tools {
   display: flex;
