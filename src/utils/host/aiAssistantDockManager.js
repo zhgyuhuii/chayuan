@@ -466,9 +466,11 @@ export function createAIAssistantDockManager(deps = {}) {
     }
     await delay(timing.closeGraceMs)
     const pane = getOpenPane()
-    if (pane) safeDeletePane(pane)
+    // 先落库再删面板：面板页自身发起 undock 时，Delete 可能连带销毁本 webview，
+    // 删除之后的语句不保证执行
     clearPaneState()
     setMode('float')
+    if (pane) safeDeletePane(pane)
     return { ok: true, mode: 'float' }
   }
 
@@ -502,12 +504,13 @@ export function createAIAssistantDockManager(deps = {}) {
   /** 全形态关闭（保持形态记忆，下次按上次形态打开）。 */
   function closeAll() {
     const pane = getOpenPane()
-    if (pane) safeDeletePane(pane)
+    // 与 undockToFloat 同理：Delete 可能销毁发起方 webview，存储写入全部前置
     clearPaneState()
     const lock = readAIAssistantLock()
     if (lock && lock.instanceId && lock.instanceId !== HANDOVER_INSTANCE_ID && !lock.handover) {
       sendAIAssistantCloseRequest(lock.instanceId)
     }
+    if (pane) safeDeletePane(pane)
   }
 
   return {

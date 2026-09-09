@@ -278,6 +278,50 @@
 
     <!-- 右侧主区域 -->
     <main class="main-area">
+      <!-- 窗口形态菜单：右上角单按钮下拉（计划 §3.7；浮窗/停靠两态通用） -->
+      <div v-if="dockMenuItems.length" class="dock-menu-wrap" ref="dockMenuRef">
+        <button
+          type="button"
+          class="dock-menu-btn"
+          :class="{ 'is-open': dockMenuOpen, 'is-docked': aiAssistantTaskPaneMode }"
+          title="窗口位置"
+          aria-label="窗口位置"
+          @click.stop="toggleDockMenu"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <rect
+              :x="aiAssistantTaskPaneMode ? 5 : 14.5"
+              y="6.5"
+              width="4.5"
+              height="11"
+              rx="1"
+              fill="currentColor"
+              opacity="0.65"
+            />
+          </svg>
+        </button>
+        <div v-if="dockMenuOpen" class="dock-menu-panel">
+          <div
+            v-for="item in dockMenuItems"
+            :key="item.action"
+            class="dock-menu-item"
+            :class="{ active: item.active, disabled: item.disabled }"
+            :title="item.hint"
+            @click.stop="handleDockAction(item.action)"
+          >
+            <svg class="dock-menu-pict" viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="item.pict.frame" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+              <path v-if="item.pict.fill" :d="item.pict.fill" fill="currentColor" opacity="0.6" />
+              <path v-if="item.pict.line" :d="item.pict.line" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <span class="dock-menu-label">{{ item.label }}</span>
+            <svg v-if="item.active" class="dock-menu-check" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" />
+            </svg>
+          </div>
+        </div>
+      </div>
       <!-- 工具助手面板:与对话区互斥,activeToolId 非空时占据右侧主区 -->
       <ToolAssistantPanel
         v-if="activeToolId"
@@ -2445,7 +2489,7 @@ import { initSync as initTaskListSync, subscribe as subscribeTaskList, getTaskBy
 import { exportDocumentImagesAsAssets } from '../utils/documentImageExportService.js'
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
-import { PANE_PROTOCOL_KEYS } from '../utils/host/aiAssistantDockManager.js'
+import { PANE_PROTOCOL_KEYS, getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { MCP_URL } from '../services/mcpBridge/config.js'
 import {
@@ -3963,6 +4007,9 @@ export default {
       tooltipLayouts: {},
       aiAssistantWindowSession: null,
       aiAssistantTaskPaneMode: false,
+      dockMenuOpen: false,
+      dockSwitching: false,
+      dockUnsupportedMap: {},
       welcomePromptIndex: -1,
       displayedWelcomePrompt: '',
       fullWelcomePrompt: '',
@@ -4031,6 +4078,61 @@ export default {
     }
   },
   computed: {
+    // 当前窗口形态：浮窗 or 停靠方向（taskpane 时 URL 带 dock 参数，兜底读 manager 记忆）
+    currentDockMode() {
+      if (!this.aiAssistantTaskPaneMode) return 'float'
+      const fromUrl = String(this.$route?.query?.dock || '').toLowerCase()
+      if (['left', 'right', 'bottom'].includes(fromUrl)) return fromUrl
+      try {
+        const remembered = getAIAssistantDockManager().getMode()
+        return ['left', 'right', 'bottom'].includes(remembered) ? remembered : 'float'
+      } catch (_) {
+        return 'float'
+      }
+    },
+    // 五项菜单（计划 §3.7）：探测确认不支持的方向直接隐藏；当前形态置灰打勾；
+    // 关闭恒在。窄面板放不下五个图标按钮，故用单按钮下拉
+    dockMenuItems() {
+      const frame = 'M4 5.5h16v13H4z'
+      const items = [
+        {
+          action: 'left',
+          label: '停靠左侧',
+          pict: { frame, fill: 'M5.5 7h5v10h-5z' }
+        },
+        {
+          action: 'right',
+          label: '停靠右侧',
+          pict: { frame, fill: 'M13.5 7h5v10h-5z' }
+        },
+        {
+          action: 'bottom',
+          label: '停靠下方',
+          pict: { frame, fill: 'M5.5 15.5h13v2.5h-13z' }
+        },
+        {
+          action: 'float',
+          label: '悬浮窗口',
+          pict: { frame: 'M7 7.5h10v9H7z', line: 'M9 10h6' }
+        },
+        {
+          action: 'close',
+          label: '关闭助手',
+          pict: { frame, line: 'M9.5 10.5l5 5M14.5 10.5l-5 5' }
+        }
+      ]
+      return items
+        .filter((item) => !this.dockUnsupportedMap[item.action])
+        .map((item) => {
+          const active = item.action === this.currentDockMode
+          return {
+            ...item,
+            active,
+            disabled: active || this.dockSwitching,
+            hint: active ? '当前窗口位置' : ''
+          }
+        })
+    },
     filteredModelGroups() {
       void this.modelGroupsVersion
       return getFilteredModelGroups()
@@ -4478,11 +4580,98 @@ export default {
     this.cancelActiveGeneratedOutputRun()
     this.aiAssistantWindowSession?.releaseOwnership?.()
     this.aiAssistantWindowSession = null
+    this.closeDockMenu()
     this.stopTaskPaneProtocol()
     this.flushHistorySave()
     if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
   methods: {
+    // ------------------------------------------------------------------
+    // 窗口形态（停靠）菜单：计划 §5.2 提交 B
+    // ------------------------------------------------------------------
+    toggleDockMenu() {
+      this.dockMenuOpen = !this.dockMenuOpen
+      if (this.dockMenuOpen) {
+        this.refreshDockSupportCache()
+        if (!this._dockMenuOutsideHandler) {
+          this._dockMenuOutsideHandler = (e) => {
+            const wrap = this.$refs.dockMenuRef
+            if (wrap && e.target && wrap.contains(e.target)) return
+            this.closeDockMenu()
+          }
+          document.addEventListener('mousedown', this._dockMenuOutsideHandler)
+        }
+      } else {
+        this.closeDockMenu()
+      }
+    },
+    closeDockMenu() {
+      this.dockMenuOpen = false
+      if (this._dockMenuOutsideHandler) {
+        document.removeEventListener('mousedown', this._dockMenuOutsideHandler)
+        this._dockMenuOutsideHandler = null
+      }
+    },
+    refreshDockSupportCache() {
+      // 探测结论由真实切换尝试回填（manager 缓存，按 WPS 版本），这里只读取隐藏已知不支持项
+      try {
+        const dock = getAIAssistantDockManager()
+        this.dockUnsupportedMap = {
+          left: dock.isDockSupported('left') === false,
+          right: dock.isDockSupported('right') === false,
+          bottom: dock.isDockSupported('bottom') === false
+        }
+      } catch (_) {
+        this.dockUnsupportedMap = {}
+      }
+    },
+    async handleDockAction(action) {
+      if (this.dockSwitching) return
+      const item = this.dockMenuItems.find((i) => i.action === action)
+      if (item && (item.disabled || item.active)) return
+      this.closeDockMenu()
+      if (action === 'close') {
+        if (this.aiAssistantTaskPaneMode) {
+          // 停靠态：先自行释放锁再销毁面板（Delete 可能连带销毁本 webview，
+          // manager 的 close 请求走 storage 事件，不会回投到写入方自身）
+          this.aiAssistantWindowSession?.releaseOwnership?.()
+          this.aiAssistantWindowSession = null
+          try {
+            getAIAssistantDockManager().closeAll()
+          } catch (e) {
+            console.warn('[dock] 销毁停靠面板失败:', e)
+          }
+        } else {
+          this.closeWindow()
+        }
+        return
+      }
+      this.dockSwitching = true
+      try {
+        const dock = getAIAssistantDockManager()
+        const result = action === 'float' ? await dock.undockToFloat() : await dock.dockTo(action)
+        if (result.ok) {
+          // 成功后本 webview 通常即将消失：停靠态由 manager 删面板；浮窗态切停靠
+          // 需自行关窗（close 请求的 storage 事件不会在本窗口触发）
+          if (!this.aiAssistantTaskPaneMode && action !== 'float') {
+            this.aiAssistantWindowSession?.releaseOwnership?.()
+            this.aiAssistantWindowSession = null
+            this.closeWindow()
+          }
+          return
+        }
+        const message =
+          result.fallback === 'float'
+            ? '当前环境不支持该停靠方式，已切换为悬浮窗口。'
+            : '窗口位置切换未完成，请重试。'
+        await inAppAlert(message, { title: '窗口位置' })
+      } catch (e) {
+        console.warn('[dock] 切换窗口位置失败:', e)
+        await inAppAlert('窗口位置切换失败，请重试。', { title: '窗口位置' })
+      } finally {
+        this.dockSwitching = false
+      }
+    },
     showEarlierMessages() {
       this.messageWindowSize += 50
     },
@@ -17715,6 +17904,95 @@ export default {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+}
+
+/* 窗口形态（停靠）菜单：右上角浮动单按钮 + 下拉（计划 §3.7/§5.2） */
+.dock-menu-wrap {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 60;
+}
+
+.dock-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--ai-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ai-text-muted);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.dock-menu-btn:hover,
+.dock-menu-btn.is-open {
+  color: #0284c7;
+  border-color: rgba(14, 165, 233, 0.45);
+  background: #fff;
+}
+
+.dock-menu-btn.is-docked {
+  color: #0284c7;
+}
+
+.dock-menu-panel {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  min-width: 148px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--ai-border);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px -12px rgba(15, 23, 42, 0.28), 0 4px 10px -6px rgba(15, 23, 42, 0.18);
+}
+
+.dock-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: #374151;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dock-menu-item:hover:not(.disabled) {
+  background: rgba(14, 165, 233, 0.09);
+  color: #0284c7;
+}
+
+.dock-menu-item.active {
+  color: #0284c7;
+  font-weight: 600;
+}
+
+.dock-menu-item.disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.dock-menu-pict {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+
+.dock-menu-label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.dock-menu-check {
+  flex: 0 0 auto;
+  color: #0284c7;
 }
 
 .main-area::before {
