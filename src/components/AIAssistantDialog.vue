@@ -5603,8 +5603,17 @@ export default {
       }
     },
     startAssistantLoadingProgress(message, initialState = {}) {
+      // 定时器是全局单例：新消息抢占时，旧消息若仍在加载，其气泡会冻结在最后一次
+      // 爬升的百分比（典型「卡在 24% 不动」——旧消息 isLoading 仍为 true 但定时器
+      // 已易主）。抢占前先把旧消息的加载态收尾，让气泡正常消失而非永久冻结。
+      const previous = this.assistantLoadingMessage
+      if (previous && previous !== message && previous.isLoading) {
+        previous.isLoading = false
+        previous.loadingState = null
+      }
       this.stopAssistantLoadingProgress()
       if (!message) return
+      this.assistantLoadingMessage = message
       message.loadingState = {
         label: '已发送，正在准备请求...',
         detail: '内容已加入会话，正在整理上下文与附件信息。',
@@ -5659,6 +5668,7 @@ export default {
         message.loadingState = null
       }
       this.assistantLoadingMessageId = ''
+      this.assistantLoadingMessage = null
     },
     createCancellableRunError(messageText, code) {
       const error = new Error(String(messageText || '任务已停止'))
