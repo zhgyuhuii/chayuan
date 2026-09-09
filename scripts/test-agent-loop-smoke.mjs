@@ -61,7 +61,8 @@ const STUBS = {
   // src/services/mcpBridge/mcpHttpClient.js
   [join(REPO, 'src/services/mcpBridge/mcpHttpClient.js')]: `
     export async function healthz() {
-      return { online: true }
+      const m = globalThis.__MOCK__
+      return { ok: true, online: true, agentOnline: m.agentOnline !== false }
     }
     export async function initializeLocal() {}
     export async function listLocalTools() {
@@ -257,6 +258,18 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(nonSystem.length === 9, 'S7 history trimmed to 8 + current, got ' + nonSystem.length)
   A(nonSystem[0].content === '历史消息2', 'S7 oldest kept is 历史消息2, got ' + nonSystem[0].content)
   console.log('✓ S7 历史滚动窗口（8 条）')
+}
+
+// 场景 8：sidecar 在线但 WPS Agent 未注册 → 快速失败，不进模型循环
+// （否则模型会连续多轮撞 WPS_AGENT_OFFLINE 烧完轮次上限，用户看到「没法正常批注」）
+{
+  const m = baseMock({ agentOnline: false })
+  const r = await run({})
+  A(r.ok === false && r.fallback === true, 'S8 ok=false fallback')
+  A(r.reason === 'agent_offline', 'S8 reason agent_offline, got ' + r.reason)
+  A(m.requests.length === 0, 'S8 no model request fired')
+  A(String(r.content || '').includes('Agent'), 'S8 actionable message')
+  console.log('✓ S8 Agent 离线快速失败')
 }
 
 console.log('ALL SCENARIOS PASSED')

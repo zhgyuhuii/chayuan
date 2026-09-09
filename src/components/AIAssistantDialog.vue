@@ -5473,6 +5473,20 @@ export default {
             this.$nextTick(() => this.scrollToBottom())
             return { handled: true }
           }
+          // WPS Agent 离线（sidecar 在线但加载项未注册）：所有文档工具必然失败，
+          // 不进模型循环也不回落内置助手——直接给出可操作的修复指引
+          if (result.reason === 'agent_offline') {
+            assistantMsg.content = String(result.content || 'WPS Agent 离线，文档工具不可用。')
+            assistantMsg.mcpSteps = result.steps || []
+            this.mcpSoftBanner = 'WPS 桥接未连接：请重启 WPS 让察元加载项重新注册'
+            this.stopAssistantLoadingProgress(assistantMsg)
+            assistantMsg.isLoading = false
+            this.isStreaming = false
+            this.activeMcpTurnContext = null
+            this.saveHistory()
+            this.$nextTick(() => this.scrollToBottom())
+            return { handled: true }
+          }
           // 仅「基础设施未就绪」（sidecar 离线 / 无启用服务 / 无工具）才回落内置助手
           this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
           this.stopAssistantLoadingProgress(assistantMsg)

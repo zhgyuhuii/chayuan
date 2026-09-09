@@ -159,6 +159,20 @@ export async function runMcpChatOrchestrator({
   if (!hz.online) {
     return { ok: false, fallback: true, reason: 'sidecar_offline', steps }
   }
+  // sidecar 在线但 WPS 加载项未注册（长轮询断开）：所有文档工具都会返回
+  // WPS_AGENT_OFFLINE。提前失败，避免模型连续多轮撞同一错误、烧完轮次上限
+  // 才放弃（实测 DeepSeek 会反复重试 wps_launch/proofread_run 6 轮）。
+  if (hz.ok && hz.agentOnline === false) {
+    pushStep('WPS Agent 未连接', 'sidecar 在线，但 WPS 加载项未注册，文档工具不可用')
+    return {
+      ok: false,
+      fallback: true,
+      reason: 'agent_offline',
+      content: '察元与 WPS 的桥接未连接（Agent 离线）：sidecar 正常，但 WPS 里的察元加载项没有注册。请重启 WPS（或重开文档窗口）让加载项重新连接后重试。',
+      steps,
+      usedServers: []
+    }
+  }
 
   const enabled = getEnabledMcpServers()
   if (!enabled.length) {
