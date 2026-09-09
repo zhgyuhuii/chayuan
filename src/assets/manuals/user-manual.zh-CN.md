@@ -1,593 +1,599 @@
-# 察元 AI 文档助手 · 用户手册
+# wps-skill-chayuan 全方位指南：一条命令，让 AI 编程智能体直接读写你的 WPS 文档
 
-> 版本：4.0.0  
-> 适用：WPS 文字 12.x / WPS 365（WebView2）· Windows / macOS / Linux  
-> 厂商：北京智灵鸟科技中心 · [aidooo.com](https://aidooo.com) · 微信公众号「智灵鸟科技」  
-> 本机 MCP 地址：`http://127.0.0.1:62588/mcp`（无需 Token）  
-> 打包说明：请编辑本文件；构建时会同步到 `src/assets/manuals/`（`?raw` 内嵌进加载项）与 `public/docs/`（随 dist 发布独立 md）。
-
-本手册按**产品全生命周期**分章：从安装、模型与知识库、助手与技能、日常文档能力，到对接 Cursor / Claude Code / Codex / OpenClaw 等外部智能体，以及授权与排障。
+> 适用版本：技能包 **v4.1.1** ｜ MCP 目录 **v0.10.0** ｜ **46 个文档工具 · 15 个域**
+> 官网：<https://aidooo.com/skill> ｜ 开源：<https://github.com/zhgyuhuii/chayuan-wps-releases> ｜ 国内镜像：<https://gitee.com/cloudshd/chayuan-wps-releases>
 
 ---
 
-## 目录
+## TL;DR（太长不看）
 
-1. [产品是什么](#1-产品是什么)
-2. [安装与首次启动](#2-安装与首次启动)
-3. [技能包下载与安装（wps-skill-chayuan）](#3-技能包下载与安装wps-skill-chayuan)
-4. [四级自检与 MCP 服务](#4-四级自检与-mcp-服务)
-5. [模型配置](#5-模型配置)
-6. [知识库配置（可选）](#6-知识库配置可选)
-7. [助手与技能配置](#7-助手与技能配置)
-8. [日常使用：功能区导览](#8-日常使用功能区导览)
-9. [校对、批注与写回纪律](#9-校对批注与写回纪律)
-10. [保密检查与文档脱密](#10-保密检查与文档脱密)
-11. [模板、表单与批量工具](#11-模板表单与批量工具)
-12. [对接外部智能体](#12-对接外部智能体)
-13. [授权、支持与反馈](#13-授权支持与反馈)
-14. [常见问题与排障](#14-常见问题与排障)
+如果你正在用 **Claude Code / Cursor / Codex** 这类 AI 编程智能体，又常用 **WPS 文字** 写文档，那你大概率遇到过这个割裂感：AI 在终端里很聪明，可它**碰不到你正打开的那篇 .docx**——要先把文档内容复制粘贴出去，改完再粘回来，表格、批注、排版全丢。
 
----
+`wps-skill-chayuan` 就是来消除这个割裂感的。**一条命令**，三样东西同时就绪：
 
-## 1. 产品是什么
+1. **WPS 加载项**（察元 AI 文档助手）装进 WPS；
+2. **本机 MCP 服务**开机自启（`127.0.0.1:62588`，无需 Token、数据不出域）；
+3. **技能文件**投放进你本机的 Claude / Cursor / Codex。
 
-察元 AI 文档助手是运行在 **WPS 文字** 中的加载项，同时在本机提供 **MCP（Model Context Protocol）文档智能体服务**。
+装完，你在智能体里说一句「**帮我把当前 WPS 文档里的错别字用批注标出来**」，它就真的去改你屏幕上那篇文档了。
 
-### 1.1 三层能力
-
-| 层 | 作用 | 典型入口 |
-| --- | --- | --- |
-| WPS 加载项 | 在 Ribbon / 右键 / AI 对话里做校对、翻译、助手、脱密等 | 功能区「察元AI助理」「察元AI编审」 |
-| 本机 MCP | 让外部 AI 智能体安全读写当前 WPS 文档 | `http://127.0.0.1:62588/mcp` |
-| 可选知识库 | 对接察元服务端 RAG，引用企业知识作答 | 设置 → 知识库设置 |
-
-### 1.2 适合谁
-
-- 需要在 **内网 / 离线 / 隔离** 环境处理公文与材料的机关、国企、军工、高校等单位  
-- 希望用 **Claude Code、Cursor、Codex、OpenClaw** 等智能体直接改 WPS 文档的个人与团队  
-- 需要 **错别字校对、保密辅助检查、文档脱密、表单审计** 的办公场景  
-
-### 1.3 安全边界（请先读）
-
-- MCP **仅监听本机** `127.0.0.1:62588`，默认无需 Token。  
-- 涉密或敏感文档建议使用 **离线 / 内网模型**，正文尽量不出本机。  
-- 保密检查、AI 痕迹检查等结果 **仅作辅助参考**，不替代人工定密，不构成司法或定密结论。  
-- 工具辅助决策，**最终责任在使用者**。
-
----
-
-## 2. 安装与首次启动
-
-你有两条常见安装路径，二选一即可（也可先装加载项，再另装技能包补齐智能体侧文件）。
-
-### 2.1 路径 A：官方安装包（推荐多数终端用户）
-
-| 平台 | 安装包示例 |
-| --- | --- |
-| Windows x64 | `chayuan-4.0.0-windows-x64.exe` |
-| macOS | `chayuan-4.0.0-macos-arm64.pkg`（或对应架构） |
-| Linux | `chayuan-4.0.0-linux-x64.deb` |
-
-**步骤：**
-
-1. 从官网 / 发行页下载对应平台安装包并安装。  
-2. **完全退出并重新打开** WPS 文字。  
-3. 在功能区确认出现：**察元AI助理**、**察元AI编审**。  
-4. 浏览器访问健康检查：  
-   `http://127.0.0.1:62588/healthz`  
-   期望看到在线 / `online`。  
-5. 若未在线：打开察元 → **设置 → MCP 服务管理 → 启动本机服务**。
-
-**加载项常见目录（排障用）：**
-
-- Windows：`%AppData%\kingsoft\wps\jsaddons`
-- Linux：`~/.local/share/Kingsoft/wps/jsaddons`
-- macOS：`~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons`（以本机实际路径为准）
-
-### 2.2 路径 B：便携技能包（推荐要对接编程智能体的用户）
-
-见 [第 3 章](#3-技能包下载与安装wps-skill-chayuan)。一条命令可同时装好：**WPS 加载项 + MCP + 各智能体技能文件**。
-
-### 2.3 首次打开 AI 助手
-
-1. 功能区 **察元AI助理 → AI助手**（或等价入口）。  
-2. 若提示未配置模型，按 [第 5 章](#5-模型配置) 完成对话模型。  
-3. 左侧栏底部有 **帮助**（本手册）与 **反馈及建议**。
-
----
-
-## 3. 技能包下载与安装（wps-skill-chayuan）
-
-### 3.1 技能包是什么
-
-`wps-skill-chayuan` 离线整包通常包含：
-
-```
-wps-skill-chayuan/
-  install-staging/     # WPS 加载项
-  mcp-sidecar/         # MCP 二进制与运行时
-  skill-chayuan/       # 各智能体技能模板
-  scripts/             # install-wps-skill-chayuan.sh / .ps1
-  portable.manifest.json
-  checksums.sha256
-  mirrors.json
-```
-
-### 3.2 下载入口
-
-- 官网技能页：https://aidooo.com/skill  
-- 发行包名示例：`wps-skill-chayuan-4.0.0-portable.zip`（附 `.sha256`）  
-- 镜像可能包括官网、Gitee、GitHub Releases（以当页为准）
-
-### 3.3 一分钟安装
-
-解压后进入 `wps-skill-chayuan` 目录：
-
-**macOS / Linux：**
-
-```bash
-bash scripts/install-wps-skill-chayuan.sh
-```
-
-**Windows（PowerShell）：**
+**一条命令（任选一条，粘贴到终端即可）：**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1
+# Windows（PowerShell）—— 不能直接 iwr | iex：PS 5.1 会按 GBK 解码导致乱码，必须显式 UTF-8 下载
+& {[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$w=New-Object Net.WebClient;$w.Encoding=[Text.Encoding]::UTF8;$s=$w.DownloadString('https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.ps1');if($s.Length -and $s[0]-eq[char]0xFEFF){$s=$s.Substring(1)};& ([scriptblock]::Create($s)) -Fetch}
 ```
-
-安装器会：
-
-1. 部署 WPS 加载项到 jsaddons，并写入 `publish.xml`  
-2. 安装 MCP 运行时、注册开机自启并启动  
-3. 自动检测已安装的 Claude / Cursor / Codex，投放技能与 MCP 配置  
-4. 跑四级自检（见第 4 章）
-
-装完后 **重启 WPS**，在智能体中验证一句：
-
-> 用察元打开当前文档，检查保密风险
-
-### 3.4 常用安装选项
-
-| 选项 | 含义 |
-| --- | --- |
-| `--with-all` / `-WithAll` | 强制部署到 Claude + Cursor + Codex |
-| `--no-agent` / `-NoAgent` | 只装加载项 + MCP，不投放智能体技能 |
-| `--skill-only` / `-SkillOnly` | 只处理运行时技能相关，不动加载项 |
-| `--fetch` / `-Fetch` | 仅有脚本时从多源回退下载整包并校验 sha256 |
-| `-h` / `-Help` | 完整帮助 |
-
-### 3.5 各智能体技能落盘位置（手工兜底）
-
-| 智能体 | 默认路径 |
-| --- | --- |
-| Claude Code | `~/.claude/skills/wps-skill-chayuan/SKILL.md` |
-| Cursor | `~/.cursor/rules/wps-skill-chayuan.mdc` |
-| Codex | `~/.codex/prompts/wps-skill-chayuan.md` + `~/.codex/config.toml` 中 `[mcp_servers.chayuan-wps-mcp]` |
-| OpenClaw / Hermes 等 GUI | 通常只需在客户端添加 MCP HTTP：`http://127.0.0.1:62588/mcp` |
-
-### 3.6 卸载（手动）
-
-当前以手动清理为主：
-
-- 删除上表技能文件 / 配置条目  
-- 删除 jsaddons 下对应 `chayuan_<版本>` 与相关 `publish.xml` 条目  
-- Windows：去掉注册表 `HKCU\...\Run\ChayuanWpsMcp` 后结束占用 62588 的进程  
-- macOS：卸载 LaunchAgent `com.chayuan.mcp` 后结束进程  
-- Linux：停用用户级 `chayuan-mcp.service` 后结束进程  
-
----
-
-## 4. 四级自检与 MCP 服务
-
-### 4.1 建议自检顺序
-
-1. **加载项**：WPS 功能区能否看到察元页签  
-2. **Sidecar 进程**：本机 MCP 是否在跑  
-3. **健康检查**：`GET http://127.0.0.1:62588/healthz` → `online`  
-4. **MCP 初始化**：外部客户端能否列出工具；或设置里「测试连接」通过  
-5. **Agent 投放**（技能包用户）：Claude / Cursor / Codex 是否已有技能文件  
-
-### 4.2 MCP 服务地址
-
-```
-http://127.0.0.1:62588/mcp
-```
-
-- 协议：Streamable HTTP MCP  
-- 建议服务名：`chayuan-wps-mcp`  
-- **无需 Token / API Key**  
-- 端口可用环境变量 `CHAYUAN_MCP_PORT` 调整（改端口后客户端配置需同步）
-
-### 4.3 在察元内管理 MCP
-
-路径：**设置 → 常规设置 → MCP 服务管理**
-
-常用操作：
-
-- **测试连接**  
-- **启动本机服务**  
-- **复制链接**  
-- 高级：外部客户端说明、诊断；可选增加其它 HTTP MCP 供对话框内文档智能体使用  
-
-前提：**先打开 WPS 并加载察元**，再让外部智能体连接（Agent 侧需要加载项在线配合）。
-
-### 4.4 开发者启动（可选）
-
-若使用源码 / 开发环境：
 
 ```bash
-npm run mcp:sidecar
-# 或
-node mcp-sidecar/server.mjs
+# macOS / Linux
+curl -fsSL https://gitee.com/cloudshd/chayuan-wps-releases/raw/master/scripts/install-wps-skill-chayuan.sh | bash -s -- --fetch
 ```
 
-Windows 亦可使用包内 `mcp-sidecar/start-mcp.cmd`（需本机 Node 18+）。正式安装包一般已内嵌二进制并开机自启，终端用户无需这一步。
+> 脚本会自动多源回退下载便携包（Gitee→官网→GitHub，**SHA-256 强校验**），再完成全部安装。海外或 GitHub 直连好的，把 URL 换成 `https://raw.githubusercontent.com/zhgyuhuii/chayuan/main/scripts/install-wps-skill-chayuan.{ps1,sh}` 即可。
+
+下面从「这是什么」一路讲到「怎么用、能干什么」。
 
 ---
 
-## 5. 模型配置
+## 一、这到底是什么？解决什么痛点？
 
-没有可用对话模型时，校对、助手、对话都无法正常工作。MCP「连得上」不等于「模型已配好」——报错如 `MODEL_NOT_CONFIGURED` 属于模型层。
+### 1.1 三合一交付
 
-### 5.1 打开设置
+`wps-skill-chayuan` 是一个**便携技能包**。一份技能定义（`SKILL.md`）+ 一个 4 步闭环安装脚本，把三样本来要分别配置的东西打成一个整体：
 
-- 功能区 **察元AI编审 → 设置**  
-- 或 AI 对话窗口左侧 **齿轮（设置）**  
-- 欢迎页提示未配置时，可点 **立即配置模型**
+| 组件 | 作用 | 没有它会怎样 |
+|------|------|--------------|
+| **WPS 加载项**（察元 AI 文档助手） | 在 WPS 文字里提供任务窗格、Ribbon、右键菜单，能读写正文、加批注、改格式 | AI 没有手，碰不到文档 |
+| **本机 MCP 服务**（sidecar） | 把「读/定位/改/批注/校对/表格/导出」等 **46 个工具**暴露成标准 MCP 接口 | 外部智能体无法标准化调用 WPS |
+| **技能文件** | 告诉 Claude/Cursor/Codex「你有这些能力、该这么用」 | 智能体不知道 WPS 这套工具的存在 |
 
-### 5.2 配置步骤（推荐）
+痛点就一句话：**AI 编程智能体很强，但它们和 WPS 文档之间缺一根标准化的管子。** MCP（Model Context Protocol）就是这根管子，而本技能包把这根管子**预先接好、开机自启、一条命令部署到各智能体**。
 
-1. 左侧进入 **模型设置**。  
-2. 选择或添加供应商（见下表），填写 **API Base URL**；云端填写 Key，本地 Ollama 等常可留空 Key。  
-3. 点击 **刷新模型**，勾选要启用的模型。  
-4. 进入 **默认设置**，指定 **对话模型**（必做）。按需设置图像 / 视频 / 语音模型。  
-5. 需要时在 **助手设置** 为单个助手指定 **执行模型**。  
-6. 用一篇短文做一次 **拼写与语法检查** 自测。
+### 1.2 为什么是「技能」而不是「插件」？
 
-### 5.3 常见供应商
+- 对 **WPS 用户**：它表现为一个加载项（在编辑器内直接用）。
+- 对 **开发者**：它表现为一个本机 MCP 服务（一个 URL 就能接）。
+- 对 **AI 智能体**：它表现为一份技能/规则文件（告诉模型有哪些工具可用）。
 
-**离线 / 内网（优先推荐隔离环境）：**
+同一个东西，三个视角，**装一次全齐**。这就是「双向自启」：你从「装技能」进去，加载项也装好了；你从「装加载项」进去，技能也带上了。
 
-- Ollama  
-- LM Studio  
-- Xinference  
-- OneAPI / New API 等 OpenAI 兼容网关  
+### 1.3 和「在浏览器里用大模型」的本质区别
 
-**云端示例：** ChatGPT、Claude、Gemini、DeepSeek、豆包、阿里百炼、百度千帆、ChatGLM、Kimi、零一万物 等（以设置页当前列表为准）。
-
-### 5.4 段落截取
-
-长文档处理时，在 **默认设置 → 段落截取设置** 中控制分块长度，避免单次上下文过长。外部智能体也可先读 `document_meta` / `document_chunks` 再分段处理。
+| 维度 | 浏览器/独立 App 里的大模型 | wps-skill-chayuan |
+|------|---------------------------|-------------------|
+| 文档写回 | 复制粘贴，丢格式丢批注 | 插入/替换/**批注**/链接批注/追加，**可定位到具体字、具体单元格** |
+| 表格 | 多数只能整段处理 | **12 个表格 action**：读切片、插行/列、合并单元格、统一列宽、导出 |
+| 数据去向 | 正文上传到云端 | **仅本机回环 127.0.0.1，无 Token，可全离线** |
+| 模型 | 锁定厂商 | **自选**：Ollama / LM Studio / Xinference / OneAPI 或任意云端 |
 
 ---
 
-## 6. 知识库配置（可选）
+## 二、安装：一条命令，四个步骤
 
-知识库用于把企业文档库检索结果注入回答（RAG）。不配置也不影响基础校对与 MCP 读写。
+### 2.1 一行命令（推荐，终端用户）
 
-### 6.1 添加连接
+把开头的两条命令之一粘贴到终端。脚本参数：
 
-1. **设置 → 常规设置 → 知识库设置 → 添加**  
-2. 选择认证方式：  
-   - **JWT（用户）**：服务器 / 用户名 / 密码  
-   - **HMAC（应用）**：服务器 / App ID / App Secret  
-3. **测试连接**，确认服务健康、凭证、知识库列表均可通。  
+- `--fetch`（mac/linux）/ `-Fetch`（Windows）：只拿到脚本、需要联网补下载载荷时**必加**。一行命令场景下**已默认带上**。
+- `--with-all` / `-WithAll`：强制部署到 Claude + Cursor + Codex（默认只装检测到的）。
+- `--skill-only` / `-SkillOnly`：只投放技能文件，不动加载项 / 服务。
+- `-Version 4.1.1`：指定版本。
 
-### 6.2 在对话中使用
+> 已经克隆了本仓库？等价的本地写法：
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1 -Fetch
+> ```
+> ```bash
+> bash scripts/install-wps-skill-chayuan.sh --fetch
+> ```
 
-1. AI 对话输入区打开 **知识库**，绑定一个或多个库。  
-2. 提问后可看到引用标记与 **知识来源**（含下载类令牌时注意有效期）。  
+### 2.2 离线整包（内网 / 无外网机器）
 
-### 6.3 Ribbon / 右键
+从 [Gitee Releases](https://gitee.com/cloudshd/chayuan-wps-releases/releases) 或 [官网](https://aidooo.com/skill) 下载 `wps-skill-chayuan-4.1.1-portable.zip`，解压后进目录跑本地脚本（不带 `--fetch`，因为整包已在手）：
 
-- 知识库核对本段 / 总结本段 / 问答本段  
-- 右键菜单「察元AI知识库」同类能力  
+```bash
+bash scripts/install-wps-skill-chayuan.sh          # mac/linux
+powershell -ExecutionPolicy Bypass -File scripts\install-wps-skill-chayuan.ps1   # Windows
+```
 
-管理员侧的库授权一般在察元服务端 Web / OpenAPI 完成，不在本加载项内。
+每个压缩包都带 `.sha256` 旁车文件，安装器下载后会**逐源强校验**，任一源被篡改都不会通过。
 
----
+### 2.3 安装器到底干了什么（四步闭环）
 
-## 7. 助手与技能配置
+同一条脚本，按顺序做四件事，**全程无需 Node.js**（sidecar 已预编译为单文件二进制）：
 
-### 7.1 概念区分（避免混淆）
+1. **装加载项** —— 把加载项释放到 WPS 的 jsaddons 目录并写好 `publish.xml`；**重启 WPS** 后功能区出现「察元」。
+2. **MCP 自启** —— 释放 `chayuan-mcp-<平台>` 二进制，注册 **OS 级开机自启**：
+   - Windows：注册表 `HKCU\…\Run\ChayuanWpsMcp`
+   - macOS：LaunchAgent `com.chayuan.mcp`（`RunAtLoad` + `KeepAlive`）
+   - Linux：systemd `--user` 单元 `chayuan-mcp.service`（`Restart=on-failure`）
+3. **四级体检** —— `jsaddons` → `/healthz` → `initialize` 握手 → 桥接工具，**装完即验证可用**，不是「装完走人」。
+4. **投放技能** —— 自动探测本机已装的 Claude / Cursor / Codex，按各自格式投放技能文件。
 
-| 名称 | 含义 |
-| --- | --- |
-| 智能助手 | 加载项内置 / 自定义的提示词能力（校对、翻译、领域助手等） |
-| 运行时技能 | 产品内部技能模块 |
-| wps-skill-chayuan | 给 **外部编程智能体** 用的技能包与 MCP 连接说明 |
+### 2.4 卸载
 
-### 7.2 使用内置助手
+手动清理（暂未提供一键卸载）：
 
-功能区 **察元AI助理** 常见入口：
-
-- AI助手（对话）  
-- 拼写与语法检查  
-- 生成摘要、文本分析、翻译  
-- 多模态相关入口  
-- 智能助手快捷位、**助手管理**  
-
-### 7.3 助手设置
-
-**设置 → 助手设置** 可：
-
-- 创建 / 导入 / 导出助手  
-- 配置展示位置（功能区 / 更多 / 右键）  
-- 配置写回动作（替换、插入、批注等）  
-- 指定执行模型  
-
-### 7.4 助手市场与进化（进阶）
-
-- **助手市场**：浏览内置 / 扩展 / 领域 / 第三方助手概览（启用仍以设置为准）。  
-- **助手进化中心**：评估、金丝雀、观察与回滚等进阶能力，面向需要持续打磨助手质量的场景。  
-
-若提示「暂无匹配的专项助手」，可通过官网或公众号「智灵鸟科技」反馈技能需求。
+- **技能文件**：删 `~/.claude/skills/wps-skill-chayuan/`、`~/.cursor/rules/wps-skill-chayuan.mdc`、`~/.codex/prompts/wps-skill-chayuan.md`（及 `config.toml` 里的 `[mcp_servers.chayuan-wps-mcp]` 段）。
+- **WPS 加载项**：删 jsaddons 目录里的 `chayuan_<版本>` 与对应 `publish.xml` 条目。
+- **MCP 自启**：macOS `launchctl bootout gui/<uid>/com.chayuan.mcp`；Windows 删 `HKCU\…\Run\ChayuanWpsMcp` 后结束 62588 端口进程；Linux 停 `chayuan-mcp.service`。最后结束占用 62588 的进程即可。
 
 ---
 
-## 8. 日常使用：功能区导览
+## 三、配置：把 MCP 接到你的智能体（只需一个 URL）
 
-### 8.1 察元AI助理（常用生产）
-
-| 分组 | 能力示例 |
-| --- | --- |
-| 关于 | 关于察元 |
-| AI助手 | 对话、校对、摘要、分析、翻译、知识库、智能助手、助手管理 |
-| 安全保密 | 保密检查、文档脱密、脱密复原 |
-| 文档批量 | 清理未使用样式、统计样式、删除空白行 |
-| 批量操作 | 表格 / 图像批量工具 |
-
-### 8.2 察元AI编审（模板与规则）
-
-| 分组 | 能力示例 |
-| --- | --- |
-| 表单辅助 | 表单内容、文档审计 |
-| 模板管理 | 导出 / 导入 / 下载模板 |
-| 规则管理 | 规则制作 / 导入 / 导出 |
-| 察元设置 | 任务清单、设置 |
-
-### 8.3 右键菜单
-
-选中文本后常见：添加到察元、文本分析、翻译、知识库、更多智能助手等。
-
----
-
-## 9. 校对、批注与写回纪律
-
-### 9.1 加载项内校对
-
-- **拼写与语法检查**：发现问题清单，通常以批注等方式呈现  
-- **纠正拼写和语法**：直接给出改正后的文本写回（更激进，确认后再用）  
-
-### 9.2 通过外部智能体校对（推荐纪律）
-
-1. 先 **预览 / dry-run**：只列问题，不改正文。  
-2. 人工确认后，再允许写批注或改正文。  
-3. 批量操作注意单次条数上限（工具侧通常有批次限制）。  
-
-口语示例：
-
-- 「帮我找出错别字，先列出问题，不要改正文」  
-- 「确认后用批注标出来」  
-- 「帮我翻译成英文，并插到每一段后面」  
-
-### 9.3 多文档
-
-打开或切换到目标文档后再执行审查；交叉校对时明确「当前活动文档」是哪一份。
-
----
-
-## 10. 保密检查与文档脱密
-
-| 功能 | 说明 |
-| --- | --- |
-| 保密检查 | 辅助发现可能的敏感表述与风险点 |
-| 文档脱密 | 按流程预览 → 应用；可设密码等策略（以界面为准） |
-| 脱密复原 | 在具备条件时恢复 |
-
-**务必：**
-
-- 结果仅供辅助，须人工复核。  
-- 不替代单位定密流程与法律责任。  
-- 涉密环境优先离线模型与本机 MCP，避免正文外传。  
-
----
-
-## 11. 模板、表单与批量工具
-
-- **模板**：导出 / 导入 / 下载，用于统一文种版式与字段。  
-- **规则**：制作、导入、导出，配合编审流程。  
-- **表单内容 / 文档审计**：面向书签、表单域等内容核对。  
-- **表格 / 图像批量**：导出、删除、题注、列宽、样式等批处理。  
-- **任务清单**：查看与管理相关任务（以当前版本界面为准）。  
-
-文件类型品牌名可能包括察元文档、察元模板、察元规则等（以「另存为」列表为准）。
-
----
-
-## 12. 对接外部智能体
-
-统一 MCP 地址（所有客户端相同）：
+技能装好后，**MCP 服务地址只有一个**，所有智能体通用：
 
 ```
 http://127.0.0.1:62588/mcp
 ```
 
-健康检查：`http://127.0.0.1:62588/healthz`
+> 如果你是用「一条命令」装的，技能文件里已经写好这个地址，**多数情况无需再手动配置**。下面是「想手工接 / 想理解原理 / 换机器」时各智能体的配置位置。
 
-### 12.1 通用前置
+### 3.1 Claude Code
 
-1. 安装察元（或技能包）并确保 MCP 在线。  
-2. 打开 WPS，加载察元，打开要处理的文档。  
-3. 在客户端添加 MCP（HTTP / Streamable HTTP），**Token 留空**。  
-4. 建议先配置好察元内的 **对话模型**（部分校对链路会用到）。  
-
-### 12.2 Claude Code
+CLI 一键注册（`--transport http`，`streamable-http` 是同义别名）：
 
 ```bash
 claude mcp add --transport http chayuan-wps-mcp http://127.0.0.1:62588/mcp
 ```
 
-或用户 / 项目级 `.mcp.json`：
+或写项目级 / 用户级 `.mcp.json`：
 
 ```json
 {
   "mcpServers": {
-    "chayuan-wps-mcp": {
-      "url": "http://127.0.0.1:62588/mcp"
-    }
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```
 
-技能文件（技能包安装后）：`~/.claude/skills/wps-skill-chayuan/SKILL.md`
+技能文件落地：`~/.claude/skills/wps-skill-chayuan/SKILL.md`。装完在 Claude Code 里输入 `/skills` 可见 `wps-skill-chayuan`。
 
-### 12.3 Cursor
+### 3.2 Cursor
 
-- **Settings → MCP → Add**，URL 填入上述地址；或  
-- 项目 / 用户 `.cursor/mcp.json`：
+项目级 `.cursor/mcp.json`（或 设置 → MCP → Add）：
 
 ```json
 {
   "mcpServers": {
-    "chayuan-wps-mcp": {
-      "url": "http://127.0.0.1:62588/mcp"
-    }
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
   }
 }
 ```
 
-技能规则（技能包）：`~/.cursor/rules/wps-skill-chayuan.mdc`
+规则文件落地：`~/.cursor/rules/wps-skill-chayuan.mdc`（frontmatter 含 description / globs / alwaysApply）。
 
-### 12.4 OpenAI Codex
+### 3.3 OpenAI Codex（codex CLI）
 
-在 `~/.codex/config.toml`：
+编辑 `~/.codex/config.toml`，加一段 Streamable HTTP MCP server：
 
 ```toml
 [mcp_servers.chayuan-wps-mcp]
 url = "http://127.0.0.1:62588/mcp"
 ```
 
-提示词 / 技能（技能包）：`~/.codex/prompts/wps-skill-chayuan.md`
+提示词落地：`~/.codex/prompts/wps-skill-chayuan.md`。
 
-### 12.5 OpenClaw / Hermes 等 GUI 智能体
+### 3.4 Hermes / OpenClaw / 其它 GUI 智能体
 
-1. 新建 MCP 服务器。  
-2. 类型选择 **HTTP** 或 **Streamable HTTP**。  
-3. URL：`http://127.0.0.1:62588/mcp`。  
-4. Token / Command 留空。  
-5. 保存后刷新工具列表，确认出现察元文档类工具。  
+两者都支持 HTTP 类型 MCP server：**新建一个 MCP 服务，类型选 HTTP / Streamable HTTP，URL 填 `http://127.0.0.1:62588/mcp`**。无需 Token、无需命令行、无需 stdio。
 
-### 12.6 调试（可选）
+### 3.5 Claude Desktop / 其它 JSON 配置型客户端
+
+```json
+{
+  "mcpServers": {
+    "chayuan-wps-mcp": { "url": "http://127.0.0.1:62588/mcp" }
+  }
+}
+```
+
+> **远程机器**注意：服务固定监听 `127.0.0.1:62588`（本机回环）。要让**另一台机器**调用，需经本机代理转发，或在该机设置 `CHAYUAN_MCP_PORT` 等环境变量调整。这是出于「涉密不出域」的安全设计，不是 bug。
+
+---
+
+## 四、验证：怎么确认装好了？
+
+由易到难四种验证方式，任选其一：
+
+### 4.1 健康检查（最快）
+
+浏览器或 curl 访问：
+
+```
+GET http://127.0.0.1:62588/healthz
+```
+
+应返回 `online`。返回这个就说明 sidecar 已在跑。
+
+### 4.2 分层状态（最全）
+
+在智能体里让它调 `wps_status`（不给参数），或用 Inspector（见 4.4）调。它会返回分层健康：
+
+- `agent.agentOnline` —— WPS 加载项是否连上 sidecar
+- `document.*` —— 当前活动文档名 / 路径
+- `ui.visibleWpsWindows` —— 是否有可见的 WPS 窗口（防止文档在后台 Preview 态被误判为「已打开」）
+
+### 4.3 一句话冒烟测试
+
+打开任意一篇 WPS 文档，在智能体里说：
+
+> 用察元读一下当前文档的前三段，告诉我大致在讲什么。
+
+如果它真的读到了你屏幕上的内容——成了。
+
+### 4.4 MCP Inspector（不依赖 IDE，最直观）
 
 ```bash
 npx @modelcontextprotocol/inspector
 ```
 
-选择 Streamable HTTP，填入本机 MCP 地址后 Connect。
+选 **Streamable HTTP**，填 `http://127.0.0.1:62588/mcp`，点 Connect。能看到 46 个工具的完整列表、参数、并能手动调用——这是验收「到底接没接上」的金标准。
 
-### 12.7 能力概览（工具类别）
+### 4.5 关于「四级体检」
 
-外部智能体通常可调用（以实际 `tools/list` 为准）：
+安装脚本结尾自动跑的四级体检（jsaddons → /healthz → initialize → 桥接工具）结果会写进：
 
-- 文档打开 / 元信息 / 分段读取 / 定位  
-- 替换、插入、批注、批量 ops  
-- 校对 dry-run 与批注写回  
-- 脱密预览 / 应用 / 复原  
-- 知识库检索  
-- 助手域检索与导出  
+- Windows：`%LOCALAPPDATA%\chayuan-wps\mcp\selftest-run.json`
+- 仓库侧：`mcp-sidecar/last-selftest.json`
 
-**原则：预览确认后再写回。**
+判据：`GO` / `GO_WITH_CAUTION` = 全链路可用；`NO_GO` 多半是本机没装 WPS（`KWPS.Document.12` 注册表缺失）。
 
 ---
 
-## 13. 授权、支持与反馈
+## 五、使用：从一句话到文档被改（端到端走查）
 
-### 13.1 版本与授权
+下面四个例子覆盖最典型的工作流。**核心心法：你（的人）提需求，AI（模型）负责推理判断，工具只负责读/定位/写——写之前默认先预览，你确认了再落盘。**
 
-- 产品提供限量免费额度；使用自有 / 本地模型时策略以当前版本说明为准。  
-- 服务版 / 至臻版等商业授权见 [aidooo.com](https://aidooo.com)。  
-- 在欢迎页或购买引导中可 **输入序列号激活**；也可通过公众号查询相关凭证说明。  
+### 5.1 错别字校对：先预览、再批注
 
-### 13.2 获取帮助
+打开一篇文档，对智能体说：
 
-- 本对话框左侧栏 **帮助**：打开本用户手册。  
-- **反馈及建议**：提交问题与建议（可带附件）。  
-- 官网：https://aidooo.com  
-- 微信公众号：智灵鸟科技  
-- 开源与发行：GitHub / Gitee 发行页（以官网链接为准）  
+> 帮我检查这篇文档的错别字，先用 dryRun 汇总问题，不要改正文。
 
-### 13.3 MCP 地址备忘
+模型会走 `proofread_run({dryRun:true})`，返回一张问题清单。你扫一眼，回一句「**确认写成批注**」，它再调 `proofread_apply_comments` 把批注**钉到具体错字上**（包括表格单元格里的字）。
 
-欢迎页与顶部不再常驻展示时，可在：
+想要它直接改正文？说「找出错别字并直接改正，先给我预览清单，确认后再执行」。
 
-- **帮助 → 本手册第 4 / 12 章**  
-- **设置 → MCP 服务管理 → 复制链接**  
+### 5.2 逐段翻译并插到段后
 
-随时复制：`http://127.0.0.1:62588/mcp`
+> 把全文译成英文，每一段中文后面插入对应英文译文；插入前先预览第一段，我确认风格后再全部执行。
 
----
+模型的标准剧本：
 
-## 14. 常见问题与排障
+1. `document_list_paragraphs` —— 取出每段文本 + start/end 锚点；
+2. **模型自己翻译**（工具不翻译，只搬运）；
+3. `document_apply_ops({action:"insert-after", confirmed:false})` —— 先预览；
+4. 你确认 → `confirmed:true` 一次性批量写回（≤200 段一次调用），**从最后一段往前插**避免锚点漂移。
 
-### 14.1 功能区没有「察元」
+### 5.3 表格：插行、合并单元格（v4.1 新能力）
 
-- 确认安装包架构与系统匹配，并 **彻底重启 WPS**。  
-- 检查 jsaddons 目录是否存在 `chayuan_*`。  
-- 企业环境若禁用加载项，需联系管理员放行。  
+表格在 v4.1 从 9 个 action 扩到 **12 个**，能按口语「在哪插」操作结构：
 
-### 14.2 healthz 不通 / MCP 连不上
+> 在「销售额」这一列后面插一列「环比」；再把表头第一行的前两个单元格合并。
 
-- 设置里 **启动本机服务**。  
-- 确认未被安全软件隔离 MCP 可执行文件或自启脚本。  
-- 确认没有其它程序占用 `62588`（或统一改端口并更新客户端）。  
-- 先开 WPS 与察元，再连外部智能体。  
+模型剧本：
 
-### 14.3 智能体连上了但不会改文档
+1. `table(action:list)` → `table(action:header_read)` / `column_read` 找到「销售额」列的索引；
+2. `table(action:column_insert,{col:<找到的列>, where:"after", confirmed:true})`；
+3. `table(action:cell_merge,{row1:1,col1:1,row2:1,col2:2, confirmed:true})` —— 同行 = 跨列合并，同列 = 跨行合并。
 
-- 是否打开了目标文档且为活动窗口。  
-- 是否只做了预览、未确认写回。  
-- 察元侧模型是否已配置（校对类）。  
-- 技能文件是否投放到对应智能体目录。  
+工具**只按显式坐标执行**，不替你猜「在哪」——这是「工具只执行事实，模型负责判断」纪律的体现，避免幻觉式改表。
 
-### 14.4 报 MODEL_NOT_CONFIGURED
+### 5.4 保密检查（涉密场景，辅助非定密）
 
-- 到 **模型设置** 启用供应商并刷新模型列表。  
-- 在 **默认设置** 指定对话模型。  
+> 帮我检查这份材料的保密风险和敏感信息，用批注标出疑似身份证号、手机号、内部路径。
 
-### 14.5 知识库测试失败
+模型用保密类能力扫描，把命中项**用批注钉在原文上**。需要真正脱密（替换成占位符）时走 `declassify_preview`（不写盘）→ 你确认 → `declassify_apply`（需密码 + confirmed）→ 日后 `declassify_restore` 用密码复原。
 
-- 核对服务器地址与认证类型（JWT / HMAC）。  
-- 先保证 `healthz` 与账号权限，再绑定对话。  
-
-### 14.6 Windows 安装技能包时脚本被杀软拦截
-
-- 优先使用官方整包与校验和。  
-- 按发行说明使用 `.cmd` / 内联安装路径；将安装目录加入信任区后重试。  
-- 勿运行来路不明的改包。  
-
-### 14.7 仍无法解决
-
-通过左侧 **反馈及建议** 或公众号 / 官网提交：系统版本、WPS 版本、察元版本、`healthz` 结果、复现步骤。
+> **重要免责**：保密检查 / AI 痕迹检查仅作**辅助参考**，不替代人工定密，不构成司法结论。
 
 ---
 
-## 附录 A · 快速检查清单
+## 六、技能功能清单：46 个工具 · 15 个域
 
-- [ ] 已安装并重启 WPS，能看到察元页签  
-- [ ] `http://127.0.0.1:62588/healthz` 为 online  
-- [ ] 已配置并自测对话模型  
-- [ ] （可选）知识库连接测试通过  
-- [ ] （可选）Claude / Cursor / Codex / OpenClaw 已添加 MCP  
-- [ ] （可选）技能包四级自检通过  
-- [ ] 已知晓：预览确认后再写回；保密结果仅供参考  
+架构上分两层：**31 个核心工具**（按职责命名）+ **15 个域聚合工具**（带 `action=` 判别，把同类细操作收拢）。合计 **46**。
 
-## 附录 B · 相关文档（仓库内）
+> 设计纪律：工具只返回**事实**（读到了什么、定位到哪、写没写成功），**判断永远在模型这一侧**。没有「评判类」工具，也不会过度抓取——模型按需取用、组合调用，而不是一个工具干完所有事。
 
-- `RELEASE_NOTES_v4.0.md` — v4.0 发行说明  
-- `release/安装说明.txt` — 技能包终端说明  
-- `mcp-sidecar/README.md` — sidecar 技术说明  
-- `plans/kb-integration-user-guide.md` — 知识库集成指南  
-- `marketing/articles/01-wps-mcp-connect-agents.md` — 对接智能体叙事指南  
+### 6.1 核心工具（31 个）
 
-—— 察元 · 使文档智能且安全
+**WPS 连接与文档生命周期**
+
+| 工具 | 作用 |
+|------|------|
+| `wps_status` | 分层健康：sidecar / Agent 在线 / 活动文档 / 可见窗口 |
+| `wps_launch` | OS 冷启动 WPS 文字并等 Agent 连接 |
+| `document_open` | 打开本地 .docx 为活动文档（可见窗口） |
+| `document_ensure_open` | 与活动文档一致则 no-op，否则打开 |
+| `document_list_open` | 列出当前打开的文档 |
+| `document_activate` | 在已开文档间切换（name/path/query/index） |
+| `document_new` | 新建空白文档或从模板开副本 |
+| `document_save` | 保存 / 另存为 |
+
+**读取与定位**
+
+| 工具 | 作用 |
+|------|------|
+| `document_meta` | 元信息：名称 / 字数 / 段数 / 是否建议分块 |
+| `document_list_paragraphs` | 分页段落文本（含 start/end 锚点，**逐段工作流入口**） |
+| `document_chunks` | 长文分页分块（cursor/limit，百万字友好） |
+| `document_get_text` | 文档/选区纯文本（超 ~80k 需 force 或改用 chunks） |
+| `document_locate` | 定位字词/句，返回多命中用于锚点 |
+
+**写回（改正文）**
+
+| 工具 | 作用 |
+|------|------|
+| `document_replace` | 替换锚点文本段（先 preview 再 confirmed） |
+| `document_insert` | 相对锚点/文末插入（after/before/append/prepend） |
+| `document_apply_ops` | **批量写回**（replace/comment/comment-replace/insert-after，≤200 ops） |
+
+**字符与段落格式**
+
+| 工具 | 作用 |
+|------|------|
+| `format_run` | 字符外观：加粗/斜体/下划线/删除线、字体/字号/颜色/高亮/拼音 |
+| `format_para` | 段落外观：对齐 / 行距 / 段前段后 / 首行缩进 |
+| `format_apply_ops` | 批量套格式（run/para，≤100 ops） |
+| `system_fonts_list` | 列出本机可用字体名 |
+
+**校对 · 知识库 · 助手 · 脱密**
+
+| 工具 | 作用 |
+|------|------|
+| `proofread_run` | 跑错别字/语法校对（dryRun 默认仅返回 issues） |
+| `proofread_apply_comments` | 把 issues 转成 WPS 批注（需 confirm） |
+| `proofread_job_poll` | 轮询异步校对任务进度 |
+| `kb_retrieve` | 检索知识库片段供模型推理（只读） |
+| `assistants_list_domains` | 列出察元助手领域目录（Agent 离线也可用） |
+| `assistants_search` | 按查询/领域检索数千个察元助手 |
+| `assistants_get` | 导出单个助手完整定义/提示词 |
+| `declassify_status` | 查询是否处于脱密/遮蔽态 |
+| `declassify_preview` | 由关键词构建遮蔽预览（不写盘） |
+| `declassify_apply` | 应用脱密（需 confirm + 密码 + 关键词） |
+| `declassify_restore` | 用密码复原脱密文档 |
+
+### 6.2 域聚合工具（15 个域，带 `action=`）
+
+| 域 | action 清单 | 典型用途 |
+|----|-------------|----------|
+| **`table`**（12 action） | `insert` `list` `header_read` `row_read` `column_read` `cell_read` `header_repeat` `column_set_width` `export` `row_insert` `column_insert` `cell_merge` | 表格切片读 + 插行/列 + 合并 + 列宽/重复表头 + 导出 md/csv/json |
+| **`comment`** | `list` `add` `delete` | 批注增删查 |
+| **`revision`** | `mode` `list` `apply` | 修订模式开关 / 列修订 / 接受·拒绝 |
+| **`layout`** | `page` `columns` `break` `blank_page` | 纸张方向页边距 / 分栏 / 分页分节符 / 空白页 |
+| **`nav`** | `location` `outline` `pane_set` | 页码行号 / 标题大纲 / 导航窗格 |
+| **`toc`** | `insert` `update` | 插入自动目录 / 更新目录 |
+| **`bookmark`** | `list` `goto` | 书签列表 / 跳转 |
+| **`caption`** | `list` | 图/表/式题注枚举（连续性由模型判断） |
+| **`field`** | `list` `add` | 域枚举（SEQ/TOC/PAGEREF/DATE）+ 构造 SEQ/TOC 域 |
+| **`image`** | `list` `insert` `delete` `export` | 图片增删查导出 |
+| **`hyperlink`** | `list` `add` `delete` | 超链接增删查 |
+| **`headerfooter`** | `get` `set` | 页眉页脚读写 |
+| **`watermark`** | `set` `clear` | 文字水印加 / 清 |
+| **`style`** | `list` `apply` `audit` | 样式列表 / 应用（如标题1）/ 统计·清理未用 |
+| **`export`** | `file` | 导出 docx / pdf |
+
+### 6.3 写操作的「先预览再确认」纪律
+
+凡是会改文档的工具，都遵循同一套确认策略：
+
+| 未传 `confirmed:true` | 传了 |
+|------------------------|------|
+| 返回 `preview:true`（或 `CONFIRMATION_REQUIRED`），**不写盘** | 落盘 + 审计 |
+
+适用：`document_replace` / `document_insert` / `document_apply_ops` / `format_*` / 各域写 action / `declassify_apply|restore` / `proofread_apply_comments`。**这意味着模型不会偷偷改你的稿**——除非你明确说「确认」。
+
+---
+
+## 七、使用场景大全（带可直接复制的提示词）
+
+下面按场景给出提示词。原则：**先预览 / dryRun，再确认写批注或改正文；涉密、定稿类务必人工复核。**
+
+### 7.1 校对类
+
+| 场景 | 提示词 |
+|------|--------|
+| 全文错别字 | 帮我检查文档中的错别字，用批注标出原文和建议改法 |
+| 选区错别字 | 只检查当前选区的错别字，写成批注 |
+| 表格内错别字 | 重点检查表格单元格里的错别字，批注必须钉在具体错字上 |
+| 同音/形近字 | 排查同音别字（的/地/得、象/像）和形近字（己/已/巳） |
+| 标点符号 | 检查标点（中英文混用、引号书名号配对、顿号逗号），用批注标出 |
+| 病句语法 | 检查病句、搭配不当、成分残缺，用批注给出改法 |
+| 序号体例 | 检查标题/条款序号（一、（一）、1.）是否层级混乱 |
+| 先预览后写回 | 先 dryRun 汇总问题，不要改正文；我确认后再写成批注 |
+
+### 7.2 正确性与逻辑
+
+| 场景 | 提示词 |
+|------|--------|
+| 正确性总检 | 核对这篇文章：错别字、标点、语法、前后矛盾一并查，结果用批注 |
+| 数字勾稽 | 核对数表与正文数字是否一致（合计、百分比） |
+| 时间线 | 检查日期、工期、里程碑时间线是否合理 |
+| 图表一致 | 核对正文描述与表格内容是否一致 |
+| 版本对比 | 对照上一版/附件，打开两份文档标出口径变化处 |
+
+### 7.3 公文 / 合同 / 规范
+
+| 场景 | 提示词 |
+|------|--------|
+| 公文格式 | 按党政机关公文习惯检查标题、主送、落款、附件说明是否缺项 |
+| 合同条款 | 检查合同是否缺主体、金额、期限、违约责任，列风险清单批注 |
+| 敏感措辞 | 标出绝对化用语（务必、从未、100%）并建议弱化 |
+| 落款日期 | 检查成文日期、签发人是否齐全 |
+
+### 7.4 翻译 / 润色 / 摘要
+
+| 场景 | 提示词 |
+|------|--------|
+| 逐段翻译插段后 | 帮我翻译成英文，并把译文插到每一段后面 |
+| 仅译文批注 | 给出译文建议，用批注写在原段，不要改正文 |
+| 润色 | 在不改变原意的前提下润色全文，改动处用批注说明 |
+| 摘要 | 生成 300 字以内摘要，插入文档开头（先预览） |
+| 去 AI 腔 | 弱化「首先其次总之」等模板腔，给修改建议批注 |
+
+### 7.5 表格 / 名单
+
+| 场景 | 提示词 |
+|------|--------|
+| 表内校对 | 检查表格内文字的错别字与标点，批注钉在单元格文字上 |
+| 插行/列 | 在「XX」列后面插一列「YY」 |
+| 合并表头 | 把表头第一行的前两个单元格合并 |
+| 统一列宽 | 把所有列宽统一为相同宽度 |
+| 导出表格 | 把第一张表导出成 Markdown |
+| 名单去重 | 检查人员名单是否重名、漏项 |
+
+### 7.6 定位 / 替换 / 批量写回
+
+| 场景 | 提示词 |
+|------|--------|
+| 批量替换 | 把「永鹅」全部替换为「咏鹅」，先预览再确认 |
+| 条件替换 | 仅在表格第二列把 A 替换为 B |
+| 批注解释 | 给所有「待确认」字样加批注「请业务确认」 |
+
+### 7.7 保密 / 脱密（辅助，非定密）
+
+| 场景 | 提示词 |
+|------|--------|
+| 保密风险 | 帮我检查保密风险与敏感信息，用批注标出 |
+| 找敏感号 | 查找疑似身份证号、手机号、银行卡号并批注 |
+| 脱密预览 | 按关键词做脱密预览，先不要落盘 |
+| 外发前检查 | 外发前再扫一遍是否残留内部路径、账号、未脱敏字段 |
+
+### 7.8 排版 / 结构
+
+| 场景 | 提示词 |
+|------|--------|
+| 自动目录 | 帮我基于标题样式插入一个自动目录 |
+| 设标题样式 | 把「第一章 总则」设为一级标题 |
+| 分页/分栏 | 在这里插一个分页符 / 把正文分成两栏 |
+| 页眉页脚 | 设置页眉为「内部资料」 |
+| 加水印 | 给文档加一个「机密」水印 |
+| 导出 PDF | 把当前文档导出为 PDF 到桌面 |
+
+### 7.9 组合工作流（可整段粘贴）
+
+```text
+你是 WPS 文档校对助手，通过 chayuan-wps-mcp 操作当前文档：
+1）先 proofread dryRun，检查错别字、标点、明显病句；
+2）汇总问题列表给我确认；
+3）我回复「确认写批注」后，再写成 WPS 批注（钉在具体文字上，尤其是表格）；
+4）不要擅自改正文，除非我明确说「确认替换」。
+```
+
+```text
+帮我做发布前终检：错别字、标点、数字前后一致性、表格与正文是否一致；
+全部用批注输出；最后给我一份问题分级摘要（严重/一般/建议）。
+```
+
+---
+
+## 八、进阶用法
+
+### 8.1 百万字长文：分块剧本
+
+千万别对百万字文档默认 `document_get_text`（会返回 `DOCUMENT_TOO_LARGE`）。正确剧本：
+
+1. `document_meta` → 看 `recommendChunks` / `charCount`；
+2. 循环 `document_chunks({cursor, limit:1..3})` → 模型处理这一段；
+3. 产出带 `originalText` + `start/end` 的 ops；
+4. `document_apply_ops`（不 confirm）预览 → 确认后 `confirmed:true`。
+
+### 8.2 自定义助手（约数千个，按需检索导出）
+
+不把几千个察元助手都注册成工具（那样模型选择面爆炸）。而是：
+
+- `assistants_search({query:"合同审查", domain:"法务"})` 找到助手；
+- `assistants_get({id})` 导出它的完整提示词；
+- 模型按这个提示词 + 文档工具执行流程。
+
+### 8.3 多文档串行
+
+「依次处理这两份文件：先错别字批注，再统一术语」——模型用 `document_open` / `document_activate` 在文档间切换，逐份处理。
+
+### 8.4 知识库对照（需已配置 KB）
+
+「对照知识库里的制度，检查本文是否违规表述，引用条文批注」——`kb_retrieve({query})` 取片段 → 模型对照 → `comment` 加批注。
+
+### 8.5 资源（Resources）
+
+| URI | 作用 |
+|-----|------|
+| `chayuan://wps/health` | 分层健康状态 |
+| `chayuan://assistants/manifest` | 助手领域清单 |
+| `chayuan://assistants/domain/{domain}` | 某领域助手摘要 |
+| `chayuan://assistants/{id}` | 助手完整定义 |
+| `chayuan://guide/tool-routing` | 工具分层路由指引 |
+
+---
+
+## 九、安全与合规
+
+| 维度 | 说明 |
+|------|------|
+| **网络边界** | MCP 仅监听 `127.0.0.1:62588`，本机即信任边界，不对外 |
+| **鉴权** | 无需 Token、无需命令行、无需 stdio |
+| **数据出域** | sidecar 与 WPS 同机；模型可配**离线 / 内网端点**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容服务），正文不出本机 |
+| **完整性** | 每个发布包带 `.sha256` 旁车文件，安装器逐源强校验，防供应链篡改 |
+| **可还原** | 脱密用密码可复原；批量/脱密/替换类操作前务必备份原件 |
+| **免责** | 保密检查、AI 痕迹检查仅作**辅助参考**，不替代人工定密与法务审查，不构成司法结论 |
+
+**涉密 / 内网部署建议**：优先离线模型 + 隔离终端；密钥按岗最小授权；外发审计报告注意渠道。MCP 发现文件 `%LOCALAPPDATA%\chayuan-wps\mcp\mcp-server.json` 记录 url / port / wpsExecutable，便于运维定位。
+
+---
+
+## 十、常见问题（FAQ）
+
+**Q：需要装 Node.js 吗？**
+不需要。安装器是纯 POSIX bash（mac/linux）与 PowerShell（Windows），技能包里已预编译各平台 MCP 二进制，开箱即用。二进制缺失时 autostart 脚本才回落 `node server.mjs`。
+
+**Q：技能和加载项是什么关系？**
+技能包 = WPS 加载项 + 本机 MCP + 各智能体技能文件的「三合一」交付。装一次，三样齐备。
+
+**Q：连不上 MCP 怎么办？**
+① 确认 WPS 已打开、察元加载项已加载（`GET /healthz` 返回 `online`）；② 服务固定在 `127.0.0.1:62588`，被占用时会启动失败，结束占用进程后重启；③ 看 `%LOCALAPPDATA%\chayuan-wps\mcp\selftest-run.json` 的体检结论。
+
+**Q：模型会不会偷偷改我的稿？**
+不会。所有写操作默认返回预览，必须你明确「确认」（`confirmed:true`）才落盘。
+
+**Q：表格工具会自己猜「在哪插」吗？**
+不会。`row_insert` / `column_insert` / `cell_merge` 都要**显式坐标**，模型先用 `header_read` / `column_read` 找到锚点再调用——工具只执行事实，判断在模型侧。
+
+**Q：支持哪些 AI 智能体？**
+任何支持 **Streamable HTTP MCP** 的客户端：Claude Code、Cursor、OpenAI Codex、Hermes、OpenClaw、Claude Desktop、Cline 等。填同一个 URL 即可。
+
+**Q：适合涉密环境吗？**
+适合。MCP 仅本机回环、无 Token；模型可指向离线/内网端点，正文不出域。但自动检查不替代定密程序。
+
+**Q：怎么换模型？**
+WPS 加载项里：设置 → 模型与供应商，填 OpenAI 兼容端点（本机 Ollama/LM Studio 或云端）。外部智能体则用它自己的模型配置，MCP 只管「接 WPS」，不绑模型。
+
+**Q：GitHub 被墙怎么办？**
+一行命令默认走 Gitee（国内首选）；安装器 `--fetch` 会按 Gitee→官网→GitHub 顺序回退。
+
+---
+
+## 十一、获取与版本
+
+| 渠道 | 地址 |
+|------|------|
+| 官网（技能页 + 下载） | <https://aidooo.com/skill> |
+| GitHub（源码 + Release） | <https://github.com/zhgyuhuii/chayuan-wps-releases> |
+| Gitee（国内镜像 + Release） | <https://gitee.com/cloudshd/chayuan-wps-releases> |
+| 一条命令安装 | 见本文 §2.1 |
+
+**版本信息**：技能包 v4.1.1 ｜ MCP 目录 v0.10.0 ｜ 46 工具 / 15 域 ｜ Apache-2.0。
+出品：北京智灵鸟科技中心。
+
+---
+
+## 十二、结语
+
+`wps-skill-chayuan` 想做的事很简单：**把 AI 编程智能体的聪明，接到你正写的那篇 WPS 文档上**——不用复制粘贴、不用在浏览器和编辑器之间反复横跳、不用把涉密正文传到云端。
+
+一条命令装好，一个 URL 接通，然后你只管用自然语言提需求：校对、翻译、改表格、查保密、做摘要、排目录……模型负责想，工具负责读写，你掌握每一处改动的最终裁量权。
+
+把 AI 当作「加速审阅与起草的副驾驶」，而不是「替代签字的驾驶员」——这是在严肃办公场景里用好它的最稳妥心态。祝用得安心、审得清楚、写得高效。
+
+> 更多工具参数与连接细节见 [`docs/mcp-connection.md`](./mcp-connection.md)；v4.1 变更见 [`RELEASE_NOTES_v4.1.md`](../RELEASE_NOTES_v4.1.md)。
