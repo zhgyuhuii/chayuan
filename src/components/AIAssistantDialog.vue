@@ -4080,17 +4080,17 @@ export default {
     }
   },
   computed: {
-    // 当前窗口形态：浮窗 or 停靠方向（taskpane 时 URL 带 dock 参数，兜底读 manager 记忆）
+    // 当前窗口形态：浮窗 or 停靠方向。优先读 PluginStorage 记忆（停靠间互切
+    // 快路径只改 DockPosition 不换 URL，路由里的 dock 参数会过期，不能作准）
     currentDockMode() {
       if (!this.aiAssistantTaskPaneMode) return 'float'
-      const fromUrl = String(this.$route?.query?.dock || '').toLowerCase()
-      if (['left', 'right', 'bottom'].includes(fromUrl)) return fromUrl
       try {
         const remembered = getAIAssistantDockManager().getMode()
-        return ['left', 'right', 'bottom'].includes(remembered) ? remembered : 'float'
-      } catch (_) {
-        return 'float'
-      }
+        if (['left', 'right', 'bottom'].includes(remembered)) return remembered
+      } catch (_) {}
+      const fromUrl = String(this.$route?.query?.dock || '').toLowerCase()
+      if (['left', 'right', 'bottom'].includes(fromUrl)) return fromUrl
+      return 'float'
     },
     // 五项菜单（计划 §3.7）：探测确认不支持的方向直接隐藏；当前形态置灰打勾；
     // 关闭恒在。窄面板放不下五个图标按钮，故用单按钮下拉
@@ -4473,6 +4473,11 @@ export default {
     }
     bootMeasure('loadHistory', () => this.loadHistory())
     bootMeasure('loadSidebarLayout', () => this.loadSidebarLayout())
+    // 停靠左/右时面板窄（默认 ~268px），自动折叠历史侧栏给消息区让位。
+    // 只改内存态不落盘：切回浮窗时保留用户原本的侧栏布局
+    if (this.aiAssistantTaskPaneMode && ['left', 'right'].includes(this.currentDockMode)) {
+      this.sidebarCollapsed = true
+    }
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
     // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})

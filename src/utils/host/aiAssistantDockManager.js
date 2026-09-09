@@ -317,34 +317,49 @@ export function createAIAssistantDockManager(deps = {}) {
   //   次数受限、精确匹配只等一个宽限期，之后按健康默认放行。
   // - 只有始终无健康回报（页面没起来/14px 坏死）才判该方向不支持。
   async function applyAndVerifyPaneSize(pane, mode, createdAt) {
-  await delay(timing.settleDelayMs)
-  const target = resolveTargetSize(mode)
-  const startedAt = Date.now()
-  let setCount = 0
-  let sawReport = false
-  while (Date.now() - startedAt < timing.sizeTotalMs) {
-    if (setCount < timing.sizeSetAttempts) {
-      try {
-        if (target.axis === 'width') pane.Width = target.value
-        else pane.Height = target.value
-      } catch (_) {}
-      setCount += 1
+    await delay(timing.settleDelayMs)
+    const target = resolveTargetSize(mode)
+    const startedAt = Date.now()
+    let setCount = 0
+    let sawReport = false
+    let lastDim = -1
+    let stableCount = 0
+    while (Date.now() - startedAt < timing.sizeTotalMs) {
+      if (setCount < timing.sizeSetAttempts) {
+        try {
+          if (target.axis === 'width') pane.Width = target.value
+          else pane.Height = target.value
+        } catch (_) {}
+        setCount += 1
+      }
+      await delay(timing.sizePollMs)
+      const report = readSizeReport(createdAt)
+      if (report) sawReport = true
+      if (isAcceptableSizeReport(report, mode, target.value)) {
+        writeRaw(target.axis === 'width' ? KEYS.width : KEYS.height, String(target.value))
+        return { ok: true, exact: true, sawReport }
+      }
+      // 稳定即接受：赋值已尝试 + 连续 3 次回报同一健康尺寸 → WPS 忽略赋值
+      // （本机实测如此）时不再空等完整宽限期，切换耗时从 3.5s+ 降到 ~1.3s
+      if (isHealthySizeReport(report, mode)) {
+        const dim = mode === 'bottom' ? Number(report.h) : Number(report.w)
+        if (dim === lastDim) stableCount += 1
+        else { lastDim = dim; stableCount = 1 }
+        if (setCount >= 1 && stableCount >= 3) {
+          return { ok: true, exact: false, sawReport }
+        }
+      } else {
+        lastDim = -1
+        stableCount = 0
+      }
+      const pastGrace = Date.now() - startedAt >= timing.sizeExactGraceMs
+      if (pastGrace && isHealthySizeReport(report, mode)) {
+        return { ok: true, exact: false, sawReport }
+      }
     }
-    await delay(timing.sizePollMs)
-    const report = readSizeReport(createdAt)
-    if (report) sawReport = true
-    if (isAcceptableSizeReport(report, mode, target.value)) {
-      writeRaw(target.axis === 'width' ? KEYS.width : KEYS.height, String(target.value))
-      return { ok: true, exact: true, sawReport }
-    }
-    const pastGrace = Date.now() - startedAt >= timing.sizeExactGraceMs
-    if (pastGrace && isHealthySizeReport(report, mode)) {
-      return { ok: true, exact: false, sawReport }
-    }
+    // sawReport=false 表示面板页始终没有回报（加载失败/极慢），非”方向坏死”实证
+    return { ok: false, sawReport }
   }
-  // sawReport=false 表示面板页始终没有回报（加载失败/极慢），非”方向坏死”实证
-  return { ok: false, sawReport }
-}
 
   // -- ready 握手（面板页挂载即写 {bootId}，bootId 变化=新页面实例） --
   async function waitPaneReady(beforeMarker, createdAt) {
@@ -422,6 +437,28 @@ export function createAIAssistantDockManager(deps = {}) {
     if (!canDockAtRuntime(normalized)) {
       cacheProbeResult(normalized, false)
       return fallbackToFloat(query, `dock-unsupported:${normalized}`)
+    }
+
+    // 停靠间互切快路径：活面板直接改 DockPosition（探针 round1 验证过同一面板
+    // 切换位置可用），免掉新 webview 冷启动整页重载与锁交接——从数秒降到亚秒。
+    // 快路径任何异常都回落全量「先建后关」路径。
+    const activePane = getOpenPane()
+    const currentDockMode = getMode()
+    if (activePane && currentDockMode !== 'float' && normalized !== currentDockMode) {
+      try {
+        activePane.DockPosition = resolveDockEnumValue(normalized)
+        // 发起方（面板页自身）就是存活证明；同步 readyBootId 后做轻量尺寸校验
+        const currentReport = readJson(KEYS.size)
+        if (!currentReport?.bootId) throw new Error('fast-no-report')
+        readyBootId = currentReport.bootId
+        const sizeResult = await applyAndVerifyPaneSize(activePane, normalized, 0)
+        if (!sizeResult.ok) throw new Error('fast-size-unhealthy')
+        setMode(normalized)
+        cacheProbeResult(normalized, true)
+        return { ok: true, mode: normalized, fast: true }
+      } catch (_) {
+        // 回落全量路径（下方 markHandover → CreateTaskPane → …）
+      }
     }
 
     const previousLock = readAIAssistantLock()

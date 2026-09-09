@@ -340,16 +340,35 @@ async function testDockManager(mod) {
     assert('收尾向旧浮窗发 close 请求', req?.action === 'close' && req?.targetInstanceId === 'float_win_1')
   }
 
-  // T6 dock→dock 换方向：旧面板删除、新面板接管
+  // T6 dock→dock 换方向（快路径）：活面板直接改 DockPosition，不建新面板、不删旧面板
   {
     const ctx = freshDock()
     const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
     await dock.openAs('left')
     const res = await dock.dockTo('bottom')
-    assert('左→下切换成功', res.ok && dock.getMode() === 'bottom')
-    assert('旧面板被删除', ctx.panes.get(1) === undefined || ctx.panes.get(1).deleted === true)
-    assert('新面板存在且底部枚举', ctx.panes.get(2) && ctx.panes.get(2).DockPosition === 3)
-    assert('新面板高设为默认 320', ctx.panes.get(2).Height === 320)
+    assert('左→下切换成功', res.ok && res.mode === 'bottom' && dock.getMode() === 'bottom')
+    assert('快路径：复用同一面板', res.fast === true && ctx.panes.size === 1)
+    assert('旧面板未被删除', ctx.panes.get(1).deleted !== true)
+    assert('DockPosition 已切换为底部', ctx.panes.get(1).DockPosition === 3)
+    assert('底部高度设为默认 320', ctx.panes.get(1).Height === 320)
+  }
+
+  // T12 快路径失败回落全量：活面板改 DockPosition 抛错时应走「先建后关」重建
+  {
+    const ctx = freshDock()
+    const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
+    await dock.openAs('left')
+    const pane1 = ctx.panes.get(1)
+    // 模拟 WPS 拒绝活面板改 DockPosition：快路径应抛错并回落全量「先建后关」
+    const posBackup = pane1.DockPosition
+    Object.defineProperty(pane1, 'DockPosition', {
+      get: () => posBackup,
+      set: () => { throw new Error('position rejected') }
+    })
+    const res = await dock.dockTo('right')
+    assert('快路径失败回落全量仍成功', res.ok && res.mode === 'right' && dock.getMode() === 'right')
+    assert('全量路径：新建面板 + 删除旧面板', res.fast !== true && ctx.panes.get(1) === undefined && !!ctx.panes.get(2))
+    assert('新面板右停靠枚举', ctx.panes.get(2).DockPosition === 2)
   }
 
   // T7 undockToFloat：浮窗带 reopen 认领 → 旧面板删除
