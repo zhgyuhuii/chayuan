@@ -15667,12 +15667,16 @@ export default {
           const superseded = this.activeDocumentRevisionRunContext &&
             this.activeDocumentRevisionRunContext.messageId &&
             this.activeDocumentRevisionRunContext.messageId !== String(assistantMsg?.id || '')
+          // 停止原因透出：取消码/错误名写进可见明细与控制台，避免「已停止」无因可查
+          const stopReason = `${error?.code || error?.name || 'unknown'}`
+          // eslint-disable-next-line no-console
+          console.warn('[document-revision] stopped:', stopReason, error?.message || '', 'superseded:', !!superseded)
           const stopHint = superseded
             ? '上一次文档修订因新的会话请求被打断（或并发启动了新的修订）。若你只想检查错别字，请等待当前预览完成后再发下一条，或先点击停止再发送。'
             : '已停止本次文档修订，未写回正文或批注。'
           assistantMsg.content = stopHint
           assistantMsg.isLoading = false
-          this.appendDocumentRevisionDetail(assistantMsg.activeDocumentRevisionRun, superseded ? '检测到修订上下文已被其他请求取代，本次未继续。' : '本次处理已停止，未继续后续步骤。')
+          this.appendDocumentRevisionDetail(assistantMsg.activeDocumentRevisionRun, superseded ? '检测到修订上下文已被其他请求取代，本次未继续。' : `本次处理已停止，未继续后续步骤。（原因：${stopReason}）`)
           this.finishActiveDocumentRevisionRun(assistantMsg, {
             status: 'cancelled',
             statusMessage: superseded ? '本次文档修订已被新的请求中断。' : '已停止本次文档修订。'
@@ -16512,6 +16516,11 @@ export default {
       const sendStartedAt = Date.now()
       const text = this.userInput.trim()
       if ((!text && this.attachments.length === 0) || this.isStreaming) return
+      // 路由期闩锁：从判重到具体链路接管（isStreaming 置位）之间有多次 await
+      // （UI 提交 / MCP 健康检查 / 两轮意图模型路由），窗口可达数秒。期间第二条
+      // 发送会穿过顶部判重、后到先至地顶替第一条的修订上下文，表现为「弹出助手
+      // 后立即 已停止本次文档修订」。闩锁覆盖整个路由期，finally 释放。
+      if (this._sendRoutingLock) return
       if (this.activeDocumentRevisionRunContext?.messageId) {
         await inAppAlert(
           '当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。',
@@ -16603,6 +16612,7 @@ export default {
       })
       this.$nextTick(() => this.scrollToBottom())
       this.saveHistory()
+      this._sendRoutingLock = true
       await this.waitForUiCommit()
 
       try {
@@ -17201,6 +17211,8 @@ export default {
         })
         this.saveHistory()
         this.$nextTick(() => this.scrollToBottom())
+      } finally {
+        this._sendRoutingLock = false
       }
     },
     scrollToBottom() {
