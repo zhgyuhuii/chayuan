@@ -376,10 +376,12 @@ export async function probeMcpHealthBundle({ signal, ensureSidecar, deep = false
       const hb = probeSidecarHeartbeat()
       const bl = readJsaddinBlocklist()
       if (hb) {
+        // 心跳文件存在：alive=环回被掐；stale=进程没起（判据确凿）
         sidecarProcessAlive = hb.alive
         failReason = hb.alive ? 'loopback_blocked' : 'sidecar_down'
       } else {
-        failReason = 'sidecar_down'
+        // 心跳文件缺失：可能没起，也可能是旧版 sidecar（不写心跳）——无法判定
+        failReason = 'unknown'
       }
       if (bl && bl.entries > 0) blocklistEntries = bl.entries
     } catch { /* best-effort */ }
