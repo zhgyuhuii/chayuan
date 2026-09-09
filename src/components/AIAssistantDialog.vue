@@ -4662,10 +4662,12 @@ export default {
           }
           return
         }
+        // eslint-disable-next-line no-console
+        console.warn('[dock] 切换失败:', JSON.stringify(result))
         const message =
           result.fallback === 'float'
             ? '当前环境不支持该停靠方式，已切换为悬浮窗口。'
-            : '窗口位置切换未完成，请重试。'
+            : `窗口位置切换未完成（${result.reason || '未知原因'}），请重试。`
         await inAppAlert(message, { title: '窗口位置' })
       } catch (e) {
         console.warn('[dock] 切换窗口位置失败:', e)

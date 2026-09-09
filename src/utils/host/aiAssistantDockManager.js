@@ -62,7 +62,7 @@ export const TIMING_DEFAULTS = {
   verifyAttempts: 5, // 尺寸不匹配时有界重试（重设+轮询）次数
   verifyIntervalMs: 200,
   pollsPerAttempt: 2,
-  readyTimeoutMs: 10000, // 面板页（重 Vue 应用）ready 握手超时
+  readyTimeoutMs: 15000, // 面板页（重 Vue 应用）ready 握手超时；冷启动首载较慢，放宽到 15s
   readyPollMs: 250,
   closeGraceMs: 60, // undock 时浮窗创建后到关旧面板的宽限
   markerFreshMs: 15000,
@@ -361,14 +361,19 @@ export function createAIAssistantDockManager(deps = {}) {
   function createPane(mode, query) {
     const app = getApplication()
     const url = buildPaneUrl(mode, query)
-    const pane = app.CreateTaskPane(url)
-    if (!pane || pane.ID === undefined) {
-      throw new Error('create-taskpane-failed')
+    try {
+      const pane = app.CreateTaskPane(url)
+      if (!pane || pane.ID === undefined) {
+        throw new Error('CreateTaskPane 返回空对象')
+      }
+      // 探针顺序：先 DockPosition 后 Visible
+      pane.DockPosition = resolveDockEnumValue(mode)
+      pane.Visible = true
+      return pane
+    } catch (e) {
+      // 带出 WPS 底层异常（如对话框 webview 不允许创建面板），透传到 UI 提示
+      throw new Error(`create-taskpane-failed: ${e?.message || e}`)
     }
-    // 探针顺序：先 DockPosition 后 Visible
-    pane.DockPosition = resolveDockEnumValue(mode)
-    pane.Visible = true
-    return pane
   }
 
   function fallbackToFloat(query, reason) {
