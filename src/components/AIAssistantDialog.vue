@@ -1,5 +1,51 @@
 <template>
   <div class="ai-assistant-dialog">
+    <!-- 窗口形态菜单：整个窗口右上角的单按钮下拉（计划 §3.7；浮窗/停靠两态通用）。
+         挂在根容器而非 main-area：main-area 的 `.main-area > *` 会把子元素强制
+         position:relative 并压 z-index，导致按钮掉进文档流、菜单与按钮分离且被遮挡 -->
+    <div v-if="dockMenuItems.length" class="dock-menu-wrap" ref="dockMenuRef">
+      <button
+        type="button"
+        class="dock-menu-btn"
+        :class="{ 'is-open': dockMenuOpen, 'is-docked': aiAssistantTaskPaneMode }"
+        title="窗口位置"
+        aria-label="窗口位置"
+        @click.stop="toggleDockMenu"
+      >
+        <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <rect
+            :x="aiAssistantTaskPaneMode ? 5 : 14.5"
+            y="6.5"
+            width="4.5"
+            height="11"
+            rx="1"
+            fill="currentColor"
+            opacity="0.65"
+          />
+        </svg>
+      </button>
+      <div v-if="dockMenuOpen" class="dock-menu-panel">
+        <div
+          v-for="item in dockMenuItems"
+          :key="item.action"
+          class="dock-menu-item"
+          :class="{ active: item.active, disabled: item.disabled }"
+          :title="item.hint"
+          @click.stop="handleDockAction(item.action)"
+        >
+          <svg class="dock-menu-pict" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="item.pict.frame" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+            <path v-if="item.pict.fill" :d="item.pict.fill" fill="currentColor" opacity="0.6" />
+            <path v-if="item.pict.line" :d="item.pict.line" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
+          <span class="dock-menu-label">{{ item.label }}</span>
+          <svg v-if="item.active" class="dock-menu-check" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+        </div>
+      </div>
+    </div>
     <!-- 左侧边栏：会话 / 助手 -->
     <aside
       class="sidebar"
@@ -278,50 +324,6 @@
 
     <!-- 右侧主区域 -->
     <main class="main-area">
-      <!-- 窗口形态菜单：右上角单按钮下拉（计划 §3.7；浮窗/停靠两态通用） -->
-      <div v-if="dockMenuItems.length" class="dock-menu-wrap" ref="dockMenuRef">
-        <button
-          type="button"
-          class="dock-menu-btn"
-          :class="{ 'is-open': dockMenuOpen, 'is-docked': aiAssistantTaskPaneMode }"
-          title="窗口位置"
-          aria-label="窗口位置"
-          @click.stop="toggleDockMenu"
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-            <rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <rect
-              :x="aiAssistantTaskPaneMode ? 5 : 14.5"
-              y="6.5"
-              width="4.5"
-              height="11"
-              rx="1"
-              fill="currentColor"
-              opacity="0.65"
-            />
-          </svg>
-        </button>
-        <div v-if="dockMenuOpen" class="dock-menu-panel">
-          <div
-            v-for="item in dockMenuItems"
-            :key="item.action"
-            class="dock-menu-item"
-            :class="{ active: item.active, disabled: item.disabled }"
-            :title="item.hint"
-            @click.stop="handleDockAction(item.action)"
-          >
-            <svg class="dock-menu-pict" viewBox="0 0 24 24" aria-hidden="true">
-              <path :d="item.pict.frame" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-              <path v-if="item.pict.fill" :d="item.pict.fill" fill="currentColor" opacity="0.6" />
-              <path v-if="item.pict.line" :d="item.pict.line" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
-            <span class="dock-menu-label">{{ item.label }}</span>
-            <svg v-if="item.active" class="dock-menu-check" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" />
-            </svg>
-          </div>
-        </div>
-      </div>
       <!-- 工具助手面板:与对话区互斥,activeToolId 非空时占据右侧主区 -->
       <ToolAssistantPanel
         v-if="activeToolId"
@@ -17273,6 +17275,7 @@ export default {
 .load-earlier-btn { font-size: 12px; padding: 4px 14px; border: 1px solid var(--color-border, #e2e4e9); border-radius: 14px; background: var(--color-surface, #fff); color: var(--color-text-secondary, #5a5f6b); cursor: pointer; }
 .load-earlier-btn:hover { color: var(--chy-violet-700, #5d4ec0); border-color: var(--chy-violet-500, #7c6cdc); }
 .ai-assistant-dialog {
+  position: relative;
   --ai-bg: #f6f8ff;
   --ai-sidebar-bg: rgba(245, 247, 252, 0.86);
   --ai-border: rgba(219, 226, 239, 0.86);
@@ -17920,12 +17923,12 @@ export default {
   overflow: hidden;
 }
 
-/* 窗口形态（停靠）菜单：右上角浮动单按钮 + 下拉（计划 §3.7/§5.2） */
+/* 窗口形态（停靠）菜单：挂根容器（整个窗口右上角），高于内容层、低于模态(1000/2000) */
 .dock-menu-wrap {
   position: absolute;
-  top: 8px;
-  right: 10px;
-  z-index: 60;
+  top: 10px;
+  right: 12px;
+  z-index: 900;
 }
 
 .dock-menu-btn {
