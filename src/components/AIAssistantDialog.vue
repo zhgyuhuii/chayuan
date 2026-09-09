@@ -2445,6 +2445,7 @@ import { initSync as initTaskListSync, subscribe as subscribeTaskList, getTaskBy
 import { exportDocumentImagesAsAssets } from '../utils/documentImageExportService.js'
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
+import { PANE_PROTOCOL_KEYS } from '../utils/host/aiAssistantDockManager.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { MCP_URL } from '../services/mcpBridge/config.js'
 import {
@@ -3961,6 +3962,7 @@ export default {
       selectionContextCollapsed: true,
       tooltipLayouts: {},
       aiAssistantWindowSession: null,
+      aiAssistantTaskPaneMode: false,
       welcomePromptIndex: -1,
       displayedWelcomePrompt: '',
       fullWelcomePrompt: '',
@@ -4348,7 +4350,16 @@ export default {
       this.handleAIAssistantWindowRequest(request)
     })
     bootMark('createAIAssistantWindowSession 完成')
-    const claimed = this.aiAssistantWindowSession.claimOwnership(this.$route?.query || {})
+    // 停靠态（?mode=taskpane，由 aiAssistantDockManager 创建）：先写 ready/size 协议标记
+    // （manager 在轮询等待），再凭 handover 标记接管单实例锁
+    this.aiAssistantTaskPaneMode = String(this.$route?.query?.mode || '').toLowerCase() === 'taskpane'
+    if (this.aiAssistantTaskPaneMode) {
+      this.startTaskPaneProtocol()
+    }
+    const claimed = this.aiAssistantWindowSession.claimOwnership(
+      this.$route?.query || {},
+      this.aiAssistantTaskPaneMode ? { mode: 'taskpane', takeOverHandover: true } : { mode: 'float' }
+    )
     bootMark(`claimOwnership 完成 (ok=${claimed.ok}, reason=${claimed.reason || '-'})`)
     if (!claimed.ok && claimed.reason === 'duplicate') {
       window.setTimeout(() => {
@@ -4467,6 +4478,7 @@ export default {
     this.cancelActiveGeneratedOutputRun()
     this.aiAssistantWindowSession?.releaseOwnership?.()
     this.aiAssistantWindowSession = null
+    this.stopTaskPaneProtocol()
     this.flushHistorySave()
     if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
@@ -6061,11 +6073,72 @@ export default {
         // Ignore window close failures in embedded dialogs.
       }
     },
+    // 停靠协议：挂载即写 ready 握手 + 真实 innerWidth/Height（resize 防抖刷新）。
+    // manager（ribbon 侧）据此确认面板存活并验证 DockPosition 切换后的尺寸真实生效
+    // ——WPS 的 Width/Height 同步读回值在布局沉降前是假的，只有页面回报可信（探针结论）。
+    startTaskPaneProtocol() {
+      this._taskPaneBootId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const report = () => {
+        try {
+          const storage = window.Application?.PluginStorage
+          if (!storage) return
+          storage.setItem(PANE_PROTOCOL_KEYS.ready, JSON.stringify({
+            bootId: this._taskPaneBootId,
+            mode: 'taskpane',
+            updatedAt: Date.now()
+          }))
+          storage.setItem(PANE_PROTOCOL_KEYS.size, JSON.stringify({
+            bootId: this._taskPaneBootId,
+            w: window.innerWidth,
+            h: window.innerHeight,
+            updatedAt: Date.now()
+          }))
+        } catch (_) {}
+      }
+      report()
+      this._taskPaneResizeHandler = () => {
+        if (this._taskPaneResizeTimer) window.clearTimeout(this._taskPaneResizeTimer)
+        this._taskPaneResizeTimer = window.setTimeout(report, 120)
+      }
+      window.addEventListener('resize', this._taskPaneResizeHandler)
+    },
+    stopTaskPaneProtocol() {
+      if (this._taskPaneResizeHandler) {
+        window.removeEventListener('resize', this._taskPaneResizeHandler)
+        this._taskPaneResizeHandler = null
+      }
+      if (this._taskPaneResizeTimer) {
+        window.clearTimeout(this._taskPaneResizeTimer)
+        this._taskPaneResizeTimer = null
+      }
+      // 仅清理本页实例写入的协议标记，避免误删交接中新面板的标记
+      try {
+        const storage = window.Application?.PluginStorage
+        if (storage) {
+          for (const key of [PANE_PROTOCOL_KEYS.ready, PANE_PROTOCOL_KEYS.size]) {
+            const parsed = safeParsePluginJson(storage.getItem(key))
+            if (parsed && parsed.bootId === this._taskPaneBootId) storage.removeItem(key)
+          }
+        }
+      } catch (_) {}
+    },
     handleAIAssistantWindowRequest(request = {}) {
       const action = String(request?.action || 'focus')
       const query = request?.query || {}
       if (String(query?.from || '').trim() === 'context') {
         this.refreshSelectionContext()
+      }
+      // dockTo/undockToFloat 原子交接的收尾请求：释放锁并退出。
+      // 浮窗自行关窗；停靠面板只释放（面板对象的销毁由 manager 侧 Delete 完成）
+      if (action === 'close') {
+        this.aiAssistantWindowSession?.releaseOwnership?.()
+        this.aiAssistantWindowSession = null
+        if (!this.aiAssistantTaskPaneMode) {
+          window.setTimeout(() => {
+            this.closeWindow()
+          }, 30)
+        }
+        return
       }
       if (action === 'reopen') {
         this.aiAssistantWindowSession?.releaseOwnership?.()

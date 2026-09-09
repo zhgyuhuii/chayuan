@@ -36,7 +36,8 @@ import {
   invalidateDeclassifyRibbonControls,
   isDocumentDeclassified
 } from '../utils/documentDeclassifyStore.js'
-import { reopenExistingAIAssistantWindow } from '../utils/aiAssistantWindowManager.js'
+import { focusExistingAIAssistantWindow } from '../utils/aiAssistantWindowManager.js'
+import { getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
 import { MODEL_GROUPS, getDefaultModelsFlat } from '../utils/defaultModelGroups.js'
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
@@ -114,27 +115,25 @@ function OnAddinLoad(ribbonUI) {
   return true
 }
 
-function openAIAssistantDialog(query = {}) {
-  const queryString = new URLSearchParams(query).toString()
-  const aiUrl = Util.GetUrlPath() + Util.GetRouterHash() + `/ai-assistant${queryString ? `?${queryString}` : ''}`
-  window.Application.ShowDialog(
-    aiUrl,
-    '察元 AI 助手',
-    900 * (window.devicePixelRatio || 1),
-    700 * (window.devicePixelRatio || 1),
-    false
-  )
-}
-
-function showAIAssistantDialog(query = {}) {
-  if (reopenExistingAIAssistantWindow(query)) {
-    openAIAssistantDialog({
-      ...query,
-      reopen: '1'
-    })
+// AI 助手统一入口：按上次形态打开（float=ShowDialog / left|right|bottom=CreateTaskPane，
+// 见 aiAssistantDockManager），已开着则聚焦不重复开；停靠/浮窗严格互斥。
+// 浮窗打开细节（900×700×DPR ShowDialog）由 dockManager 默认 openFloat 承担。
+function openAIAssistant(query = {}) {
+  const dock = getAIAssistantDockManager()
+  // 停靠面板已开：确保可见，query 经单实例锁请求通道投递（面板页与浮窗共用处理逻辑）
+  if (dock.hasOpenPane()) {
+    dock.focusOpenPane()
+    focusExistingAIAssistantWindow(query)
     return
   }
-  openAIAssistantDialog(query)
+  // 浮窗已开：聚焦并投递 query
+  if (focusExistingAIAssistantWindow(query)) {
+    return
+  }
+  // 无实例：按记忆形态打开；停靠切换失败时 manager 静默回退浮窗
+  dock.openAs(dock.getMode(), query).catch((e) => {
+    console.warn('[ribbon] openAIAssistant 按形态打开失败:', e)
+  })
 }
 
 
@@ -3224,7 +3223,7 @@ function OnAction(control) {
     // P0 清理:btnAITraceCheck(大写 I)是 XML 中不存在的死分支;XML 中正确的是 btnAiTraceCheck。
     // 历史空 case 已移除,真实痕迹检查走下方 btnAiTraceCheck → executeAssistantFromRibbon('analysis.ai-trace-check')
     case 'btnAIAssistant': {
-      showAIAssistantDialog()
+      openAIAssistant()
       break
     }
     case 'btnTaskOrchestration':
@@ -3602,7 +3601,7 @@ function OnAction(control) {
       })
       break
     case 'btnTextToImage':
-      showAIAssistantDialog({
+      openAIAssistant({
         from: 'context',
         multimodal: 'image',
         prompt: '请根据当前内容生成一张图片，如有必要先让我确认画幅比例等参数。',
@@ -3610,7 +3609,7 @@ function OnAction(control) {
       })
       break
     case 'btnTextToAudio':
-      showAIAssistantDialog({
+      openAIAssistant({
         from: 'context',
         multimodal: 'audio',
         prompt: '请根据当前内容生成语音，如有必要先让我确认语音风格等参数。',
@@ -3618,7 +3617,7 @@ function OnAction(control) {
       })
       break
     case 'btnTextToVideo':
-      showAIAssistantDialog({
+      openAIAssistant({
         from: 'context',
         multimodal: 'video',
         prompt: '请根据当前内容生成视频，如有必要先让我确认时长和画幅比例等参数。',
@@ -4212,7 +4211,7 @@ function OnContextMenuAction(control) {
         window.Application.PluginStorage.setItem('assistant_selected_content', selectedContent)
         window.Application.PluginStorage.setItem('assistant_selected_context', JSON.stringify(payload))
       } catch (e) {}
-      showAIAssistantDialog({ from: 'context' })
+      openAIAssistant({ from: 'context' })
     } else {
       alert('请先选择要添加的内容')
     }
@@ -4287,7 +4286,7 @@ function triggerKnowledgeBaseAction(mode) {
       window.Application.PluginStorage.setItem('assistant_selected_context', JSON.stringify(payload))
     } catch (e) {}
     const prompt = _kbActionPromptTemplate(mode, text)
-    showAIAssistantDialog({
+    openAIAssistant({
       from: 'context',
       kbMode: mode,
       prompt,
@@ -4346,7 +4345,9 @@ function getBase64Icon(type) {
 // 在 WPS 早期调用时会找不到 ribbon（Vue onMounted 太晚）
 const ribbon = {
   OnAddinLoad,
-  showAIAssistantDialog,
+  openAIAssistant,
+  // 兼容别名：外部系统/控制台可能仍以旧名调用（语义已升级为“按上次形态打开”）
+  showAIAssistantDialog: openAIAssistant,
   OnAction,
   GetImage,
   OnGetEnabled,
