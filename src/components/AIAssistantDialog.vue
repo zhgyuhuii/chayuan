@@ -4473,9 +4473,10 @@ export default {
     }
     bootMeasure('loadHistory', () => this.loadHistory())
     bootMeasure('loadSidebarLayout', () => this.loadSidebarLayout())
-    // 停靠左/右时面板窄（默认 ~268px），自动折叠历史侧栏给消息区让位。
-    // 只改内存态不落盘：切回浮窗时保留用户原本的侧栏布局
-    if (this.aiAssistantTaskPaneMode && ['left', 'right'].includes(this.currentDockMode)) {
+    // 停靠态按实际面板宽度自适应：窄面板（≤500px，如 WPS 忽略设宽时的默认宽）
+    // 自动折叠历史侧栏给消息区让位；半屏宽面板不再折叠。只改内存态不落盘，
+    // 切回浮窗时保留用户原本的侧栏布局
+    if (this.aiAssistantTaskPaneMode && Number(window.innerWidth || 0) <= 500) {
       this.sidebarCollapsed = true
     }
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())

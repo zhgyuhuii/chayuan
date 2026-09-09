@@ -51,6 +51,7 @@ function createFakeWindow({ storage, app }) {
     localStorage: storage,
     Application: app || null,
     location: { protocol: 'file:', href: 'file:///addons/chayuan_4.1.2/index.html' },
+    screen: { width: 1600, availWidth: 1600 },
     devicePixelRatio: 1,
     setTimeout,
     clearTimeout,
@@ -285,13 +286,13 @@ async function testDockManager(mod) {
     const pane = ctx.panes.get(1)
     assert('openAs(left) 成功', res.ok && res.mode === 'left')
     assert('面板先 DockPosition 后 Visible', pane.DockPosition === 0 && pane.Visible === true)
-    assert('面板宽按规范延迟设置为默认 420', pane.Width === 420)
+    assert('面板宽目标为屏幕一半(1600/2=800)', pane.Width === 800)
     assert(
       '面板 URL 带 taskpane 协议参数',
       /mode=taskpane/.test(pane.url) && /dock=left/.test(pane.url) && /prompt=/.test(pane.url)
     )
     assert('面板 id 与形态已记忆', ctx.storage.getItem('ai_assistant_taskpane_id') === '1' && ctx.storage.getItem('ai_assistant_dock_mode') === 'left')
-    assert('验证过的宽度被记忆', ctx.storage.getItem('ai_assistant_dock_width') === '420')
+    assert('验证过的宽度被记忆', ctx.storage.getItem('ai_assistant_dock_width') === '800')
     const probe = JSON.parse(ctx.storage.getItem('ai_assistant_dock_probe') || '{}')
     assert('探测缓存按版本记录 left 可用', probe.version === '12.1.28492' && probe.results.left === true)
     assert('isDockSupported 读取缓存', dock.isDockSupported('left') === true && dock.isDockSupported('bottom') === null)
@@ -335,7 +336,7 @@ async function testDockManager(mod) {
     ctx.localStorage.setItem(LOCK_KEY, JSON.stringify({ instanceId: 'float_win_1', mode: 'float', updatedAt: Date.now() }))
     const res = await dock.dockTo('right')
     assert('浮窗→右停靠成功', res.ok && res.mode === 'right')
-    assert('右停靠枚举与宽度', ctx.panes.get(1).DockPosition === 2 && ctx.panes.get(1).Width === 420)
+    assert('右停靠枚举与宽度', ctx.panes.get(1).DockPosition === 2 && ctx.panes.get(1).Width === 800)
     const req = JSON.parse(ctx.localStorage.getItem(REQUEST_KEY) || 'null')
     assert('收尾向旧浮窗发 close 请求', req?.action === 'close' && req?.targetInstanceId === 'float_win_1')
   }
@@ -395,13 +396,13 @@ async function testDockManager(mod) {
     assert('closeAll 请求锁持有者自行关闭', req?.action === 'close' && req?.targetInstanceId === 'pane_sess_1')
   }
 
-  // T9 记忆宽度越界被钳制
+  // T9 底栏记忆高度越界被钳制（左右宽已改为屏幕一半策略，不再读宽记忆）
   {
     const ctx = freshDock()
-    ctx.storage.setItem('ai_assistant_dock_width', '9999')
+    ctx.storage.setItem('ai_assistant_dock_height', '9999')
     const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
-    await dock.openAs('left')
-    assert('记忆宽度钳制到上限', ctx.panes.get(1).Width === 720)
+    await dock.openAs('bottom')
+    assert('底栏记忆高度钳制到上限', ctx.panes.get(1).Height === 640)
   }
 
   // T11 WPS 忽略左右面板设宽（探针只证实过 Height 延迟生效）→ 健康默认尺寸即接受，

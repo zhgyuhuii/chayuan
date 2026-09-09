@@ -82,6 +82,21 @@ export const SIZE_LIMITS = {
 }
 export const DEFAULT_PANE_SIZE = { width: 420, height: 320 }
 
+/**
+ * 左右停靠的目标宽度：屏幕一半（与 WPS 文档平分屏幕宽度，用户口径即屏幕）。
+ * manager 运行在 WPS webview 里，window.screen 与 WPS 主窗口同屏；
+ * 取不到 screen 时回落旧默认 420。
+ */
+function resolveHalfScreenWidthPx() {
+  try {
+    const w = Number(window.screen?.availWidth || window.screen?.width || 0)
+    if (Number.isFinite(w) && w >= 2 * SIZE_LIMITS.minWidth) {
+      return Math.floor(w / 2)
+    }
+  } catch (_) {}
+  return DEFAULT_PANE_SIZE.width
+}
+
 const FLOAT_DIALOG_TITLE = '察元 AI 助手'
 const FLOAT_DIALOG_SIZE = { width: 900, height: 700 }
 
@@ -298,9 +313,10 @@ export function createAIAssistantDockManager(deps = {}) {
         DEFAULT_PANE_SIZE.height
       return { axis: 'height', value: height }
     }
-    const width =
-      clampPaneSizeValue(readRaw(KEYS.width), SIZE_LIMITS.minWidth, SIZE_LIMITS.maxWidth) ||
-      DEFAULT_PANE_SIZE.width
+    // 左/右：屏幕一半（用户约定），不套 maxWidth 上限（1920 屏即 960）；
+    // 最小可用宽仍受 minWidth 保护
+    const half = resolveHalfScreenWidthPx()
+    const width = Math.max(SIZE_LIMITS.minWidth, half)
     return { axis: 'width', value: width }
   }
   function readSizeReport(createdAt) {
