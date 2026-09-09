@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>停靠探针-对话框</title></head>
+<body style="font-family: sans-serif; padding: 12px;">
+  <h3>ShowDialog 探针页</h3>
+  <pre id="out">上报中…（4 秒后自动关闭）</pre>
+<script>
+  var REPORT = 'http://127.0.0.1:3999/report'
+  function rep(tag, data) {
+    var payload = { tag: tag, data: data, at: new Date().toISOString() }
+    try { fetch(REPORT, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) }) } catch (e) {}
+    try { if (window.Application && window.Application.PluginStorage) window.Application.PluginStorage.setItem('probe_' + tag, JSON.stringify(payload)) } catch (e) {}
+  }
+  try { localStorage.setItem('probe_dialog_wrote', 'd1-' + Date.now()) } catch (e) {}
+
+  var before = { screenX: window.screenX, screenY: window.screenY, innerWidth: window.innerWidth, innerHeight: window.innerHeight }
+  var moveResult
+  try {
+    window.moveTo(150, 150)
+    moveResult = { screenX: window.screenX, screenY: window.screenY, moved: (window.screenX !== before.screenX || window.screenY !== before.screenY) }
+  } catch (e) { moveResult = { error: String(e) } }
+  var resizeResult
+  try {
+    window.resizeTo(320, 260)
+    resizeResult = { innerWidth: window.innerWidth, innerHeight: window.innerHeight, resized: (window.innerWidth !== before.innerWidth || window.innerHeight !== before.innerHeight) }
+  } catch (e) { resizeResult = { error: String(e) } }
+
+  var info = {
+    marker: null,
+    before: before,
+    moveToResult: moveResult,
+    resizeResult: resizeResult,
+    hasApplication: !!window.Application,
+    ua: navigator.userAgent
+  }
+  try { info.marker = localStorage.getItem('probe_marker') } catch (e) { info.marker = 'ERR:' + String(e) }
+  rep('dialog-page', info)
+  document.getElementById('out').textContent = JSON.stringify(info, null, 2)
+  setTimeout(function () { try { window.close() } catch (e) {} }, 4000)
+</script>
+</body>
+</html>

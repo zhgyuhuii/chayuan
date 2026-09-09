@@ -1,0 +1,11 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="ribbon.OnAddinLoad">
+    <ribbon startFromScratch="false">
+        <tabs>
+            <tab id="tabProbe" label="停靠探针">
+                <group id="groupProbe" label="探针" autoScale="true">
+                    <button id="btnRunProbe" label="跑探针" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                </group>
+            </tab>
+        </tabs>
+    </ribbon>
+</customUI>

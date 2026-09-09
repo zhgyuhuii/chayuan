@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>停靠探针-面板</title></head>
+<body style="font-family: sans-serif; padding: 12px; margin:0;">
+  <h3 style="margin:4px 0">TaskPane 探针页</h3>
+  <pre id="out" style="margin:4px;font-size:11px">上报中…</pre>
+<script>
+  var REPORT = 'http://127.0.0.1:3999/report'
+  function rep(tag, data) {
+    var payload = { tag: tag, data: data, at: new Date().toISOString() }
+    try { fetch(REPORT, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) }) } catch (e) {}
+    try { if (window.Application && window.Application.PluginStorage) window.Application.PluginStorage.setItem('probe_' + tag, JSON.stringify(payload)) } catch (e) {}
+  }
+  try { localStorage.setItem('probe_pane_wrote', 'p1-' + Date.now()) } catch (e) {}
+
+  var t0 = (window.performance && performance.now) ? performance.now() : 0
+  function reportSize(source) {
+    var info = {
+      source: source,
+      elapsedMs: Math.round((window.performance && performance.now) ? performance.now() - t0 : 0),
+      innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth, outerHeight: window.outerHeight
+    }
+    rep('pane-size', info)
+    document.getElementById('out').textContent = JSON.stringify(info, null, 1)
+  }
+  window.addEventListener('resize', function () { reportSize('resize-event') })
+  window.addEventListener('load', function () { reportSize('load') })
+  reportSize('script')
+</script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>停靠探针</title></head>
+<body>
+<p>停靠探针 ribbon 宿主页（按钮触发探针，结果上报 127.0.0.1:3999）</p>
+<script>
+(function () {
+  var REPORT = 'http://127.0.0.1:3999/report'
+
+  function rep(tag, data) {
+    var payload = { tag: tag, data: data, at: new Date().toISOString() }
+    try {
+      fetch(REPORT, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload)
+      })
+    } catch (e) { /* 忽略上报失败 */ }
+    try {
+      if (window.Application && window.Application.PluginStorage) {
+        window.Application.PluginStorage.setItem('probe_' + tag, JSON.stringify(payload))
+      }
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function nameForValue(val, E) {
+    var keys = Object.keys(E || {})
+    for (var i = 0; i < keys.length; i++) {
+      if (E[keys[i]] === val) return keys[i]
+    }
+    return String(val)
+  }
+
+  rep('env', {
+    href: location.href,
+    ua: navigator.userAgent,
+    dpr: window.devicePixelRatio,
+    screen: [screen.width, screen.height, screen.availWidth, screen.availHeight],
+    hasApplication: !!window.Application
+  })
+
+  // localStorage 反向共享验证：pane/dialog 页会读这两个键并回读 probe_pane_wrote
+  try {
+    localStorage.setItem('probe_marker', 'set-by-ribbon-' + Date.now())
+    localStorage.setItem('probe_ribbon_only', 'r1')
+    rep('localstorage-ribbon', { ok: true, marker: localStorage.getItem('probe_marker') })
+  } catch (e) {
+    rep('localstorage-ribbon', { ok: false, error: String(e) })
+  }
+
+  function runProbe() {
+    var E = (window.Application && window.Application.Enum) || {}
+    var base = location.href.replace(/index\.html.*$/, '')
+    var paneUrl = base + 'pane.html'
+    var dlgUrl = base + 'dialog.html'
+
+    // P1: 枚举
+    var keys = Object.keys(E)
+    var hits = keys.filter(function (k) { return /CTP|Dock|TaskPane/i.test(k) })
+    rep('enum', {
+      total: keys.length,
+      pairs: hits.map(function (k) { return [k, E[k]] })
+    })
+
+    // P2: 创建 TaskPane
+    var pane = null
+    var createErr = null
+    try { pane = window.Application.CreateTaskPane(paneUrl) } catch (e) { createErr = String(e && e.message || e) }
+
+    if (!pane) { rep('pane-created', { status: 'FAILED', error: createErr }) }
+    else {
+      rep('pane-created', {
+        status: 'OK', id: pane.ID,
+        props: ['DockPosition', 'Width', 'Height', 'Visible', 'Position', 'Left', 'Top'].map(function (p) {
+          var has = false; try { has = p in pane } catch (e) {}
+          return [p, has]
+        })
+      })
+
+      var defaults = {}
+      ;['DockPosition', 'Width', 'Height', 'Visible'].forEach(function (p) {
+        try { defaults[p] = pane[p] } catch (e) { defaults[p] = 'ERR:' + String(e && e.message || e) }
+      })
+      rep('pane-defaults', defaults)
+
+      // P1b: 各方向停靠实测（设置后立即读回）
+      var trials = [
+        ['Left', E.msoCTPDockPositionLeft],
+        ['Right', E.msoCTPDockPositionRight],
+        ['Top', E.msoCTPDockPositionTop],
+        ['Bottom', E.msoCTPDockPositionBottom],
+        ['Floating', E.msoCTPDockPositionFloating]
+      ]
+      trials.forEach(function (t) {
+        var name = t[0], val = t[1]
+        if (val === undefined) { rep('dock-trial', { name: name, status: 'ENUM_MISSING' }); return }
+        try {
+          pane.DockPosition = val
+          var back = pane.DockPosition
+          rep('dock-trial', {
+            name: name, setValue: val, readBack: back,
+            readBackName: nameForValue(back, E), matched: back === val
+          })
+        } catch (e) {
+          rep('dock-trial', { name: name, status: 'SET_ERR', error: String(e && e.message || e) })
+        }
+      })
+
+      // P2b: 宽高设置
+      try { pane.Width = 420; rep('width', { set: 420, readBack: pane.Width }) } catch (e) { rep('width', { error: String(e && e.message || e) }) }
+      try { pane.Height = 320; rep('height', { set: 320, readBack: pane.Height }) } catch (e) { rep('height', { error: String(e && e.message || e) }) }
+
+      // 结尾：底部停靠尺寸实验室（第二轮）
+      // 假设：Height 必须在停靠布局沉降后延迟设置才生效。
+      // 面板页 pane.html 会在每次 resize 事件时上报真实 innerHeight 时间线。
+      try {
+        if (E.msoCTPDockPositionBottom !== undefined) pane.DockPosition = E.msoCTPDockPositionBottom
+        pane.Visible = true
+        var setH = function (h, tag) {
+          return function () {
+            try { pane.Height = h; rep(tag, { set: h, heightPropReadBack: pane.Height }) }
+            catch (e) { rep(tag, { set: h, error: String(e && e.message || e) }) }
+          }
+        }
+        setTimeout(setH(240, 'bottom-h-400ms'), 400)
+        setTimeout(setH(320, 'bottom-h-1200ms'), 1200)
+        setTimeout(setH(400, 'bottom-h-2400ms'), 2400)
+        // 6 秒后切顶部再试一轮
+        setTimeout(function () {
+          try {
+            if (E.msoCTPDockPositionTop !== undefined) pane.DockPosition = E.msoCTPDockPositionTop
+            setTimeout(setH(280, 'top-h-400ms'), 400)
+            setTimeout(setH(360, 'top-h-1500ms'), 1500)
+          } catch (e) { rep('top-switch', { error: String(e) }) }
+        }, 6000)
+      } catch (e) {
+        rep('bottom-lab', { error: String(e && e.message || e) })
+        try { pane.Visible = true } catch (e2) {}
+      }
+    }
+
+    // P3/P5: ShowDialog 探针页
+    try { window.Application.ShowDialog(dlgUrl, '停靠探针-对话框', 420, 320, false); rep('dialog-open', { status: 'CALLED' }) }
+    catch (e) { rep('dialog-open', { status: 'ERROR', error: String(e && e.message || e) }) }
+
+    // 反向读取 pane 页写入的 localStorage 键
+    setTimeout(function () {
+      var reverse = { paneWrote: null, dialogWrote: null }
+      try { reverse.paneWrote = localStorage.getItem('probe_pane_wrote') } catch (e) {}
+      try { reverse.dialogWrote = localStorage.getItem('probe_dialog_wrote') } catch (e) {}
+      rep('localstorage-reverse', reverse)
+      rep('done', { finished: true })
+    }, 5000)
+  }
+
+  window.ribbon = {
+    OnAddinLoad: function (ribbonUI) {
+      rep('onload', { hasRibbonUI: !!ribbonUI })
+      // 自动运行：文档窗口加载加载项后 4 秒触发，免点击
+      setTimeout(function () {
+        rep('autorun', {})
+        try { runProbe() } catch (e) { rep('runprobe-error', { error: String(e && e.stack || e) }) }
+      }, 4000)
+    },
+    OnAction: function (control) {
+      var id = control && control.Id
+      rep('onaction', { id: id })
+      if (id === 'btnRunProbe') { try { runProbe() } catch (e) { rep('runprobe-error', { error: String(e && e.stack || e) }) } }
+    },
+    GetImage: function () {
+      return location.href.replace(/index\.html.*$/, '') + 'probe.svg'
+    }
+  }
+})()
+</script>
+</body>
+</html>
