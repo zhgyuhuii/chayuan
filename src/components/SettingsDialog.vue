@@ -2486,7 +2486,7 @@
 
 <script>
 import { activateHostWindow } from '../utils/windowActivation.js'
-import { getLocalEngineSpec, probeLocalEngine, installLocalEngine } from '../utils/localEngineSetup.js'
+import { getLocalEngineSpec, probeLocalEngine, installLocalEngine, getPullHint } from '../utils/localEngineSetup.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
 import { loadGlobalSettings, saveGlobalSettings, getLastSaveFailureReason } from '../utils/globalSettings.js'
@@ -5724,6 +5724,9 @@ export default {
       this.localEnginePort = result.port || 0
       if (result.status === 'running' && !this.currentModelConfig.apiUrl) {
         this.localEngineHint = `检测到本地服务运行于 127.0.0.1:${result.port}，点击「填入地址」自动完成配置。`
+      } else if (result.status === 'running') {
+        // 已配置地址：给模型拉取的网络提示（pull 权重同样受国内网络影响）
+        this.localEngineHint = getPullHint(providerId) || ''
       } else if (result.status === 'unreachable') {
         this.localEngineHint = '一键安装后，启动引擎并回到此页刷新即可自动识别。'
       }
