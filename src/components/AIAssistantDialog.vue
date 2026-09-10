@@ -231,26 +231,13 @@
               @click.prevent="openExternalWebsite('https://aidooo.com')"
             >aidooo.com</a>
           </div>
-          <!-- 常驻支持入口：关注公众号（扫码）+ GitHub Star，始终可见不再隐藏 -->
-          <div class="sidebar-footer-star-row">
-            <button
-              type="button"
-              class="sidebar-footer-star-btn"
-              title="关注微信公众号「智灵鸟科技」"
-              @click="openSidebarFooterSupportDialog('follow')"
-            >
-              关注公众号
-            </button>
-            <button
-              type="button"
-              class="sidebar-footer-star-btn"
-              :title="starBadgeResolved ? '感谢支持开源' : '去 GitHub 点个 Star 支持开源'"
-              @click="handleStarPromptGo"
-            >
-              {{ starBadgeResolved ? '已点赞 ⭐' : 'GitHub Star ⭐' }}
-            </button>
-          </div>
           <div class="sidebar-footer-actions">
+            <a
+              href="#"
+              class="sidebar-footer-text-btn"
+              title="去 GitHub 点个 Star 支持开源"
+              @click.prevent="handleStarPromptGo"
+            >点赞</a>
             <button type="button" class="sidebar-footer-text-btn" @click="helpManualVisible = true">帮助</button>
             <button type="button" class="sidebar-footer-text-btn" @click="feedbackDialogVisible = true">反馈及建议</button>
           </div>
@@ -18461,32 +18448,6 @@ export default {
   filter: brightness(0.97);
 }
 
-/* 侧栏常驻支持入口：关注公众号 + GitHub Star */
-.sidebar-footer-star-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.sidebar-footer-star-btn {
-  flex: 1;
-  padding: 4px 6px;
-  border: 1px solid rgba(202, 138, 4, 0.28);
-  border-radius: 7px;
-  background: rgba(255, 251, 235, 0.8);
-  color: #a16207;
-  font-size: 11px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sidebar-footer-star-btn:hover {
-  background: #fef3c7;
-  color: #92400e;
-}
 .composer-tools {
   display: flex;
   align-items: center;
