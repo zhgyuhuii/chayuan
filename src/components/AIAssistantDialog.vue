@@ -67,7 +67,7 @@
           @click="activeSidebarTab = 'chats'"
         >
           <span>对话</span>
-          <span class="sidebar-tab-badge">{{ chatHistory.length }}</span>
+          <span class="sidebar-tab-badge">{{ savedChatCount }}</span>
         </div>
       </div>
 
@@ -332,6 +332,37 @@
 
     <!-- 右侧主区域 -->
     <main class="main-area">
+      <!-- 会话页签栏:已打开会话的 tab,「+」新建(草稿模型),×仅关闭不删除 -->
+      <div v-if="!activeToolId && openChatTabs.length" class="chat-tabbar">
+        <div class="chat-tabbar-tabs">
+          <div
+            v-for="tabId in openChatTabs"
+            :key="tabId"
+            class="chat-tab"
+            :class="{ active: currentChatId === tabId }"
+            :title="getChatTabLabel(tabId)"
+            @click="switchChat(tabId)"
+            @click.middle="closeChatTab(tabId)"
+          >
+            <span class="chat-tab-title">{{ getChatTabLabel(tabId) }}</span>
+            <button
+              type="button"
+              class="chat-tab-close"
+              title="关闭页签(不删除会话)"
+              @click.stop="closeChatTab(tabId)"
+            >×</button>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="chat-tab-add"
+          title="新建对话"
+          aria-label="新建对话"
+          @click="newChat"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
+        </button>
+      </div>
       <!-- 工具助手面板:与对话区互斥,activeToolId 非空时占据右侧主区 -->
       <ToolAssistantPanel
         v-if="activeToolId"
@@ -602,7 +633,8 @@
             v-for="(msg, i) in visibleMessages"
             :key="msg.id"
             class="message-row"
-            :class="[msg.role, getMessageEntryEffectClass(msg)]"
+            :class="[msg.role, getMessageEntryEffectClass(msg), { 'ruler-highlight': rulerHighlightMessageId === msg.id }]"
+            :data-message-id="msg.id"
           >
             <div class="message-avatar">
               <span v-if="msg.role === 'user'">👤</span>
@@ -1936,7 +1968,32 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
-        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen }">
+        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen, 'has-ruler': composerRulerTicks.length > 0 }">
+          <!-- 历史刻度尺:每颗刻度=当前会话一轮提问,悬停变长+预览,点击定位 -->
+          <div v-if="composerRulerTicks.length" class="composer-ruler" aria-label="对话历史刻度">
+            <button
+              v-for="tick in composerRulerTicks"
+              :key="tick.messageId"
+              type="button"
+              class="composer-ruler-tick"
+              :class="{ 'is-active': hoveredRulerTickId === tick.messageId }"
+              :aria-label="tick.question || '历史提问'"
+              @mouseenter="hoveredRulerTickId = tick.messageId"
+              @mouseleave="hoveredRulerTickId = ''"
+              @focus="hoveredRulerTickId = tick.messageId"
+              @blur="hoveredRulerTickId = ''"
+              @click="locateChatTurn(tick)"
+            >
+              <span
+                v-if="hoveredRulerTickId === tick.messageId"
+                class="composer-ruler-tooltip"
+              >
+                <span class="composer-ruler-tooltip-q">{{ tick.question || '（空）' }}</span>
+                <span v-if="tick.replyFirstLine" class="composer-ruler-tooltip-a">{{ tick.replyFirstLine }}</span>
+                <span v-if="tick.timeLabel" class="composer-ruler-tooltip-t">{{ tick.timeLabel }}</span>
+              </span>
+            </button>
+          </div>
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -2231,19 +2288,22 @@
           <button
             type="button"
             class="composer-tool-btn composer-tool-btn--send"
-            :class="{ 'is-launching': sendLaunchEffect.active }"
-            :disabled="isStreaming || !hasPendingInput"
-            @click="sendMessage"
-            title="发送"
-            aria-label="发送"
+            :class="{ 'is-launching': sendLaunchEffect.active, 'is-stop': isTurnRunning }"
+            :disabled="!isTurnRunning && !hasPendingInput"
+            @click="isTurnRunning ? stopActiveTurn() : sendMessage()"
+            :title="isTurnRunning ? '停止' : '发送'"
+            :aria-label="isTurnRunning ? '停止' : '发送'"
           >
-            <!-- 发送：纸飞机 -->
-            <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <!-- 发送：纸飞机；执行中：红色停止键（全车道通用） -->
+            <svg v-if="!isTurnRunning" class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M4.6 11.1 19.2 4.7c.65-.28 1.28.35 1 1L14.4 20c-.28.65-1.2.66-1.5 0l-2-4.9-4.9-2c-.66-.28-.65-1.2 0-1.5Z"
                 fill="currentColor"
               />
               <path d="m10.5 13.1 7.8-7.8" stroke="#fff" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <svg v-else class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="7" y="7" width="10" height="10" rx="1.6" fill="currentColor" />
             </svg>
           </button>
           </div>
@@ -4055,6 +4115,9 @@ export default {
       isResizingSidebar: false,
       chatHistory: [],
       currentChatId: null,
+      openChatTabs: [],
+      hoveredRulerTickId: '',
+      rulerHighlightMessageId: '',
       assistantItems: [],
       assistantGroupCollapsed: {},
       chatSearchText: '',
@@ -4074,6 +4137,7 @@ export default {
       modelGroupCollapsed: {},
       isStreaming: false,
       streamingContent: '',
+      activeLegacyTurnContext: null,
       selectionContextSnapshot: null,
       selectionContextCollapsed: true,
       tooltipLayouts: {},
@@ -4322,6 +4386,37 @@ export default {
     currentChat() {
       return this.chatHistory.find(c => c.id === this.currentChatId)
     },
+    isTurnRunning() {
+      return this.isStreaming || !!this.activeMcpTurnContext || !!this.activeLegacyTurnContext
+    },
+    savedChatCount() {
+      return this.chatHistory.filter(c => !c?.draft).length
+    },
+    composerRulerTicks() {
+      const all = this.currentMessages
+      if (!Array.isArray(all)) return []
+      const ticks = []
+      for (let i = 0; i < all.length; i++) {
+        const msg = all[i]
+        if (!msg || msg.role !== 'user') continue
+        let reply = ''
+        for (let j = i + 1; j < all.length; j++) {
+          if (all[j]?.role === 'assistant') {
+            reply = String(all[j].content || '').trim()
+            break
+          }
+        }
+        const replyFirstLine = reply ? (reply.split('\n').map(s => s.trim()).find(Boolean) || '') : ''
+        const ts = Number(String(msg.id || '').slice(1))
+        ticks.push({
+          messageId: msg.id,
+          question: String(msg.content || '').trim().slice(0, 80),
+          replyFirstLine: replyFirstLine.slice(0, 80),
+          timeLabel: this.formatRulerTime(Number.isFinite(ts) && ts > 0 ? ts : 0)
+        })
+      }
+      return ticks
+    },
     currentMessages() {
       return this.currentChat?.messages || []
     },
@@ -4345,10 +4440,11 @@ export default {
       }
     },
     filteredChatHistory() {
-      // 用防抖后的搜索文本,避免每次按键都全量扫描会话内容
+      // 用防抖后的搜索文本,避免每次按键都全量扫描会话内容;草稿会话不入列表
       const search = String(this.debouncedChatSearchText || '').trim().toLowerCase()
-      if (!search) return this.chatHistory
-      return this.chatHistory.filter((chat) => {
+      const pool = this.chatHistory.filter(chat => !chat?.draft)
+      if (!search) return pool
+      return pool.filter((chat) => {
         const title = String(chat?.title || '').toLowerCase()
         const contents = Array.isArray(chat?.messages)
           ? chat.messages.map(msg => String(msg?.content || '')).join('\n').toLowerCase()
@@ -5679,7 +5775,11 @@ export default {
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
-          assistantMsg.content = '已停止文档智能体本轮执行。'
+          // 停止语义:保留已流出内容并追加标记;无内容时才用整句提示
+          const prevContent = String(assistantMsg.content || '').trim()
+          assistantMsg.content = prevContent
+            ? `${prevContent}\n\n（已停止）`
+            : '已停止文档智能体本轮执行。'
           this.saveHistory()
           return { handled: true, cancelled: true }
         }
@@ -5725,6 +5825,67 @@ export default {
       this.activeMcpTurnContext = null
       this.isStreaming = false
       return true
+    },
+    // 发送键停止入口：全车道统一——MCP 回合 / 旧链路流式 / 各长任务运行上下文
+    stopActiveTurn() {
+      if (this.activeMcpTurnContext) return this.stopActiveMcpTurn()
+      if (this.activeLegacyTurnContext) return this.stopActiveLegacyTurn()
+      if (this.activeDocumentRevisionRunContext) {
+        this.cancelActiveDocumentRevisionRun()
+        return true
+      }
+      if (this.activeDocumentAwareRunContext) {
+        this.cancelActiveDocumentAwareRun()
+        return true
+      }
+      if (this.activeGeneratedOutputRunContext) {
+        this.cancelActiveGeneratedOutputRun()
+        return true
+      }
+      return false
+    },
+    stopActiveLegacyTurn() {
+      const ctx = this.activeLegacyTurnContext
+      if (!ctx) return false
+      ctx.cancelled = true
+      try { ctx.abortController?.abort?.('user-stop') } catch { /* ignore */ }
+      // 状态复位交给流式回调（onError/onDone）收尾，那里负责保留已流出内容
+      return true
+    },
+    formatRulerTime(ts) {
+      if (!Number.isFinite(ts) || ts <= 0) return ''
+      try {
+        const d = new Date(ts)
+        if (Number.isNaN(d.getTime())) return ''
+        const now = new Date()
+        const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+        const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        if (sameDay) return hm
+        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hm}`
+      } catch {
+        return ''
+      }
+    },
+    async locateChatTurn(tick) {
+      const messageId = String(tick?.messageId || '')
+      if (!messageId) return
+      const all = this.currentMessages
+      const idx = Array.isArray(all) ? all.findIndex(m => m?.id === messageId) : -1
+      if (idx < 0) return
+      // 目标轮次在「显示更早消息」窗口之外时，先扩窗再定位
+      const needed = all.length - idx + 2
+      if (needed > this.messageWindowSize) this.messageWindowSize = needed
+      this.rulerHighlightMessageId = messageId
+      await this.$nextTick()
+      const container = this.$refs.messagesRef
+      const el = container?.querySelector?.(`[data-message-id="${messageId}"]`)
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      if (this._rulerHighlightTimer) window.clearTimeout(this._rulerHighlightTimer)
+      this._rulerHighlightTimer = window.setTimeout(() => {
+        this.rulerHighlightMessageId = ''
+      }, 1800)
     },
     getMessagePrimaryRouteDetail(message) {
       const label = this.getMessagePrimaryRouteLabel(message)
@@ -7247,14 +7408,17 @@ export default {
         } else {
           this.currentChatId = null
         }
+        this.initOpenChatTabsAfterLoad()
       } catch (e) {
         console.warn('加载对话历史失败:', e)
       }
     },
     buildHistorySavePayload(options = {}) {
       const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
-      // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent),避免污染持久化
-      const cleanHistory = this.chatHistory.map(chat => ({
+      // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent),避免污染持久化;草稿会话不落库
+      const cleanHistory = this.chatHistory
+        .filter(chat => !chat?.draft)
+        .map(chat => ({
         ...chat,
         messages: Array.isArray(chat?.messages)
           // eslint-disable-next-line no-unused-vars
@@ -7329,20 +7493,65 @@ export default {
     },
     newChat() {
       this.activeToolId = ''
+      // 草稿模型:已存在空白草稿 tab 时只激活,不重复新建
+      const existingEmptyDraft = this.chatHistory.find(c => c?.draft && (c.messages || []).length === 0)
+      if (existingEmptyDraft) {
+        this.openChatTab(existingEmptyDraft.id)
+        return
+      }
       const id = 'chat_' + Date.now()
+      // 新建仅产生内存草稿(draft:true),首条消息发出后才经 ensureWritableChat 落库
       this.chatHistory.unshift({
         id,
         title: '新对话',
         messages: [],
-        kbBindings: normalizeKbBinding()
+        kbBindings: normalizeKbBinding(),
+        draft: true
       })
+      this.openChatTab(id)
+    },
+    openChatTab(id) {
+      if (!id) return
+      if (!this.openChatTabs.includes(id)) this.openChatTabs.push(id)
       this.currentChatId = id
       this.saveHistory()
     },
+    getChatTabLabel(tabId) {
+      const chat = this.chatHistory.find(c => c?.id === tabId)
+      return String(chat?.title || '').trim() || '新对话'
+    },
+    closeChatTab(tabId) {
+      const idx = this.openChatTabs.indexOf(tabId)
+      if (idx < 0) return
+      this.openChatTabs.splice(idx, 1)
+      // 未发言的草稿关闭即无痕消失
+      const chat = this.chatHistory.find(c => c?.id === tabId)
+      if (chat?.draft && (chat.messages || []).length === 0) {
+        this.chatHistory = this.chatHistory.filter(c => c.id !== tabId)
+      }
+      if (this.currentChatId === tabId) {
+        const neighbor = this.openChatTabs[idx - 1] ?? this.openChatTabs[idx] ?? null
+        if (neighbor) {
+          this.currentChatId = neighbor
+          this.saveHistory()
+        } else {
+          this.newChat()
+        }
+      }
+    },
     switchChat(id) {
       this.activeToolId = ''
-      this.currentChatId = id
-      this.saveHistory()
+      this.openChatTab(id)
+    },
+    initOpenChatTabsAfterLoad() {
+      const valid = this.currentChatId && this.chatHistory.some(c => c?.id === this.currentChatId)
+      if (valid) {
+        this.openChatTabs = [this.currentChatId]
+      } else {
+        this.currentChatId = null
+        this.openChatTabs = []
+        this.newChat()
+      }
     },
     async deleteChat(id) {
       const targetIndex = this.chatHistory.findIndex(chat => chat.id === id)
@@ -7356,8 +7565,17 @@ export default {
       if (!confirmed) return
       const remaining = this.chatHistory.filter(chat => chat.id !== id)
       this.chatHistory = remaining
+      const tabIdx = this.openChatTabs.indexOf(id)
+      if (tabIdx >= 0) this.openChatTabs.splice(tabIdx, 1)
       if (this.currentChatId === id) {
-        this.currentChatId = remaining[targetIndex]?.id || remaining[targetIndex - 1]?.id || remaining[0]?.id || null
+        const nextId = remaining[targetIndex]?.id || remaining[targetIndex - 1]?.id || remaining[0]?.id || null
+        if (nextId) {
+          this.currentChatId = nextId
+          if (!this.openChatTabs.includes(nextId)) this.openChatTabs.push(nextId)
+        } else {
+          this.newChat()
+          return
+        }
       }
       this.saveHistory()
     },
@@ -9387,7 +9605,13 @@ export default {
         this.newChat()
       }
       const chatId = this.currentChatId || this.chatHistory[0]?.id
-      return this.chatHistory.find(c => c.id === chatId) || null
+      const chatObj = this.chatHistory.find(c => c.id === chatId) || null
+      if (chatObj?.draft) {
+        // 主发送链路入口:草稿在此转正(落库+进入左栏历史)
+        chatObj.draft = false
+        this.saveHistory()
+      }
+      return chatObj
     },
     prepareOutgoingMessages(text, options = {}) {
       const chatObj = this.getOrCreateWritableChat()
@@ -12172,13 +12396,14 @@ export default {
         reason: '未识别到明确的工具或助手需求，默认按普通对话处理。'
       }
     },
-    async inferPrimaryConversationIntentWithModel(text, model) {
+    async inferPrimaryConversationIntentWithModel(text, model, turnCtx = null) {
       const fallback = this.inferPrimaryConversationIntentByRule(text)
       try {
         const raw = await chatCompletion({
           providerId: model.providerId,
           modelId: model.modelId,
           temperature: 0.1,
+          signal: turnCtx?.abortController?.signal,
           messages: [
             {
               role: 'system',
@@ -12213,7 +12438,7 @@ export default {
         return fallback
       }
     },
-    async resolvePrimaryConversationIntent(text, model) {
+    async resolvePrimaryConversationIntent(text, model, turnCtx = null) {
       const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
       const selectionContext = this.resolveBestSelectionContext()
       const routeContext = {
@@ -12237,7 +12462,7 @@ export default {
       }
       const cachedIntent = getCachedModelRouteIntent(text, routeCacheOptions)
       if (cachedIntent) return cachedIntent
-      const modelIntent = await this.inferPrimaryConversationIntentWithModel(text, model)
+      const modelIntent = await this.inferPrimaryConversationIntentWithModel(text, model, turnCtx)
       setCachedModelRouteIntent(text, modelIntent, routeCacheOptions)
       const ruleKind = String(ruleIntent?.kind || 'chat').trim()
       const modelKind = String(modelIntent?.kind || 'chat').trim()
@@ -16127,6 +16352,11 @@ export default {
       const chatId = this.currentChatId || this.chatHistory[0]?.id
       const chatObj = this.chatHistory.find(c => c.id === chatId)
       if (!chatObj) return null
+      if (chatObj.draft) {
+        // 首条消息落库:草稿转为正式会话,此后左栏历史/持久化可见
+        chatObj.draft = false
+        this.saveHistory()
+      }
       if (!chatObj.title || chatObj.title === '新对话') {
         chatObj.title = inputText.slice(0, 20) + (inputText.length > 20 ? '...' : '')
       }
@@ -16217,13 +16447,23 @@ export default {
         percent: 14
       })
 
+      const translateCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const translateCtx = {
+        messageId: assistantMsg?.id || '',
+        abortController: translateCtrl,
+        cancelled: false
+      }
+      this.activeLegacyTurnContext = translateCtx
+
       streamChatCompletion({
         ribbonModelId: model.id,
         providerId: model.providerId,
         modelId: model.modelId,
         temperature: 0.2,
+        signal: translateCtrl?.signal,
         messages: this.buildSelectionTranslateMessages(selectionContext, intent?.targetLanguage),
         onChunk: (chunk) => {
+          if (translateCtx.cancelled) return
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.streamingContent += chunk
@@ -16235,6 +16475,7 @@ export default {
           assistantMsg.isLoading = false
           this.isStreaming = false
           this.streamingContent = ''
+          this.activeLegacyTurnContext = null
           this.requestAssistantEvolutionSuggestionCheck()
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
@@ -16244,8 +16485,16 @@ export default {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
+          const translatePartial = String(this.streamingContent || assistantMsg.content || '').trim()
           this.streamingContent = ''
+          this.activeLegacyTurnContext = null
           this.clearAssistantRecommendations(assistantMsg)
+          if (translateCtx.cancelled) {
+            assistantMsg.content = translatePartial ? `${translatePartial}\n\n（已停止）` : '（已停止，本轮未收到内容）'
+            this.saveHistory()
+            this.$nextTick(() => this.scrollToBottom())
+            return
+          }
           assistantMsg.content = '[错误] ' + (err || '翻译失败')
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
@@ -16721,6 +16970,16 @@ export default {
       }
       const prepared = this.prepareOutgoingMessages(text)
       if (!prepared) return
+      // 旧链路回合中止上下文:发送入口即创建,让停止键覆盖意图路由期;
+      // 聊天流式阶段沿用同一上下文;提前返回的分支由方法级 finally 统一回收。
+      const legacyCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const legacyTurnCtx = {
+        messageId: prepared.assistantMsg?.id || '',
+        abortController: legacyCtrl,
+        cancelled: false,
+        ownedByStream: false
+      }
+      this.activeLegacyTurnContext = legacyTurnCtx
       const { chatObj, userMessageId, assistantMsg, selectionSnapshot, attachmentsSnapshot } = prepared
       this.startMessageEntryEffect(userMessageId, 'user')
       this.startMessageEntryEffect(assistantMsg?.id, 'assistant')
@@ -16825,7 +17084,18 @@ export default {
         }
 
         const routeStartedAt = Date.now()
-        const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model)
+        const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model, legacyTurnCtx)
+        if (legacyTurnCtx.cancelled) {
+          // 用户在意图路由期点了停止:终结占位消息,不再进入任何链路
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          const prevRouteContent = String(assistantMsg.content || '').trim()
+          assistantMsg.content = prevRouteContent ? `${prevRouteContent}\n\n（已停止）` : '（已停止，本轮未收到内容）'
+          this.isStreaming = false
+          this.saveHistory()
+          this.$nextTick(() => this.scrollToBottom())
+          return
+        }
         const unifiedLane = String(resolvedPrimaryIntent?.unifiedPlan?.lane || '').trim()
         const primaryIntent = hasBoundKnowledgeBase && unifiedLane === 'knowledge_query'
           ? {
@@ -17270,12 +17540,17 @@ export default {
 
         let rawStreamText = ''
         let firstChunkRecorded = false
+        // 复用发送入口创建的中止上下文;标记流式接管后,方法级 finally 不再回收
+        const legacyCtx = legacyTurnCtx
+        legacyCtx.ownedByStream = true
         streamChatCompletion({
           ribbonModelId: model.id,
           providerId: model.providerId,
           modelId: model.modelId,
           messages: messagesForApi,
+          signal: legacyCtx.abortController?.signal,
           onChunk: (chunk) => {
+            if (legacyCtx.cancelled) return
             if (!firstChunkRecorded) {
               firstChunkRecorded = true
               recordPerf({
@@ -17301,6 +17576,7 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
+            this.activeLegacyTurnContext = null
             if (shouldNormalizePlain) {
               assistantMsg.content = this.normalizePlainTextIntroOutput(rawStreamText || assistantMsg.content)
             }
@@ -17357,7 +17633,16 @@ export default {
             assistantMsg.isLoading = false
             this.isStreaming = false
             this.streamingContent = ''
+            this.activeLegacyTurnContext = null
             this.clearAssistantRecommendations(assistantMsg)
+            if (legacyCtx.cancelled) {
+              // 用户主动停止:保留已流出内容并追加标记,不当作错误
+              const partial = String(rawStreamText || assistantMsg.content || '').trim()
+              assistantMsg.content = partial ? `${partial}\n\n（已停止）` : '（已停止，本轮未收到内容）'
+              this.saveHistory()
+              this.$nextTick(() => this.scrollToBottom())
+              return
+            }
             assistantMsg.content = '[错误] ' + this.formatAssistantTaskError(err || '请求失败')
             recordPerf({
               kind: 'send.total',
@@ -17374,6 +17659,9 @@ export default {
         this.saveHistory()
         this.scrollToBottom()
       } catch (err) {
+        if (this.activeLegacyTurnContext === legacyTurnCtx) {
+          this.activeLegacyTurnContext = null
+        }
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         this.isStreaming = false
@@ -17391,6 +17679,10 @@ export default {
         this.$nextTick(() => this.scrollToBottom())
       } finally {
         this._sendRoutingLock = false
+        // 提前返回的分支:未被流式接管的回合上下文就地回收,避免停止键滞留
+        if (this.activeLegacyTurnContext === legacyTurnCtx && !legacyTurnCtx.ownedByStream) {
+          this.activeLegacyTurnContext = null
+        }
       }
     },
     scrollToBottom() {
@@ -18240,6 +18532,107 @@ export default {
     radial-gradient(circle at 50% 0%, rgba(110, 141, 248, 0.08), transparent 38%);
 }
 
+/* ── 右栏会话页签栏 ── */
+.chat-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 6px 10px 0;
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.9), rgba(248, 250, 252, 0.4));
+  border-bottom: 1px solid rgba(203, 213, 225, 0.55);
+}
+.chat-tabbar-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.chat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  background: rgba(226, 232, 240, 0.45);
+  color: #475569;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.chat-tab:hover {
+  background: rgba(226, 232, 240, 0.8);
+}
+.chat-tab.active {
+  background: #fff;
+  border-color: rgba(203, 213, 225, 0.55);
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 -2px 6px rgba(15, 23, 42, 0.04);
+}
+.chat-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-tab-close {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.chat-tab:hover .chat-tab-close,
+.chat-tab.active .chat-tab-close {
+  opacity: 1;
+}
+.chat-tab-close:hover {
+  background: rgba(148, 163, 184, 0.25);
+  color: #ef4444;
+}
+.chat-tab-add {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 3px;
+  padding: 0;
+  border: 1px dashed rgba(148, 163, 184, 0.6);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.chat-tab-add:hover {
+  background: rgba(79, 70, 229, 0.1);
+  border-color: rgba(79, 70, 229, 0.5);
+  color: #4f46e5;
+}
+
 .mcp-service-banner {
   display: flex;
   align-items: center;
@@ -18596,6 +18989,105 @@ export default {
 .composer-tool-btn--send.is-launching::after {
   border: 1px solid rgba(59, 130, 246, 0.42);
   animation: send-button-ring 0.72s ease-out both;
+}
+/* 执行中:发送键变红色停止键(全车道通用) */
+.composer-tool-btn--send.is-stop {
+  background: rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+}
+.composer-tool-btn--send.is-stop:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.24);
+  color: #b91c1c;
+}
+
+/* ── 历史刻度尺:输入框左缘,每颗刻度=一轮提问 ── */
+.composer-shell.has-ruler {
+  padding-left: 26px;
+  /* 刻度预览浮层需要溢出容器显示(与 model-open 下拉同机制) */
+  overflow: visible;
+}
+.composer-ruler {
+  position: absolute;
+  left: 6px;
+  top: 12px;
+  bottom: 12px;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  align-items: center;
+  z-index: 6;
+}
+.composer-ruler-tick {
+  position: relative;
+  width: 16px;
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.composer-ruler-tick::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(100, 116, 139, 0.5);
+  transform: translate(-50%, -50%);
+  transition: width 0.15s ease, background 0.15s ease;
+}
+.composer-ruler-tick:hover::after,
+.composer-ruler-tick:focus-visible::after,
+.composer-ruler-tick.is-active::after {
+  width: 16px;
+  background: #4f46e5;
+}
+.composer-ruler-tooltip {
+  position: absolute;
+  left: 14px;
+  bottom: -14px;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #f1f5f9;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+  z-index: 60;
+}
+.composer-ruler-tooltip-q {
+  font-weight: 600;
+  word-break: break-all;
+}
+.composer-ruler-tooltip-a {
+  color: #cbd5e1;
+  word-break: break-all;
+}
+.composer-ruler-tooltip-t {
+  color: #94a3b8;
+  font-size: 11px;
+}
+/* 点击刻度后定位高亮 */
+.message-row.ruler-highlight > .message-content > .message-text {
+  animation: ruler-locate-flash 1.6s ease-out both;
+  border-radius: 8px;
+}
+@keyframes ruler-locate-flash {
+  0% { box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.4); background: rgba(79, 70, 229, 0.08); }
+  70% { box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.22); background: rgba(79, 70, 229, 0.05); }
+  100% { box-shadow: 0 0 0 3px rgba(79, 70, 229, 0); background: transparent; }
 }
 .mcp-select-wrap {
   position: relative;
