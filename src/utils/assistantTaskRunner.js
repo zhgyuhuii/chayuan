@@ -1,4 +1,5 @@
 import { buildChatCompletionsRequestSnapshot, chatCompletion, getChatApiConfigByProvider } from './chatApi.js'
+import { withDocumentWriteLock } from '../services/documentWriteLock.js'
 import { isVisionCapable } from './chatApiMultimodal.js'
 import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
@@ -14,6 +15,17 @@ import {
   textLooksLikePlanStatsJson
 } from './documentActions.js'
 import { inferModelType, matchesModelType } from './modelTypeUtils.js'
+
+/** 任务执行器的文档写回统一走写锁排队：与其它会话/智能体的写回串行，写前做活动文档身份与 OCC 校验 */
+async function applyDocumentActionLocked(label, ...args) {
+  const { promise } = withDocumentWriteLock({ label }, () => applyDocumentAction(...args))
+  return promise
+}
+
+async function applyDocumentProcessingPlanLocked(label, ...args) {
+  const { promise } = withDocumentWriteLock({ label }, () => applyDocumentProcessingPlan(...args))
+  return promise
+}
 import { getDocumentChunksWithPositions, getSelectionChunksWithPositions } from './documentChunker.js'
 import { getChunkSettings } from './chunkSettings.js'
 import {
@@ -1225,7 +1237,7 @@ async function runPlainDocumentAssistantExecution(ctx) {
 
   throwIfCancelled(runState)
   await yieldToUI(0)
-  const applyResult = applyDocumentAction(runtimeDocumentAction, output, {
+  const applyResult = await applyDocumentActionLocked('assistant-task.auto-write', runtimeDocumentAction, output, {
     title: displayTitle,
     commentText,
     strictTargetAction: strictAssistantDefaults === true,
@@ -1499,7 +1511,7 @@ async function runChunkedPlainDocumentExecution(ctx) {
 
   throwIfCancelled(runState)
   await yieldToUI(0)
-  const applyResult = applyDocumentAction(runtimeDocumentAction, output, {
+  const applyResult = await applyDocumentActionLocked('assistant-task.auto-write', runtimeDocumentAction, output, {
     title: displayTitle,
     commentText,
     strictTargetAction: strictAssistantDefaults === true,
@@ -2432,7 +2444,7 @@ async function executeAssistantTask(assistantId, overrides = {}) {
       }
     }
     throwIfCancelled(runState)
-    const applyResult = applyDocumentProcessingPlan(executionPlan, {
+    const applyResult = await applyDocumentProcessingPlanLocked('assistant-task.plan-run', executionPlan, {
       title: displayTitle,
       commentText,
       inputSource: inputInfo.source,
@@ -2631,7 +2643,7 @@ export async function applyAssistantTaskPlan(taskId) {
       })
       await yieldToUI(0)
       const docAct = String(task?.data?.documentAction || '').trim()
-      const applyResult = applyDocumentAction(task?.data?.documentAction, outputText, {
+      const applyResult = await applyDocumentActionLocked('assistant-task.plain-apply', task?.data?.documentAction, outputText, {
         title: task?.title || '',
         commentText: String(task?.data?.commentPreview || '').trim(),
         strictTargetAction: task?.data?.strictAssistantDefaults === true,
@@ -2725,7 +2737,7 @@ export async function applyAssistantTaskPlan(taskId) {
       })
     })
     await yieldToUI(0)
-    const applyResult = applyDocumentProcessingPlan(executionPlan, {
+    const applyResult = await applyDocumentProcessingPlanLocked('assistant-task.plan-apply', executionPlan, {
       title: task?.title || '',
       commentText: String(task?.data?.commentPreview || '').trim(),
       inputSource: task?.data?.inputSource,

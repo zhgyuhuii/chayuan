@@ -10616,10 +10616,14 @@ export default {
       const capabilityKey = String(pending.capabilityKey || '').trim()
       const params = this.buildWpsCapabilityParams(pending)
       message.pendingWpsCapabilityForm = null
-      await this.runWpsCapabilityTaskFromMessage(message, capabilityKey, {
-        requirementText: pending.originalText,
-        params
-      })
+      // WPS 能力执行（插表格/保存等）纳入文档写锁排队
+      const { promise } = withDocumentWriteLock({ label: `wps-capability.${capabilityKey || 'run' }` }, () =>
+        this.runWpsCapabilityTaskFromMessage(message, capabilityKey, {
+          requirementText: pending.originalText,
+          params
+        })
+      )
+      await promise
     },
     cancelPendingWpsCapabilityForm(message) {
       const pending = message?.pendingWpsCapabilityForm
@@ -10745,8 +10749,11 @@ export default {
     undoDocumentCommentRun(message) {
       const taskId = String(message?.activeDocumentCommentRun?.taskId || '')
       if (!taskId || message?.activeDocumentCommentRun?.canUndo !== true) return
-      try {
-        const result = undoDocumentCommentTask(taskId)
+      // 撤销批注会改动文档:纳入写锁排队
+      const { promise } = withDocumentWriteLock({ label: 'document-comment.undo' }, () =>
+        undoDocumentCommentTask(taskId)
+      )
+      promise.then((result) => {
         const statusMessage = result?.message || '已撤销本次批注改动。'
         message.content = statusMessage
         message.activeDocumentCommentRun = {
@@ -10756,14 +10763,14 @@ export default {
           canUndo: false
         }
         this.appendDocumentRevisionDetail(message.activeDocumentCommentRun, statusMessage)
-      } catch (error) {
+      }).catch((error) => {
         const statusMessage = error?.message || '撤销批注失败'
         message.activeDocumentCommentRun = {
           ...message.activeDocumentCommentRun,
           statusMessage
         }
         this.appendDocumentRevisionDetail(message.activeDocumentCommentRun, statusMessage)
-      }
+      })
       this.saveHistory()
     },
     undoGeneratedOutputRun(message) {
@@ -10833,8 +10840,11 @@ export default {
         inAppAlert('当前任务没有可回滚的文档备份')
         return
       }
-      try {
-        const restoreResult = restoreDocumentBackupRecordById(backupId)
+      // 回滚会覆盖文档内容:同样纳入写锁排队,避免与其它会话的写回交叉
+      const { promise } = withDocumentWriteLock({ label: 'assistant-task.undo' }, () =>
+        restoreDocumentBackupRecordById(backupId)
+      )
+      promise.then((restoreResult) => {
         message.content = restoreResult.message
         message.activeAssistantTaskRun = {
           ...(run || {}),
@@ -10852,10 +10862,10 @@ export default {
           }
         })
         this.saveHistory()
-      } catch (error) {
+      }).catch((error) => {
         message.content = `[错误] ${this.formatAssistantTaskError(error?.message || '文档回滚失败')}`
         this.saveHistory()
-      }
+      })
     },
     retryAssistantTaskRun(message) {
       if (this.isStreaming || message?.activeAssistantTaskRun?.status === 'running') return
@@ -16226,44 +16236,48 @@ export default {
       this.appendDocumentRevisionDetail(pending, '用户已确认，开始写回修订结果。')
       this.saveHistory()
       try {
-        if (pending.backupRequested === true && pending.backupSupported === true) {
-          const backupRef = createDocumentBackupRecord({
-            assistantId: pending?.intent?.assistantId || 'document-revision',
-            reason: 'document-revision-apply',
-            launchSource: 'dialog',
-            metadata: {
-              scope: pending.actualScope || 'document',
-              sourceLabel: pending.scopeLabel || ''
+        // 修订写回纳入文档写锁:备份→替换→批注整体持锁,与其它会话/智能体的写回串行
+        const { promise } = withDocumentWriteLock({ label: 'document-revision.apply' }, () => {
+          if (pending.backupRequested === true && pending.backupSupported === true) {
+            const backupRef = createDocumentBackupRecord({
+              assistantId: pending?.intent?.assistantId || 'document-revision',
+              reason: 'document-revision-apply',
+              launchSource: 'dialog',
+              metadata: {
+                scope: pending.actualScope || 'document',
+                sourceLabel: pending.scopeLabel || ''
+              }
+            })
+            pending.backupRef = backupRef
+            pending.rollbackCandidate = {
+              type: 'document-backup',
+              backupId: backupRef.id,
+              path: backupRef.backupPath
             }
-          })
-          pending.backupRef = backupRef
-          pending.rollbackCandidate = {
-            type: 'document-backup',
-            backupId: backupRef.id,
-            path: backupRef.backupPath
+            this.appendDocumentRevisionDetail(pending, `已备份源文件：${backupRef.backupPath}`)
           }
-          this.appendDocumentRevisionDetail(pending, `已备份源文件：${backupRef.backupPath}`)
-        }
-        const resultMessage = pending.actualScope === 'keyword-paragraphs'
-          ? this.applyKeywordParagraphRevisionResult(pending)
-          : this.applyDocumentRevisionResult(pending.actualScope || 'document', pending.outputText, pending)
-        this.appendDocumentRevisionDetail(pending, resultMessage)
-        const commentCount = this.addDocumentRevisionComments(
-          pending.actualScope || 'document',
-          pending.sourceInfo || {},
-          pending.outputText,
-          pending.intent || {},
-          pending.commentTexts || []
-        )
-        if (commentCount > 0) {
-          this.appendDocumentRevisionDetail(pending, `已写入 ${commentCount} 条修订说明批注。`)
-        } else {
-          this.appendDocumentRevisionDetail(pending, '当前未写入修订说明批注。')
-        }
-        pending.status = 'applied'
-        pending.statusMessage = commentCount > 0
-          ? `${resultMessage} 已写入 ${commentCount} 条修订说明批注。`
-          : resultMessage
+          const resultMessage = pending.actualScope === 'keyword-paragraphs'
+            ? this.applyKeywordParagraphRevisionResult(pending)
+            : this.applyDocumentRevisionResult(pending.actualScope || 'document', pending.outputText, pending)
+          this.appendDocumentRevisionDetail(pending, resultMessage)
+          const commentCount = this.addDocumentRevisionComments(
+            pending.actualScope || 'document',
+            pending.sourceInfo || {},
+            pending.outputText,
+            pending.intent || {},
+            pending.commentTexts || []
+          )
+          if (commentCount > 0) {
+            this.appendDocumentRevisionDetail(pending, `已写入 ${commentCount} 条修订说明批注。`)
+          } else {
+            this.appendDocumentRevisionDetail(pending, '当前未写入修订说明批注。')
+          }
+          pending.status = 'applied'
+          pending.statusMessage = commentCount > 0
+            ? `${resultMessage} 已写入 ${commentCount} 条修订说明批注。`
+            : resultMessage
+        })
+        await promise
         this.refreshSelectionContext()
       } catch (error) {
         pending.status = 'failed'
@@ -17838,32 +17852,29 @@ export default {
       this.doInsertToDocument(text)
     },
     doInsertToDocument(text) {
-      try {
+      // 插入模态四动作均为自动写文档动作:纳入文档写锁排队,排队期间横幅可见可取消
+      const { promise } = withDocumentWriteLock({ label: 'insert.to-document' }, () =>
         applyDocumentAction('insert', text, { title: '察元 AI 助手' })
-      } catch (e) {
-        reportError('插入到文档失败', e)
-      }
+      )
+      promise.catch((e) => reportError('插入到文档失败', e))
     },
     doReplaceDocumentContent(text) {
-      try {
+      const { promise } = withDocumentWriteLock({ label: 'insert.replace-document' }, () =>
         applyDocumentAction('replace', text, { title: '察元 AI 助手' })
-      } catch (e) {
-        reportError('替换文档内容失败', e)
-      }
+      )
+      promise.catch((e) => reportError('替换文档内容失败', e))
     },
     doAppendToDocument(text) {
-      try {
+      const { promise } = withDocumentWriteLock({ label: 'insert.append' }, () =>
         applyDocumentAction('append', text, { title: '察元 AI 助手' })
-      } catch (e) {
-        reportError('追加到文末失败', e)
-      }
+      )
+      promise.catch((e) => reportError('追加到文末失败', e))
     },
     doInsertAsComment(text) {
-      try {
+      const { promise } = withDocumentWriteLock({ label: 'insert.comment' }, () =>
         applyDocumentAction('comment', text, { title: '察元 AI 助手' })
-      } catch (e) {
-        reportError('插入批注失败', e)
-      }
+      )
+      promise.catch((e) => reportError('插入批注失败', e))
     }
   }
 }

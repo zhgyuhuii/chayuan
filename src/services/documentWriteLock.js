@@ -116,16 +116,21 @@ export function getLockState() {
 export function withDocumentWriteLock(opts = {}, fn) {
   const label = String(opts.label || 'document-write')
   const expectDocId = opts.expectDocId !== undefined ? opts.expectDocId : getActiveDocId()
-  const waiter = { label, cancelled: false, handle: null }
+  const waiter = { label, cancelled: false, handle: null, rejectEarly: null }
   waiter.handle = {
     cancel: () => {
       if (waiter.cancelled) return
       waiter.cancelled = true
       const idx = queue.indexOf(waiter)
       if (idx >= 0) {
+        // 尚未轮到:立即拒绝,调用方马上收到取消结果;链槽到达时 run() 会再次短路
         queue.splice(idx, 1)
+        if (waiter.rejectEarly) {
+          waiter.rejectEarly(makeError('DOC_WRITE_LOCK_CANCELLED', '已取消等待文档写锁，本次写回未执行。'))
+        }
         notifySubscribers()
       }
+      // 已在执行(不在队列):写动作本身无法中断,保持原语义
     }
   }
 
@@ -160,8 +165,12 @@ export function withDocumentWriteLock(opts = {}, fn) {
     }
   }
 
-  const result = writeTail.then(run, run)
-  writeTail = result.catch(() => { /* 链继续，跳过失败者 */ })
+  const chained = writeTail.then(run, run)
+  writeTail = chained.catch(() => { /* 链继续，跳过失败者 */ })
+  const result = new Promise((resolve, reject) => {
+    waiter.rejectEarly = reject
+    chained.then(resolve, reject)
+  })
   queue.push(waiter)
   notifySubscribers()
   return {
