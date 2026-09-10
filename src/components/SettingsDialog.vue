@@ -438,6 +438,26 @@
             </div>
 
             <div class="config-content">
+              <!-- 本地引擎（Ollama/LM Studio）：安装状态检测 + 一键安装 -->
+              <div v-if="localEngineSpec" class="config-item local-engine-box">
+                <div class="local-engine-row">
+                  <span class="local-engine-status" :class="`is-${localEngineStatus}`">
+                    {{ localEngineStatusText }}
+                  </span>
+                  <button
+                    v-if="localEngineStatus !== 'running'"
+                    class="btn-refresh local-engine-install-btn"
+                    :disabled="localEngineInstalling"
+                    @click="installLocalEngineNow"
+                  >{{ localEngineInstalling ? '正在打开…' : '一键安装' }}</button>
+                  <button
+                    v-if="localEngineStatus === 'running' && !currentModelConfig.apiUrl"
+                    class="btn-refresh local-engine-install-btn"
+                    @click="fillLocalEngineUrl"
+                  >填入地址</button>
+                </div>
+                <p v-if="localEngineHint" class="config-hint">{{ localEngineHint }}</p>
+              </div>
               <div class="config-item">
                 <label class="config-label">API 密钥</label>
                 <div class="input-group">
@@ -2466,6 +2486,7 @@
 
 <script>
 import { activateHostWindow } from '../utils/windowActivation.js'
+import { getLocalEngineSpec, probeLocalEngine, installLocalEngine } from '../utils/localEngineSetup.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
 import { loadGlobalSettings, saveGlobalSettings, getLastSaveFailureReason } from '../utils/globalSettings.js'
@@ -2642,6 +2663,12 @@ export default {
       mcpManual: null,
       mcpTokenVisible: false,
       mcpTokenCached: '',
+      // 本地引擎（Ollama/LM Studio）检测与一键安装
+      localEngineStatus: 'unknown', // running | unreachable | unknown
+      localEngineVersion: '',
+      localEnginePort: 0,
+      localEngineInstalling: false,
+      localEngineHint: '',
       mcpSpikeResults: null,
       mcpServerList: [],
       mcpServerProbeHints: {},
@@ -2902,6 +2929,21 @@ export default {
     },
     errorLogDirectoryDisplay() {
       return getErrorLogDirectoryForDataPath(this.dataPath)
+    },
+    // 当前选中的模型供应商是否为可一键安装的本地引擎
+    localEngineSpec() {
+      return getLocalEngineSpec(this.selectedModel?.id)
+    },
+    localEngineStatusText() {
+      const name = this.localEngineSpec?.name || '本地引擎'
+      if (this.localEngineStatus === 'running') {
+        const v = this.localEngineVersion ? `（${this.localEngineVersion}）` : ''
+        return `✅ ${name} 已安装并运行${v}`
+      }
+      if (this.localEngineStatus === 'unreachable') {
+        return `⚠️ 未检测到 ${name}（未安装或未启动）`
+      }
+      return `⏳ 正在检测 ${name}…`
     },
     mcpStatusLine() {
       const s = this.mcpStatus
@@ -5664,6 +5706,48 @@ export default {
         enabled: config.enabled || false,
         modelSeries: config.modelSeries || config.models || [] // 兼容旧版本
       }
+      // 本地引擎（Ollama/LM Studio）：选中即自动探测安装/运行状态
+      this.localEngineHint = ''
+      if (getLocalEngineSpec(model.id)) {
+        this.localEngineStatus = 'unknown'
+        this.probeLocalEngineNow()
+      }
+    },
+    async probeLocalEngineNow() {
+      const providerId = this.selectedModel?.id
+      if (!getLocalEngineSpec(providerId)) return
+      const result = await probeLocalEngine(providerId)
+      // 用户可能已切到其它供应商，丢弃过期结果
+      if (this.selectedModel?.id !== providerId) return
+      this.localEngineStatus = result.status
+      this.localEngineVersion = result.version || ''
+      this.localEnginePort = result.port || 0
+      if (result.status === 'running' && !this.currentModelConfig.apiUrl) {
+        this.localEngineHint = `检测到本地服务运行于 127.0.0.1:${result.port}，点击「填入地址」自动完成配置。`
+      } else if (result.status === 'unreachable') {
+        this.localEngineHint = '一键安装后，启动引擎并回到此页刷新即可自动识别。'
+      }
+    },
+    async installLocalEngineNow() {
+      if (this.localEngineInstalling) return
+      this.localEngineInstalling = true
+      try {
+        const result = await installLocalEngine(this.selectedModel?.id)
+        this.localEngineHint = result.message
+        this.showMessage(result.message, 'info')
+      } catch (e) {
+        this.showMessage('打开安装引导失败：' + (e?.message || e), 'error')
+      } finally {
+        this.localEngineInstalling = false
+      }
+    },
+    fillLocalEngineUrl() {
+      const spec = getLocalEngineSpec(this.selectedModel?.id)
+      if (!spec) return
+      this.currentModelConfig.apiUrl = spec.apiUrl
+      this.updateModelConfig()
+      this.onFormChange()
+      this.showMessage(`已填入 ${spec.name} 默认地址 ${spec.apiUrl}，可点击「刷新模型」获取本地模型列表`, 'success')
     },
     // 选择默认模型（旧逻辑，保留兼容）
     selectDefaultModel(modelId) {
@@ -9032,6 +9116,34 @@ input:checked + .slider:before {
 .btn-detect-icon:hover:not(:disabled) .btn-detect-icon-img {
   opacity: 1;
   filter: invert(42%) sepia(93%) saturate(1352%) hue-rotate(197deg) brightness(101%) contrast(101%);
+}
+
+/* 本地引擎（Ollama/LM Studio）检测条 */
+.local-engine-box {
+  padding: 10px 12px;
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  border-radius: 8px;
+  background: rgba(14, 165, 233, 0.04);
+}
+
+.local-engine-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.local-engine-status {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.local-engine-status.is-running { color: #047857; }
+.local-engine-status.is-unreachable { color: #b45309; }
+.local-engine-status.is-unknown { color: #6b7280; }
+
+.local-engine-install-btn {
+  flex: 0 0 auto;
 }
 
 .config-hint {
