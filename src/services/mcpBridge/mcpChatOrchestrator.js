@@ -33,19 +33,24 @@ const MAX_ROUNDS = 16
 // 模型对 tools 参数报错的特征（与旧编排器同一正则；命中后整轮重跑 JSON 兼容协议）
 const TOOLS_UNSUPPORTED_RE = /tool|tools|function call|不支持/i
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent }) {
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
+  const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
+    .filter(t => t && t.status !== 'completed' && String(t?.content || '').trim())
   const lines = [
     '你是察元助手页内的文档智能体。通过 MCP 工具操作当前 WPS 文档与其它已配置的 HTTP MCP 服务。',
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
     '禁止调用 declassify_*。写文档前先 dryRun/预览；需要 confirmed=true 的写回交给用户确认，不要自行编造 confirmed=true。',
+    '【任务清单·强制顺序】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：第 1 轮必须先调用 todo_write 列出完整计划，在此之前禁止调用任何其他工具（只读工具也不行）；随后严格按清单推进——每开始一项，先 todo_write 把它置 in_progress；每完成一项，立即 todo_write 置 completed 再开始下一项；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
     '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。',
     '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。',
-    '【任务清单】请求包含 ≥2 个可独立交付的子任务或明确多步流程时，先调用 todo_write 写入完整清单（每项一个动词开头的短句）；开始某项前先把它置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress；过程中发现新任务就整表重写追加。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
+    pendingPrev.length
+      ? `【沿用清单】上一轮任务清单尚有未完成项：${pendingPrev.map(t => t.content).join('；')}。先调用 todo_write 重建该清单（用户已确认/已完成的部分标 completed，本轮要做的第一项置 in_progress），沿用它继续执行，不要另立新清单。`
+      : '',
     '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。',
     '【改正正文·流程】proofread_run 返回后汇总问题；按用户选择走「写成批注」(proofread_apply_comments) 或「改正正文」出口，不要只用批注交差。',
     '【需要通读全文（翻译 / 改写 / 摘要）才用 document_chunks】每次 limit:8 尽量多读，cursor 只前进、不回退、不重读已读段落；读够立即停，把轮次留给写作工具，而不是反复分页。',
@@ -131,6 +136,7 @@ export async function runMcpChatOrchestrator({
   selectionCtx = null,
   kbBound = false,
   historyMessages = [],
+  previousTodos = [],
   signal,
   onProgress,
   onTodos,
@@ -230,7 +236,7 @@ export async function runMcpChatOrchestrator({
   if (signal?.aborted) throw abortError()
 
   const proofreadIntent = inferProofreadIntent(userText)
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent })
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos })
   const seed = seedHistoryFrom(historyMessages)
   const pendingConfirms = []
   let proofreadCard = null

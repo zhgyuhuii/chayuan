@@ -5555,9 +5555,14 @@ export default {
         percent: 18
       })
       const historyMessages = (this.currentMessages || [])
-        .filter(m => m && m.id !== assistantMsg.id && (m.role === 'user' || m.role === 'assistant'))
+        .filter(m => m && m.id !== assistantMsg?.id && (m.role === 'user' || m.role === 'assistant'))
         .slice(-8)
         .map(m => ({ role: m.role, content: String(m.content || '').slice(0, 4000) }))
+      // 跨回合沿用未完成清单：上一条带 mcpTodos 的助手消息中未完成项，避免新回合重复建单
+      const prevTodosMsg = (this.currentMessages || [])
+        .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpTodos) && m.mcpTodos.length)
+        .pop()
+      const previousTodos = prevTodosMsg ? prevTodosMsg.mcpTodos : []
 
       try {
         const result = await runMcpChatOrchestrator({
@@ -5566,6 +5571,7 @@ export default {
           selectionCtx: this.buildMcpSelectionCtx(),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
           historyMessages,
+          previousTodos,
           signal: ctrl?.signal,
           onProgress: (step, steps) => {
             assistantMsg.mcpSteps = steps.slice()
