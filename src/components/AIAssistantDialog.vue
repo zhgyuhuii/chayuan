@@ -379,6 +379,18 @@
       />
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
+        <!-- 文档写锁排队横幅:多会话并行写同一文档时,等待中的写回在此可见、可取消 -->
+        <div v-if="docWriteLockState.queue.length" class="doc-write-wait-banner" role="status">
+          <span class="doc-write-wait-spinner" aria-hidden="true"></span>
+          <span class="doc-write-wait-text">
+            ⏳ 排队等待文档写锁（共 {{ docWriteLockState.queue.length }} 项，最前者：{{ docWriteLockState.queue[0].label }}）
+          </span>
+          <button
+            type="button"
+            class="doc-write-wait-cancel"
+            @click="cancelFirstDocWriteWait"
+          >取消最前等待</button>
+        </div>
         <div
           v-if="mcpEnabled && mcpSoftBanner"
           class="mcp-soft-banner"
@@ -2528,6 +2540,11 @@ node mcp-sidecar/server.mjs</pre>
 <script>
 // jszip(~96KB)首屏用不到,仅在导出 zip 时才需要 → 改为按需动态 import,见 createGeneratedZipFile
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
+import {
+  setWriteBaseline,
+  subscribeLockState,
+  withDocumentWriteLock
+} from '../services/documentWriteLock.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
@@ -4145,6 +4162,7 @@ export default {
       streamingContent: '',
       activeLegacyTurnContexts: {},
       sendRoutingLocks: {},
+      docWriteLockState: { locked: false, ownerLabel: '', queue: [] },
       selectionContextSnapshot: null,
       selectionContextCollapsed: true,
       tooltipLayouts: {},
@@ -4726,9 +4744,17 @@ export default {
     if (this.mcpEnabled) {
       this.runWhenIdle(() => this.refreshMcpHealthBundle())
     }
+    // 文档写锁状态订阅:排队时在消息区顶部显示等待横幅(可取消)
+    this._lockStateUnsubscribe = subscribeLockState((snap) => {
+      this.docWriteLockState = snap
+    })
   },
   beforeUnmount() {
     this.stopActiveMcpTurn()
+    if (this._lockStateUnsubscribe) {
+      try { this._lockStateUnsubscribe() } catch { /* ignore */ }
+      this._lockStateUnsubscribe = null
+    }
     ;(this._idleHandles || []).forEach(([kind, h]) => {
       if (kind === 'idle' && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(h)
       else window.clearTimeout(h)
@@ -5670,6 +5696,9 @@ export default {
         cancelled: false,
         chatId: turnChatId
       }
+      // OCC 基线:回合起点记录文档指纹;回合内的写文档工具在写锁校验时以此为参照,
+      // 手动编辑或其它未持锁修改会让后续写回失败并提示,而不是覆盖掉用户改动
+      setWriteBaseline()
       this.isStreaming = true
       assistantMsg.lane = 'mcp'
       assistantMsg.primaryRoute = {
@@ -5819,17 +5848,21 @@ export default {
       card.applying = true
       this.saveHistory()
       try {
-        if (mode === 'comments') {
-          if (!card.taskId) throw new Error('缺少校对 taskId，请重新检查错别字')
-          await applyProofreadComments(card.taskId, { maxComments: 40 })
-          msg.content = `${String(msg.content || '').trim()}\n\n已将校对结果写成批注。`.trim()
-        } else {
-          const out = await applyProofreadTextFixes({
-            raw: card.raw,
-            scope: card.scope || 'document'
-          })
-          msg.content = `${String(msg.content || '').trim()}\n\n已尝试直接改正正文（${out?.count || 0} 处替换）。`.trim()
-        }
+        // 校对写回属于自动写文档动作:纳入文档写锁排队,与其它会话/智能体的写回串行
+        const { promise } = withDocumentWriteLock({ label: mode === 'comments' ? 'proofread.comments' : 'proofread.fixes' }, async () => {
+          if (mode === 'comments') {
+            if (!card.taskId) throw new Error('缺少校对 taskId，请重新检查错别字')
+            await applyProofreadComments(card.taskId, { maxComments: 40 })
+            msg.content = `${String(msg.content || '').trim()}\n\n已将校对结果写成批注。`.trim()
+          } else {
+            const out = await applyProofreadTextFixes({
+              raw: card.raw,
+              scope: card.scope || 'document'
+            })
+            msg.content = `${String(msg.content || '').trim()}\n\n已尝试直接改正正文（${out?.count || 0} 处替换）。`.trim()
+          }
+        })
+        await promise
         card.applied = true
         card.applying = false
         this.saveHistory()
@@ -7557,6 +7590,12 @@ export default {
     },
     isChatTabRunning(tabId) {
       return !!(this.activeMcpTurnContexts?.[tabId] || this.activeLegacyTurnContexts?.[tabId])
+    },
+    cancelFirstDocWriteWait() {
+      const first = this.docWriteLockState?.queue?.[0]
+      if (first?.handle?.cancel) {
+        first.handle.cancel()
+      }
     },
     closeChatTab(tabId) {
       const idx = this.openChatTabs.indexOf(tabId)
@@ -18723,6 +18762,52 @@ export default {
   border-radius: 10px;
   background: rgba(239, 246, 255, 0.72);
   min-width: 0;
+}
+
+/* 文档写锁排队横幅 */
+.doc-write-wait-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 251, 235, 0.9);
+  min-width: 0;
+}
+.doc-write-wait-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(217, 119, 6, 0.3);
+  border-top-color: #d97706;
+  border-radius: 50%;
+  animation: chat-tab-spin 0.8s linear infinite;
+}
+.doc-write-wait-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-write-wait-cancel {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  border-radius: 7px;
+  background: #fff;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.doc-write-wait-cancel:hover {
+  background: rgba(217, 119, 6, 0.1);
 }
 .mcp-service-banner-label {
   flex: 0 0 auto;

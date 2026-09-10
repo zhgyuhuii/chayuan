@@ -1,6 +1,7 @@
 /**
  * Unified MCP Agent dispatcher — handles jobs from sidecar long-poll.
  */
+import { withDocumentWriteLock } from '../documentWriteLock.js'
 import {
   startSpellCheckAllTask,
   startSpellCheckSelectionTask,
@@ -397,12 +398,65 @@ async function handleApplyComments(params = {}) {
 }
 
 /**
+ * 会写当前文档（或切换活动文档）的 MCP 方法：必须持文档写锁串行执行。
+ * 纯读方法（get_text/chunks/locate/list 类）不拿锁，多会话并行互不阻塞。
+ */
+const DOC_WRITE_METHODS = new Set([
+  'document.replace',
+  'document.insert',
+  'document.apply_ops',
+  'document.new',
+  'document.save',
+  'document.activate',
+  'document.open',
+  'document.ensure_open',
+  'document.add_comment',
+  'comment.delete',
+  'format.run',
+  'format.para',
+  'format.apply_ops',
+  'style.apply',
+  'break.insert',
+  'page.blank_insert',
+  'revision.mode',
+  'revision.apply',
+  'layout.columns',
+  'toc.insert',
+  'toc.update',
+  'table.insert',
+  'table.header_repeat',
+  'table.column_set_width',
+  'table.row_insert',
+  'table.column_insert',
+  'table.cell_merge',
+  'field.add',
+  'image.insert',
+  'image.delete',
+  'hyperlink.add',
+  'hyperlink.delete',
+  'headerfooter.set',
+  'watermark.set',
+  'watermark.clear',
+  'declassify.apply',
+  'declassify.restore',
+  'proofread.apply_comments'
+])
+
+/**
  * @param {{ method: string, params?: any }} job
  */
 export async function dispatchMcpJob(job = {}) {
   const method = String(job.method || '')
   const params = job.params || {}
+  if (DOC_WRITE_METHODS.has(method)) {
+    // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与 OCC 基线
+    const { promise } = withDocumentWriteLock({ label: method }, () => dispatchMcpJobInner(method, params))
+    return promise
+  }
+  return dispatchMcpJobInner(method, params)
+}
 
+async function dispatchMcpJobInner(method, params) {
   switch (method) {
     case 'wps.status':
       return {
