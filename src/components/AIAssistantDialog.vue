@@ -231,8 +231,24 @@
               @click.prevent="openExternalWebsite('https://aidooo.com')"
             >aidooo.com</a>
           </div>
-          <div v-if="starBadgeResolved" class="sidebar-footer-star-badge" title="感谢支持开源">
-            已点赞支持开源 ⭐
+          <!-- 常驻支持入口：关注公众号（扫码）+ GitHub Star，始终可见不再隐藏 -->
+          <div class="sidebar-footer-star-row">
+            <button
+              type="button"
+              class="sidebar-footer-star-btn"
+              title="关注微信公众号「智灵鸟科技」"
+              @click="openSidebarFooterSupportDialog('follow')"
+            >
+              关注公众号
+            </button>
+            <button
+              type="button"
+              class="sidebar-footer-star-btn"
+              :title="starBadgeResolved ? '感谢支持开源' : '去 GitHub 点个 Star 支持开源'"
+              @click="handleStarPromptGo"
+            >
+              {{ starBadgeResolved ? '已点赞 ⭐' : 'GitHub Star ⭐' }}
+            </button>
           </div>
           <div class="sidebar-footer-actions">
             <button type="button" class="sidebar-footer-text-btn" @click="helpManualVisible = true">帮助</button>
@@ -344,27 +360,27 @@
         >
           {{ mcpSoftBanner }}
         </div>
-        <!-- GitHub Star 提示：未点赞引导去点；已点赞后侧栏底部常驻微标 -->
-        <div v-if="starPromptVisible" class="star-prompt-card" role="dialog" aria-label="GitHub Star 提示">
+        <!-- GitHub Star / 公众号 提示：未表态时展示引导卡；侧栏另有常驻入口 -->
+        <div v-if="starPromptVisible" class="star-prompt-card" role="dialog" aria-label="支持我们">
           <div class="star-prompt-emoji">⭐</div>
           <div class="star-prompt-main">
             <div class="star-prompt-title">
               {{ starPromptChatOpens >= 5 ? `你已经和察元助手聊了 ${starPromptChatOpens} 次` : '觉得察元好用吗？' }}
             </div>
             <div class="star-prompt-body">
-              察元是免费开源的 WPS 文档智能助手。去 GitHub 点个 Star，是对我们持续更新最好的支持。
+              察元是免费开源的 WPS 文档智能助手。关注微信公众号「智灵鸟科技」获取更新与教程；也欢迎到 GitHub 点个 Star 支持开源。
             </div>
           </div>
           <div class="star-prompt-actions">
-            <button type="button" class="star-prompt-btn primary" @click="handleStarPromptGo">去点 Star ⭐</button>
-            <button type="button" class="star-prompt-btn" @click="handleStarPromptDone">已经点过了</button>
+            <button type="button" class="star-prompt-btn primary" @click="handleStarPromptFollow">关注公众号</button>
+            <button type="button" class="star-prompt-btn" @click="handleStarPromptGo">GitHub ⭐</button>
             <button type="button" class="star-prompt-btn ghost" @click="handleStarPromptLater">以后再说</button>
           </div>
         </div>
         <div v-else-if="starPromptThanks" class="star-prompt-card thanks" role="status">
           <div class="star-prompt-emoji">🎉</div>
           <div class="star-prompt-main">
-            <div class="star-prompt-title">已点赞加星，感谢支持开源！</div>
+            <div class="star-prompt-title">{{ starPromptThanksText }}</div>
           </div>
         </div>
         <div
@@ -4048,6 +4064,7 @@ export default {
       starPromptVisible: false,
       starPromptChatOpens: 0,
       starPromptThanks: false,
+      starPromptThanksText: '',
       starBadgeResolved: false,
       welcomePromptIndex: -1,
       displayedWelcomePrompt: '',
@@ -4636,8 +4653,8 @@ export default {
     // ------------------------------------------------------------------
     // 窗口形态（停靠）菜单：计划 §5.2 提交 B
     // ------------------------------------------------------------------
-    // ── GitHub Star 提示（移植 chayuan-office 语义：价值门槛后最多弹 2 次，
-    // 明确表态永久解决；点赞无法无 OAuth 检测，打开仓库页即视为已处理）──
+    // ── GitHub Star / 公众号 支持引导（语义移植 chayuan-office：最多弹 2 次、
+    // 明确表态永久解决）──
     tryOpenStarPrompt() {
       const star = recordDialogOpen()
       this.starBadgeResolved = isStarredResolved()
@@ -4647,7 +4664,22 @@ export default {
         markShown()
       }
     },
+    // 公众号主 CTA：直接开内置「关注我们」二维码弹窗（不依赖系统浏览器，
+    // 扫码即关注）；同时视为一次支持表态，卡片不再打扰
+    handleStarPromptFollow() {
+      this.starPromptVisible = false
+      this.starPromptThanks = true
+      this.starPromptThanksText = '扫码关注「智灵鸟科技」，更新与教程不错过'
+      this.openSidebarFooterSupportDialog('follow')
+      resolveStarPrompt('starred')
+      this.starBadgeResolved = true
+      window.setTimeout(() => {
+        this.starPromptThanks = false
+      }, 8000)
+    },
     handleStarPromptGo() {
+      // GitHub 打不开浏览器时（ShellExecute 被安全层拦/无回调）不能无声无息：
+      // 先试多重打开通道，全部失败则给出可用出口（复制链接 + 公众号弹窗）
       this.openExternalWebsite(GITHUB_REPO_URL)
       this.resolveStarPromptAndThank()
     },
@@ -4658,6 +4690,7 @@ export default {
       resolveStarPrompt('starred')
       this.starPromptVisible = false
       this.starPromptThanks = true
+      this.starPromptThanksText = '已点赞加星，感谢支持开源！'
       this.starBadgeResolved = true
       window.setTimeout(() => {
         this.starPromptThanks = false
@@ -7962,19 +7995,42 @@ export default {
       const normalizedUrl = String(url || '').trim()
       if (!normalizedUrl) return
       const app = window.Application || window.opener?.Application || window.parent?.Application
-      try {
-        if (app?.OAAssist?.ShellExecute) {
-          app.OAAssist.ShellExecute(normalizedUrl)
-          return
+      // 多重回退（2026-09-09：WPS 12.1.28492 实测 ShellExecute 可能被安全层静默
+      // 吞掉——调用不报错但浏览器不打开），逐通道尝试：
+      // ShellExecute → FollowHyperlink → window.open → 剪贴板兜底
+      const attempts = [
+        () => {
+          if (app?.OAAssist?.ShellExecute) app.OAAssist.ShellExecute(normalizedUrl)
+          else throw new Error('no ShellExecute')
+        },
+        () => {
+          if (app?.FollowHyperlink) app.FollowHyperlink(normalizedUrl, '', true)
+          else throw new Error('no FollowHyperlink')
+        },
+        () => {
+          window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
         }
-        if (app?.FollowHyperlink) {
-          app.FollowHyperlink(normalizedUrl, '', true)
+      ]
+      for (const attempt of attempts) {
+        try {
+          attempt()
           return
+        } catch (e) {
+          // 试下一通道
         }
-      } catch (e) {
-        console.warn('系统浏览器打开链接失败:', e)
       }
-      window.open(normalizedUrl, '_blank', 'noopener,noreferrer')
+      // 全部失败：复制链接到剪贴板兜底，用户可粘贴到浏览器
+      try {
+        const textarea = document.createElement('textarea')
+        textarea.value = normalizedUrl
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+        inAppAlert(`浏览器未自动打开，链接已复制：\n${normalizedUrl}`, { title: '打开链接' })
+      } catch (_) {}
     },
     // 已购买 → 打开购买引导窗（含购买/分享二维码 + 公众号 + 下方授权码输入），输入授权码激活
     openActivateDialog() {
@@ -18378,6 +18434,33 @@ export default {
   font-size: 11px;
   color: #a16207;
   opacity: 0.9;
+}
+
+/* 侧栏常驻支持入口：关注公众号 + GitHub Star */
+.sidebar-footer-star-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sidebar-footer-star-btn {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid rgba(202, 138, 4, 0.28);
+  border-radius: 7px;
+  background: rgba(255, 251, 235, 0.8);
+  color: #a16207;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-footer-star-btn:hover {
+  background: #fef3c7;
+  color: #92400e;
 }
 .composer-tools {
   display: flex;
