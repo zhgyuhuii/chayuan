@@ -345,6 +345,12 @@
             @click.middle="closeChatTab(tabId)"
           >
             <span class="chat-tab-title">{{ getChatTabLabel(tabId) }}</span>
+            <span
+              v-if="isChatTabRunning(tabId)"
+              class="chat-tab-running"
+              title="会话执行中"
+              aria-hidden="true"
+            ></span>
             <button
               type="button"
               class="chat-tab-close"
@@ -673,7 +679,7 @@
               <div
                 class="message-text"
                 :class="{
-                  'streaming-text': isStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1,
+                  'streaming-text': activeChatStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1,
                   'message-text-waiting': isAssistantMessagePending(msg, i) && !String(msg.content || '').trim(),
                   'has-user-context-meta': msg.role === 'user' && !!getUserMessageContextLabel(msg),
                   'message-text-error': msg.role === 'assistant' && isAssistantErrorMessage(msg)
@@ -709,7 +715,7 @@
                       @toggle-backup="handleLongTaskRunToggleBackup(taskRun.stopAction, msg, $event)"
                     />
                     <button
-                      v-if="msg.lane === 'mcp' && activeMcpTurnContext?.messageId === msg.id"
+                      v-if="msg.lane === 'mcp' && activeMcpTurnContexts[currentChatId]?.messageId === msg.id"
                       type="button"
                       class="message-error-action-btn"
                       style="margin-top: 8px;"
@@ -721,7 +727,7 @@
                 </template>
                 <template v-else>
                   <span v-html="getRenderedMessageHtml(msg)"></span>
-                  <span v-if="isStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
+                  <span v-if="activeChatStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
                     v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
                     :sources="msg.messageMeta.kbSources"
@@ -4106,7 +4112,7 @@ export default {
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
-      activeMcpTurnContext: null,
+      activeMcpTurnContexts: {},
       mcpDropdownOpen: false,
       mcpServerList: [],
       sidebarWidth: 300,
@@ -4137,7 +4143,8 @@ export default {
       modelGroupCollapsed: {},
       isStreaming: false,
       streamingContent: '',
-      activeLegacyTurnContext: null,
+      activeLegacyTurnContexts: {},
+      sendRoutingLocks: {},
       selectionContextSnapshot: null,
       selectionContextCollapsed: true,
       tooltipLayouts: {},
@@ -4387,7 +4394,18 @@ export default {
       return this.chatHistory.find(c => c.id === this.currentChatId)
     },
     isTurnRunning() {
-      return this.isStreaming || !!this.activeMcpTurnContext || !!this.activeLegacyTurnContext
+      // 当前会话视角：聊天/MCP 回合按会话隔离，多 tab 并行互不阻塞
+      const chatId = this.currentChatId
+      return !!(this.activeMcpTurnContexts?.[chatId] || this.activeLegacyTurnContexts?.[chatId])
+    },
+    activeChatStreaming() {
+      // 当前会话是否处于可视的流式/等待态：回合上下文优先；
+      // 文档类长任务无会话级上下文，用全局 isStreaming + 当前会话末条加载态兜底
+      if (this.isTurnRunning) return true
+      if (!this.isStreaming) return false
+      const msgs = this.currentMessages
+      const last = Array.isArray(msgs) && msgs.length ? msgs[msgs.length - 1] : null
+      return !!last && last.role === 'assistant' && !!last.isLoading
     },
     savedChatCount() {
       return this.chatHistory.filter(c => !c?.draft).length
@@ -5267,6 +5285,7 @@ export default {
     startAssistantLocalFaqMessage(prepared, faq) {
       const assistantMsg = prepared?.assistantMsg
       if (!assistantMsg) return
+      const faqChatId = this.currentChatId
 
       this.stopAssistantSelfIntroStreaming()
       this.clearAssistantRecommendations(assistantMsg)
@@ -5304,7 +5323,7 @@ export default {
           }
           this.requestAssistantEvolutionSuggestionCheck()
           this.saveHistory()
-          this.$nextTick(() => this.scrollToBottom())
+          this.$nextTick(() => this.scrollToBottomIfChatActive(faqChatId))
           return
         }
 
@@ -5314,11 +5333,11 @@ export default {
         assistantMsg.isLoading = false
         this.streamingContent = fullText.slice(0, cursor)
         assistantMsg.content = this.streamingContent
-        this.$nextTick(() => this.scrollToBottom())
+        this.$nextTick(() => this.scrollToBottomIfChatActive(faqChatId))
         this.assistantSelfIntroTimer = window.setTimeout(step, this.getAssistantSelfIntroNextDelay())
       }
 
-      this.$nextTick(() => this.scrollToBottom())
+      this.$nextTick(() => this.scrollToBottomIfChatActive(faqChatId))
       this.assistantSelfIntroTimer = window.setTimeout(step, 120)
     },
     startAssistantSelfIntroMessage(prepared) {
@@ -5517,7 +5536,7 @@ export default {
       // 用身份判断"是否最后一条",而非可见索引 —— 兼容消息列表窗口化(visibleMessages)
       const list = this.currentMessages
       const isLast = Array.isArray(list) && list.length > 0 && list[list.length - 1] === msg
-      return msg?.role === 'assistant' && isLast && (this.isStreaming || msg?.isLoading)
+      return msg?.role === 'assistant' && isLast && (msg?.isLoading || this.activeChatStreaming)
     },
     getAssistantLoadingPercent(msg) {
       const value = Number(msg?.loadingState?.percent)
@@ -5643,10 +5662,13 @@ export default {
     },
     async runMcpExclusiveTurn({ text, model, prepared, assistantMsg }) {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
-      this.activeMcpTurnContext = {
+      // MCP 回合按会话隔离：并行 tab 各自持有回合上下文
+      const turnChatId = this.currentChatId
+      this.activeMcpTurnContexts[turnChatId] = {
         messageId: assistantMsg?.id || '',
         abortController: ctrl,
-        cancelled: false
+        cancelled: false,
+        chatId: turnChatId
       }
       this.isStreaming = true
       assistantMsg.lane = 'mcp'
@@ -5721,9 +5743,9 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
-            this.activeMcpTurnContext = null
+            this.clearMcpTurnCtx(turnChatId)
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return { handled: true }
           }
           // WPS Agent 离线（sidecar 在线但加载项未注册）：所有文档工具必然失败，
@@ -5735,9 +5757,9 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
-            this.activeMcpTurnContext = null
+            this.clearMcpTurnCtx(turnChatId)
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return { handled: true }
           }
           // 仅「基础设施未就绪」（sidecar 离线 / 无启用服务 / 无工具）才回落内置助手
@@ -5748,7 +5770,7 @@ export default {
           assistantMsg.primaryRoute = null
           assistantMsg.content = ''
           this.isStreaming = false
-          this.activeMcpTurnContext = null
+          this.clearMcpTurnCtx(turnChatId)
           return { handled: false, fallback: true, reason: result.reason }
         }
 
@@ -5765,13 +5787,13 @@ export default {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         this.isStreaming = false
-        this.activeMcpTurnContext = null
+        this.clearMcpTurnCtx(turnChatId)
         this.saveHistory()
-        this.$nextTick(() => this.scrollToBottom())
+        this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
         return { handled: true }
       } catch (e) {
         this.isStreaming = false
-        this.activeMcpTurnContext = null
+        this.clearMcpTurnCtx(turnChatId)
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
@@ -5817,19 +5839,32 @@ export default {
         this.saveHistory()
       }
     },
-    stopActiveMcpTurn() {
-      const ctx = this.activeMcpTurnContext
+    stopActiveMcpTurn(chatId = this.currentChatId) {
+      const ctx = this.activeMcpTurnContexts?.[chatId]
       if (!ctx) return false
       ctx.cancelled = true
       try { ctx.abortController?.abort?.() } catch { /* ignore */ }
-      this.activeMcpTurnContext = null
+      this.clearMcpTurnCtx(chatId)
       this.isStreaming = false
       return true
     },
-    // 发送键停止入口：全车道统一——MCP 回合 / 旧链路流式 / 各长任务运行上下文
+    clearMcpTurnCtx(chatId) {
+      if (!chatId) return
+      if (this.activeMcpTurnContexts && this.activeMcpTurnContexts[chatId]) {
+        delete this.activeMcpTurnContexts[chatId]
+      }
+    },
+    clearLegacyTurnCtx(chatId) {
+      if (!chatId) return
+      if (this.activeLegacyTurnContexts && this.activeLegacyTurnContexts[chatId]) {
+        delete this.activeLegacyTurnContexts[chatId]
+      }
+    },
+    // 发送键停止入口：停止「当前会话」的回合（聊天/MCP），文档类长任务为全局单例仍可停
     stopActiveTurn() {
-      if (this.activeMcpTurnContext) return this.stopActiveMcpTurn()
-      if (this.activeLegacyTurnContext) return this.stopActiveLegacyTurn()
+      const chatId = this.currentChatId
+      if (this.activeMcpTurnContexts?.[chatId]) return this.stopActiveMcpTurn(chatId)
+      if (this.activeLegacyTurnContexts?.[chatId]) return this.stopActiveLegacyTurn(chatId)
       if (this.activeDocumentRevisionRunContext) {
         this.cancelActiveDocumentRevisionRun()
         return true
@@ -5844,8 +5879,8 @@ export default {
       }
       return false
     },
-    stopActiveLegacyTurn() {
-      const ctx = this.activeLegacyTurnContext
+    stopActiveLegacyTurn(chatId = this.currentChatId) {
+      const ctx = this.activeLegacyTurnContexts?.[chatId]
       if (!ctx) return false
       ctx.cancelled = true
       try { ctx.abortController?.abort?.('user-stop') } catch { /* ignore */ }
@@ -7520,6 +7555,9 @@ export default {
       const chat = this.chatHistory.find(c => c?.id === tabId)
       return String(chat?.title || '').trim() || '新对话'
     },
+    isChatTabRunning(tabId) {
+      return !!(this.activeMcpTurnContexts?.[tabId] || this.activeLegacyTurnContexts?.[tabId])
+    },
     closeChatTab(tabId) {
       const idx = this.openChatTabs.indexOf(tabId)
       if (idx < 0) return
@@ -7580,32 +7618,55 @@ export default {
       this.saveHistory()
     },
     // 流式渲染合批:把每个 token/chunk 的「写 content + 滚动」合并到每帧一次。
-    // 用快照(_streamRenderText)而非实时 this.streamingContent,确保即使 onDone
-    // 已清空 streamingContent,待执行的那帧仍渲染出完整文本。
-    scheduleStreamRender(assistantMsg, text) {
-      this._streamRenderMsg = assistantMsg
-      this._streamRenderText = text
-      if (this._streamRenderRAFId) return
-      this._streamRenderRAFId = requestAnimationFrame(() => {
-        this._streamRenderRAFId = null
-        const m = this._streamRenderMsg
-        if (m) m.content = this._streamRenderText
-        this.$nextTick(() => this.scrollToBottom())
+    // 并行模型下多个会话可能同时流式,按消息 id 各自持有合批帧;
+    // 滚动仅当消息所属会话仍是当前 tab 时执行,后台会话的渲染不劫持当前视图。
+    scheduleStreamRender(assistantMsg, text, chatId = null) {
+      if (!this._streamRenderMap) this._streamRenderMap = new Map()
+      let entry = this._streamRenderMap.get(assistantMsg.id)
+      if (!entry) {
+        entry = { msg: assistantMsg, text: '', raf: 0, chatId }
+        this._streamRenderMap.set(assistantMsg.id, entry)
+      }
+      entry.msg = assistantMsg
+      entry.text = text
+      if (chatId) entry.chatId = chatId
+      if (entry.raf) return
+      entry.raf = requestAnimationFrame(() => {
+        entry.raf = 0
+        const e = this._streamRenderMap && this._streamRenderMap.get(assistantMsg.id)
+        if (!e) return
+        e.msg.content = e.text
+        if (!e.chatId || e.chatId === this.currentChatId) {
+          this.$nextTick(() => this.scrollToBottom())
+        }
       })
     },
-    cancelStreamRender() {
-      if (this._streamRenderRAFId) {
-        cancelAnimationFrame(this._streamRenderRAFId)
-        this._streamRenderRAFId = null
+    cancelStreamRender(assistantMsg = null) {
+      if (!this._streamRenderMap) return
+      if (!assistantMsg) {
+        // 无参:清空全部待渲染帧(错误收尾兜底)
+        for (const entry of this._streamRenderMap.values()) {
+          if (entry.raf) cancelAnimationFrame(entry.raf)
+        }
+        this._streamRenderMap.clear()
+        return
+      }
+      const entry = this._streamRenderMap.get(assistantMsg.id)
+      if (entry) {
+        if (entry.raf) cancelAnimationFrame(entry.raf)
+        this._streamRenderMap.delete(assistantMsg.id)
       }
     },
     // onDone 收尾:取消待执行帧并把最终快照同步写入 content,确保 onDone 内对
     // assistantMsg.content 的读取(记忆/评测记录)拿到完整文本,而非落后一帧。
     flushStreamRender(assistantMsg) {
-      this.cancelStreamRender()
-      if (assistantMsg && this._streamRenderText != null) {
-        assistantMsg.content = this._streamRenderText
-      }
+      const entry = assistantMsg && this._streamRenderMap
+        ? this._streamRenderMap.get(assistantMsg.id)
+        : null
+      if (!entry) return
+      if (entry.raf) cancelAnimationFrame(entry.raf)
+      this._streamRenderMap.delete(assistantMsg.id)
+      if (entry.text != null) assistantMsg.content = entry.text
     },
     getRenderedMessageHtml(msg) {
       if (!msg) return ''
@@ -8865,7 +8926,7 @@ export default {
       }
     },
     retryAssistantMessage(message) {
-      if (this.isStreaming) return
+      if (this.isTurnRunning) return
       const userMessage = this.findPreviousUserMessage(message)
       if (!userMessage) {
         inAppAlert('未找到可重试的上一条请求')
@@ -16440,20 +16501,22 @@ export default {
 
       assistantMsg.isLoading = true
       this.isStreaming = true
-      this.streamingContent = ''
       this.startAssistantLoadingProgress(assistantMsg, {
         label: '已发送，正在翻译...',
         detail: '正在等待模型返回首段译文。',
         percent: 14
       })
 
+      const translateChatId = this.currentChatId
+      let translateBuffer = ''
       const translateCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null
       const translateCtx = {
         messageId: assistantMsg?.id || '',
         abortController: translateCtrl,
-        cancelled: false
+        cancelled: false,
+        chatId: translateChatId
       }
-      this.activeLegacyTurnContext = translateCtx
+      this.activeLegacyTurnContexts[translateChatId] = translateCtx
 
       streamChatCompletion({
         ribbonModelId: model.id,
@@ -16466,43 +16529,40 @@ export default {
           if (translateCtx.cancelled) return
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
-          this.streamingContent += chunk
-          this.scheduleStreamRender(assistantMsg, this.streamingContent)
+          translateBuffer += chunk
+          this.scheduleStreamRender(assistantMsg, translateBuffer, translateChatId)
         },
         onDone: () => {
           this.flushStreamRender(assistantMsg)
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
-          this.streamingContent = ''
-          this.activeLegacyTurnContext = null
+          this.clearLegacyTurnCtx(translateChatId)
           this.requestAssistantEvolutionSuggestionCheck()
           this.saveHistory()
-          this.$nextTick(() => this.scrollToBottom())
+          this.$nextTick(() => this.scrollToBottomIfChatActive(translateChatId))
         },
         onError: (err) => {
-          this.cancelStreamRender()
+          this.cancelStreamRender(assistantMsg)
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           this.isStreaming = false
-          const translatePartial = String(this.streamingContent || assistantMsg.content || '').trim()
-          this.streamingContent = ''
-          this.activeLegacyTurnContext = null
+          const translatePartial = String(translateBuffer || assistantMsg.content || '').trim()
+          this.clearLegacyTurnCtx(translateChatId)
           this.clearAssistantRecommendations(assistantMsg)
           if (translateCtx.cancelled) {
             assistantMsg.content = translatePartial ? `${translatePartial}\n\n（已停止）` : '（已停止，本轮未收到内容）'
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(translateChatId))
             return
           }
           assistantMsg.content = '[错误] ' + (err || '翻译失败')
           this.saveHistory()
-          this.$nextTick(() => this.scrollToBottom())
+          this.$nextTick(() => this.scrollToBottomIfChatActive(translateChatId))
         }
       })
 
       this.saveHistory()
-      this.scrollToBottom()
     },
     async sendDocumentAwareMessage(userContent, model, prepared = null) {
       const payload = this.getCurrentDocumentPayload()
@@ -16576,6 +16636,8 @@ export default {
       // 尽快占用「流式/长任务」锁，避免在分段循环开始前又发一条消息，导致新的 startActiveDocumentAwareRun 顶替上下文并被判定为已停止。
       this.isStreaming = true
       this.streamingContent = ''
+      const awareChatId = prepared?.chatObj?.id || this.currentChatId
+      let awareBuffer = ''
 
       if (chunks.length <= 1 && documentCharCount <= DIRECT_DOCUMENT_CHAR_LIMIT && strategy !== 'transform') {
         const recommendationContext = this.getRecommendationContextText(documentApiUserContent)
@@ -16595,8 +16657,8 @@ export default {
             if (runContext.cancelled) return
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
-            this.streamingContent += chunk
-            this.scheduleStreamRender(assistantMsg, this.streamingContent)
+            awareBuffer += chunk
+            this.scheduleStreamRender(assistantMsg, awareBuffer, awareChatId)
           },
           onDone: () => {
             this.flushStreamRender(assistantMsg)
@@ -16607,10 +16669,10 @@ export default {
             this.finishActiveDocumentAwareRun(assistantMsg)
             this.requestAssistantEvolutionSuggestionCheck()
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(awareChatId))
           },
           onError: (err) => {
-            this.cancelStreamRender()
+            this.cancelStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -16631,11 +16693,10 @@ export default {
               })
             }
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(awareChatId))
           }
         })
         this.saveHistory()
-        this.scrollToBottom()
         return
       }
 
@@ -16722,6 +16783,7 @@ export default {
           1200
         )
         this.streamingContent = ''
+        awareBuffer = ''
         assistantMsg.activeDocumentAwareRun.statusMessage = '分段阅读完成，正在汇总最终结果...'
         this.appendDocumentRevisionDetail(assistantMsg.activeDocumentAwareRun, '全部分段阅读完成，开始汇总最终回答。')
         streamChatCompletion({
@@ -16734,8 +16796,8 @@ export default {
             if (runContext.cancelled) return
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
-            this.streamingContent += chunk
-            this.scheduleStreamRender(assistantMsg, this.streamingContent)
+            awareBuffer += chunk
+            this.scheduleStreamRender(assistantMsg, awareBuffer, awareChatId)
           },
           onDone: () => {
             this.flushStreamRender(assistantMsg)
@@ -16747,10 +16809,10 @@ export default {
             this.finishActiveDocumentAwareRun(assistantMsg)
             this.requestAssistantEvolutionSuggestionCheck()
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(awareChatId))
           },
           onError: (err) => {
-            this.cancelStreamRender()
+            this.cancelStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -16773,11 +16835,10 @@ export default {
               })
             }
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(awareChatId))
           }
         })
         this.saveHistory()
-        this.scrollToBottom()
       } catch (error) {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
@@ -16873,7 +16934,7 @@ export default {
     },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
-      if (this.activeMcpTurnContext?.messageId) {
+      if (this.activeMcpTurnContexts?.[this.currentChatId]?.messageId) {
         await inAppAlert('文档智能体正在写文档，请等待完成或停止后再执行助手。', { title: '请稍候' })
         return
       }
@@ -16942,12 +17003,16 @@ export default {
     async sendMessage() {
       const sendStartedAt = Date.now()
       const text = this.userInput.trim()
-      if ((!text && this.attachments.length === 0) || this.isStreaming) return
-      // 路由期闩锁：从判重到具体链路接管（isStreaming 置位）之间有多次 await
+      // 并行模型：本会话已有回合（聊天/流式/MCP）时禁止重复发送；其它 tab 的回合不受影响
+      const sendingChatId = this.currentChatId
+      if ((!text && this.attachments.length === 0)
+        || this.activeLegacyTurnContexts?.[sendingChatId]
+        || this.activeMcpTurnContexts?.[sendingChatId]) return
+      // 路由期闩锁（按会话）：从判重到具体链路接管之间有多次 await
       // （UI 提交 / MCP 健康检查 / 两轮意图模型路由），窗口可达数秒。期间第二条
       // 发送会穿过顶部判重、后到先至地顶替第一条的修订上下文，表现为「弹出助手
       // 后立即 已停止本次文档修订」。闩锁覆盖整个路由期，finally 释放。
-      if (this._sendRoutingLock) return
+      if (this.sendRoutingLocks[sendingChatId]) return
       if (this.activeDocumentRevisionRunContext?.messageId) {
         await inAppAlert(
           '当前正在生成文档修订预览（已发起模型请求）。请等待本条完成，或先在消息进度区点击「停止」后再发送新内容；否则新消息会中断本次修订。',
@@ -16955,7 +17020,7 @@ export default {
         )
         return
       }
-      if (this.activeMcpTurnContext?.messageId) {
+      if (this.activeMcpTurnContexts?.[sendingChatId]?.messageId) {
         await inAppAlert(
           '文档智能体正在执行。请等待完成，或先停止后再发送。',
           { title: '文档智能体执行中' }
@@ -16977,9 +17042,10 @@ export default {
         messageId: prepared.assistantMsg?.id || '',
         abortController: legacyCtrl,
         cancelled: false,
-        ownedByStream: false
+        ownedByStream: false,
+        chatId: sendingChatId
       }
-      this.activeLegacyTurnContext = legacyTurnCtx
+      this.activeLegacyTurnContexts[sendingChatId] = legacyTurnCtx
       const { chatObj, userMessageId, assistantMsg, selectionSnapshot, attachmentsSnapshot } = prepared
       this.startMessageEntryEffect(userMessageId, 'user')
       this.startMessageEntryEffect(assistantMsg?.id, 'assistant')
@@ -17049,7 +17115,7 @@ export default {
       })
       this.$nextTick(() => this.scrollToBottom())
       this.saveHistory()
-      this._sendRoutingLock = true
+      this.sendRoutingLocks[sendingChatId] = true
       await this.waitForUiCommit()
 
       try {
@@ -17569,14 +17635,14 @@ export default {
               ? this.normalizePlainTextIntroOutput(rawStreamText)
               : rawStreamText
             this.streamingContent = displayText
-            this.scheduleStreamRender(assistantMsg, displayText)
+            this.scheduleStreamRender(assistantMsg, displayText, legacyCtx.chatId)
           },
           onDone: () => {
             this.flushStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
-            this.activeLegacyTurnContext = null
+            this.clearLegacyTurnCtx(legacyCtx.chatId)
             if (shouldNormalizePlain) {
               assistantMsg.content = this.normalizePlainTextIntroOutput(rawStreamText || assistantMsg.content)
             }
@@ -17628,19 +17694,19 @@ export default {
             this.$nextTick(() => this.scrollToBottom())
           },
           onError: (err) => {
-            this.cancelStreamRender()
+            this.cancelStreamRender(assistantMsg)
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
             this.streamingContent = ''
-            this.activeLegacyTurnContext = null
+            this.clearLegacyTurnCtx(legacyCtx.chatId)
             this.clearAssistantRecommendations(assistantMsg)
             if (legacyCtx.cancelled) {
               // 用户主动停止:保留已流出内容并追加标记,不当作错误
               const partial = String(rawStreamText || assistantMsg.content || '').trim()
               assistantMsg.content = partial ? `${partial}\n\n（已停止）` : '（已停止，本轮未收到内容）'
               this.saveHistory()
-              this.$nextTick(() => this.scrollToBottom())
+              this.$nextTick(() => this.scrollToBottomIfChatActive(legacyCtx.chatId))
               return
             }
             assistantMsg.content = '[错误] ' + this.formatAssistantTaskError(err || '请求失败')
@@ -17653,15 +17719,12 @@ export default {
               note: String(err?.message || err || '请求失败').slice(0, 80)
             })
             this.saveHistory()
-            this.$nextTick(() => this.scrollToBottom())
+            this.$nextTick(() => this.scrollToBottomIfChatActive(legacyCtx.chatId))
           }
         })
         this.saveHistory()
-        this.scrollToBottom()
       } catch (err) {
-        if (this.activeLegacyTurnContext === legacyTurnCtx) {
-          this.activeLegacyTurnContext = null
-        }
+        this.clearLegacyTurnCtx(legacyTurnCtx.chatId)
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         this.isStreaming = false
@@ -17678,10 +17741,10 @@ export default {
         this.saveHistory()
         this.$nextTick(() => this.scrollToBottom())
       } finally {
-        this._sendRoutingLock = false
+        this.sendRoutingLocks[sendingChatId] = false
         // 提前返回的分支:未被流式接管的回合上下文就地回收,避免停止键滞留
-        if (this.activeLegacyTurnContext === legacyTurnCtx && !legacyTurnCtx.ownedByStream) {
-          this.activeLegacyTurnContext = null
+        if (!legacyTurnCtx.ownedByStream) {
+          this.clearLegacyTurnCtx(sendingChatId)
         }
       }
     },
@@ -17690,6 +17753,10 @@ export default {
         const el = this.$refs.messagesRef
         if (el) el.scrollTop = el.scrollHeight
       })
+    },
+    // 流式/回合收尾滚动:仅当回合所属会话仍是当前 tab 时才滚底,避免后台会话的完成动作劫持当前视图
+    scrollToBottomIfChatActive(chatId) {
+      if (!chatId || chatId === this.currentChatId) this.scrollToBottom()
     },
     openResultActionModal(mode, messageText = '') {
       const text = String(messageText || '').trim()
@@ -18610,6 +18677,19 @@ export default {
 .chat-tab-close:hover {
   background: rgba(148, 163, 184, 0.25);
   color: #ef4444;
+}
+/* 会话执行中指示:tab 标题旁转圈 */
+.chat-tab-running {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(79, 70, 229, 0.25);
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: chat-tab-spin 0.8s linear infinite;
+}
+@keyframes chat-tab-spin {
+  to { transform: rotate(360deg); }
 }
 .chat-tab-add {
   flex: 0 0 auto;
