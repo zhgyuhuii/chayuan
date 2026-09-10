@@ -23,7 +23,7 @@ import {
   syncUpstreamAllowlist
 } from './mcpHttpClient.js'
 import { createAgentCoreTransport } from './agentCoreTransport.js'
-import { createMcpDocumentSkill } from './agentCoreSkill.js'
+import { createMcpDocumentSkill, normalizeTodoList } from './agentCoreSkill.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
 // 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
@@ -45,6 +45,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent }) {
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
     '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。',
     '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。',
+    '【任务清单】请求包含 ≥2 个可独立交付的子任务或明确多步流程时，先调用 todo_write 写入完整清单（每项一个动词开头的短句）；开始某项前先把它置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress；过程中发现新任务就整表重写追加。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。',
     '【改正正文·流程】proofread_run 返回后汇总问题；按用户选择走「写成批注」(proofread_apply_comments) 或「改正正文」出口，不要只用批注交差。',
     '【需要通读全文（翻译 / 改写 / 摘要）才用 document_chunks】每次 limit:8 尽量多读，cursor 只前进、不回退、不重读已读段落；读够立即停，把轮次留给写作工具，而不是反复分页。',
@@ -120,7 +121,8 @@ function seedHistoryFrom(historyMessages) {
  *   steps?: Array,
  *   proofreadCard?: object|null,
  *   pendingConfirms?: Array,
- *   usedServers?: string[]
+ *   usedServers?: string[],
+ *   todos?: Array
  * }>}
  */
 export async function runMcpChatOrchestrator({
@@ -131,9 +133,11 @@ export async function runMcpChatOrchestrator({
   historyMessages = [],
   signal,
   onProgress,
+  onTodos,
   confirmHandler
 } = {}) {
   const steps = []
+  let todos = []
   const pushStep = (label, detail = '') => {
     const step = { at: Date.now(), label, detail }
     steps.push(step)
@@ -244,6 +248,10 @@ export async function runMcpChatOrchestrator({
       pushProgress,
       confirmHandler,
       pendingConfirms,
+      onTodoWrite: (list) => {
+        todos = normalizeTodoList(list)
+        onTodos?.(todos)
+      },
       onProofreadCard: (card) => {
         proofreadCard = {
           ...card,
@@ -287,7 +295,7 @@ export async function runMcpChatOrchestrator({
 
   if (typeof out.error === 'string' && out.error) {
     if (signal?.aborted) throw abortError()
-    return { ok: false, fallback: true, reason: 'model_error', content: localizeLoopError(out.error), steps, usedServers }
+    return { ok: false, fallback: true, reason: 'model_error', content: localizeLoopError(out.error), steps, usedServers, todos }
   }
   const r = out.result || {}
   if (r.cancelled || signal?.aborted) throw abortError()
@@ -301,7 +309,8 @@ export async function runMcpChatOrchestrator({
     proofreadCard,
     pendingConfirms,
     usedServers,
-    proofreadIntent
+    proofreadIntent,
+    todos
   }
 }
 

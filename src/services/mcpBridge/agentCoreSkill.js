@@ -25,6 +25,44 @@ function isWriteTool(serverId, toolName) {
   return false
 }
 
+/** 客户端 todo 工具：不落 sidecar，只经 onTodoWrite 回调透出给消息卡渲染 */
+const TODO_WRITE_TOOL = {
+  name: 'todo_write',
+  description: '维护本轮任务清单（整表替换式更新）。当请求包含 ≥2 个可独立交付的子任务或明确多步流程时，先调用它写入全部计划；开始某项前将其置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress。单一简单请求不要使用。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      todos: {
+        type: 'array',
+        description: '完整清单，每次整表替换',
+        items: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '任务短句，动词开头' },
+            status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] }
+          },
+          required: ['content', 'status']
+        }
+      }
+    },
+    required: ['todos']
+  }
+}
+
+const TODO_STATUSES = new Set(['pending', 'in_progress', 'completed'])
+
+function normalizeTodoList(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const item of raw.slice(0, 50)) {
+    const content = String(item?.content || '').trim().slice(0, 200)
+    if (!content) continue
+    const status = TODO_STATUSES.has(item?.status) ? item.status : 'pending'
+    out.push({ content, status })
+  }
+  return out
+}
+
 function toolNeedsConfirm(serverId, toolName, toolMeta, args) {
   if (serverId === CHAYUAN_SERVER_ID) {
     if (toolName === 'proofread_apply_comments') return true
@@ -127,6 +165,7 @@ const DEGRADED_SYSTEM_SUFFIX = [
  * @param {Array} opts.mergedTools - 已合并（namespaced）的工具目录条目
  * @param {(info: object) => void} [opts.pushProgress] - 长任务实时进度
  * @param {(card: object) => void} [opts.onProofreadCard] - proofread_run 结果卡片
+ * @param {(todos: Array) => void} [opts.onTodoWrite] - todo_write 客户端工具的清单透出
  * @param {Function} [opts.confirmHandler] - 写操作确认回调；不传则回灌 CONFIRM_REQUIRED
  * @param {Array} [opts.pendingConfirms] - 收集待确认项的数组（编排器透出）
  */
@@ -135,6 +174,7 @@ export function createMcpDocumentSkill({
   mergedTools,
   pushProgress,
   onProofreadCard,
+  onTodoWrite,
   confirmHandler,
   pendingConfirms = []
 } = {}) {
@@ -143,14 +183,26 @@ export function createMcpDocumentSkill({
   return {
     id: 'chayuan-mcp-doc',
     systemPrompt,
-    tools: (mergedTools || []).map(t => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema || { type: 'object', properties: {} }
-    })),
+    tools: [
+      TODO_WRITE_TOOL,
+      ...(mergedTools || []).map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema || { type: 'object', properties: {} }
+      }))
+    ],
     buildContext: () => '',
     degradedFallback: () => ({ systemSuffix: DEGRADED_SYSTEM_SUFFIX }),
     async executeTool(call, signal) {
+      if (call?.name === TODO_WRITE_TOOL.name) {
+        const todos = normalizeTodoList(call?.input?.todos)
+        onTodoWrite?.(todos)
+        const done = todos.filter(t => t.status === 'completed').length
+        return {
+          output: JSON.stringify({ ok: true, total: todos.length, done }),
+          summary: `任务清单已更新（${done}/${todos.length} 完成）`
+        }
+      }
       const nsName = call.name
       const { serverId, toolName } = parseNamespacedTool(nsName)
       const meta = toolMetaByName.get(nsName)
@@ -224,4 +276,4 @@ export function createMcpDocumentSkill({
 }
 
 // 供编排器/冒烟测试复用的领域谓词与抽取器
-export { isWriteTool, toolNeedsConfirm, extractProofreadCard, summarizeToolResult }
+export { isWriteTool, toolNeedsConfirm, extractProofreadCard, summarizeToolResult, normalizeTodoList }

@@ -754,6 +754,29 @@
                     </div>
                   </div>
                   <div
+                    v-if="msg.role === 'assistant' && Array.isArray(msg.mcpTodos) && msg.mcpTodos.length"
+                    class="mcp-todo-card"
+                  >
+                    <div class="mcp-todo-header">
+                      <span class="mcp-todo-title">任务清单</span>
+                      <span class="mcp-todo-progress">{{ getMcpTodoDoneCount(msg) }}/{{ msg.mcpTodos.length }}</span>
+                    </div>
+                    <div
+                      v-for="(todo, todoIdx) in msg.mcpTodos"
+                      :key="`${msg.id}-mcp-todo-${todoIdx}`"
+                      class="mcp-todo-item"
+                      :class="`is-${todo.status}`"
+                    >
+                      <span
+                        v-if="todo.status === 'in_progress'"
+                        class="mcp-todo-spinner"
+                        aria-hidden="true"
+                      ></span>
+                      <span v-else class="mcp-todo-icon">{{ todo.status === 'completed' ? '✓' : '○' }}</span>
+                      <span class="mcp-todo-content">{{ todo.content }}</span>
+                    </div>
+                  </div>
+                  <div
                     v-if="msg.role === 'assistant' && Array.isArray(msg.mcpSteps) && msg.mcpSteps.length"
                     class="mcp-steps-list"
                   >
@@ -5413,6 +5436,10 @@ export default {
     getAssistantLoadingDetail(msg) {
       return prepareDialogDisplayText(String(msg?.loadingState?.detail || '内容已加入会话，正在整理上下文与请求。'))
     },
+    getMcpTodoDoneCount(msg) {
+      const todos = Array.isArray(msg?.mcpTodos) ? msg.mcpTodos : []
+      return todos.filter(t => t?.status === 'completed').length
+    },
     getMessagePrimaryRouteLabel(message) {
       if (message?.lane === 'mcp') return '文档智能体（MCP）'
       const kind = String(message?.primaryRoute?.kind || '').trim()
@@ -5574,6 +5601,9 @@ export default {
               })
             }
             this.saveHistory()
+          },
+          onTodos: (todos) => {
+            assistantMsg.mcpTodos = Array.isArray(todos) ? todos.slice() : []
           }
         })
 
@@ -5587,6 +5617,7 @@ export default {
             console.error('[mcp] orchestrator model error:', errMsg)
             assistantMsg.content = `文档智能体调用模型失败：${errMsg}\n（MCP 已连接 · ${(result.usedServers || []).length} 个服务、${(result.steps || []).length} 步，但本轮模型请求未成功，未执行任何工具。请检查模型 API 地址/密钥，或换一个模型重试。）`
             assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
+            if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             this.isStreaming = false
@@ -5630,6 +5661,7 @@ export default {
           }
         }
         assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
+        if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         this.isStreaming = false
@@ -18732,6 +18764,73 @@ export default {
 }
 .mcp-steps-item + .mcp-steps-item {
   margin-top: 2px;
+}
+.mcp-todo-card {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(32, 100, 180, 0.14);
+  border-radius: 10px;
+  background: rgba(32, 100, 180, 0.04);
+}
+.mcp-todo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mcp-todo-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+.mcp-todo-progress {
+  font-size: 11px;
+  color: #1c5a9e;
+  font-variant-numeric: tabular-nums;
+}
+.mcp-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mcp-todo-icon {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: #99a;
+}
+.mcp-todo-content {
+  word-break: break-word;
+}
+.mcp-todo-item.is-completed .mcp-todo-icon {
+  color: #16a34a;
+}
+.mcp-todo-item.is-completed .mcp-todo-content {
+  color: #8a90a0;
+  text-decoration: line-through;
+}
+.mcp-todo-item.is-in_progress .mcp-todo-content {
+  font-weight: 600;
+}
+.mcp-todo-item.is-pending .mcp-todo-content {
+  color: #555c6b;
+}
+.mcp-todo-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin: 3px 1px 0;
+  border: 2px solid rgba(32, 100, 180, 0.25);
+  border-top-color: #1c5a9e;
+  border-radius: 50%;
+  animation: mcp-todo-spin 0.8s linear infinite;
+}
+@keyframes mcp-todo-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .mcp-service-banner-copy:hover {
   background: #1d4ed8;
