@@ -18429,13 +18429,6 @@ export default {
   filter: brightness(0.97);
 }
 
-.sidebar-footer-star-badge {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #a16207;
-  opacity: 0.9;
-}
-
 /* 侧栏常驻支持入口：关注公众号 + GitHub Star */
 .sidebar-footer-star-row {
   display: flex;
