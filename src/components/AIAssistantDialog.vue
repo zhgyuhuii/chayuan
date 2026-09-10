@@ -235,11 +235,13 @@
             <a
               href="#"
               class="sidebar-footer-text-btn"
-              title="去 GitHub 点个 Star 支持开源"
-              @click.prevent="handleStarPromptGo"
-            >点赞</a>
-            <button type="button" class="sidebar-footer-text-btn" @click="helpManualVisible = true">帮助</button>
-            <button type="button" class="sidebar-footer-text-btn" @click="feedbackDialogVisible = true">反馈及建议</button>
+              @click.prevent="helpManualVisible = true"
+            >帮助</a>
+            <a
+              href="#"
+              class="sidebar-footer-text-btn"
+              @click.prevent="feedbackDialogVisible = true"
+            >反馈及建议</a>
           </div>
         </div>
       </div>
@@ -379,6 +381,15 @@
           <span class="welcome-inline-text">
             {{ $cdt(displayedWelcomePrompt) }}
             <span v-if="isWelcomePromptTyping" class="welcome-cursor">▊</span>
+            <!-- 支持引导：随欢迎语出现（打字完成才显），欢迎语消失则随之消失。
+                 一行纯文字 + 醒目链接，不占独立空间（侧栏 footer 放不下） -->
+            <a
+              v-if="!isWelcomePromptTyping && hasConfiguredChatModels"
+              href="#"
+              class="welcome-inline-support-link"
+              title="去 GitHub 给察元点个 Star，支持开源持续更新"
+              @click.prevent="handleStarPromptGo"
+            >觉得好用，去 GitHub 给我们点个赞 ⭐；关注公众号「智灵鸟科技」随时提需求</a>
           </span>
         </div>
         <div
@@ -18834,6 +18845,21 @@ export default {
   color: #475569;
   font-size: 12.5px;
   line-height: 1.7;
+}
+
+/* 支持引导链接：与欢迎语同段一行，醒目（金色+下划线），随欢迎语生死 */
+.welcome-inline-support-link {
+  color: #b45309;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.welcome-inline-support-link:hover {
+  color: #92400e;
+  text-decoration-thickness: 2px;
 }
 
 .assistant-evolution-banner {
