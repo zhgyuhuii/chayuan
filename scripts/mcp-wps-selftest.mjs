@@ -87,12 +87,15 @@ async function fetchJson(url, options = {}) {
 }
 
 async function mcpCall(method, params, id = 1) {
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json'
+  }
+  const token = readToken()
+  if (token) headers['X-Chayuan-Token'] = token
   return fetchJson(`${BASE}/mcp`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
+    headers,
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params })
   })
 }

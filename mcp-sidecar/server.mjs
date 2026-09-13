@@ -263,10 +263,19 @@ function unauthorized(res) {
 }
 
 /**
- * Auth disabled by product decision: clients connect with URL only.
- * Sidecar binds 127.0.0.1 — localhost boundary is the trust model.
- * Optional Bearer/token still accepted for backward compatibility, never required.
+ * 最小 token 鉴权（PR8）：sidecar 只绑 127.0.0.1，但本机任意进程都是等效客户端——
+ * 此前 declassify_apply 可被直调且自选密码、/upstream/allowlist POST 无鉴权可把
+ * sidecar 变成 SSRF 跳板、/agent/* 可被冒名提交假结果。现要求敏感路由携带
+ * X-Chayuan-Token（与 dataDir/token 比对；页面/加载项经 Application.FileSystem
+ * 同源读取该文件）。普通文档工具的 /mcp tools/call 仍开放给外部 MCP 客户端
+ * （Claude Code 等走 preview→commit 协议合法使用 confirmed）。
  */
+function isTrusted(req) {
+  const header = String(req.headers['x-chayuan-token'] || '').trim()
+  return !!header && header === token
+}
+
+/** 兼容旧调用点：开放路由恒过 */
 function checkAuth(_req) {
   return true
 }
@@ -312,8 +321,9 @@ async function handleMcp(req, res) {
   const responses = []
   let sessionId = sessionHeader || ''
 
+  const client = isTrusted(req) ? 'trusted' : 'anonymous'
   for (const msg of messages) {
-    const out = await mcp.handleMessage(msg, { sessionId })
+    const out = await mcp.handleMessage(msg, { sessionId, client })
     if (out?.sessionId) sessionId = out.sessionId
     if (out?.notification) continue
     if (out?.error) {
@@ -339,6 +349,12 @@ async function handleMcp(req, res) {
 }
 
 async function handleAgent(req, res, pathname) {
+  // Agent 长轮询是 WPS 加载项专属通道：任意本机进程可注册假 agent / 提交假结果
+  // 投毒工具调用，故整个 /agent/* 要求 token
+  if (!isTrusted(req)) {
+    unauthorized(res)
+    return
+  }
   if (pathname === '/agent/register' && req.method === 'POST') {
     const body = (await readBody(req)) || {}
     sendJson(res, 200, agentHub.register(body))
@@ -412,6 +428,11 @@ const server = http.createServer(async (req, res) => {
     // Upstream HTTP MCP proxy (allowlisted URLs only; for in-page multi-MCP client)
     if (pathname.startsWith('/upstream/')) {
       if (pathname === '/upstream/allowlist' && req.method === 'POST') {
+        // allowlist 决定 sidecar 可向哪些 http(s) 目标发请求（SSRF 面）：写入需 token
+        if (!isTrusted(req)) {
+          unauthorized(res)
+          return
+        }
         const body = (await readBody(req)) || {}
         sendJson(res, 200, upstreamProxy.setAllowlist(body.servers || body.allowlist || []))
         return
@@ -539,7 +560,7 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`[chayuan-mcp] healthz  http://127.0.0.1:${port}${HEALTHZ_PATH}`)
   console.log(`[chayuan-mcp] WS spike ws://127.0.0.1:${port}/agent-ws`)
   console.log(`[chayuan-mcp] dataDir  ${dataDir}`)
-  console.log(`[chayuan-mcp] auth     none (URL only; localhost bind)`)
+  console.log(`[chayuan-mcp] auth     token-gated: /agent/*, /upstream/allowlist POST, declassify_* tools`)
   console.log(`[chayuan-mcp] protocol ${PROTOCOL_VERSION}`)
 })
 

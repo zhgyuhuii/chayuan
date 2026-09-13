@@ -2,6 +2,7 @@
  * Thin Streamable HTTP MCP client for local chayuan sidecar + upstream proxy.
  */
 import { MCP_URL, MCP_BASE_URL, MCP_HEALTHZ_URL } from './config.js'
+import { readSidecarToken } from './webviewFsProbe.js'
 import {
   CHAYUAN_SERVER_ID,
   getUpstreamAllowlistPayload,
@@ -29,7 +30,23 @@ function networkErrorMessage(err) {
   return raw || SIDECAR_OFFLINE_HINT
 }
 
+let _cachedSidecarToken = null
+/** 敏感路由访问令牌（FS 同源读取，见 webviewFsProbe.readSidecarToken）；读不到为空串 */
+function sidecarAccessToken() {
+  if (_cachedSidecarToken !== null) return _cachedSidecarToken
+  try {
+    _cachedSidecarToken = readSidecarToken() || ''
+  } catch {
+    _cachedSidecarToken = ''
+  }
+  return _cachedSidecarToken
+}
+
 async function postJson(url, body, { headers = {}, signal, timeoutMs = 60000 } = {}) {
+  const token = sidecarAccessToken()
+  if (token && !headers['X-Chayuan-Token']) {
+    headers = { ...headers, 'X-Chayuan-Token': token }
+  }
   abortError(signal)
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
   const onParent = () => ctrl?.abort()

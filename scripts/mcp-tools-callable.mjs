@@ -11,6 +11,22 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TOOLS, SERVER_INFO } from '../mcp-sidecar/lib/toolCatalog.mjs'
+import os from 'node:os'
+
+function dataDir() {
+  if (process.platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'chayuan-wps', 'mcp')
+  }
+  return path.join(os.homedir(), '.config', 'chayuan-wps', 'mcp')
+}
+
+function readToken() {
+  try {
+    return String(fs.readFileSync(path.join(dataDir(), 'token'), 'utf8') || '').trim()
+  } catch {
+    return ''
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
@@ -33,7 +49,11 @@ async function fetchJson(url, options = {}) {
 async function mcpCall(method, params, id = 1) {
   return fetchJson(`${BASE}/mcp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(readToken() ? { 'X-Chayuan-Token': readToken() } : {})
+    },
     body: JSON.stringify({ jsonrpc: '2.0', id, method, params })
   })
 }

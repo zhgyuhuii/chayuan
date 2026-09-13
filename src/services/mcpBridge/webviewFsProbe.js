@@ -51,6 +51,30 @@ function readTextViaHost(filePath) {
 }
 
 /**
+ * 读 sidecar 的访问令牌（dataDir/token，loadOrCreateToken 每次启动确保存在）。
+ * 页面/加载项与 sidecar 同机同用户目录：经 Application.FileSystem 同源读取，
+ * 供敏感路由（allowlist 写入、declassify 工具、agent 注册）附带 X-Chayuan-Token。
+ * 读不到（dev http 环境/文件被删）返回 ''，调用方按匿名降级。
+ * @returns {string}
+ */
+export function readSidecarToken() {
+  try {
+    const home = guessHomeDir()
+    if (!home) return ''
+    const candidates = isWindowsLike()
+      ? [`${home}\\AppData\\Local\\chayuan-wps\\mcp\\token`]
+      : [`${home}/.config/chayuan-wps/mcp/token`]
+    for (const p of candidates) {
+      const raw = readTextViaHost(p)
+      if (raw) return String(raw).trim()
+    }
+    return ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * @returns {{alive: boolean, ageMs: number, at: number, pid: number}|null}
  *   null = 无法探测（非 file 安装 / FileSystem 不可用 / 找不到文件）
  */

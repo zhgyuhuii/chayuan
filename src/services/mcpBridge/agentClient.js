@@ -11,6 +11,7 @@ import {
   getAddonVersion
 } from './config.js'
 import { dispatchMcpJob } from './dispatch.js'
+import { readSidecarToken } from './webviewFsProbe.js'
 
 const POLL_TIMEOUT_SEC = 25
 const HEARTBEAT_MS = 20_000
@@ -60,12 +61,25 @@ function ensureAgentId() {
   return _agentId
 }
 
+let _cachedSidecarToken = null
+function sidecarAccessToken() {
+  if (_cachedSidecarToken !== null) return _cachedSidecarToken
+  try {
+    _cachedSidecarToken = readSidecarToken() || ''
+  } catch {
+    _cachedSidecarToken = ''
+  }
+  return _cachedSidecarToken
+}
+
 async function fetchJson(url, options = {}) {
   const headers = {
     Accept: 'application/json',
+    // 敏感路由（agent 注册/轮询/结果、allowlist 写入）要求 X-Chayuan-Token；
+    // FS 同源读取 sidecar dataDir/token，读不到按匿名（仅开放路由可用）
+    ...(sidecarAccessToken() ? { 'X-Chayuan-Token': sidecarAccessToken() } : {}),
     ...(options.headers || {})
   }
-  // MCP/Agent: no token required (localhost-only sidecar)
   // 客户端超时：sidecar 在 25s 长轮询中途被杀时，半死 TCP 连接会让 fetch 永久挂起，
   // 卡死 loop() 的重连循环（catch 永远跑不到）。AbortController 到点必 abort → 抛错 → 退避重连。
   const timeoutMs = Number(options.timeoutMs) || 0

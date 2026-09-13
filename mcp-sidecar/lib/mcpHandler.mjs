@@ -269,9 +269,17 @@ function buildPromptMessages(name, args = {}) {
   return null
 }
 
-export function createMcpHandler({ agentHub, getServerMeta, audit, launchWpsAndWait }) {
+export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, launchWpsAndWait }) {
   /** @type {Map<string, any>} */
   const sessions = new Map()
+
+  // PR8 审计调用方：handleMessage 入口记录本次请求的来源（trusted=带 token 的
+  // 页面/加载项，anonymous=外部客户端），所有审计行统一打标。Node 单线程下并发
+  // 请求交错最多串一个标记，审计为 best-effort 可接受。
+  let clientTag = 'anonymous'
+  const audit = rawAudit
+    ? { append: (entry) => rawAudit.append({ client: clientTag, ...entry }) }
+    : null
 
   function createSession() {
     const id = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -1163,7 +1171,8 @@ export function createMcpHandler({ agentHub, getServerMeta, audit, launchWpsAndW
     }
   }
 
-  async function handleMessage(msg, { sessionId } = {}) {
+  async function handleMessage(msg, { sessionId, client } = {}) {
+    clientTag = client === 'trusted' ? 'trusted' : 'anonymous'
     if (!msg || typeof msg !== 'object') {
       return { error: { code: -32700, message: 'Parse error' } }
     }
@@ -1200,6 +1209,17 @@ export function createMcpHandler({ agentHub, getServerMeta, audit, launchWpsAndW
         case 'tools/call': {
           const name = msg.params?.name
           const args = msg.params?.arguments || {}
+          // 密码保护对本机进程为零（自选密码即可复原），declassify_* 仅对带 token
+          // 的页面通道开放；anonymous 通道直接 401 语义错误
+          if (typeof name === 'string' && name.startsWith('declassify_') && clientTag !== 'trusted') {
+            return {
+              error: {
+                code: -32600,
+                message: 'declassify tools are restricted to the trusted in-app channel (X-Chayuan-Token required)'
+              },
+              id
+            }
+          }
           const toolResult = await handleToolsCall(name, args)
           return { result: toolResult, id }
         }

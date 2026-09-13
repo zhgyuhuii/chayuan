@@ -55,13 +55,14 @@ export function createAgentHub() {
     const windowId = String(body.windowId || '')
     let agent = agents.get(agentId)
     if (!agent) {
-      agent = { agentId, protocolVersion, addonVersion, windowId, lastSeen: now(), waiters: [] }
+      agent = { agentId, protocolVersion, addonVersion, windowId, lastSeen: now(), waiters: [], timeoutStrikes: 0 }
       agents.set(agentId, agent)
     } else {
       agent.protocolVersion = protocolVersion
       agent.addonVersion = addonVersion
       agent.windowId = windowId || agent.windowId
       agent.lastSeen = now()
+      agent.timeoutStrikes = 0
     }
     return {
       ok: true,
@@ -76,6 +77,7 @@ export function createAgentHub() {
     const a = agents.get(String(agentId || ''))
     if (!a) return { ok: false, code: 'AGENT_NOT_REGISTERED' }
     a.lastSeen = now()
+    a.timeoutStrikes = 0
     return { ok: true }
   }
 
@@ -113,6 +115,7 @@ export function createAgentHub() {
     const a = agents.get(String(agentId || ''))
     if (!a) return Promise.resolve({ error: { code: 'AGENT_NOT_REGISTERED' } })
     a.lastSeen = now()
+    a.timeoutStrikes = 0
 
     // Immediate job?
     if (pendingJobs.length) {
@@ -157,7 +160,10 @@ export function createAgentHub() {
     clearTimeout(job.timer)
     inflight.delete(jobId)
     const a = agents.get(agentId)
-    if (a) a.lastSeen = now()
+    if (a) {
+      a.lastSeen = now()
+      a.timeoutStrikes = 0
+    }
     if (body.ok === false) {
       job.reject(Object.assign(new Error(body.error?.message || 'AGENT_JOB_FAILED'), {
         code: body.error?.code || 'AGENT_JOB_FAILED',
@@ -204,8 +210,17 @@ export function createAgentHub() {
           inflight.delete(jobId)
           const idx = pendingJobs.indexOf(job)
           if (idx >= 0) pendingJobs.splice(idx, 1)
-          // Timed-out inflight jobs usually mean the WebView died mid-handler.
-          if (assigned) dropAgent(assigned, 'job-timeout')
+          // PR8：单个任务硬超时（如大文档校对 >120s）不再立即注销 agent——那会让
+          // 加载项进入「假离线」窗口（底层 webview 其实还活着，长轮询会立刻回来）。
+          // 连续 3 次超时且期间无任何活跃信号（心跳/轮询/结果都会清零 strike）才判死。
+          if (assigned) {
+            const a = agents.get(assigned)
+            if (a) {
+              a.timeoutStrikes = (a.timeoutStrikes || 0) + 1
+              if (a.timeoutStrikes >= 3) dropAgent(assigned, 'job-timeout x3')
+              else console.warn(`[agentHub] job timeout (strike ${a.timeoutStrikes}/3) agent=${assigned}`)
+            }
+          }
           reject(Object.assign(new Error(`Agent job timeout ${timeoutMs}ms`), { code: 'AGENT_JOB_TIMEOUT' }))
         }, timeoutMs)
       }
