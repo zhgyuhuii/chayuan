@@ -178,6 +178,8 @@ const DEGRADED_SYSTEM_SUFFIX = [
  * @param {(todos: Array) => void} [opts.onTodoWrite] - todo_write 客户端工具的清单透出
  * @param {Function} [opts.confirmHandler] - 写操作确认回调；不传则回灌 CONFIRM_REQUIRED
  * @param {Array} [opts.pendingConfirms] - 收集待确认项的数组（编排器透出）
+ * @param {string} [opts.writeBaselineToken] - 回合 OCC 基线 token；随写工具参数
+ *   透传到加载项 dispatch 层，供写锁按回合隔离校验（__baselineToken 为保留字段）
  */
 export function createMcpDocumentSkill({
   systemPrompt,
@@ -186,7 +188,8 @@ export function createMcpDocumentSkill({
   onProofreadCard,
   onTodoWrite,
   confirmHandler,
-  pendingConfirms = []
+  pendingConfirms = [],
+  writeBaselineToken = ''
 } = {}) {
   const toolMetaByName = new Map()
   for (const t of mergedTools || []) toolMetaByName.set(t.name, t)
@@ -261,6 +264,11 @@ export function createMcpDocumentSkill({
         if (serverId === CHAYUAN_SERVER_ID) {
           if (!isChayuanToolAllowed(toolName)) {
             throw Object.assign(new Error('TOOL_NOT_ALLOWED'), { code: 'TOOL_NOT_ALLOWED' })
+          }
+          // 写工具带上回合 OCC 基线 token（__baselineToken 为保留字段，dispatch 层
+          // 弹出后用于 withDocumentWriteLock 校验，不会进入真实 WPS 调用参数）
+          if (writeBaselineToken && isWriteTool(serverId, toolName)) {
+            args.__baselineToken = writeBaselineToken
           }
           if (toolName === 'proofread_run') {
             result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })

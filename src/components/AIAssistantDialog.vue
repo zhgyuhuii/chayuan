@@ -5796,9 +5796,11 @@ export default {
         cancelled: false,
         chatId: turnChatId
       }
-      // OCC 基线:回合起点记录文档指纹;回合内的写文档工具在写锁校验时以此为参照,
-      // 手动编辑或其它未持锁修改会让后续写回失败并提示,而不是覆盖掉用户改动
-      setWriteBaseline()
+      // OCC 基线（PR5 按回合 token 隔离）:回合起点记录本回合视角的文档指纹;
+      // 写锁校验只认本 token 的基线——其它会话再开新回合也「洗白」不了本校验,
+      // 手动编辑后另一会话发消息,本回合的写仍会被拦下要求重读。
+      const writeBaselineToken = `mcp-turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      setWriteBaseline(undefined, undefined, writeBaselineToken)
       this.isStreaming = true
       assistantMsg.lane = 'mcp'
       assistantMsg.primaryRoute = {
@@ -5841,6 +5843,7 @@ export default {
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
           historyMessages,
           previousTodos,
+          writeBaselineToken,
           signal: ctrl?.signal,
           confirmHandler: ({ serverId, toolName, namespacedName, args, meta, signal }) =>
             this.requestMcpWriteConfirm({

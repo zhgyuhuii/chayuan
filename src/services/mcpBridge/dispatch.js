@@ -447,10 +447,18 @@ const DOC_WRITE_METHODS = new Set([
  */
 export async function dispatchMcpJob(job = {}) {
   const method = String(job.method || '')
-  const params = job.params || {}
+  const params = { ...(job.params || {}) }
+  // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
+  // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
+  const baselineToken = String(params.__baselineToken || '')
+  delete params.__baselineToken
   if (DOC_WRITE_METHODS.has(method)) {
-    // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与 OCC 基线
-    const { promise } = withDocumentWriteLock({ label: method }, () => dispatchMcpJobInner(method, params))
+    // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
+    // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
+    const { promise } = withDocumentWriteLock(
+      { label: method, ...(baselineToken ? { baselineToken } : {}) },
+      () => dispatchMcpJobInner(method, params)
+    )
     return promise
   }
   return dispatchMcpJobInner(method, params)

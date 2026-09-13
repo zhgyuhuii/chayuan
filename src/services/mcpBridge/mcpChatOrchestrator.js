@@ -137,6 +137,7 @@ export async function runMcpChatOrchestrator({
   kbBound = false,
   historyMessages = [],
   previousTodos = [],
+  writeBaselineToken = '',
   signal,
   onProgress,
   onTodos,
@@ -254,6 +255,7 @@ export async function runMcpChatOrchestrator({
       pushProgress,
       confirmHandler,
       pendingConfirms,
+      writeBaselineToken,
       onTodoWrite: (list) => {
         todos = normalizeTodoList(list)
         onTodos?.(todos)

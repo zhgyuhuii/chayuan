@@ -9,9 +9,14 @@
  *   排队顺序严格 FIFO（promise 链保证）；队列快照经订阅回调通知 UI。
  * - 拿到锁时校验「活动文档身份」与 enqueue 时一致，防止排队期间用户切走文档
  *   导致写落到错误文档上。
- * - OCC：setWriteBaseline() 在回合起点记录文档指纹；每次写前核对，若指纹变化
- *   （被手动编辑或其它未持锁方修改）则拒绝写入；己方写成功后滚动更新基线，
- *   因此同一回合的连续写不会误报。
+ * - OCC（基线按 ownerToken 隔离，PR5）：回合起点 setWriteBaseline(token) 记录
+ *   本回合视角的文档指纹；带 baselineToken 的写在写前只核对自己 token 的基线，
+ *   其它回合再开新基线也「洗白」不了本回合的校验——手动编辑后另一会话发消息，
+ *   本回合的写仍会被 DOCUMENT_MODIFIED_SINCE_BASELINE 拦下。己方写成功后仅
+ *   滚动更新自己的基线（同一回合连续写不误报）。不带 token 的写（UI 直调链路：
+ *   校对卡按钮、备份回滚等用户显式动作）共用匿名基线槽。
+ * - 指纹为全文 hash（段落数+长度+全文）：旧实现只看首尾各 48 字，中段等长替换
+ *   （"张三"→"李四"）三者全不变，OCC 穿透；反正全文已取出，直接 hash 全文。
  */
 
 function getActiveDocId() {
@@ -40,27 +45,47 @@ export function getDocumentFingerprint() {
     try { text = String(doc.Content?.Text || '') } catch { text = '' }
     let paraCount = 0
     try { paraCount = Number(doc.Paragraphs?.Count || 0) } catch { paraCount = 0 }
-    const head = text.slice(0, 48)
-    const tailText = text.slice(-48)
-    return `${paraCount}:${text.length}:${hashLite(head)}:${hashLite(tailText)}`
+    return `${paraCount}:${text.length}:${hashLite(text)}`
   } catch {
     return ''
   }
 }
 
-let baseline = { docId: '', fp: '' }
+/**
+ * 基线表：ownerToken（回合唯一）→ { docId, fp }。
+ * '' 键 = 匿名槽，供不带 token 的 UI 直调写链路；任何 setWriteBaseline 都会
+ * 顺带刷新匿名槽，保持无 token 链路的旧语义（最近一次记录为参照）。
+ */
+const ANON_TOKEN = ''
+const baselines = new Map()
 
-/** 回合起点调用：记录当前文档指纹作为 OCC 基线 */
-export function setWriteBaseline(fp = getDocumentFingerprint(), docId = getActiveDocId()) {
-  baseline = { docId, fp }
+/** 回合起点调用：记录当前文档指纹作为本回合的 OCC 基线 */
+export function setWriteBaseline(fp = getDocumentFingerprint(), docId = getActiveDocId(), ownerToken = ANON_TOKEN) {
+  const token = String(ownerToken || ANON_TOKEN)
+  baselines.set(token, { docId, fp })
+  if (token !== ANON_TOKEN) baselines.set(ANON_TOKEN, { docId, fp })
 }
 
-export function getWriteBaseline() {
-  return { ...baseline }
+export function getWriteBaseline(ownerToken = ANON_TOKEN) {
+  const entry = baselines.get(String(ownerToken || ANON_TOKEN))
+  return entry ? { ...entry } : { docId: '', fp: '' }
 }
 
-function verifyWriteBaseline() {
-  if (!baseline.fp) return { ok: true }
+/** 仅供测试/重置使用 */
+export function resetWriteBaselines() {
+  baselines.clear()
+}
+
+/**
+ * 校验指定 token 的基线。基线为空=放行（该回合起点没有可用文档）。
+ * 基线记录的是另一篇文档=拒绝：无论是用户中途切换（模型还拿旧文档的读取在
+ * 规划写入）还是 UI 直调链路跨文档误用，都应重新建立上下文。模型经
+ * document.activate/open/new 主动切文档本身走写锁，写后会滚动更新本 token
+ * 的基线到新文档，后续写自然通过——不依赖这里的放行。
+ */
+function verifyWriteBaseline(ownerToken) {
+  const baseline = baselines.get(String(ownerToken || ANON_TOKEN))
+  if (!baseline || !baseline.fp) return { ok: true }
   const docId = getActiveDocId()
   if (baseline.docId && docId && docId !== baseline.docId) {
     return { ok: false, reason: '活动文档已切换' }
@@ -109,13 +134,15 @@ export function getLockState() {
 
 /**
  * 持锁执行 fn。等待期间可 cancel()；轮到时依次校验：
- * 取消 → 活动文档身份 → OCC 基线，任一失败即拒绝并抛错（不占用写窗口）。
- * @param {{ label?: string, expectDocId?: string }} opts
+ * 取消 → 活动文档身份 → OCC 基线（仅校验调用者的 baselineToken，PR5 起各回合
+ * 互不洗白），任一失败即拒绝并抛错（不占用写窗口）。
+ * @param {{ label?: string, expectDocId?: string, baselineToken?: string }} opts
  * @param {() => Promise<any>} fn
  */
 export function withDocumentWriteLock(opts = {}, fn) {
   const label = String(opts.label || 'document-write')
   const expectDocId = opts.expectDocId !== undefined ? opts.expectDocId : getActiveDocId()
+  const baselineToken = String(opts.baselineToken || ANON_TOKEN)
   const waiter = { label, cancelled: false, handle: null, rejectEarly: null }
   waiter.handle = {
     cancel: () => {
@@ -149,7 +176,7 @@ export function withDocumentWriteLock(opts = {}, fn) {
       // 链式队列理论上不会出现；兜底防御
       throw makeError('DOC_WRITE_LOCK_BUSY', '文档写锁被占用，本次写回未执行。')
     }
-    const verdict = verifyWriteBaseline()
+    const verdict = verifyWriteBaseline(baselineToken)
     if (!verdict.ok) {
       throw makeError('DOCUMENT_MODIFIED_SINCE_BASELINE', `写回前校验失败：${verdict.reason}。请重新读取文档内容后重试，或改用带备份的写回方式。`)
     }
@@ -159,8 +186,15 @@ export function withDocumentWriteLock(opts = {}, fn) {
       return await fn()
     } finally {
       owner = null
-      // 写后滚动更新基线（无论成败），同回合连续写不误报
-      setWriteBaseline(getDocumentFingerprint(), nowDocId)
+      // 写后滚动更新基线（无论成败）：只更新调用者自己的 token（PR5 起不再洗白
+      // 其它回合）+ 匿名槽。若期间活动文档切换了（verdict.docSwitched 或写入本身
+      // 切了文档），在新文档上重立基线——同回合后续写以新文档为参照。
+      const rollFp = getDocumentFingerprint()
+      const rollDocId = getActiveDocId()
+      baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
+      if (baselineToken !== ANON_TOKEN) {
+        baselines.set(ANON_TOKEN, { docId: rollDocId, fp: rollFp })
+      }
       notifySubscribers()
     }
   }
