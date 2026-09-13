@@ -726,6 +726,43 @@
                       @toggle-details="toggleDocumentRevisionDetails(taskRun.run)"
                       @toggle-backup="handleLongTaskRunToggleBackup(taskRun.stopAction, msg, $event)"
                     />
+                    <div
+                      v-if="msg.role === 'assistant' && msg.pendingMcpToolConfirm"
+                      class="mcp-proofread-card mcp-write-confirm-card"
+                    >
+                      <div class="mcp-proofread-card-title">写操作待确认</div>
+                      <p class="mcp-proofread-card-summary">
+                        文档智能体请求执行 <b>{{ msg.pendingMcpToolConfirm.namespacedName }}</b>，批准后将写入当前文档；不确认不会执行。
+                      </p>
+                      <pre
+                        v-if="msg.pendingMcpToolConfirm.argsPreview"
+                        class="mcp-write-confirm-args"
+                      >{{ msg.pendingMcpToolConfirm.argsPreview }}</pre>
+                      <div class="mcp-proofread-card-actions">
+                        <button
+                          type="button"
+                          class="message-error-action-btn primary"
+                          @click.stop="msg.pendingMcpToolConfirm.approve && msg.pendingMcpToolConfirm.approve()"
+                        >
+                          批准并执行
+                        </button>
+                        <button
+                          type="button"
+                          class="message-error-action-btn"
+                          @click.stop="msg.pendingMcpToolConfirm.reject && msg.pendingMcpToolConfirm.reject()"
+                        >
+                          拒绝
+                        </button>
+                        <button
+                          type="button"
+                          class="message-error-action-btn"
+                          title="本回合内该工具的后续调用不再询问"
+                          @click.stop="msg.pendingMcpToolConfirm.allowAllThisTurn && msg.pendingMcpToolConfirm.allowAllThisTurn()"
+                        >
+                          本轮全允许
+                        </button>
+                      </div>
+                    </div>
                     <button
                       v-if="msg.lane === 'mcp' && activeMcpTurnContexts[currentChatId]?.messageId === msg.id"
                       type="button"
@@ -2545,6 +2582,14 @@ import {
   subscribeLockState,
   withDocumentWriteLock
 } from '../services/documentWriteLock.js'
+import {
+  loadToolPermissionMode,
+  saveToolPermissionMode,
+  loadDialogAutoContinueSeconds,
+  saveDialogAutoContinueSeconds,
+  TOOL_PERMISSION_MODE_META,
+  isToolPermissionMode
+} from '../services/toolPermission.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
@@ -4126,6 +4171,8 @@ export default {
       mcpUrlCopyHint: '',
       showMcpGuideDialog: false,
       mcpEnabled: true,
+      // 工具权限档位：confirm(默认)/auto/full（src/services/toolPermission.js）
+      toolPermissionMode: 'confirm',
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
@@ -4739,6 +4786,11 @@ export default {
       this.mcpEnabled = loadMcpEnabled()
     } catch {
       this.mcpEnabled = true
+    }
+    try {
+      this.toolPermissionMode = loadToolPermissionMode()
+    } catch {
+      this.toolPermissionMode = 'confirm'
     }
     this.reloadMcpServerList()
     if (this.mcpEnabled) {
@@ -5721,6 +5773,17 @@ export default {
         .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpTodos) && m.mcpTodos.length)
         .pop()
       const previousTodos = prevTodosMsg ? prevTodosMsg.mcpTodos : []
+      // 本回合「该工具全部允许」集合：确认卡上勾选后，同回合同名工具免再问
+      // （Claude Code don't-ask-again 的会话内版本；回合结束随上下文一起废弃）
+      const turnAllowedTools = new Set()
+      // 结束本回合时清掉可能残留的写确认卡（拒绝/批准/中止都会走到这里）
+      const clearPendingMcpConfirm = () => {
+        if (assistantMsg.pendingMcpToolConfirm) {
+          const pending = assistantMsg.pendingMcpToolConfirm
+          assistantMsg.pendingMcpToolConfirm = null
+          try { pending?.reject?.() } catch { /* 已结算则忽略 */ }
+        }
+      }
 
       try {
         const result = await runMcpChatOrchestrator({
@@ -5731,6 +5794,18 @@ export default {
           historyMessages,
           previousTodos,
           signal: ctrl?.signal,
+          confirmHandler: ({ serverId, toolName, namespacedName, args, meta, signal }) =>
+            this.requestMcpWriteConfirm({
+              assistantMsg,
+              turnChatId,
+              turnAllowedTools,
+              serverId,
+              toolName,
+              namespacedName,
+              args,
+              meta,
+              signal
+            }),
           onProgress: (step, steps) => {
             assistantMsg.mcpSteps = steps.slice()
             const realPercent = Number(step?.progress)
@@ -5771,6 +5846,7 @@ export default {
             if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
+            clearPendingMcpConfirm()
             this.isStreaming = false
             this.clearMcpTurnCtx(turnChatId)
             this.saveHistory()
@@ -5785,6 +5861,7 @@ export default {
             this.mcpSoftBanner = 'WPS 桥接未连接：请重启 WPS 让察元加载项重新注册'
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
+            clearPendingMcpConfirm()
             this.isStreaming = false
             this.clearMcpTurnCtx(turnChatId)
             this.saveHistory()
@@ -5815,6 +5892,7 @@ export default {
         if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
+        clearPendingMcpConfirm()
         this.isStreaming = false
         this.clearMcpTurnCtx(turnChatId)
         this.saveHistory()
@@ -5822,6 +5900,7 @@ export default {
         return { handled: true }
       } catch (e) {
         this.isStreaming = false
+        clearPendingMcpConfirm()
         this.clearMcpTurnCtx(turnChatId)
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
           this.stopAssistantLoadingProgress(assistantMsg)
@@ -5840,6 +5919,69 @@ export default {
         assistantMsg.content = ''
         this.mcpSoftBanner = '文档智能体执行失败，将尝试内置助手链路'
         return { handled: false, fallback: true, reason: e?.message || 'mcp_error' }
+      }
+    },
+    /**
+     * MCP 车道写操作确认（PR2/PR4 确认链）。
+     * - auto/full 档：直接批准（confirmed 由本权限层注入，模型说了不算）
+     * - confirm 档：在助手消息上挂通用写确认卡（工具名+参数摘要），用户批准才放行；
+     *   与回合 AbortSignal 竞速——点停止键 = 自动拒绝（resolve false），
+     *   拒绝经 skill 回灌 USER_REJECTED 让模型自行收尾，不做整回合硬终止。
+     * 「本轮该工具全允许」写入回合级 Set，同回合同名工具免再问。
+     */
+    requestMcpWriteConfirm({
+      assistantMsg,
+      turnChatId,
+      turnAllowedTools,
+      serverId,
+      toolName,
+      namespacedName,
+      args,
+      meta,
+      signal
+    }) {
+      const mode = this.toolPermissionMode
+      if (mode === 'auto' || mode === 'full') return Promise.resolve(true)
+      if (turnAllowedTools && turnAllowedTools.has(namespacedName)) return Promise.resolve(true)
+      return new Promise((resolve) => {
+        let settled = false
+        const finish = (approved) => {
+          if (settled) return
+          settled = true
+          signal?.removeEventListener?.('abort', onAbort)
+          const pending = assistantMsg.pendingMcpToolConfirm
+          if (pending && pending.namespacedName === namespacedName) {
+            assistantMsg.pendingMcpToolConfirm = null
+          }
+          this.saveHistory()
+          resolve(approved)
+        }
+        const onAbort = () => finish(false)
+        signal?.addEventListener?.('abort', onAbort, { once: true })
+        assistantMsg.pendingMcpToolConfirm = {
+          namespacedName,
+          serverId,
+          toolName,
+          argsPreview: this.buildMcpToolArgsPreview(args),
+          hasDryRun: args?.dryRun === true,
+          mode,
+          approve: () => finish(true),
+          reject: () => finish(false),
+          allowAllThisTurn: () => {
+            if (turnAllowedTools) turnAllowedTools.add(namespacedName)
+            finish(true)
+          }
+        }
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
+      })
+    },
+    buildMcpToolArgsPreview(args) {
+      try {
+        const text = JSON.stringify(args, null, 2) || ''
+        return text.length > 1200 ? `${text.slice(0, 1200)}\n…(截断)` : text
+      } catch {
+        return String(args ?? '')
       }
     },
     async applyMcpProofreadOutcome(msg, mode) {
@@ -19401,6 +19543,25 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.mcp-write-confirm-card {
+  margin-top: 8px;
+  border: 1px solid rgba(196, 124, 20, 0.28);
+  background: rgba(196, 124, 20, 0.05);
+}
+.mcp-write-confirm-args {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #445;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .mcp-steps-list {
   margin-top: 8px;
