@@ -396,7 +396,8 @@ console.log('ALL SCENARIOS PASSED')
 
 const tmp = await mkdtemp(join(tmpdir(), 'agent-loop-smoke-'))
 const runner = join(tmp, 'runner.mjs')
-await writeFile(runner, runnerSource.replace('./ORCH_IMPORT', join(REPO, 'src/services/mcpBridge/mcpChatOrchestrator.js')))
+// Windows 反斜杠路径拼进模板字符串会被当转义序列吃掉（D:\code → D:code），统一改写为正斜杠
+await writeFile(runner, runnerSource.replace('./ORCH_IMPORT', join(REPO, 'src/services/mcpBridge/mcpChatOrchestrator.js').replace(/\\/g, '/')))
 
 try {
   await build({

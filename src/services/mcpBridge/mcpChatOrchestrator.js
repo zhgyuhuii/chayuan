@@ -17,7 +17,6 @@ import {
 import {
   callLocalTool,
   healthz,
-  initializeLocal,
   listLocalTools,
   listUpstreamTools,
   syncUpstreamAllowlist
@@ -29,6 +28,31 @@ import { createMcpDocumentSkill, normalizeTodoList } from './agentCoreSkill.js'
 // 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
 // 走 proofread_run 单次调用，根本用不到这么多轮。
 const MAX_ROUNDS = 16
+
+// 回合启动提速：工具清单短 TTL 缓存。此前每回合都要 initialize + tools/list（本机
+// 两个串行 HTTP 往返，上游 MCP 每个还要白名单同步 + 拉取，动辄数百 ms 起）——连续
+// 对话时这些延迟全部叠加在首字之前。缓存 60s 内直接复用；白名单/启用状态变化最迟
+// 60s 后生效，对工具目录这种准静态数据是可接受的窗口。
+const TOOLS_CACHE_TTL_MS = 60_000
+let localToolsCache = { at: 0, tools: null }
+const upstreamToolsCache = new Map() // serverId → { at, tools }
+
+async function listLocalToolsCached({ signal } = {}) {
+  if (!localToolsCache.tools || Date.now() - localToolsCache.at > TOOLS_CACHE_TTL_MS) {
+    const tools = await listLocalTools({ signal })
+    localToolsCache = { at: Date.now(), tools }
+  }
+  return localToolsCache.tools
+}
+
+function listUpstreamToolsCached(serverId, { signal } = {}) {
+  const hit = upstreamToolsCache.get(serverId)
+  if (hit?.tools && Date.now() - hit.at <= TOOLS_CACHE_TTL_MS) return Promise.resolve(hit.tools)
+  return listUpstreamTools(serverId, { signal }).then((tools) => {
+    upstreamToolsCache.set(serverId, { at: Date.now(), tools })
+    return tools
+  })
+}
 
 // 模型对 tools 参数报错的特征（与旧编排器同一正则；命中后整轮重跑 JSON 兼容协议）
 const TOOLS_UNSUPPORTED_RE = /tool|tools|function call|不支持/i
@@ -211,36 +235,53 @@ export async function runMcpChatOrchestrator({
   const mergedTools = []
   const usedServers = []
 
+  // 回合启动握手并行化：本机 tools/list、上游白名单同步 + 各上游 tools/list 三路
+  // 同时发起（此前严格串行——上游一多，每个都要等前一个完成才开跑）。步骤日志在
+  // 全部落定后按 enabled 原顺序补齐，保持 UI 步骤顺序稳定。
+  const localServer = enabled.find(s => s.id === CHAYUAN_SERVER_ID)
+  const upstreamServers = enabled.filter(s => s.id !== CHAYUAN_SERVER_ID)
+  const [localResult, upstreamResults] = await Promise.all([
+    localServer
+      ? listLocalToolsCached({ signal }).then(tools => ({ tools }), error => ({ error }))
+      : Promise.resolve(null),
+    upstreamServers.length
+      ? syncUpstreamAllowlist({ signal })
+        .then(() => Promise.all(upstreamServers.map(s =>
+          listUpstreamToolsCached(s.id, { signal }).then(
+            tools => ({ server: s, tools }),
+            error => ({ server: s, error })
+          )
+        )))
+        .catch(error => upstreamServers.map(s => ({ server: s, error })))
+      : Promise.resolve([])
+  ])
+  const perServerTools = new Map()
+  if (localServer) {
+    perServerTools.set(CHAYUAN_SERVER_ID, localResult.error ? { error: localResult.error } : { tools: localResult.tools })
+  }
+  for (const r of upstreamResults) {
+    perServerTools.set(r.server.id, r.error ? { error: r.error } : { tools: r.tools })
+  }
   for (const server of enabled) {
-    try {
-      if (server.id === CHAYUAN_SERVER_ID) {
-        await initializeLocal({ signal })
-        const tools = await listLocalTools({ signal })
-        for (const t of tools) {
-          if (!isChayuanToolAllowed(t.name)) continue
-          mergedTools.push({
-            name: namespaceToolName(CHAYUAN_SERVER_ID, t.name),
-            description: `[${server.name}] ${t.description || t.name}`,
-            inputSchema: t.inputSchema || { type: 'object', properties: {} }
-          })
-        }
-        usedServers.push(CHAYUAN_SERVER_ID)
-        pushStep('已连接察元 MCP', `${tools.length} 个工具（白名单后 ${mergedTools.filter(x => x.name.startsWith(`${CHAYUAN_SERVER_ID}__`)).length}）`)
-      } else {
-        await syncUpstreamAllowlist({ signal })
-        const tools = await listUpstreamTools(server.id, { signal })
-        for (const t of tools) {
-          mergedTools.push({
-            name: namespaceToolName(server.id, t.name),
-            description: `[${server.name}] ${t.description || t.name}`,
-            inputSchema: t.inputSchema || { type: 'object', properties: {} }
-          })
-        }
-        usedServers.push(server.id)
-        pushStep(`已连接 ${server.name}`, `${tools.length} 个工具`)
-      }
-    } catch (e) {
-      pushStep(`跳过 ${server.name || server.id}`, e.message || String(e))
+    const r = perServerTools.get(server.id)
+    if (!r) continue
+    if (r.error) {
+      pushStep(`跳过 ${server.name || server.id}`, r.error.message || String(r.error))
+      continue
+    }
+    for (const t of r.tools) {
+      if (server.id === CHAYUAN_SERVER_ID && !isChayuanToolAllowed(t.name)) continue
+      mergedTools.push({
+        name: namespaceToolName(server.id, t.name),
+        description: `[${server.name}] ${t.description || t.name}`,
+        inputSchema: t.inputSchema || { type: 'object', properties: {} }
+      })
+    }
+    usedServers.push(server.id)
+    if (server.id === CHAYUAN_SERVER_ID) {
+      pushStep('已连接察元 MCP', `${r.tools.length} 个工具（白名单后 ${mergedTools.filter(x => x.name.startsWith(`${CHAYUAN_SERVER_ID}__`)).length}）`)
+    } else {
+      pushStep(`已连接 ${server.name}`, `${r.tools.length} 个工具`)
     }
   }
 

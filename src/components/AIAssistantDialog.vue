@@ -379,6 +379,43 @@
       />
       <!-- 消息区域 -->
       <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
+        <!-- 执行中的任务清单漂浮卡：回合进行中常驻右上角、可折叠/展开；回合结束自动隐藏 -->
+        <div v-if="mcpTodoFloat" class="mcp-todo-float-anchor">
+          <div class="mcp-todo-float">
+            <button
+              type="button"
+              class="mcp-todo-float-head"
+              :title="mcpTodoFloatCollapsed ? '展开任务清单' : '收起任务清单'"
+              @click="mcpTodoFloatCollapsed = !mcpTodoFloatCollapsed"
+            >
+              <span class="mcp-todo-float-spinner" aria-hidden="true"></span>
+              <span class="mcp-todo-float-title">任务清单</span>
+              <span v-if="mcpTodoFloatTodos.length" class="mcp-todo-float-progress">{{ getMcpTodoDoneCount(mcpTodoFloat) }}/{{ mcpTodoFloatTodos.length }}</span>
+              <span v-else class="mcp-todo-float-progress is-planning">规划中</span>
+              <span class="mcp-todo-float-arrow" aria-hidden="true">{{ mcpTodoFloatCollapsed ? '▾' : '▴' }}</span>
+            </button>
+            <div v-if="!mcpTodoFloatCollapsed" class="mcp-todo-float-body">
+              <div v-if="!mcpTodoFloatTodos.length" class="mcp-todo-item is-placeholder">
+                <span class="mcp-todo-spinner" aria-hidden="true"></span>
+                <span class="mcp-todo-content">正在规划任务清单…</span>
+              </div>
+              <div
+                v-for="(todo, todoIdx) in mcpTodoFloatTodos"
+                :key="`mcp-todo-float-${mcpTodoFloat.id}-${todoIdx}`"
+                class="mcp-todo-item"
+                :class="`is-${todo.status}`"
+              >
+                <span
+                  v-if="todo.status === 'in_progress'"
+                  class="mcp-todo-spinner"
+                  aria-hidden="true"
+                ></span>
+                <span v-else class="mcp-todo-icon">{{ todo.status === 'completed' ? '✓' : '○' }}</span>
+                <span class="mcp-todo-content">{{ todo.content }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- 文档写锁排队横幅:多会话并行写同一文档时,等待中的写回在此可见、可取消 -->
         <div v-if="docWriteLockState.queue.length" class="doc-write-wait-banner" role="status">
           <span class="doc-write-wait-spinner" aria-hidden="true"></span>
@@ -4228,6 +4265,8 @@ export default {
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
       activeMcpTurnContexts: {},
+      // 任务清单漂浮卡的用户折叠状态（新回合开始时重置为展开）
+      mcpTodoFloatCollapsed: false,
       mcpDropdownOpen: false,
       mcpServerList: [],
       sidebarWidth: 300,
@@ -4579,6 +4618,23 @@ export default {
     },
     currentMessageCount() {
       return this.currentMessages.length
+    },
+    /**
+     * 执行中的任务清单漂浮卡数据源：当前会话有进行中的 MCP 回合即返回该回合的
+     * 助手消息——清单尚未产出时模板渲染「规划中」占位态，保证回合一开始卡片就
+     * 出现在右上角，而不是等模型第一轮 todo_write 之后。回合结束
+     * （clearMcpTurnCtx）后 ctx 消失，漂浮卡自动隐藏；清单本体仍留在消息流里。
+     */
+    mcpTodoFloat() {
+      const ctx = this.activeMcpTurnContexts?.[this.currentChatId]
+      const messageId = ctx?.messageId
+      if (!messageId) return null
+      const msg = (this.currentMessages || []).find(m => m && m.id === messageId)
+      if (!msg) return null
+      return msg
+    },
+    mcpTodoFloatTodos() {
+      return Array.isArray(this.mcpTodoFloat?.mcpTodos) ? this.mcpTodoFloat.mcpTodos : []
     },
     sidebarStyle() {
       return {
@@ -5821,6 +5877,8 @@ export default {
       // 手动编辑后另一会话发消息,本回合的写仍会被拦下要求重读。
       const writeBaselineToken = `mcp-turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       setWriteBaseline(undefined, undefined, writeBaselineToken)
+      // 新回合任务清单漂浮卡默认展开（用户上一回合的折叠选择不延续）
+      this.mcpTodoFloatCollapsed = false
       this.isStreaming = true
       assistantMsg.lane = 'mcp'
       assistantMsg.primaryRoute = {
@@ -6118,9 +6176,12 @@ export default {
       if (!card || card.applied || card.applying) return
       card.applying = true
       this.saveHistory()
-      try {
-        // 校对写回属于自动写文档动作:纳入文档写锁排队,与其它会话/智能体的写回串行
-        const { promise } = withDocumentWriteLock({ label: mode === 'comments' ? 'proofread.comments' : 'proofread.fixes' }, async () => {
+      // 校对写回属于自动写文档动作:纳入文档写锁排队,与其它会话/智能体的写回串行。
+      // OCC 拦截（校对后文档又被改过）时提供一次显式确认重试：刷新基线=以当前文档
+      // 为参照重写；按原文定位的替换对已改动处自然不命中，不会强行覆盖新内容。
+      const runWrite = () => withDocumentWriteLock(
+        { label: mode === 'comments' ? 'proofread.comments' : 'proofread.fixes' },
+        async () => {
           if (mode === 'comments') {
             if (!card.taskId) throw new Error('缺少校对 taskId，请重新检查错别字')
             await applyProofreadComments(card.taskId, { maxComments: 40 })
@@ -6132,8 +6193,25 @@ export default {
             })
             msg.content = `${String(msg.content || '').trim()}\n\n已尝试直接改正正文（${out?.count || 0} 处替换）。`.trim()
           }
-        })
-        await promise
+        }
+      )
+      try {
+        try {
+          await runWrite().promise
+        } catch (e) {
+          if (e?.code !== 'DOCUMENT_MODIFIED_SINCE_BASELINE') throw e
+          const retry = await inAppConfirm(
+            '文档内容在本回合期间已被修改（可能为手动编辑或其它操作），直接写回可能错位。\n\n仍要基于当前校对结果写回吗？写回按原文定位：内容已变化的位置会自动跳过。',
+            { title: '校对写回确认', okText: '仍要写回', cancelText: '取消' }
+          )
+          if (!retry) {
+            card.applying = false
+            this.saveHistory()
+            return
+          }
+          setWriteBaseline()
+          await runWrite().promise
+        }
         card.applied = true
         card.applying = false
         this.saveHistory()
@@ -19896,6 +19974,81 @@ export default {
   to {
     transform: rotate(360deg);
   }
+}
+/* 执行中的任务清单漂浮卡：sticky 锚点高度为 0，不影响消息流布局；
+   卡片固定在消息区可视区右上角，随滚动保持可见。 */
+.mcp-todo-float-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.mcp-todo-float {
+  pointer-events: auto;
+  margin-top: 10px;
+  width: min(300px, 78%);
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border: 1px solid rgba(32, 100, 180, 0.16);
+  border-radius: 12px;
+  background: rgba(252, 253, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 40, 80, 0.16);
+  backdrop-filter: blur(6px);
+}
+.mcp-todo-float-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.mcp-todo-float-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: #20304a;
+}
+.mcp-todo-float-progress {
+  margin-left: auto;
+  font-size: 11px;
+  color: #1c5a9e;
+  font-variant-numeric: tabular-nums;
+}
+.mcp-todo-float-arrow {
+  flex: none;
+  font-size: 10px;
+  color: #8a92a6;
+}
+.mcp-todo-float-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(32, 100, 180, 0.25);
+  border-top-color: #1c5a9e;
+  border-radius: 50%;
+  animation: mcp-todo-spin 0.8s linear infinite;
+}
+.mcp-todo-float-body {
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(32, 100, 180, 0.14);
+}
+/* 清单未产出时的占位行：灰字弱化，提示「规划中」而非空白卡 */
+.mcp-todo-item.is-placeholder .mcp-todo-content {
+  color: #8a92a6;
+  font-size: 12px;
+}
+.mcp-todo-float-progress.is-planning {
+  color: #8a92a6;
 }
 .mcp-service-banner-copy:hover {
   background: #1d4ed8;
