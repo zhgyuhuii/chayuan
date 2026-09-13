@@ -154,9 +154,11 @@ export async function runMcpChatOrchestrator({
   historyMessages = [],
   previousTodos = [],
   writeBaselineToken = '',
+  loopHistory = [],
   signal,
   onProgress,
   onTodos,
+  onSnapshot,
   confirmHandler
 } = {}) {
   const steps = []
@@ -258,7 +260,37 @@ export async function runMcpChatOrchestrator({
   const pendingConfirms = []
   let proofreadCard = null
 
+  // 首次变更前快照（PR7）：loop 在第一个 mutating 工具执行前调用；页面直读
+  // WPS API 取全文，供消息卡「撤销本次修改」一键回滚。读不到文档返回 undefined。
+  const captureDocSnapshot = () => {
+    try {
+      const doc = window.Application?.ActiveDocument
+      if (!doc) return undefined
+      return {
+        docId: String(doc.FullName || doc.Name || ''),
+        text: String(doc.Content?.Text || ''),
+        at: Date.now()
+      }
+    } catch {
+      return undefined
+    }
+  }
+
+  // 跨回合上下文（PR7）：上回合序列化的 loop.messages 原样 restore——上一轮读过的
+  // 文档内容、工具结论全部保留，追问「刚才第二段改成什么了」可答；8 条种子窗口
+  // 降级为无 loopHistory 时的兜底。compaction 打开（预算收紧），超长自动摘要。
+  const restoreHistory = (loop) => {
+    if (Array.isArray(loopHistory) && loopHistory.length) {
+      try {
+        loop.restore(loopHistory)
+        return
+      } catch { /* 损坏历史回落种子窗口 */ }
+    }
+    if (seed.length) loop.restore(seed)
+  }
+
   // 跑一轮完整的 agent 循环。settle 为 { result }（onDone）或 { error: string }（onError）。
+  let loopRef = null
   const runLoop = (forceDegraded) => new Promise((resolve) => {
     let onAbort = null
     const settle = (value) => {
@@ -292,19 +324,23 @@ export async function runMcpChatOrchestrator({
       skill,
       events: {
         onToolStart: (call) => pushStep(`调用 ${call.name}`, JSON.stringify(call.input ?? {}).slice(0, 200)),
-        onToolExecuted: ({ call, execution }) => {
+        onToolExecuted: ({ call, execution, snapshotBefore }) => {
           const detail = execution.isError ? toolErrorDetail(execution.output) : String(execution.output || '')
           pushStep(`${execution.isError ? '失败' : '完成'} ${call.name}`, detail.slice(0, 160))
+          // 首个写操作的写前快照透出给 UI（撤销卡数据源）
+          if (snapshotBefore) onSnapshot?.(snapshotBefore)
         },
         onDone: (result) => settle({ result }),
         onError: (error) => settle({ error })
       },
       maxTurns: MAX_ROUNDS,
-      maxHistory: Infinity, // 单轮编排内不裁历史（与旧编排器一致；跨轮由调用方的 8 条滚动窗口控制）
-      compaction: false
+      maxHistory: Infinity, // 单轮编排内不裁历史；跨轮由 loopHistory restore + compaction 承接
+      compaction: { maxBytes: 128 * 1024, keepRecentBytes: 48 * 1024 },
+      captureSnapshot: captureDocSnapshot
     })
+    loopRef = loop
     if (forceDegraded) loop.degrade()
-    if (seed.length) loop.restore(seed)
+    restoreHistory(loop)
     onAbort = () => loop.cancel()
     if (signal && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
     loop.run(String(userText))
@@ -336,8 +372,30 @@ export async function runMcpChatOrchestrator({
     pendingConfirms,
     usedServers,
     proofreadIntent,
-    todos
+    todos,
+    // 跨回合上下文：本回合结束后 loop 内的完整历史（含工具结论），调用方按 chat
+    // 持久化，下回合经 loopHistory 参数 restore 回来
+    loopMessages: trimLoopHistoryForStorage(loopRef?.messages || [])
   }
+}
+
+/** 持久化裁剪：从尾部保留到 ~96KB；开头不允许是孤立的 tool 结果（协议配对要求） */
+function trimLoopHistoryForStorage(messages, maxBytes = 96 * 1024) {
+  if (!Array.isArray(messages) || !messages.length) return []
+  let total = 0
+  let cut = messages.length
+  for (let i = messages.length - 1; i >= 0; i--) {
+    let size = 0
+    try { size = JSON.stringify(messages[i]).length } catch { size = 4096 }
+    if (total + size > maxBytes) {
+      cut = i + 1
+      break
+    }
+    total += size
+  }
+  let kept = messages.slice(cut)
+  while (kept.length && kept[0]?.role === 'tool') kept = kept.slice(1)
+  return JSON.parse(JSON.stringify(kept))
 }
 
 export async function applyProofreadComments(taskId, { maxComments = 30, signal } = {}) {

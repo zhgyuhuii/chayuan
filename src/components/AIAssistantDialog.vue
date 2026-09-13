@@ -839,6 +839,26 @@
                     </div>
                   </div>
                   <div
+                    v-if="msg.role === 'assistant' && msg.mcpSnapshot && !msg.mcpSnapshot.undone"
+                    class="mcp-proofread-card mcp-snapshot-card"
+                  >
+                    <div class="mcp-proofread-card-title">一键撤销</div>
+                    <p class="mcp-proofread-card-summary">
+                      本轮修改前已创建文档快照，如对结果不满意可整体撤销回写前状态。
+                    </p>
+                    <div class="mcp-proofread-card-actions">
+                      <button
+                        type="button"
+                        class="message-error-action-btn"
+                        :disabled="msg.mcpSnapshot.restoring || activeChatStreaming"
+                        @click.stop="undoMcpSnapshot(msg)"
+                      >
+                        {{ msg.mcpSnapshot.restoring ? '撤销中...' : '撤销本次修改' }}
+                      </button>
+                    </div>
+                    <div v-if="msg.mcpSnapshot.message" class="mcp-snapshot-note">{{ msg.mcpSnapshot.message }}</div>
+                  </div>
+                  <div
                     v-if="msg.role === 'assistant' && Array.isArray(msg.mcpTodos) && msg.mcpTodos.length"
                     class="mcp-todo-card"
                   >
@@ -5823,6 +5843,12 @@ export default {
         .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpTodos) && m.mcpTodos.length)
         .pop()
       const previousTodos = prevTodosMsg ? prevTodosMsg.mcpTodos : []
+      // 跨回合上下文（PR7）：最近一条带 mcpLoopHistory 的助手消息 → 本回合 restore，
+      // 上一轮读过的文档内容与工具结论全部保留（8 条种子窗口降级为兜底）
+      const prevLoopMsg = (this.currentMessages || [])
+        .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpLoopHistory) && m.mcpLoopHistory.length)
+        .pop()
+      const previousLoopHistory = prevLoopMsg ? prevLoopMsg.mcpLoopHistory : []
       // 本回合「该工具全部允许」集合：确认卡上勾选后，同回合同名工具免再问
       // （Claude Code don't-ask-again 的会话内版本；回合结束随上下文一起废弃）
       const turnAllowedTools = new Set()
@@ -5844,6 +5870,7 @@ export default {
           historyMessages,
           previousTodos,
           writeBaselineToken,
+          loopHistory: previousLoopHistory,
           signal: ctrl?.signal,
           confirmHandler: ({ serverId, toolName, namespacedName, args, meta, signal }) =>
             this.requestMcpWriteConfirm({
@@ -5881,6 +5908,10 @@ export default {
           },
           onTodos: (todos) => {
             assistantMsg.mcpTodos = Array.isArray(todos) ? todos.slice() : []
+          },
+          onSnapshot: (snapshot) => {
+            // 首次变更前快照：撤销卡数据源（自动执行档的安全网，各档通用）
+            if (snapshot && snapshot.text) assistantMsg.mcpSnapshot = snapshot
           }
         })
 
@@ -5938,6 +5969,15 @@ export default {
             applied: false,
             applying: false
           }
+        }
+        if (Array.isArray(result.loopMessages) && result.loopMessages.length) {
+          // 只保留最新一条消息上的 loop 历史：跨回合链只需最新快照点
+          for (const m of (this.currentMessages || [])) {
+            if (m && m.id !== assistantMsg?.id && Array.isArray(m.mcpLoopHistory)) {
+              m.mcpLoopHistory = []
+            }
+          }
+          assistantMsg.mcpLoopHistory = result.loopMessages
         }
         assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
         if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
@@ -6103,6 +6143,46 @@ export default {
         this.activeGeneratedOutputRunContext
       )
       if (!anyTurn && !anyDocTask) this.isStreaming = false
+    },
+    /**
+     * 撤销本回合文档修改（PR7）：用首次变更前快照整体回写。
+     * 走文档写锁串行；回滚用独立基线 token（回滚本身就是一次合法的全量写，
+     * 不应被本回合或其它回合的旧基线拦截）。快照与活动文档不一致时拒绝，防跨文档误写。
+     */
+    async undoMcpSnapshot(msg) {
+      const snap = msg?.mcpSnapshot
+      if (!snap || snap.undone || snap.restoring) return
+      if (!String(snap.text || '')) {
+        snap.message = '快照为空，无法撤销。'
+        return
+      }
+      snap.restoring = true
+      snap.message = ''
+      this.saveHistory()
+      const undoToken = `undo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      try {
+        const { promise } = withDocumentWriteLock({ label: 'mcp.snapshot-undo', baselineToken: undoToken }, async () => {
+          const doc = window.Application?.ActiveDocument
+          if (!doc) throw new Error('当前没有活动文档，无法撤销。')
+          const nowId = String(doc.FullName || doc.Name || '')
+          if (snap.docId && nowId && snap.docId !== nowId) {
+            throw new Error('活动文档已切换（快照属于另一篇文档），为避免误写已取消撤销。')
+          }
+          // 全量回写快照全文（与既有备份→替换链路同型）；undoToken 无基线记录，
+          // OCC 校验放行，写后回滚各槽基线到回写后的状态
+          doc.Content.Text = String(snap.text)
+        })
+        await promise
+        snap.undone = true
+        snap.restoring = false
+        snap.message = '已撤销：文档已恢复到本回合修改前的状态。'
+        msg.content = `${String(msg.content || '').trim()}\n\n（已撤销本次修改）`.trim()
+        this.refreshSelectionContext?.()
+      } catch (e) {
+        snap.restoring = false
+        snap.message = e?.message || '撤销失败。'
+      }
+      this.saveHistory()
     },
     stopActiveMcpTurn(chatId = this.currentChatId) {
       const ctx = this.activeMcpTurnContexts?.[chatId]
@@ -19698,6 +19778,16 @@ export default {
 .mcp-dropdown-seconds-unit {
   font-size: 11px;
   color: #667;
+}
+.mcp-snapshot-card {
+  border: 1px solid rgba(32, 100, 180, 0.18);
+  background: rgba(32, 100, 180, 0.04);
+}
+.mcp-snapshot-note {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #667;
+  line-height: 1.4;
 }
 .mcp-write-confirm-card {
   margin-top: 8px;

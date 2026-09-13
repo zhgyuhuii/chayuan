@@ -193,6 +193,20 @@ export function createMcpDocumentSkill({
 } = {}) {
   const toolMetaByName = new Map()
   for (const t of mergedTools || []) toolMetaByName.set(t.name, t)
+  // 本回合成功落笔的写操作数（按 ops 条目计），供 verifyResponse 与末轮声称核对
+  let executedWriteOps = 0
+  const countWriteOps = (toolName, args, result) => {
+    if (result?.isError) return 0
+    if (toolName === 'document_apply_ops') {
+      return Math.max(1, Number(args?.ops?.length || 1))
+    }
+    if (toolName === 'proofread_apply_comments') {
+      const sc = result?.structuredContent || result
+      const applied = Number(sc?.applied ?? sc?.count ?? 0)
+      return applied > 0 ? applied : 1
+    }
+    return 1
+  }
   return {
     id: 'chayuan-mcp-doc',
     systemPrompt,
@@ -206,6 +220,28 @@ export function createMcpDocumentSkill({
     ],
     buildContext: () => '',
     degradedFallback: () => ({ systemSuffix: DEGRADED_SYSTEM_SUFFIX }),
+    /**
+     * 声称核对（loop 预留钩子，PR7 接通）：末轮文本声明「已替换/改正/删除 N 处」
+     * 而实际成功写操作数不足时，强制追加一轮纠偏——谎报被拦，模型要么补齐操作
+     * 要么修正总结。只对明确数量声明生效（正则限界），避免误伤泛泛表述。
+     */
+    verifyResponse(finalText, executed) {
+      const text = String(finalText || '')
+      const claimed = []
+      const RE = /已[^。；;\n]{0,10}?(\d+)\s*(?:处|条|个|段|次|项)/g
+      let m
+      while ((m = RE.exec(text)) !== null) {
+        const n = Number(m[1])
+        if (Number.isFinite(n) && n > 0) claimed.push(n)
+      }
+      if (!claimed.length) return null
+      const claimedMax = Math.max(...claimed)
+      if (claimedMax <= executedWriteOps) return null
+      return [
+        `你的总结声称完成了约 ${claimedMax} 处修改，但本轮工具实际成功落笔的写操作数为 ${executedWriteOps}。`,
+        '请核对实际执行结果：若有操作未执行或失败，请重新调用相应工具补齐；若确实无需修改，请修正总结中的数量表述，不要虚报。'
+      ].join('')
+    },
     async executeTool(call, signal) {
       if (call?.name === TODO_WRITE_TOOL.name) {
         const todos = normalizeTodoList(call?.input?.todos)
@@ -281,11 +317,13 @@ export function createMcpDocumentSkill({
         const card = extractProofreadCard(toolName, args, result)
         if (card) onProofreadCard?.(card)
         const output = summarizeToolResult(result)
+        const mutated = !result?.isError && isWriteTool(serverId, toolName)
+        if (mutated) executedWriteOps += countWriteOps(toolName, args, result)
         return {
           output,
           summary: output.slice(0, 120) || nsName,
           // 写工具成功落笔才视为变更：退避守卫据此豁免「重复相同写操作」的熔断
-          mutated: !result?.isError && isWriteTool(serverId, toolName)
+          mutated
         }
       } catch (e) {
         return {
