@@ -17,6 +17,10 @@ vite.config.js.timestamp-*
 mcp-sidecar/bin/
 mcp-sidecar/build/
 
+# MCP sidecar runtime state (每次运行自动重新生成，勿提交)
+mcp-sidecar/last-*.json
+mcp-sidecar/data/domain-index.json
+
 # Local / secrets
 .env
 .env.*
