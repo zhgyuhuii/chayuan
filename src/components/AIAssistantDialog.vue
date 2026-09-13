@@ -7814,8 +7814,10 @@ export default {
         .map(chat => ({
         ...chat,
         messages: Array.isArray(chat?.messages)
+          // 序列化前剔除渲染缓存字段与回合内临时确认卡（pendingMcpToolConfirm 持
+          // 回调函数，JSON 序列化丢弃后重载只剩死卡片），避免污染持久化
           // eslint-disable-next-line no-unused-vars
-          ? chat.messages.map(({ _renderedHtml, _renderedContent, ...m }) => m)
+          ? chat.messages.map(({ _renderedHtml, _renderedContent, pendingMcpToolConfirm, ...m }) => m)
           : chat?.messages
       }))
       return {
