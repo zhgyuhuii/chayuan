@@ -272,6 +272,56 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S8 Agent 离线快速失败')
 }
 
+// 场景 9：模型自带 confirmed:true 也不能绕过确认闸门（PR1 防旁路铁律）
+{
+  const m = baseMock()
+  m.chatScript = [
+    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: '永鹅', newText: '咏鹅', confirmed: true })] },
+    { content: '需要用户确认。' }
+  ]
+  const r = await run({})
+  A(r.ok === true, 'S9 ok')
+  A(m.localCalls.length === 0, 'S9 write tool NOT executed despite model-supplied confirmed:true')
+  A(r.pendingConfirms.length === 1 && r.pendingConfirms[0].toolName === 'document_replace', 'S9 pendingConfirms collected')
+  const toolMsg = m.requests[1].messages.find(x => x.role === 'tool' && x.tool_call_id === 'c1')
+  A(toolMsg && toolMsg.content.includes('CONFIRM_REQUIRED'), 'S9 CONFIRM_REQUIRED fed back')
+  console.log('✓ S9 confirmed:true 入参被剥除，无确认不执行')
+}
+
+// 场景 10：confirmHandler 批准 → 权限层注入 confirmed:true 后执行
+{
+  const m = baseMock()
+  m.chatScript = [
+    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b', confirmed: true })] },
+    { content: '已替换。' }
+  ]
+  const seen = []
+  const r = await run({
+    confirmHandler: async (info) => { seen.push(info.namespacedName); return true }
+  })
+  A(r.ok === true, 'S10 ok')
+  A(seen.length === 1 && seen[0] === 'chayuan__document_replace', 'S10 confirmHandler consulted')
+  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_replace', 'S10 executed after approval')
+  A(m.localCalls[0].args.confirmed === true, 'S10 confirmed injected by permission layer')
+  console.log('✓ S10 confirmHandler 批准后注入 confirmed 执行')
+}
+
+// 场景 11：confirmHandler 拒绝 → USER_REJECTED 回灌模型收尾（非硬终止）
+{
+  const m = baseMock()
+  m.chatScript = [
+    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b' })] },
+    { content: '用户已拒绝，本轮不再修改文档。' }
+  ]
+  const r = await run({ confirmHandler: async () => false })
+  A(r.ok === true, 'S11 ok')
+  A(m.localCalls.length === 0, 'S11 write tool NOT executed after rejection')
+  const toolMsg = m.requests[1].messages.find(x => x.role === 'tool' && x.tool_call_id === 'c1')
+  A(toolMsg && toolMsg.content.includes('USER_REJECTED'), 'S11 USER_REJECTED fed back')
+  A(r.content.includes('用户已拒绝'), 'S11 model wraps up by itself')
+  console.log('✓ S11 拒绝回灌 USER_REJECTED 模型自行收尾')
+}
+
 console.log('ALL SCENARIOS PASSED')
 `
 

@@ -63,20 +63,30 @@ function normalizeTodoList(raw) {
   return out
 }
 
+// 上游工具只读启发式：绝大多数 MCP 服务器不设置 annotations.readOnlyHint，
+// 若只认注解则常规上游的读工具也一律 CONFIRM_REQUIRED（永远走不通）。
+// 注解优先；缺注解时按名字前缀判定读类工具。
+const UPSTREAM_READONLY_NAME_RE = /^(read|get|list|search|query|find|fetch|describe|health|status|ping)/i
+
+function isUpstreamToolReadOnly(toolName, toolMeta) {
+  const hint = toolMeta?.annotations?.readOnlyHint
+  if (hint === true) return true
+  if (hint === false) return false
+  return UPSTREAM_READONLY_NAME_RE.test(String(toolName || ''))
+}
+
+/**
+ * 写/敏感操作确认闸门。铁律：args.confirmed 在 executeTool 入口已被剥除，
+ * 模型入参携带的 confirmed 不参与本判定——是否 confirmed 完全由前端权限层
+ * （confirmHandler 批准后注入）决定，模型永远绕不过。
+ */
 function toolNeedsConfirm(serverId, toolName, toolMeta, args) {
   if (serverId === CHAYUAN_SERVER_ID) {
     if (toolName === 'proofread_apply_comments') return true
-    if (isWriteTool(serverId, toolName) && args?.confirmed !== true && args?.dryRun !== true) {
-      // allow dryRun / preview paths through; confirmed writes blocked for UI confirm
-      if (args && Object.prototype.hasOwnProperty.call(args, 'confirmed') && args.confirmed !== true) {
-        return true
-      }
-      if (WRITE_TOOL_RE.test(toolName)) return true
-    }
-    return false
+    // dryRun 预览直通；写操作一律需确认
+    return isWriteTool(serverId, toolName) && args?.dryRun !== true
   }
-  if (toolMeta?.annotations?.readOnlyHint === true) return false
-  return true
+  return !isUpstreamToolReadOnly(toolName, toolMeta)
 }
 
 function summarizeToolResult(result) {
@@ -209,6 +219,10 @@ export function createMcpDocumentSkill({
       const args = call.input && typeof call.input === 'object' && !Array.isArray(call.input)
         ? { ...call.input }
         : {}
+      // 铁律：confirmed 只能由前端权限层注入。模型入参里的 confirmed 一律剥除——
+      // sidecar 工具示例会教模型带 confirmed:true（外部智能体的 preview→commit
+      // 协议），不剥除则确认闸门可被入参直接绕过（H1）。
+      delete args.confirmed
 
       if (toolNeedsConfirm(serverId, toolName, meta, args)) {
         if (typeof confirmHandler === 'function') {
@@ -217,7 +231,8 @@ export function createMcpDocumentSkill({
             toolName,
             namespacedName: nsName,
             args,
-            meta
+            meta,
+            signal
           })
           if (!approved) {
             return {
@@ -276,4 +291,4 @@ export function createMcpDocumentSkill({
 }
 
 // 供编排器/冒烟测试复用的领域谓词与抽取器
-export { isWriteTool, toolNeedsConfirm, extractProofreadCard, summarizeToolResult, normalizeTodoList }
+export { isWriteTool, toolNeedsConfirm, isUpstreamToolReadOnly, extractProofreadCard, summarizeToolResult, normalizeTodoList }
