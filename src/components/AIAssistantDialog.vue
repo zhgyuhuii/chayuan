@@ -795,7 +795,7 @@
                     <button
                       type="button"
                       class="message-error-action-btn primary"
-                      :disabled="isStreaming"
+                      :disabled="activeChatStreaming"
                       @click.stop="handleAssistantErrorPrimaryAction(msg)"
                     >
                       {{ getAssistantErrorPrimaryActionLabel(msg) }}
@@ -803,7 +803,7 @@
                     <button
                       type="button"
                       class="message-error-action-btn"
-                      :disabled="isStreaming && shouldRetryAssistantError(msg)"
+                      :disabled="activeChatStreaming && shouldRetryAssistantError(msg)"
                       @click.stop="handleAssistantErrorSecondaryAction(msg)"
                     >
                       {{ getAssistantErrorSecondaryActionLabel(msg) }}
@@ -822,7 +822,7 @@
                         type="button"
                         class="message-error-action-btn"
                         :class="{ primary: msg.mcpProofreadCard.intent !== 'fix' }"
-                        :disabled="isStreaming || msg.mcpProofreadCard.applying"
+                        :disabled="activeChatStreaming || msg.mcpProofreadCard.applying"
                         @click.stop="applyMcpProofreadOutcome(msg, 'comments')"
                       >
                         写成批注
@@ -831,7 +831,7 @@
                         type="button"
                         class="message-error-action-btn"
                         :class="{ primary: msg.mcpProofreadCard.intent === 'fix' }"
-                        :disabled="isStreaming || msg.mcpProofreadCard.applying"
+                        :disabled="activeChatStreaming || msg.mcpProofreadCard.applying"
                         @click.stop="applyMcpProofreadOutcome(msg, 'fix')"
                       >
                         直接改正正文
@@ -4463,6 +4463,12 @@ export default {
       const chatId = this.currentChatId
       return !!(this.activeMcpTurnContexts?.[chatId] || this.activeLegacyTurnContexts?.[chatId])
     },
+    anyChatTurnRunning() {
+      // 任意会话是否有回合在跑（数据源=回合上下文映射，不受 isStreaming 误清影响）
+      const a = this.activeMcpTurnContexts || {}
+      const b = this.activeLegacyTurnContexts || {}
+      return Object.keys(a).length > 0 || Object.keys(b).length > 0
+    },
     activeChatStreaming() {
       // 当前会话是否处于可视的流式/等待态：回合上下文优先；
       // 文档类长任务无会话级上下文，用全局 isStreaming + 当前会话末条加载态兜底
@@ -5847,8 +5853,8 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             clearPendingMcpConfirm()
-            this.isStreaming = false
             this.clearMcpTurnCtx(turnChatId)
+            this.settleGlobalStreamingFlag()
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return { handled: true }
@@ -5862,8 +5868,8 @@ export default {
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             clearPendingMcpConfirm()
-            this.isStreaming = false
             this.clearMcpTurnCtx(turnChatId)
+            this.settleGlobalStreamingFlag()
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return { handled: true }
@@ -5875,8 +5881,8 @@ export default {
           assistantMsg.lane = ''
           assistantMsg.primaryRoute = null
           assistantMsg.content = ''
-          this.isStreaming = false
           this.clearMcpTurnCtx(turnChatId)
+          this.settleGlobalStreamingFlag()
           return { handled: false, fallback: true, reason: result.reason }
         }
 
@@ -5893,15 +5899,15 @@ export default {
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         clearPendingMcpConfirm()
-        this.isStreaming = false
         this.clearMcpTurnCtx(turnChatId)
+        this.settleGlobalStreamingFlag()
         this.saveHistory()
         this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
         return { handled: true }
       } catch (e) {
-        this.isStreaming = false
         clearPendingMcpConfirm()
         this.clearMcpTurnCtx(turnChatId)
+        this.settleGlobalStreamingFlag()
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
@@ -6014,13 +6020,27 @@ export default {
         this.saveHistory()
       }
     },
+    // 全局 isStreaming 复位守卫：仅当没有任何会话回合与文档长任务运行时才清零。
+    // 各车道收尾统一走这里，避免 A 车道结束把 B 车道/文档长任务的流式态误清。
+    settleGlobalStreamingFlag() {
+      const anyTurn = Object.keys(this.activeMcpTurnContexts || {}).length > 0 ||
+        Object.keys(this.activeLegacyTurnContexts || {}).length > 0
+      const anyDocTask = !!(
+        this.activeDocumentRevisionRunContext ||
+        this.activeDocumentAwareRunContext ||
+        this.activeGeneratedOutputRunContext
+      )
+      if (!anyTurn && !anyDocTask) this.isStreaming = false
+    },
     stopActiveMcpTurn(chatId = this.currentChatId) {
       const ctx = this.activeMcpTurnContexts?.[chatId]
       if (!ctx) return false
       ctx.cancelled = true
       try { ctx.abortController?.abort?.() } catch { /* ignore */ }
       this.clearMcpTurnCtx(chatId)
-      this.isStreaming = false
+      // 不再无条件清全局 isStreaming（PR3）：停止本会话回合时其它车道可能仍在
+      // 流式，误清会让它们的按钮/光标提前解锁。仅在确认无任何运行中上下文时复位。
+      this.settleGlobalStreamingFlag()
       return true
     },
     clearMcpTurnCtx(chatId) {
@@ -6904,7 +6924,7 @@ export default {
       this.$nextTick(() => this.adjustComposerHeight())
       if (String(query?.autoSend || '').trim() === '1') {
         window.setTimeout(() => {
-          if (String(this.userInput || '').trim() === prompt && !this.isStreaming) {
+          if (String(this.userInput || '').trim() === prompt && !this.anyChatTurnRunning) {
             this.sendMessage()
           }
         }, 80)
@@ -7782,6 +7802,11 @@ export default {
         danger: true
       })
       if (!confirmed) return
+      // 幽灵回合修复（H3）：删除会话前先按「被删 id」停掉该会话的运行中回合。
+      // 此前 deleteChat 不停回合、停止键又只按 currentChatId 取回合——被删会话的
+      // 回合会继续跑到自然结束：占用/排队文档写锁、isStreaming 卡 true、且无法停止。
+      this.stopActiveMcpTurn(id)
+      this.stopActiveLegacyTurn(id)
       const remaining = this.chatHistory.filter(chat => chat.id !== id)
       this.chatHistory = remaining
       const tabIdx = this.openChatTabs.indexOf(id)
@@ -10933,7 +10958,7 @@ export default {
       this.saveHistory()
     },
     async retryGeneratedOutputRun(message) {
-      if (this.isStreaming || message?.activeGeneratedOutputRun?.status === 'running') return
+      if (this.activeChatStreaming || message?.activeGeneratedOutputRun?.status === 'running') return
       const retryPayload = message?.activeGeneratedOutputRun?.retryPayload
       if (!retryPayload?.text || !retryPayload?.intent) {
         inAppAlert('未找到可重试的生成参数')
@@ -11010,7 +11035,7 @@ export default {
       })
     },
     retryAssistantTaskRun(message) {
-      if (this.isStreaming || message?.activeAssistantTaskRun?.status === 'running') return
+      if (this.activeChatStreaming || message?.activeAssistantTaskRun?.status === 'running') return
       const previousRun = message?.activeAssistantTaskRun || null
       const previousTaskId = String(previousRun?.taskId || '').trim()
       const previousTask = previousTaskId ? getTaskById(previousTaskId) : null
