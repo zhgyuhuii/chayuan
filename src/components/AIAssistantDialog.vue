@@ -2247,6 +2247,33 @@
                   :title="mcpHealthHint || ''"
                 >{{ mcpHealthHintShort }}</span>
               </label>
+              <div class="mcp-dropdown-perm">
+                <div class="mcp-dropdown-perm-label">写操作权限</div>
+                <div class="mcp-dropdown-perm-modes">
+                  <button
+                    v-for="modeEntry in toolPermissionModeOptions"
+                    :key="`perm-${modeEntry.id}`"
+                    type="button"
+                    class="mcp-dropdown-perm-mode"
+                    :class="{ 'is-active': toolPermissionMode === modeEntry.id }"
+                    :title="modeEntry.hint"
+                    @click="onToolPermissionModeChange(modeEntry.id)"
+                  >{{ modeEntry.label }}</button>
+                </div>
+                <div class="mcp-dropdown-perm-hint">{{ toolPermissionModeHint }}</div>
+              </div>
+              <label class="mcp-dropdown-row mcp-dropdown-row--seconds" title="参数收集等表单卡的自动继续等待秒数；写确认卡不受此设置影响">
+                <span class="mcp-dropdown-row-name">表单自动继续</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  class="mcp-dropdown-seconds-input"
+                  :value="dialogAutoContinueSecondsValue"
+                  @change="onDialogAutoContinueSecondsChange($event.target.value)"
+                />
+                <span class="mcp-dropdown-seconds-unit">秒</span>
+              </label>
               <div class="mcp-dropdown-divider"></div>
               <label
                 v-for="server in mcpServerList"
@@ -2602,6 +2629,9 @@ import chatAttachSvgInline from '../assets/ai-assistant/chat-attach.svg?inline'
 import chatSelectionSvgInline from '../assets/ai-assistant/chat-selection.svg?inline'
 import chatSendSvgInline from '../assets/ai-assistant/chat-send.svg?inline'
 import chatToggleSvgInline from '../assets/ai-assistant/chat-toggle.svg?inline'
+
+// 权限型 pending：永不自动继续（不确认=拒绝/等待），与表单型（超时用建议答案）相对
+const PERMISSION_TYPE_PENDING_KEYS = new Set(['pendingRevisionModePrompt', 'pendingMcpToolConfirm'])
 
 const AI_DIALOG_ASSETS_INLINE = {
   logo: logoAvatarDataUrl,
@@ -4173,6 +4203,7 @@ export default {
       mcpEnabled: true,
       // 工具权限档位：confirm(默认)/auto/full（src/services/toolPermission.js）
       toolPermissionMode: 'confirm',
+      dialogAutoContinueSecondsValue: 5,
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
@@ -4373,6 +4404,12 @@ export default {
     },
     selectedModelIcon() {
       return this.selectedModel ? (getModelLogoPath(this.selectedModel.providerId) || 'images/ai-assistant.svg') : 'images/ai-assistant.svg'
+    },
+    toolPermissionModeOptions() {
+      return Object.entries(TOOL_PERMISSION_MODE_META).map(([id, meta]) => ({ id, ...meta }))
+    },
+    toolPermissionModeHint() {
+      return TOOL_PERMISSION_MODE_META[this.toolPermissionMode]?.hint || ''
     },
     mcpEnabledServerCount() {
       return (this.mcpServerList || []).filter(s => s && s.enabled !== false).length
@@ -4797,6 +4834,11 @@ export default {
       this.toolPermissionMode = loadToolPermissionMode()
     } catch {
       this.toolPermissionMode = 'confirm'
+    }
+    try {
+      this.dialogAutoContinueSecondsValue = loadDialogAutoContinueSeconds()
+    } catch {
+      this.dialogAutoContinueSecondsValue = 5
     }
     this.reloadMcpServerList()
     if (this.mcpEnabled) {
@@ -5935,6 +5977,33 @@ export default {
      *   拒绝经 skill 回灌 USER_REJECTED 让模型自行收尾，不做整回合硬终止。
      * 「本轮该工具全允许」写入回合级 Set，同回合同名工具免再问。
      */
+    onToolPermissionModeChange(mode) {
+      if (!isToolPermissionMode(mode) || mode === this.toolPermissionMode) return
+      if (mode === 'full') {
+        // 完全访问=写操作直通：切换前给一次明确告知，避免误触后静默 yolo
+        inAppConfirm(
+          '「完全访问」下文档智能体的写操作将不再弹确认卡直接落盘（等同 yolo）。确定切换吗？',
+          { title: '切换到完全访问', okText: '切换', cancelText: '取消', danger: true }
+        ).then((ok) => {
+          if (!ok) return
+          this.toolPermissionMode = mode
+          saveToolPermissionMode(mode)
+          this.saveHistory()
+        })
+        return
+      }
+      this.toolPermissionMode = mode
+      saveToolPermissionMode(mode)
+      this.saveHistory()
+    },
+    onDialogAutoContinueSecondsChange(value) {
+      const n = Number(value)
+      if (saveDialogAutoContinueSeconds(n)) {
+        this.dialogAutoContinueSecondsValue = loadDialogAutoContinueSeconds()
+      }
+      // 非法输入回退为当前生效值，避免输入框显示与存储不一致
+      this.dialogAutoContinueSecondsValue = loadDialogAutoContinueSeconds()
+    },
     requestMcpWriteConfirm({
       assistantMsg,
       turnChatId,
@@ -14214,7 +14283,13 @@ export default {
       return prepareDialogDisplayText(text)
     },
     getDialogAutoContinueSeconds() {
-      return 5
+      // 表单型 pending（参数收集/执行选择等）的自动继续秒数，进设置可配（PR4）。
+      // 权限型 pending（写确认/修订模式）不读此值——它们永不自动放行。
+      try {
+        return loadDialogAutoContinueSeconds()
+      } catch {
+        return 5
+      }
     },
     shouldPromptEnableRevisionModeForPending(message, actionType = '', task = null) {
       if (message?.pendingRevisionModePrompt) return false
@@ -14234,7 +14309,7 @@ export default {
         status: 'pending',
         summaryText: options.summaryText || '写回文档前，可先开启修订模式。',
         confirmPrompt: options.confirmPrompt || '开启后，本次改动会以修订痕迹写入文档；如果不需要，也可以直接继续处理。',
-        statusMessage: options.statusMessage || '若未选择，将按默认方式直接继续处理。',
+        statusMessage: options.statusMessage || '权限型确认不会自动继续：请选择「开启修订并继续」或「直接继续处理」，不选择则保持等待。',
         autoContinueSecondsLeft: 0,
         autoContinueLabel: '直接继续处理',
         actionType: String(actionType || '').trim(),
@@ -14298,6 +14373,9 @@ export default {
       const messageId = String(message?.id || '')
       const pending = pendingKey ? message?.[pendingKey] : null
       if (!messageId || !pending || pending.status !== 'pending' || typeof confirmHandler !== 'function') return
+      // 权限型 pending 铁律（PR4）：写确认/修订模式不自动倒计时、超时不默认放行，
+      // 只能用户显式选择。悬停暂停后的 resume 也走本方法，在此一并拦死。
+      if (PERMISSION_TYPE_PENDING_KEYS.has(pendingKey)) return
       const seconds = Math.max(1, Number(preserveRemaining === true ? (pending.autoContinueSecondsLeft || this.getDialogAutoContinueSeconds() || 5) : (this.getDialogAutoContinueSeconds() || 5)))
       if (timerBucket === 'report') {
         this.clearReportGenerationAutoContinue(messageId)
@@ -19568,6 +19646,55 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.mcp-dropdown-perm {
+  padding: 6px 10px 8px;
+}
+.mcp-dropdown-perm-label {
+  font-size: 11px;
+  color: #667;
+  margin-bottom: 5px;
+}
+.mcp-dropdown-perm-modes {
+  display: flex;
+  gap: 4px;
+}
+.mcp-dropdown-perm-mode {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 11px;
+  color: #445;
+  cursor: pointer;
+}
+.mcp-dropdown-perm-mode.is-active {
+  border-color: #1c5a9e;
+  background: rgba(32, 100, 180, 0.1);
+  color: #1c5a9e;
+  font-weight: 600;
+}
+.mcp-dropdown-perm-hint {
+  margin-top: 5px;
+  font-size: 10px;
+  color: #889;
+  line-height: 1.4;
+}
+.mcp-dropdown-row--seconds {
+  justify-content: space-between;
+}
+.mcp-dropdown-seconds-input {
+  width: 52px;
+  padding: 2px 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+}
+.mcp-dropdown-seconds-unit {
+  font-size: 11px;
+  color: #667;
 }
 .mcp-write-confirm-card {
   margin-top: 8px;
