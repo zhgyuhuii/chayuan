@@ -33,6 +33,22 @@ const MAX_ROUNDS = 16
 // 模型对 tools 参数报错的特征（与旧编排器同一正则；命中后整轮重跑 JSON 兼容协议）
 const TOOLS_UNSUPPORTED_RE = /tool|tools|function call|不支持/i
 
+// agent-core 循环守卫的终态错误前缀（localizeLoopError 同一清单）。这些错误文本
+// 恰好都含 "tool"，若按正则判定会误认为「模型不支持 tools」而整轮降级重跑——
+// 一次 Agent 离线故障会烧掉 2×16 轮模型调用（PR6/H4）。
+const LOOP_GUARD_ERROR_PREFIXES = [
+  'Tool input was unusable',
+  'Every tool call failed',
+  'The model kept repeating'
+]
+
+/** 是否为「模型不支持 tools 协议」错误：守卫熔断类终态错误不算 */
+function isToolsUnsupportedError(message) {
+  const s = String(message || '')
+  if (LOOP_GUARD_ERROR_PREFIXES.some(p => s.startsWith(p))) return false
+  return TOOLS_UNSUPPORTED_RE.test(s)
+}
+
 function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
@@ -295,8 +311,10 @@ export async function runMcpChatOrchestrator({
   })
 
   let out = await runLoop(false)
-  // 模型不支持 tools 协议：与旧编排器一样，识别报错特征后立即切 JSON 兼容层整轮重跑
-  if (out.error && !signal?.aborted && TOOLS_UNSUPPORTED_RE.test(String(out.error))) {
+  // 模型不支持 tools 协议：与旧编排器一样，识别报错特征后立即切 JSON 兼容层整轮重跑。
+  // 守卫熔断错误（Every tool call failed… 等）被 isToolsUnsupportedError 排除——
+  // 那是执行层故障（如 Agent 离线），降级重跑只会再烧一轮轮次，不解决问题。
+  if (out.error && !signal?.aborted && isToolsUnsupportedError(out.error)) {
     pushStep('模型可能不支持 tools，改用 JSON 兼容层')
     out = await runLoop(true)
   }

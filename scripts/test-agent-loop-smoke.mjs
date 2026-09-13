@@ -322,6 +322,23 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S11 拒绝回灌 USER_REJECTED 模型自行收尾')
 }
 
+// 场景 12：循环守卫熔断错误（含 "tool" 字样）不触发 JSON 降级整轮重跑（PR6/H4）
+// Agent 离线 → 连续 8 轮全失败 → 守卫返回 "Every tool call failed…" →
+// 旧正则 /tool|…/ 误判「模型不支持 tools」→ 降级再烧 16 轮。修复后只跑一次。
+{
+  const m = baseMock()
+  m.chatScript = [
+    { throw: new Error('Every tool call failed for 8 turns in a row; the run was stopped. Please send the request again') },
+    { content: 'should never run' }
+  ]
+  const r = await run({})
+  A(r.ok === false && r.fallback === true && r.reason === 'model_error', 'S12 model_error, got ' + r.reason)
+  A(m.requests.length === 1, 'S12 loop ran exactly once (no degraded re-run), requests=' + m.requests.length)
+  A(!r.steps.some(s => s.label.includes('JSON 兼容层')), 'S12 no JSON-compat step')
+  A(String(r.content).includes('连续多轮工具调用全部失败'), 'S12 localized guard message, got ' + r.content)
+  console.log('✓ S12 守卫熔断错误不触发降级重跑')
+}
+
 console.log('ALL SCENARIOS PASSED')
 `
 
