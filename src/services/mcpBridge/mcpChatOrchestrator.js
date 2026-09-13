@@ -383,7 +383,8 @@ export async function runMcpChatOrchestrator({
 function trimLoopHistoryForStorage(messages, maxBytes = 96 * 1024) {
   if (!Array.isArray(messages) || !messages.length) return []
   let total = 0
-  let cut = messages.length
+  // 默认 0=全部保留；超预算时改为「保留起点」（尾部最近的先满足预算）
+  let cut = 0
   for (let i = messages.length - 1; i >= 0; i--) {
     let size = 0
     try { size = JSON.stringify(messages[i]).length } catch { size = 4096 }

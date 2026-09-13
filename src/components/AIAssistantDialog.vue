@@ -5950,8 +5950,19 @@ export default {
             this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return { handled: true }
           }
-          // 仅「基础设施未就绪」（sidecar 离线 / 无启用服务 / 无工具）才回落内置助手
-          this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
+          // 仅「基础设施未就绪」（sidecar 离线 / 无启用服务 / 无工具）才回落内置助手。
+          // F15 归因：把具体 reason 作为步骤留在消息卡上——否则「你好被标为普通对话」
+          // 这类回落现象永远无法事后判定错在哪一层
+          const failReasonText = {
+            sidecar_offline: '本机 sidecar 未运行',
+            no_servers: '没有启用的 MCP 服务',
+            no_tools: 'MCP 未返回任何可用工具'
+          }[result.reason] || String(result.reason || 'unknown')
+          assistantMsg.mcpSteps = [
+            ...(result.steps || []),
+            { at: Date.now(), label: 'MCP 车道不可用，已回落内置助手', detail: `原因：${failReasonText}` }
+          ]
+          this.mcpSoftBanner = `本机文档服务未就绪（${failReasonText}），发送将使用内置助手`
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
           assistantMsg.lane = ''

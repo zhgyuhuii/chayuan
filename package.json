@@ -53,6 +53,7 @@
 		"doctor": "node scripts/chayuan-doctor.mjs",
 		"doctor:quick": "node scripts/chayuan-doctor.mjs --quick",
 		"test:agent-loop": "node scripts/test-agent-loop-smoke.mjs",
+		"test:write-lock": "node scripts/test-document-write-lock.mjs",
 		"test:evolution": "node scripts/test-evolution-smoke.mjs",
 		"test:services": "node scripts/test-service-smoke.mjs",
 		"test:kb-integration": "node scripts/test-kb-integration-smoke.mjs",

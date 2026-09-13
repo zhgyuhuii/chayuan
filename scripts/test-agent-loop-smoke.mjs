@@ -44,7 +44,8 @@ const STUBS = {
   [join(REPO, 'src/services/mcpBridge/mcpServerRegistry.js')]: `
     export const CHAYUAN_SERVER_ID = 'chayuan'
     export function getEnabledMcpServers() {
-      return [{ id: 'chayuan', name: '察元 MCP' }]
+      const m = globalThis.__MOCK__
+      return m.servers || [{ id: 'chayuan', name: '察元 MCP' }]
     }
     export function isChayuanToolAllowed(name) {
       return !String(name).startsWith('declassify_')
@@ -68,7 +69,9 @@ const STUBS = {
     export async function listLocalTools() {
       return globalThis.__MOCK__.localTools
     }
-    export async function listUpstreamTools() { return [] }
+    export async function listUpstreamTools(serverId) {
+      return (globalThis.__MOCK__.upstreamTools || []).map(t => ({ ...t, serverId }))
+    }
     export async function syncUpstreamAllowlist() {}
     export async function callLocalTool(name, args, { signal } = {}) {
       const m = globalThis.__MOCK__
@@ -337,6 +340,53 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(!r.steps.some(s => s.label.includes('JSON 兼容层')), 'S12 no JSON-compat step')
   A(String(r.content).includes('连续多轮工具调用全部失败'), 'S12 localized guard message, got ' + r.content)
   console.log('✓ S12 守卫熔断错误不触发降级重跑')
+}
+
+// 场景 13：上游工具 readOnly 启发式——get/list 等名字或 readOnlyHint 注解直通，
+// 其余（无注解 write 类）进确认链（PR2）
+{
+  const m = baseMock()
+  m.servers = [{ id: 'chayuan', name: '察元 MCP' }, { id: 'upstream', name: '上游服务' }]
+  m.upstreamTools = [
+    { name: 'get_weather', description: '查天气' },
+    { name: 'read_config', description: '读配置', annotations: { readOnlyHint: true } },
+    { name: 'send_notification', description: '发通知', annotations: { readOnlyHint: false } }
+  ]
+  m.chatScript = [
+    {
+      tool_calls: [
+        toolCall('c1', 'upstream__get_weather', { city: '北京' }),
+        toolCall('c2', 'upstream__send_notification', { text: 'hi' })
+      ]
+    },
+    { content: '已完成天气查询；通知未获批准。' }
+  ]
+  const asked = []
+  const r = await run({ confirmHandler: async (info) => { asked.push(info.namespacedName); return false } })
+  A(r.ok === true, 'S13 ok')
+  const names = m.localCalls.map(c => c.name).sort()
+  A(JSON.stringify(names) === JSON.stringify(['upstream__get_weather']), 'S13 readOnly 名字直通、write 类被拦, calls=' + JSON.stringify(names))
+  A(asked.length === 1 && asked[0] === 'upstream__send_notification', 'S13 仅 write 类进入确认链')
+  console.log('✓ S13 上游 readOnly 启发式（名字/注解直通，其余确认）')
+}
+
+// 场景 14：跨回合上下文——loopHistory restore 进模型请求，工具结论可续问（PR7）
+{
+  const m = baseMock()
+  m.chatScript = [{ content: '刚才第二段已改为「咏鹅」，就是那首唐诗。' }]
+  const loopHistory = [
+    { role: 'user', text: '把第二段改成咏鹅' },
+    { role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'chayuan__document_replace', input: { originalText: '永鹅', newText: '咏鹅', confirmed: true } }] },
+    { role: 'tool', results: [{ id: 't1', name: 'chayuan__document_replace', output: '{"ok":true,"replaced":1}', isError: false }] },
+    { role: 'assistant', text: '已把「永鹅」改为「咏鹅」。' }
+  ]
+  const r = await run({ loopHistory })
+  A(r.ok === true, 'S14 ok')
+  const req = m.requests[0]
+  A(req.messages.some(x => x.role === 'user' && x.content === '把第二段改成咏鹅'), 'S14 历史用户消息进入请求')
+  A(req.messages.some(x => x.role === 'tool' && x.tool_call_id === 't1'), 'S14 历史工具结果进入请求（追问可答）')
+  A(Array.isArray(r.loopMessages) && r.loopMessages.length >= 4, 'S14 结果返回 loopMessages 供下回合续接')
+  console.log('✓ S14 跨回合上下文 restore（工具结论不丢）')
 }
 
 console.log('ALL SCENARIOS PASSED')
