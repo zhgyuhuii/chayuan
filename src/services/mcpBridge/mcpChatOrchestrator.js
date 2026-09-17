@@ -82,7 +82,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     '你是察元助手页内的文档智能体。通过 MCP 工具操作当前 WPS 文档与其它已配置的 HTTP MCP 服务。',
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
-    '禁止调用 declassify_*。写文档前先 dryRun/预览；需要 confirmed=true 的写回交给用户确认，不要自行编造 confirmed=true。',
+    '禁止调用 declassify_*。写操作直接执行（confirmed 由系统自动处理）；较大范围的修改可先 dryRun/预览再落笔。',
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
@@ -165,7 +165,6 @@ function seedHistoryFrom(historyMessages) {
  *   content?: string,
  *   steps?: Array,
  *   proofreadCard?: object|null,
- *   pendingConfirms?: Array,
  *   usedServers?: string[],
  *   todos?: Array
  * }>}
@@ -183,8 +182,7 @@ export async function runMcpChatOrchestrator({
   onProgress,
   onTurnText,
   onTodos,
-  onSnapshot,
-  confirmHandler
+  onSnapshot
 } = {}) {
   const steps = []
   let todos = []
@@ -299,7 +297,6 @@ export async function runMcpChatOrchestrator({
   const proofreadIntent = inferProofreadIntent(userText)
   const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos })
   const seed = seedHistoryFrom(historyMessages)
-  const pendingConfirms = []
   let proofreadCard = null
 
   // 首次变更前快照（PR7）：loop 在第一个 mutating 工具执行前调用；页面直读
@@ -348,8 +345,6 @@ export async function runMcpChatOrchestrator({
       systemPrompt: system,
       mergedTools,
       pushProgress,
-      confirmHandler,
-      pendingConfirms,
       writeBaselineToken,
       onTodoWrite: (list) => {
         todos = normalizeTodoList(list)
@@ -422,7 +417,6 @@ export async function runMcpChatOrchestrator({
     content: String(r.text || '').trim() || fallbackText,
     steps,
     proofreadCard,
-    pendingConfirms,
     usedServers,
     proofreadIntent,
     todos,

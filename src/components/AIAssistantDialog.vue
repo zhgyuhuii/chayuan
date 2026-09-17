@@ -792,43 +792,6 @@
                       @toggle-details="toggleDocumentRevisionDetails(taskRun.run)"
                       @toggle-backup="handleLongTaskRunToggleBackup(taskRun.stopAction, msg, $event)"
                     />
-                    <div
-                      v-if="msg.role === 'assistant' && msg.pendingMcpToolConfirm"
-                      class="mcp-proofread-card mcp-write-confirm-card"
-                    >
-                      <div class="mcp-proofread-card-title">写操作待确认</div>
-                      <p class="mcp-proofread-card-summary">
-                        文档智能体请求执行 <b>{{ msg.pendingMcpToolConfirm.namespacedName }}</b>，批准后将写入当前文档；不确认不会执行。
-                      </p>
-                      <pre
-                        v-if="msg.pendingMcpToolConfirm.argsPreview"
-                        class="mcp-write-confirm-args"
-                      >{{ msg.pendingMcpToolConfirm.argsPreview }}</pre>
-                      <div class="mcp-proofread-card-actions">
-                        <button
-                          type="button"
-                          class="message-error-action-btn primary"
-                          @click.stop="msg.pendingMcpToolConfirm.approve && msg.pendingMcpToolConfirm.approve()"
-                        >
-                          批准并执行
-                        </button>
-                        <button
-                          type="button"
-                          class="message-error-action-btn"
-                          @click.stop="msg.pendingMcpToolConfirm.reject && msg.pendingMcpToolConfirm.reject()"
-                        >
-                          拒绝
-                        </button>
-                        <button
-                          type="button"
-                          class="message-error-action-btn"
-                          title="本回合内该工具的后续调用不再询问"
-                          @click.stop="msg.pendingMcpToolConfirm.allowAllThisTurn && msg.pendingMcpToolConfirm.allowAllThisTurn()"
-                        >
-                          本轮全允许
-                        </button>
-                      </div>
-                    </div>
                     <button
                       v-if="msg.lane === 'mcp' && activeMcpTurnContexts[currentChatId]?.messageId === msg.id"
                       type="button"
@@ -2325,22 +2288,7 @@
                   :title="mcpHealthHint || ''"
                 >{{ mcpHealthHintShort }}</span>
               </label>
-              <div class="mcp-dropdown-perm">
-                <div class="mcp-dropdown-perm-label">写操作权限</div>
-                <div class="mcp-dropdown-perm-modes">
-                  <button
-                    v-for="modeEntry in toolPermissionModeOptions"
-                    :key="`perm-${modeEntry.id}`"
-                    type="button"
-                    class="mcp-dropdown-perm-mode"
-                    :class="{ 'is-active': toolPermissionMode === modeEntry.id }"
-                    :title="modeEntry.hint"
-                    @click="onToolPermissionModeChange(modeEntry.id)"
-                  >{{ modeEntry.label }}</button>
-                </div>
-                <div class="mcp-dropdown-perm-hint">{{ toolPermissionModeHint }}</div>
-              </div>
-              <label class="mcp-dropdown-row mcp-dropdown-row--seconds" title="参数收集等表单卡的自动继续等待秒数；写确认卡不受此设置影响">
+              <label class="mcp-dropdown-row mcp-dropdown-row--seconds" title="参数收集等表单卡的自动继续等待秒数">
                 <span class="mcp-dropdown-row-name">表单自动继续</span>
                 <input
                   type="number"
@@ -2688,12 +2636,8 @@ import {
   withDocumentWriteLock
 } from '../services/documentWriteLock.js'
 import {
-  loadToolPermissionMode,
-  saveToolPermissionMode,
   loadDialogAutoContinueSeconds,
-  saveDialogAutoContinueSeconds,
-  TOOL_PERMISSION_MODE_META,
-  isToolPermissionMode
+  saveDialogAutoContinueSeconds
 } from '../services/toolPermission.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
@@ -2709,7 +2653,7 @@ import chatSendSvgInline from '../assets/ai-assistant/chat-send.svg?inline'
 import chatToggleSvgInline from '../assets/ai-assistant/chat-toggle.svg?inline'
 
 // 权限型 pending：永不自动继续（不确认=拒绝/等待），与表单型（超时用建议答案）相对
-const PERMISSION_TYPE_PENDING_KEYS = new Set(['pendingRevisionModePrompt', 'pendingMcpToolConfirm'])
+const PERMISSION_TYPE_PENDING_KEYS = new Set(['pendingRevisionModePrompt'])
 
 const AI_DIALOG_ASSETS_INLINE = {
   logo: logoAvatarDataUrl,
@@ -4279,8 +4223,6 @@ export default {
       mcpUrlCopyHint: '',
       showMcpGuideDialog: false,
       mcpEnabled: true,
-      // 工具权限档位：confirm(默认)/auto/full（src/services/toolPermission.js）
-      toolPermissionMode: 'confirm',
       dialogAutoContinueSecondsValue: 5,
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
@@ -4488,12 +4430,6 @@ export default {
     },
     selectedModelIcon() {
       return this.selectedModel ? (getModelLogoPath(this.selectedModel.providerId) || 'images/ai-assistant.svg') : 'images/ai-assistant.svg'
-    },
-    toolPermissionModeOptions() {
-      return Object.entries(TOOL_PERMISSION_MODE_META).map(([id, meta]) => ({ id, ...meta }))
-    },
-    toolPermissionModeHint() {
-      return TOOL_PERMISSION_MODE_META[this.toolPermissionMode]?.hint || ''
     },
     mcpEnabledServerCount() {
       return (this.mcpServerList || []).filter(s => s && s.enabled !== false).length
@@ -4930,11 +4866,6 @@ export default {
       this.mcpEnabled = loadMcpEnabled()
     } catch {
       this.mcpEnabled = true
-    }
-    try {
-      this.toolPermissionMode = loadToolPermissionMode()
-    } catch {
-      this.toolPermissionMode = 'confirm'
     }
     try {
       this.dialogAutoContinueSecondsValue = loadDialogAutoContinueSeconds()
@@ -5936,17 +5867,6 @@ export default {
         .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpLoopHistory) && m.mcpLoopHistory.length)
         .pop()
       const previousLoopHistory = prevLoopMsg ? prevLoopMsg.mcpLoopHistory : []
-      // 本回合「该工具全部允许」集合：确认卡上勾选后，同回合同名工具免再问
-      // （Claude Code don't-ask-again 的会话内版本；回合结束随上下文一起废弃）
-      const turnAllowedTools = new Set()
-      // 结束本回合时清掉可能残留的写确认卡（拒绝/批准/中止都会走到这里）
-      const clearPendingMcpConfirm = () => {
-        if (assistantMsg.pendingMcpToolConfirm) {
-          const pending = assistantMsg.pendingMcpToolConfirm
-          assistantMsg.pendingMcpToolConfirm = null
-          try { pending?.reject?.() } catch { /* 已结算则忽略 */ }
-        }
-      }
 
       try {
         const result = await runMcpChatOrchestrator({
@@ -5968,18 +5888,6 @@ export default {
             mcpStreamRenderAt = now
             assistantMsg.mcpStreamingText = t
           },
-          confirmHandler: ({ serverId, toolName, namespacedName, args, meta, signal }) =>
-            this.requestMcpWriteConfirm({
-              assistantMsg,
-              turnChatId,
-              turnAllowedTools,
-              serverId,
-              toolName,
-              namespacedName,
-              args,
-              meta,
-              signal
-            }),
           onProgress: (step, steps) => {
             assistantMsg.mcpSteps = steps.slice()
             const realPercent = Number(step?.progress)
@@ -6024,7 +5932,6 @@ export default {
             if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
-            clearPendingMcpConfirm()
             this.clearMcpTurnCtx(turnChatId)
             this.settleGlobalStreamingFlag()
             this.saveHistory()
@@ -6039,7 +5946,6 @@ export default {
             this.mcpSoftBanner = 'WPS 桥接未连接：请重启 WPS 让察元加载项重新注册'
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
-            clearPendingMcpConfirm()
             this.clearMcpTurnCtx(turnChatId)
             this.settleGlobalStreamingFlag()
             this.saveHistory()
@@ -6092,14 +5998,12 @@ export default {
         if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
-        clearPendingMcpConfirm()
         this.clearMcpTurnCtx(turnChatId)
         this.settleGlobalStreamingFlag()
         this.saveHistory()
         this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
         return { handled: true }
       } catch (e) {
-        clearPendingMcpConfirm()
         this.clearMcpTurnCtx(turnChatId)
         this.settleGlobalStreamingFlag()
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
@@ -6123,33 +6027,6 @@ export default {
         return { handled: false, fallback: true, reason: e?.message || 'mcp_error' }
       }
     },
-    /**
-     * MCP 车道写操作确认（PR2/PR4 确认链）。
-     * - auto/full 档：直接批准（confirmed 由本权限层注入，模型说了不算）
-     * - confirm 档：在助手消息上挂通用写确认卡（工具名+参数摘要），用户批准才放行；
-     *   与回合 AbortSignal 竞速——点停止键 = 自动拒绝（resolve false），
-     *   拒绝经 skill 回灌 USER_REJECTED 让模型自行收尾，不做整回合硬终止。
-     * 「本轮该工具全允许」写入回合级 Set，同回合同名工具免再问。
-     */
-    onToolPermissionModeChange(mode) {
-      if (!isToolPermissionMode(mode) || mode === this.toolPermissionMode) return
-      if (mode === 'full') {
-        // 完全访问=写操作直通：切换前给一次明确告知，避免误触后静默 yolo
-        inAppConfirm(
-          '「完全访问」下文档智能体的写操作将不再弹确认卡直接落盘（等同 yolo）。确定切换吗？',
-          { title: '切换到完全访问', okText: '切换', cancelText: '取消', danger: true }
-        ).then((ok) => {
-          if (!ok) return
-          this.toolPermissionMode = mode
-          saveToolPermissionMode(mode)
-          this.saveHistory()
-        })
-        return
-      }
-      this.toolPermissionMode = mode
-      saveToolPermissionMode(mode)
-      this.saveHistory()
-    },
     onDialogAutoContinueSecondsChange(value) {
       const n = Number(value)
       if (saveDialogAutoContinueSeconds(n)) {
@@ -6157,61 +6034,6 @@ export default {
       }
       // 非法输入回退为当前生效值，避免输入框显示与存储不一致
       this.dialogAutoContinueSecondsValue = loadDialogAutoContinueSeconds()
-    },
-    requestMcpWriteConfirm({
-      assistantMsg,
-      turnChatId,
-      turnAllowedTools,
-      serverId,
-      toolName,
-      namespacedName,
-      args,
-      meta,
-      signal
-    }) {
-      const mode = this.toolPermissionMode
-      if (mode === 'auto' || mode === 'full') return Promise.resolve(true)
-      if (turnAllowedTools && turnAllowedTools.has(namespacedName)) return Promise.resolve(true)
-      return new Promise((resolve) => {
-        let settled = false
-        const finish = (approved) => {
-          if (settled) return
-          settled = true
-          signal?.removeEventListener?.('abort', onAbort)
-          const pending = assistantMsg.pendingMcpToolConfirm
-          if (pending && pending.namespacedName === namespacedName) {
-            assistantMsg.pendingMcpToolConfirm = null
-          }
-          this.saveHistory()
-          resolve(approved)
-        }
-        const onAbort = () => finish(false)
-        signal?.addEventListener?.('abort', onAbort, { once: true })
-        assistantMsg.pendingMcpToolConfirm = {
-          namespacedName,
-          serverId,
-          toolName,
-          argsPreview: this.buildMcpToolArgsPreview(args),
-          hasDryRun: args?.dryRun === true,
-          mode,
-          approve: () => finish(true),
-          reject: () => finish(false),
-          allowAllThisTurn: () => {
-            if (turnAllowedTools) turnAllowedTools.add(namespacedName)
-            finish(true)
-          }
-        }
-        this.saveHistory()
-        this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
-      })
-    },
-    buildMcpToolArgsPreview(args) {
-      try {
-        const text = JSON.stringify(args, null, 2) || ''
-        return text.length > 1200 ? `${text.slice(0, 1200)}\n…(截断)` : text
-      } catch {
-        return String(args ?? '')
-      }
     },
     async applyMcpProofreadOutcome(msg, mode) {
       const card = msg?.mcpProofreadCard
@@ -7938,17 +7760,14 @@ export default {
     buildHistorySavePayload(options = {}) {
       const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
       // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent)与回合内临时字段
-      // （pendingMcpToolConfirm/mcpStreamingText 持回调/流式草稿，JSON 序列化丢弃后
-      // 重载只剩死数据），避免污染持久化;草稿会话不落库
+      // （mcpStreamingText 流式草稿），避免污染持久化;草稿会话不落库
       const cleanHistory = this.chatHistory
         .filter(chat => !chat?.draft)
         .map(chat => ({
         ...chat,
         messages: Array.isArray(chat?.messages)
-          // 序列化前剔除渲染缓存字段与回合内临时确认卡（pendingMcpToolConfirm 持
-          // 回调函数，JSON 序列化丢弃后重载只剩死卡片），避免污染持久化
           // eslint-disable-next-line no-unused-vars
-          ? chat.messages.map(({ _renderedHtml, _renderedContent, pendingMcpToolConfirm, mcpStreamingText, ...m }) => m)
+          ? chat.messages.map(({ _renderedHtml, _renderedContent, mcpStreamingText, ...m }) => m)
           : chat?.messages
       }))
       return {
@@ -19909,40 +19728,6 @@ export default {
   flex-wrap: wrap;
   gap: 8px;
 }
-.mcp-dropdown-perm {
-  padding: 6px 10px 8px;
-}
-.mcp-dropdown-perm-label {
-  font-size: 11px;
-  color: #667;
-  margin-bottom: 5px;
-}
-.mcp-dropdown-perm-modes {
-  display: flex;
-  gap: 4px;
-}
-.mcp-dropdown-perm-mode {
-  flex: 1;
-  padding: 4px 6px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 6px;
-  background: transparent;
-  font-size: 11px;
-  color: #445;
-  cursor: pointer;
-}
-.mcp-dropdown-perm-mode.is-active {
-  border-color: #1c5a9e;
-  background: rgba(32, 100, 180, 0.1);
-  color: #1c5a9e;
-  font-weight: 600;
-}
-.mcp-dropdown-perm-hint {
-  margin-top: 5px;
-  font-size: 10px;
-  color: #889;
-  line-height: 1.4;
-}
 .mcp-dropdown-row--seconds {
   justify-content: space-between;
 }
@@ -19967,25 +19752,6 @@ export default {
   font-size: 11px;
   color: #667;
   line-height: 1.4;
-}
-.mcp-write-confirm-card {
-  margin-top: 8px;
-  border: 1px solid rgba(196, 124, 20, 0.28);
-  background: rgba(196, 124, 20, 0.05);
-}
-.mcp-write-confirm-args {
-  margin: 0 0 8px;
-  padding: 8px 10px;
-  max-height: 180px;
-  overflow: auto;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.04);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  color: #445;
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 .mcp-steps-list {
   margin-top: 8px;

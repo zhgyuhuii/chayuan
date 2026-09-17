@@ -189,20 +189,21 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S1 正常工具循环')
 }
 
-// 场景 2：写操作无 confirmHandler → CONFIRM_REQUIRED，不执行
+// 场景 2：写操作直通执行——confirmed 由 skill 层自动注入（2026-09-17 移除人工确认闸门）
 {
   const m = baseMock()
   m.chatScript = [
     { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b' })] },
-    { content: '该写操作需要用户确认后执行。' }
+    { content: '已替换。' }
   ]
   const r = await run({})
   A(r.ok === true, 'S2 ok')
-  A(m.localCalls.length === 0, 'S2 write tool NOT executed')
-  A(r.pendingConfirms.length === 1 && r.pendingConfirms[0].toolName === 'document_replace', 'S2 pendingConfirms')
+  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_replace', 'S2 write tool executed directly')
+  A(m.localCalls[0].args.confirmed === true, 'S2 confirmed injected by skill layer')
+  A(!r.pendingConfirms, 'S2 no pendingConfirms in result')
   const toolMsg = m.requests[1].messages.find(x => x.role === 'tool' && x.tool_call_id === 'c1')
-  A(toolMsg && toolMsg.content.includes('CONFIRM_REQUIRED'), 'S2 CONFIRM_REQUIRED fed back')
-  console.log('✓ S2 写操作确认闸门（CONFIRM_REQUIRED）')
+  A(toolMsg && !toolMsg.content.includes('CONFIRM_REQUIRED'), 'S2 tool result is real output, not confirm envelope')
+  console.log('✓ S2 写操作直通（confirmed 自动注入）')
 }
 
 // 场景 3：写操作带 dryRun → 直通执行
@@ -304,54 +305,45 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S8 Agent 离线快速失败')
 }
 
-// 场景 9：模型自带 confirmed:true 也不能绕过确认闸门（PR1 防旁路铁律）
+// 场景 9：模型自带 confirmed:true 被剥除后由 skill 层重新注入——仍只执行一次
 {
   const m = baseMock()
   m.chatScript = [
     { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: '永鹅', newText: '咏鹅', confirmed: true })] },
-    { content: '需要用户确认。' }
+    { content: '已替换。' }
   ]
   const r = await run({})
   A(r.ok === true, 'S9 ok')
-  A(m.localCalls.length === 0, 'S9 write tool NOT executed despite model-supplied confirmed:true')
-  A(r.pendingConfirms.length === 1 && r.pendingConfirms[0].toolName === 'document_replace', 'S9 pendingConfirms collected')
-  const toolMsg = m.requests[1].messages.find(x => x.role === 'tool' && x.tool_call_id === 'c1')
-  A(toolMsg && toolMsg.content.includes('CONFIRM_REQUIRED'), 'S9 CONFIRM_REQUIRED fed back')
-  console.log('✓ S9 confirmed:true 入参被剥除，无确认不执行')
+  A(m.localCalls.length === 1, 'S9 executed exactly once')
+  A(m.localCalls[0].args.confirmed === true, 'S9 confirmed is client-injected (not model-supplied passthrough)')
+  console.log('✓ S9 模型 confirmed:true 剥除后由客户端重新注入')
 }
 
-// 场景 10：confirmHandler 批准 → 权限层注入 confirmed:true 后执行
+// 场景 10：写操作 dryRun 预览——预览不是落笔，不注入 confirmed（预览语义保留）
 {
   const m = baseMock()
   m.chatScript = [
-    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b', confirmed: true })] },
-    { content: '已替换。' }
+    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b', dryRun: true })] },
+    { content: '预览完成。' }
   ]
-  const seen = []
-  const r = await run({
-    confirmHandler: async (info) => { seen.push(info.namespacedName); return true }
-  })
-  A(r.ok === true, 'S10 ok')
-  A(seen.length === 1 && seen[0] === 'chayuan__document_replace', 'S10 confirmHandler consulted')
-  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_replace', 'S10 executed after approval')
-  A(m.localCalls[0].args.confirmed === true, 'S10 confirmed injected by permission layer')
-  console.log('✓ S10 confirmHandler 批准后注入 confirmed 执行')
+  const r = await run({})
+  A(r.ok === true && m.localCalls.length === 1, 'S10 dryRun executed')
+  A(m.localCalls[0].args.confirmed === undefined, 'S10 dryRun preview carries no confirmed')
+  console.log('✓ S10 dryRun 预览不带 confirmed')
 }
 
-// 场景 11：confirmHandler 拒绝 → USER_REJECTED 回灌模型收尾（非硬终止）
+// 场景 11：proofread_apply_comments 是落笔动作——即使带 dryRun 也注入 confirmed
 {
   const m = baseMock()
+  m.localTools.push({ name: 'proofread_apply_comments', description: '批注落笔', inputSchema: { type: 'object', properties: { taskId: { type: 'string' } } } })
   m.chatScript = [
-    { tool_calls: [toolCall('c1', 'chayuan__document_replace', { originalText: 'a', newText: 'b' })] },
-    { content: '用户已拒绝，本轮不再修改文档。' }
+    { tool_calls: [toolCall('c1', 'chayuan__proofread_apply_comments', { taskId: 't1', dryRun: true })] },
+    { content: '已写成批注。' }
   ]
-  const r = await run({ confirmHandler: async () => false })
-  A(r.ok === true, 'S11 ok')
-  A(m.localCalls.length === 0, 'S11 write tool NOT executed after rejection')
-  const toolMsg = m.requests[1].messages.find(x => x.role === 'tool' && x.tool_call_id === 'c1')
-  A(toolMsg && toolMsg.content.includes('USER_REJECTED'), 'S11 USER_REJECTED fed back')
-  A(r.content.includes('用户已拒绝'), 'S11 model wraps up by itself')
-  console.log('✓ S11 拒绝回灌 USER_REJECTED 模型自行收尾')
+  const r = await run({})
+  A(r.ok === true && m.localCalls.length === 1, 'S11 apply_comments executed')
+  A(m.localCalls[0].args.confirmed === true, 'S11 apply_comments always confirmed (sidecar gate)')
+  console.log('✓ S11 proofread_apply_comments 无条件注入 confirmed')
 }
 
 // 场景 12：循环守卫熔断错误（含 "tool" 字样）不触发 JSON 降级整轮重跑（PR6/H4）
@@ -372,8 +364,7 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S12 守卫熔断错误不触发降级重跑')
 }
 
-// 场景 13：上游工具 readOnly 启发式——get/list 等名字或 readOnlyHint 注解直通，
-// 其余（无注解 write 类）进确认链（PR2）
+// 场景 13：上游工具直通——readOnly 启发式随确认闸门一并移除，读写都直接执行
 {
   const m = baseMock()
   m.servers = [{ id: 'chayuan', name: '察元 MCP' }, { id: 'upstream', name: '上游服务' }]
@@ -389,15 +380,13 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
         toolCall('c2', 'upstream__send_notification', { text: 'hi' })
       ]
     },
-    { content: '已完成天气查询；通知未获批准。' }
+    { content: '已完成天气查询并发出通知。' }
   ]
-  const asked = []
-  const r = await run({ confirmHandler: async (info) => { asked.push(info.namespacedName); return false } })
+  const r = await run({})
   A(r.ok === true, 'S13 ok')
   const names = m.localCalls.map(c => c.name).sort()
-  A(JSON.stringify(names) === JSON.stringify(['upstream__get_weather']), 'S13 readOnly 名字直通、write 类被拦, calls=' + JSON.stringify(names))
-  A(asked.length === 1 && asked[0] === 'upstream__send_notification', 'S13 仅 write 类进入确认链')
-  console.log('✓ S13 上游 readOnly 启发式（名字/注解直通，其余确认）')
+  A(JSON.stringify(names) === JSON.stringify(['upstream__get_weather', 'upstream__send_notification']), 'S13 读写工具均直通执行, calls=' + JSON.stringify(names))
+  console.log('✓ S13 上游工具直通（无 readOnly 拦截）')
 }
 
 // 场景 14：跨回合上下文——loopHistory restore 进模型请求，工具结论可续问（PR7）

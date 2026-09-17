@@ -176,7 +176,7 @@ const stubPlugin = {
 /* ── 拉取 sidecar 真实工具目录 → 注入 → 跑编排器 ── */
 
 async function fetchToolCatalog() {
-  const init = await fetch('http://127.0.0.1:62588/mcp', {
+  await fetch('http://127.0.0.1:62588/mcp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'diag', version: '0' } } })
@@ -205,7 +205,7 @@ const result = await runMcpChatOrchestrator({
 })
 const diag = globalThis.__DIAG__
 console.log('\\n===== RESULT =====')
-console.log(JSON.stringify({ ok: result.ok, fallback: result.fallback, reason: result.reason, content: (result.content || '').slice(0, 900), proofreadCard: result.proofreadCard ? { taskId: result.proofreadCard.taskId, issueCount: result.proofreadCard.issueCount, intent: result.proofreadCard.intent } : null, pendingConfirms: result.pendingConfirms, steps: (result.steps || []).map(s => s.label) }, null, 2))
+console.log(JSON.stringify({ ok: result.ok, fallback: result.fallback, reason: result.reason, content: (result.content || '').slice(0, 900), proofreadCard: result.proofreadCard ? { taskId: result.proofreadCard.taskId, issueCount: result.proofreadCard.issueCount, intent: result.proofreadCard.intent } : null, steps: (result.steps || []).map(s => s.label) }, null, 2))
 console.log('\\n===== MODEL TURNS =====')
 for (const t of diag.turns) console.log(JSON.stringify(t).slice(0, 400))
 console.log('\\n===== TOOL EXECUTIONS =====')
