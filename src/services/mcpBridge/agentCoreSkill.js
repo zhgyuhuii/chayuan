@@ -18,7 +18,7 @@ import { callLocalTool, callUpstreamTool } from './mcpHttpClient.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 
-const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|document_new|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export)$/
+const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export)$/
 
 // 聚合域工具（名字=工具，action 区分读写）的只读 action：不注入 confirmed、
 // 不带 OCC 基线 token、不算 mutated（否则 style list / comment list 会被当写操作）
@@ -200,7 +200,8 @@ export function createMcpDocumentSkill({
   pushProgress,
   onProofreadCard,
   onTodoWrite,
-  writeBaselineToken = ''
+  writeBaselineToken = '',
+  targetDocumentId
 } = {}) {
   // 本回合成功落笔的写操作数（按 ops 条目计），供 verifyResponse 与末轮声称核对
   let executedWriteOps = 0
@@ -221,7 +222,10 @@ export function createMcpDocumentSkill({
     systemPrompt,
     tools: [
       TODO_WRITE_TOOL,
-      ...(mergedTools || []).map(t => ({
+      ...(mergedTools || []).filter(t => {
+        const { serverId, toolName } = parseNamespacedTool(t.name)
+        return serverId !== CHAYUAN_SERVER_ID || isChayuanToolAllowed(toolName)
+      }).map(t => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema || { type: 'object', properties: {} }
@@ -287,6 +291,7 @@ export function createMcpDocumentSkill({
       // confirmed 单一来源：模型入参里的 confirmed 一律剥除（sidecar 工具示例会教
       // 模型带 confirmed:true），写工具是否带 confirmed 由本层统一决定后注入。
       delete args.confirmed
+      delete args.__expectedDocId
       if (needsAutoConfirm(serverId, toolName, args)) {
         args.confirmed = true
       }
@@ -295,7 +300,13 @@ export function createMcpDocumentSkill({
         let result
         if (serverId === CHAYUAN_SERVER_ID) {
           if (!isChayuanToolAllowed(toolName)) {
-            throw Object.assign(new Error('TOOL_NOT_ALLOWED'), { code: 'TOOL_NOT_ALLOWED' })
+            throw Object.assign(new Error(`工具 ${toolName} 已禁用。请仅在当前打开的文档中编写，不要新建、打开或切换文档，也不要启动/重启应用；没有文档时请用户手动打开。`), { code: 'TOOL_NOT_ALLOWED' })
+          }
+          if (targetDocumentId !== undefined && isWriteTool(serverId, toolName, args)) {
+            if (!targetDocumentId) {
+              throw Object.assign(new Error('本回合没有打开目标文档，请手动打开文档后重新发送指令。'), { code: 'NO_ACTIVE_DOCUMENT' })
+            }
+            args.__expectedDocId = targetDocumentId
           }
           // 写工具带上回合 OCC 基线 token（__baselineToken 为保留字段，dispatch 层
           // 弹出后用于 withDocumentWriteLock 校验，不会进入真实 WPS 调用参数）
@@ -318,6 +329,7 @@ export function createMcpDocumentSkill({
         toolLogEnd(!result?.isError)
         return {
           output,
+          isError: result?.isError === true,
           summary: output.slice(0, 120) || nsName,
           // 写工具成功落笔才视为变更：退避守卫据此豁免「重复相同写操作」的熔断
           mutated

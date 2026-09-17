@@ -16,6 +16,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
+import { createMcpHandler } from '../mcp-sidecar/lib/mcpHandler.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -69,21 +73,11 @@ const STUBS = {
   `,
   // src/services/mcpBridge/mcpServerRegistry.js
   [join(REPO, 'src/services/mcpBridge/mcpServerRegistry.js')]: `
-    export const CHAYUAN_SERVER_ID = 'chayuan'
+    export { CHAYUAN_SERVER_ID, isChayuanToolAllowed, namespaceToolName, parseNamespacedTool }
+      from ${JSON.stringify(join(REPO, 'src/services/mcpBridge/mcpServerRegistry.js').replace(/\\/g, '/'))}
     export function getEnabledMcpServers() {
       const m = globalThis.__MOCK__
       return m.servers || [{ id: 'chayuan', name: '察元 MCP' }]
-    }
-    export function isChayuanToolAllowed(name) {
-      return !String(name).startsWith('declassify_')
-    }
-    export function namespaceToolName(serverId, toolName) {
-      return serverId + '__' + toolName
-    }
-    export function parseNamespacedTool(ns) {
-      const i = String(ns).indexOf('__')
-      if (i < 0) return { serverId: '', toolName: String(ns) }
-      return { serverId: String(ns).slice(0, i), toolName: String(ns).slice(i + 2) }
     }
   `,
   // src/services/mcpBridge/mcpHttpClient.js
@@ -149,6 +143,7 @@ function hash(s) {
 
 const runnerSource = `
 const A = (cond, msg) => { if (!cond) throw new Error('断言失败: ' + msg) }
+const lifecycleTools = ['document_new', 'document_open', 'document_ensure_open', 'document_activate', 'wps_launch']
 const baseMock = (extra = {}) => {
   globalThis.__MOCK__ = {
     requests: [], chatScript: [], chatIdx: 0,
@@ -156,7 +151,9 @@ const baseMock = (extra = {}) => {
     localTools: [
       { name: 'document_locate', description: '定位文本', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },
       { name: 'document_replace', description: '替换文本', inputSchema: { type: 'object', properties: { originalText: { type: 'string' }, newText: { type: 'string' } } } },
-      { name: 'proofread_run', description: '校对', inputSchema: { type: 'object', properties: { dryRun: { type: 'boolean' } } } }
+      { name: 'document_insert', description: '插入文本', inputSchema: { type: 'object', properties: { text: { type: 'string' }, position: { type: 'string' } } } },
+      { name: 'proofread_run', description: '校对', inputSchema: { type: 'object', properties: { dryRun: { type: 'boolean' } } } },
+      ...lifecycleTools.map(name => ({ name, description: name, inputSchema: { type: 'object', properties: {} } }))
     ],
     ...extra
   }
@@ -447,15 +444,126 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S16 跨回合轻上下文（陈旧输出截断）')
 }
 
+{
+  const m = baseMock()
+  m.chatScript = [
+    { tool_calls: [toolCall('write', 'chayuan__document_insert', { text: '新段落', position: 'append' })] },
+    { content: '已写入当前文档。' }
+  ]
+  const r = await run({ userText: '帮我写一篇文章', selectionCtx: { fileName: '当前文档.docx' }, writeBaselineToken: 'current-doc-turn', targetDocumentId: '/tmp/current.docx' })
+  A(r.ok === true && m.localCalls.length === 1, 'S17 direct write')
+  A(m.localCalls[0].name === 'document_insert', 'S17 insert without new document')
+  A(m.localCalls[0].args.confirmed === true && m.localCalls[0].args.__baselineToken === 'current-doc-turn', 'S17 confirmed and baseline preserved')
+  A(m.localCalls[0].args.__expectedDocId === '/tmp/current.docx', 'S17 original document identity passed to host')
+  const req = m.requests[0]
+  for (const name of lifecycleTools) A(!req.tools.some(t => t.function.name === 'chayuan__' + name), 'S17 hidden: ' + name)
+  const system = req.messages.filter(x => x.role === 'system').map(x => x.content).join(' ')
+  A(system.includes('仅当前文档') && system.includes('手动打开') && system.includes('不得为写作先清空全文'), 'S17 current-document writing instructions')
+  console.log('S17 当前文档直接落笔，禁止自动新建及切换')
+}
+
+{
+  const { createMcpDocumentSkill } = await import('./SKILL_IMPORT')
+  const m = baseMock()
+  const skill = createMcpDocumentSkill({ mergedTools: m.localTools.map(t => ({ ...t, name: 'chayuan__' + t.name })) })
+  for (const name of lifecycleTools) {
+    A(!skill.tools.some(t => t.name === 'chayuan__' + name), 'S18 skill hides ' + name)
+    for (const nsName of [name, 'chayuan__' + name]) {
+      const r = await skill.executeTool({ name: nsName, input: { confirmed: true, templatePath: '/tmp/template.dotx', __baselineToken: 'old-turn' } })
+      A(r.isError === true && !r.mutated, 'S18 blocked ' + nsName)
+      A(JSON.parse(r.output).error === 'TOOL_NOT_ALLOWED', 'S18 error code ' + nsName)
+      A(r.output.includes('当前打开的文档'), 'S18 corrective guidance')
+    }
+  }
+  A(m.localCalls.length === 0, 'S18 blocked calls never reach sidecar')
+  console.log('S18 历史调用、伪造确认和模板参数均无法绕过执行守卫')
+}
+
+{
+  const m = baseMock()
+  m.localToolImpl = () => ({ isError: true, structuredContent: { code: 'NO_ACTIVE_DOCUMENT', message: '当前没有打开文档，请手动打开。' } })
+  m.chatScript = [
+    { tool_calls: [toolCall('write', 'chayuan__document_insert', { text: '正文', position: 'append' })] },
+    { content: '当前没有打开文档，请先手动打开目标文档。' }
+  ]
+  const r = await run({})
+  A(r.ok === true && r.content.includes('手动打开'), 'S19 no-document guidance')
+  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_insert', 'S19 no creation fallback')
+  A(r.steps.some(s => s.label === '失败 chayuan__document_insert'), 'S19 sidecar error not reported as successful write')
+  console.log('S19 无文档写入失败正确透传，不自动创建或重启')
+}
+
+{
+  const m = baseMock()
+  m.chatScript = [
+    { tool_calls: [toolCall('new', 'chayuan__document_new', { confirmed: true })] },
+    { tool_calls: [toolCall('write', 'chayuan__document_insert', { text: '正文', position: 'append' })] },
+    { content: '已写入当前文档。' }
+  ]
+  const r = await run({ loopHistory: [
+    { role: 'user', text: '写一篇文章' },
+    { role: 'assistant', text: '', toolCalls: [{ id: 'old-new', name: 'chayuan__document_new', input: {} }] },
+    { role: 'tool', results: [{ id: 'old-new', name: 'chayuan__document_new', output: '{"created":true}', isError: false }] }
+  ] })
+  A(r.ok === true, 'S20 old history turn completes')
+  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_insert', 'S20 old creation history cannot trigger a new window')
+  console.log('S20 恢复含新建记录的旧会话后只允许当前文档写入')
+}
+
+{
+  const { createMcpDocumentSkill } = await import('./SKILL_IMPORT')
+  const m = baseMock()
+  const skill = createMcpDocumentSkill({ targetDocumentId: '/tmp/original.docx' })
+  await skill.executeTool({ name: 'chayuan__document_insert', input: { text: '正文', __expectedDocId: '/tmp/other.docx' } })
+  A(m.localCalls[0].args.__expectedDocId === '/tmp/original.docx', 'S21 model cannot override original document')
+  const withoutDocument = createMcpDocumentSkill({ targetDocumentId: '' })
+  const r = await withoutDocument.executeTool({ name: 'chayuan__document_insert', input: { text: '正文' } })
+  A(r.isError && JSON.parse(r.output).error === 'NO_ACTIVE_DOCUMENT', 'S21 no-document turn cannot write')
+  A(m.localCalls.length === 1, 'S21 no-document turn never reaches host')
+  console.log('S21 原文档身份不可伪造，无文档回合禁止写入')
+}
+
 console.log('ALL SCENARIOS PASSED')
 `
 
 /* ────────── 构建 + 执行 ────────── */
 
+{
+  let agentCalls = 0
+  let fileWrites = 0
+  const handler = createMcpHandler({
+    getServerMeta: () => ({}),
+    agentHub: {
+      callAgent: async () => { agentCalls++; throw new Error('Unexpected host call') }
+    }
+  })
+  const writeFileSync = fs.writeFileSync
+  fs.writeFileSync = () => { fileWrites++; throw new Error('Unexpected file creation') }
+  syncBuiltinESMExports()
+  try {
+    const listed = await handler.handleMessage({ id: 1, method: 'tools/list' })
+    assert.ok(!listed.result.tools.some(t => t.name === 'document_new'))
+    assert.ok(listed.result.tools.some(t => t.name === 'document_insert'))
+    for (const args of [{}, { confirmed: true }, { templatePath: '/tmp/template.dotx' }, { path: '/tmp/template.docx', __baselineToken: 'old-turn' }]) {
+      const response = await handler.handleMessage({ id: 2, method: 'tools/call', params: { name: 'document_new', arguments: args } })
+      assert.equal(response.result.isError, true)
+      assert.equal(response.result.structuredContent.code, 'DOCUMENT_CREATION_DISABLED')
+    }
+    assert.equal(agentCalls, 0)
+    assert.equal(fileWrites, 0)
+    console.log('MCP 服务端拒绝全部新建路径：无文件写入、无宿主调用')
+  } finally {
+    fs.writeFileSync = writeFileSync
+    syncBuiltinESMExports()
+  }
+}
+
 const tmp = await mkdtemp(join(tmpdir(), 'agent-loop-smoke-'))
 const runner = join(tmp, 'runner.mjs')
 // Windows 反斜杠路径拼进模板字符串会被当转义序列吃掉（D:\code → D:code），统一改写为正斜杠
-await writeFile(runner, runnerSource.replace('./ORCH_IMPORT', join(REPO, 'src/services/mcpBridge/mcpChatOrchestrator.js').replace(/\\/g, '/')))
+await writeFile(runner, runnerSource
+  .replace('./ORCH_IMPORT', join(REPO, 'src/services/mcpBridge/mcpChatOrchestrator.js').replace(/\\/g, '/'))
+  .replaceAll('./SKILL_IMPORT', join(REPO, 'src/services/mcpBridge/agentCoreSkill.js').replace(/\\/g, '/')))
 
 try {
   await build({

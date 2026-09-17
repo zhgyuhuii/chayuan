@@ -711,51 +711,8 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
           return jsonError(e.code || 'ERROR', e.message, e.details)
         }
       }
-      case 'document_new': {
-        // 不走 jsapi Documents.Add():该调用经加载项 webview 执行会以 ksojscore
-        // EXC_BAD_ACCESS 崩掉整个 WPS(2026-09-17 三次实锤,含一次环境完全健康的
-        // 对照)。改为 sidecar 写出空白 docx → 系统打开(等同用户双击文件)→ 等
-        // agent 确认新文档成为活动文档 → 刷新该回合的写锁基线(文档已切换,旧
-        // 基线必然失配,不刷则同回合后续写全被 OCC 拦成死循环)。
-        try {
-          if (String(args.templatePath || args.path || '').trim()) {
-            const result = await agentHub.callAgent('document.new', args, { timeoutMs: 60_000 })
-            audit?.append({ tool: name, ok: true })
-            return jsonResult(result)
-          }
-          const fsMod = await import('node:fs')
-          const osMod = await import('node:os')
-          const pathMod = await import('node:path')
-          const { blankDocxBuffer } = await import('./blankDocx.mjs')
-          const stamp = Date.now().toString(36)
-          const blankPath = pathMod.join(osMod.tmpdir(), `chayuan-blank-${stamp}.docx`)
-          fsMod.writeFileSync(blankPath, blankDocxBuffer())
-          const exe = getServerMeta?.()?.config?.wpsExecutable || findWpsExecutable?.() || ''
-          const osOpen = openPathWithOs(blankPath, { wpsExe: exe })
-          if (!osOpen?.ok) {
-            return jsonError(osOpen?.code || 'OS_OPEN_FAILED', osOpen?.error || 'failed to open blank docx via OS', osOpen)
-          }
-          // 轮询确认新文档就位(最多 ~12s)
-          let meta = null
-          for (let i = 0; i < 6; i++) {
-            await new Promise((r) => setTimeout(r, 2000))
-            try {
-              meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 8_000 })
-              if (meta && String(meta.name || '').includes('chayuan-blank')) break
-            } catch { /* retry */ }
-          }
-          const token = String(args.__baselineToken || '')
-          if (token) {
-            try {
-              await agentHub.callAgent('document.reset_baseline', { baselineToken: token }, { timeoutMs: 8_000 })
-            } catch { /* 基线刷新尽力而为 */ }
-          }
-          audit?.append({ tool: name, ok: true, via: 'os-open', path: blankPath })
-          return jsonResult({ ok: true, created: true, viaOsOpen: true, path: blankPath, document: meta })
-        } catch (e) {
-          return jsonError(e.code || 'ERROR', e.message, e.details)
-        }
-      }
+      case 'document_new':
+        return jsonError('DOCUMENT_CREATION_DISABLED', '已禁用自动新建文档，请在当前打开的文档中编写；没有文档时请先手动打开目标文档。')
       case 'document_save': {
         // jsapi 的 Save()/SaveAs2() 经 jsaddons 桥执行会崩 WPS(2026-09-17 真机
         // 实验 A/B 双崩,ksojscore)。改走原生路径:激活 WPS + 模拟 Cmd+S(菜单
@@ -763,18 +720,15 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
         // 原生保存后 OS 复制到目标路径。
         try {
           if (args.via === 'jsapi') {
-            // 实验后门(排查用):强制走 jsapi 保存路径(先重立匿名基线以越过 OCC)
-            try {
-              await agentHub.callAgent('document.reset_baseline', { baselineToken: '' }, { timeoutMs: 8_000 })
-            } catch { /* ignore */ }
             const result = await agentHub.callAgent('document.save', args, { timeoutMs: 60_000 })
             audit?.append({ tool: name, ok: true, via: 'jsapi' })
             return jsonResult(result)
           }
           const targetPath = String(args.path || '').trim()
+          const documentContext = args.__expectedDocId === undefined ? {} : { __expectedDocId: args.__expectedDocId }
           let meta = null
           try {
-            meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 10_000 })
+            meta = await agentHub.callAgent('document.meta', documentContext, { timeoutMs: 10_000 })
           } catch (e) {
             return jsonError(e.code || 'ERROR', e.message)
           }
@@ -798,7 +752,7 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
             for (let i = 0; i < 6; i++) {
               await new Promise((r) => setTimeout(r, 1200))
               try {
-                meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 8_000 })
+                meta = await agentHub.callAgent('document.meta', documentContext, { timeoutMs: 8_000 })
                 if (meta?.saved !== false) break
               } catch { /* retry */ }
             }

@@ -42,7 +42,7 @@ export function registerWpsDocumentTools() {
   registerTool({
     key: 'document.getText',
     title: '读取当前文档正文',
-    description: '读取当前 WPS 文档的纯文本正文。',
+    description: '读取当前文档的纯文本正文。',
     riskLevel: 'low',
     outputSchema: {
       type: 'object',

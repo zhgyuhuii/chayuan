@@ -468,7 +468,7 @@
               {{ starPromptChatOpens >= 5 ? `你已经和察元助手聊了 ${starPromptChatOpens} 次` : '觉得察元好用吗？' }}
             </div>
             <div class="star-prompt-body">
-              察元是免费开源的 WPS 文档智能助手。关注微信公众号「智灵鸟科技」获取更新与教程；也欢迎到 GitHub 点个 Star 支持开源。
+              察元是免费开源的文档智能助手。关注微信公众号「智灵鸟科技」获取更新与教程；也欢迎到 GitHub 点个 Star 支持开源。
             </div>
           </div>
           <div class="star-prompt-actions">
@@ -804,7 +804,7 @@
                   </div>
                 </template>
                 <template v-else>
-                  <span v-html="getRenderedMessageHtml(msg)"></span>
+                  <span v-html="getRenderedMessageHtml(msg)" :class="{ 'md-body': isMessageMarkdown(msg) }"></span>
                   <span v-if="activeChatStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
                     v-if="msg.role === 'assistant' && shouldShowKbSourceStrip(msg)"
@@ -1390,7 +1390,7 @@
                         :disabled="msg.pendingWpsCapabilityForm.status === 'applying'"
                         @click.stop="confirmPendingWpsCapabilityForm(msg)"
                       >
-                        {{ msg.pendingWpsCapabilityForm.status === 'applying' ? '执行中...' : '执行 WPS 操作' }}
+                        {{ msg.pendingWpsCapabilityForm.status === 'applying' ? '执行中...' : '执行 察元AI操作' }}
                       </button>
                       <button
                         type="button"
@@ -2189,7 +2189,7 @@
                 />
               </svg>
               <span
-                v-if="selectedModelIcon && failedModelLogos[publicAssetUrl(selectedModelIcon)]"
+                v-if="!selectedModelIcon || failedModelLogos[publicAssetUrl(selectedModelIcon)] || !hasKnownLogoFor(selectedModel ? selectedModel.providerId : '')"
                 class="composer-tool-logo-badge composer-tool-logo-badge--fallback"
               >{{ getModelFirstChar(selectedModelName) }}</span>
               <img
@@ -2217,7 +2217,7 @@
                   >
                     <span class="model-group-arrow">▾</span>
                     <span
-                      v-if="failedModelLogos[publicAssetUrl(group.icon || getModelLogoPath(group.providerId))]"
+                      v-if="!hasGroupLogo(group) || failedModelLogos[publicAssetUrl(group.icon || getModelLogoPath(group.providerId))]"
                       class="model-group-icon model-group-icon--fallback"
                     >{{ getModelFirstChar(group.label) }}</span>
                     <img
@@ -2227,7 +2227,7 @@
                       alt=""
                       loading="lazy"
                       decoding="async"
-                      @error="onModelLogoError"
+                      @error="onModelLogoError($event, group.providerId)"
                     />
                     <span>{{ group.label }}</span>
                   </div>
@@ -2240,7 +2240,7 @@
                       @mousedown.prevent="selectModel(m)"
                     >
                       <span
-                        v-if="failedModelLogos[publicAssetUrl(getModelLogoPath(m.providerId))]"
+                        v-if="failedModelLogos[publicAssetUrl(getModelLogoPath(m.providerId))] || failedProviderLogos[m.providerId || ''] || !hasKnownLogoFor(m.providerId)"
                         class="model-option-icon model-option-icon--fallback"
                       >{{ getModelFirstChar(m.name || m.modelId) }}</span>
                       <img
@@ -2250,7 +2250,7 @@
                         alt=""
                         loading="lazy"
                         decoding="async"
-                        @error="onModelLogoError"
+                        @error="onModelLogoError($event, m.providerId)"
                       />
                       <span>{{ m.name || m.modelId }}</span>
                     </div>
@@ -2319,7 +2319,7 @@
               </label>
               <div class="mcp-dropdown-divider"></div>
               <label
-                v-for="server in mcpServerList"
+                v-for="server in mcpUserServerList"
                 :key="server.id"
                 class="mcp-dropdown-row"
                 :class="{ disabled: !mcpEnabled }"
@@ -2332,9 +2332,8 @@
                   @change="onMcpServerEnabledChange(server.id, $event.target.checked)"
                 />
                 <span class="mcp-dropdown-row-name">{{ server.name }}</span>
-                <span v-if="server.builtin" class="mcp-dropdown-tag">内置</span>
               </label>
-              <div v-if="!mcpServerList.length" class="mcp-dropdown-empty">暂无服务</div>
+              <div v-if="!mcpUserServerList.length" class="mcp-dropdown-empty">暂无其它服务——内置察元AI文档服务自动启用</div>
               <div class="mcp-dropdown-foot">
                 <button type="button" class="mcp-dropdown-link" @click="refreshMcpHealthBundle({ deep: true })">刷新</button>
                 <button type="button" class="mcp-dropdown-link" @click="openMcpSettingsFromComposer">管理</button>
@@ -2509,7 +2508,7 @@
 # 或
 node mcp-sidecar/server.mjs</pre>
           <p>默认监听 <code>127.0.0.1:62588</code>。Windows 也可双击 <code>mcp-sidecar/start-mcp.cmd</code>（需本机 Node 18+）。</p>
-          <h5>2. 打开 WPS 并加载察元插件</h5>
+          <h5>2. 打开文档应用并加载察元插件</h5>
           <p>加载项会注册 Agent。请先启动 sidecar，再打开文档。</p>
           <h5>3. 客户端配置示例</h5>
           <pre class="mcp-guide-pre">{{ mcpClientConfigExample }}</pre>
@@ -2649,6 +2648,7 @@ node mcp-sidecar/server.mjs</pre>
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import {
   setWriteBaseline,
+  getWriteBaseline,
   subscribeLockState,
   withDocumentWriteLock
 } from '../services/documentWriteLock.js'
@@ -2658,7 +2658,7 @@ import {
 } from '../services/toolPermission.js'
 import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
-import { getModelLogoPath } from '../utils/modelLogos.js'
+import { getModelLogoPath, hasKnownModelLogo } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { reportError } from '../utils/reportError.js'
 import { inAppAlert, inAppConfirm } from '../utils/inAppDialog.js'
@@ -2687,6 +2687,7 @@ import {
 } from '../utils/modelTypeUtils.js'
 import { applyDocumentAction, getActiveDocument, getDocumentText, resolveDocumentInput, textLooksLikePlanStatsJson } from '../utils/documentActions.js'
 import { prepareDialogDisplayText } from '../utils/dialogTextDisplay.js'
+import { looksLikeMarkdown, renderMarkdownSafe } from '../utils/chatMarkdown.js'
 import { resolveDocumentTaskInputScope } from '../utils/documentTaskScope.js'
 import {
   clearDocumentFormatPreview,
@@ -4259,6 +4260,7 @@ export default {
       hoveredRulerTickId: '',
       rulerHighlightMessageId: '',
       failedModelLogos: {},
+      failedProviderLogos: {},
       assistantItems: [],
       assistantGroupCollapsed: {},
       chatSearchText: '',
@@ -4446,10 +4448,17 @@ export default {
       return this.selectedModel?.name || this.selectedModel?.modelId || (this.hasConfiguredChatModels ? '选择模型' : '配置模型')
     },
     selectedModelIcon() {
-      return this.selectedModel ? (getModelLogoPath(this.selectedModel.providerId) || 'images/ai-assistant.svg') : 'images/ai-assistant.svg'
+      // 无已知 logo 的厂商返回空串 → 模板走首字徽标分支,不发 404 请求
+      if (!this.selectedModel || !hasKnownModelLogo(this.selectedModel.providerId)) return ''
+      return getModelLogoPath(this.selectedModel.providerId) || 'images/ai-assistant.svg'
+    },
+    /** 用户手动添加的 MCP 服务(内置察元AI服务不展示:它默认启用、智能体自动调用) */
+    mcpUserServerList() {
+      return (this.mcpServerList || []).filter(s => s && !s.builtin)
     },
     mcpEnabledServerCount() {
-      return (this.mcpServerList || []).filter(s => s && s.enabled !== false).length
+      // 徽标只计用户添加的服务(内置服务常驻,不计入避免误导)
+      return (this.mcpServerList || []).filter(s => s && !s.builtin && s.enabled !== false).length
     },
     mcpComposerButtonTitle() {
       if (!this.mcpEnabled) return '文档智能体（已关闭）· 点击选择 MCP'
@@ -5572,7 +5581,7 @@ export default {
         {
           key: 'wps-capability',
           run: message?.activeWpsCapabilityRun || null,
-          summaryText: message?.activeWpsCapabilityRun?.summaryText || '正在执行 WPS 操作...',
+          summaryText: message?.activeWpsCapabilityRun?.summaryText || '正在执行 察元AI操作...',
           stopAction: 'wps-capability'
         },
         {
@@ -5768,7 +5777,7 @@ export default {
       if (kind === 'kb-chat') return '知识库检索分析'
       if (kind === 'chat') return '普通对话'
       if (kind === 'document-operation') return '文档处理'
-      if (kind === 'wps-capability') return 'WPS 操作'
+      if (kind === 'wps-capability') return '察元AI操作'
       if (kind === 'generated-output') return '报告或文件生成'
       if (kind === 'assistant-task') return '助手任务'
       return ''
@@ -5833,7 +5842,7 @@ export default {
           // 三级分诊（2026-09-09）：WPS 安全层可拦环回 HTTP，须与「进程没起」区分，
           // 否则用户按「服务未启动」排障方向全错。旁路判定见 webviewFsProbe.js
           if (bundle.failReason === 'loopback_blocked') {
-            this.mcpSoftBanner = '本机服务在运行，但 WPS 安全层拦截了加载项的连接——请在 WPS 设置中信任察元加载项（或确认安全弹窗）后重启 WPS'
+            this.mcpSoftBanner = '本机服务在运行，但应用安全层拦截了加载项的连接——请在设置中信任察元AI加载项（或确认安全弹窗）后重启应用'
             this.mcpHealthHint = `环回被拦截（sidecar 进程经心跳旁路判定存活）${bundle.blocklistEntries ? ` · 检测到 jsaddons 拦截表 ${bundle.blocklistEntries} 条` : ''}`
           } else {
             this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
@@ -5929,6 +5938,7 @@ export default {
           historyMessages,
           previousTodos,
           writeBaselineToken,
+          targetDocumentId: getWriteBaseline(writeBaselineToken).docId,
           loopHistory: previousLoopHistory,
           signal: ctrl?.signal,
           onTurnText: (text) => {
@@ -5994,9 +6004,9 @@ export default {
           // WPS Agent 离线（sidecar 在线但加载项未注册）：所有文档工具必然失败，
           // 不进模型循环也不回落内置助手——直接给出可操作的修复指引
           if (result.reason === 'agent_offline') {
-            assistantMsg.content = String(result.content || 'WPS Agent 离线，文档工具不可用。')
+            assistantMsg.content = String(result.content || '察元AI服务离线，文档工具不可用。')
             assistantMsg.mcpSteps = result.steps || []
-            this.mcpSoftBanner = 'WPS 桥接未连接：请重启 WPS 让察元加载项重新注册'
+            this.mcpSoftBanner = '察元AI桥接未连接：请重启应用让察元AI加载项重新注册'
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             assistantMsg.mcpStepsExpanded = false
@@ -6280,11 +6290,28 @@ export default {
         this.rulerHighlightMessageId = ''
       }, 1800)
     },
-    onModelLogoError(e) {
+    onModelLogoError(e, providerId = '') {
       const src = e.target?.src || ''
       if (src && !this.failedModelLogos[src]) {
         this.$set(this.failedModelLogos, src, true)
       }
+      // 按 providerId 记忆:同一厂商的 404 不再在分组行/每个模型行重复请求
+      if (providerId && !this.failedProviderLogos[providerId]) {
+        this.$set(this.failedProviderLogos, providerId, true)
+      }
+    },
+    /** 分组是否有可用 logo:分组数据只在厂商确有已知 logo 时才带 icon;
+     *  再核一次已知清单(自定义 icon 仍优先,失败由 @error 记忆兜底) */
+    hasGroupLogo(group) {
+      if (group?.icon) return true
+      return this.hasKnownLogoFor(group?.providerId)
+    },
+    /** 该厂商是否在构建期 logo 清单里(不在=无 logo,直接首字,不发 404 请求) */
+    hasKnownLogoFor(providerId) {
+      if (!providerId) return false
+      const id = String(providerId)
+      if (this.failedProviderLogos[id]) return false
+      return hasKnownModelLogo(id)
     },
     getModelFirstChar(name) {
       return (name || '?').charAt(0).toUpperCase()
@@ -7747,6 +7774,7 @@ export default {
       return this.applyHistoryStorageScope(this.resolveHistoryStorageScope())
     },
     syncHistoryScopeWithActiveDocument() {
+      if (this.isWindowBusy) return false
       const nextScope = this.resolveHistoryStorageScope()
       const nextScopeKey = String(nextScope.scopeKey || '').trim()
       if (!nextScopeKey) return false
@@ -8065,21 +8093,31 @@ export default {
       this._streamRenderMap.delete(assistantMsg.id)
       if (entry.text != null) assistantMsg.content = entry.text
     },
-    getRenderedMessageHtml(msg) {
-      if (!msg) return ''
-      const content = String(msg.content || '')
-      if (msg._renderedContent === content && typeof msg._renderedHtml === 'string') {
-        return msg._renderedHtml
-      }
-      const html = this.formatMessage(content)
-      // 缓存到消息对象(普通字段,序列化时已在 buildHistorySavePayload 剔除)
-      msg._renderedContent = content
-      msg._renderedHtml = html
-      return html
-    },
+  getRenderedMessageHtml(msg) {
+    if (!msg) return ''
+    const content = String(msg.content || '')
+    if (msg._renderedContent === content && typeof msg._renderedHtml === 'string') {
+      return msg._renderedHtml
+    }
+    const html = this.formatMessage(content)
+    // 缓存到消息对象(普通字段,序列化时已在 buildHistorySavePayload 剔除)
+    msg._renderedContent = content
+    msg._renderedHtml = html
+    return html
+  },
+  isMessageMarkdown(msg) {
+    if (!msg || msg.role !== 'assistant') return false
+    return looksLikeMarkdown(prepareDialogDisplayText(String(msg.content || '')))
+  },
     formatMessage(text) {
       if (!text) return ''
       const raw = prepareDialogDisplayText(String(text))
+      // 含 Markdown 特征(表格/标题/列表/加粗/代码)的消息走 md 渲染——agent 车道的
+      // 校对结果、任务汇报大量输出 GFM 表格,旧行为(转义+<br>)把表格当纯文本糊出来。
+      // XSS 安全:renderMarkdownSafe 先整体转义再解析,输出不含可执行标记。
+      if (looksLikeMarkdown(raw)) {
+        return this._injectKbCitations(renderMarkdownSafe(raw))
+      }
       const escaped = raw
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -8380,7 +8418,7 @@ export default {
           inAppAlert('文件已保存：' + savePath.split(/[/\\]/).pop(), { title: '保存成功' })
           return
         }
-        console.warn('WPS API 写入失败，回退到浏览器下载:', savePath)
+        console.warn('本地写入失败，回退到浏览器下载:', savePath)
       }
       this.triggerGeneratedFileBrowserDownload(url, fileName)
     },
@@ -9887,7 +9925,7 @@ export default {
       if (!model?.providerId || !model?.modelId) return null
       const snapshot = this.resolveBestSelectionContext()
       const systemPrompt = [
-        '你是一个 WPS 文档段落移动与复制指令解析器，负责把自然语言解析为结构化 JSON。',
+        '你是一个 文档段落移动与复制指令解析器，负责把自然语言解析为结构化 JSON。',
         '只有当用户明确要求移动、挪动、复制、拷贝段落内容到另一位置时，才返回 intent=document-relocation；否则返回 {"intent":"other"}。',
         'operation 只能是 move 或 copy。',
         'sourceType 只能是 paragraph-index、current-paragraph、paragraph-keyword。',
@@ -9932,7 +9970,7 @@ export default {
       if (!model?.providerId || !model?.modelId) return null
       const snapshot = this.resolveBestSelectionContext()
       const systemPrompt = [
-        '你是一个 WPS 文档关键词编辑指令解析器，负责把自然语言中的关键词删除或替换操作解析为结构化 JSON。',
+        '你是一个 文档关键词编辑指令解析器，负责把自然语言中的关键词删除或替换操作解析为结构化 JSON。',
         '只有当用户明确要求删除某个关键词、移除某个关键字，或把一个词替换成另一个词，或者删除/替换包含某词的整段时，才返回 intent=document-text-edit；否则返回 {"intent":"other"}。',
         'operation 只能是 delete 或 replace。',
         'scope 只能是 selection、paragraph、document。',
@@ -9975,7 +10013,7 @@ export default {
       if (!model?.providerId || !model?.modelId) return null
       const snapshot = this.resolveBestSelectionContext()
       const systemPrompt = [
-        '你是一个 WPS 文档删除指令解析器，负责把自然语言删除操作解析为结构化 JSON。',
+        '你是一个 文档删除指令解析器，负责把自然语言删除操作解析为结构化 JSON。',
         '只有当用户明确要求执行删除、移除、去掉、清空时，才返回 intent=document-delete；否则返回 {"intent":"other"}。',
         'target 只能是 selection、paragraph、document、table、image、comment、paragraph-index。',
         'scope 只能是 selection、paragraph、document。',
@@ -10017,7 +10055,7 @@ export default {
       if (!model?.providerId || !model?.modelId) return null
       const snapshot = this.resolveBestSelectionContext()
       const systemPrompt = [
-        '你是一个 WPS 文档格式指令解析器，负责把自然语言格式操作解析为结构化 JSON。',
+        '你是一个 文档格式指令解析器，负责把自然语言格式操作解析为结构化 JSON。',
         '只有当用户明确要求执行文档格式修改时，才返回 intent=document-format；否则返回 {"intent":"other"}。',
         'scope 只能是 selection、paragraph、document。',
         '如果用户说“当前段落/本段”，scope=paragraph；如果说“当前选择/选中文字/选区”，scope=selection；如果说“全文/整个文档”，scope=document。',
@@ -10540,20 +10578,20 @@ export default {
       if (!task) return ''
       let out = ''
       if (task.status === 'completed') {
-        out = task.data?.applyResult?.message || 'WPS 操作已完成'
+        out = task.data?.applyResult?.message || '察元AI操作已完成'
       } else if (task.status === 'cancelled') {
-        out = task.error || 'WPS 操作已停止'
+        out = task.error || '察元AI操作已停止'
       } else if (task.status === 'failed') {
         out = this.formatAssistantTaskError(task.error || '')
       } else if (task.status === 'abnormal') {
-        out = task.error || 'WPS 操作异常结束'
+        out = task.error || '察元AI操作异常结束'
       } else {
         const current = Number(task.current || 0)
         const total = Number(task.total || 0)
         if (total > 0) {
           out = `正在执行步骤：${current} / ${total}`
         } else {
-          out = '正在执行 WPS 直接操作...'
+          out = '正在执行察元AI直接操作...'
         }
       }
       return prepareDialogDisplayText(out)
@@ -10799,12 +10837,12 @@ export default {
             message.activeWpsCapabilityRun._lastProgressKey = progressKey
           }
           if (task.status === 'completed') {
-            message.content = task.data?.applyResult?.message || 'WPS 操作已完成。'
+            message.content = task.data?.applyResult?.message || '察元AI操作已完成。'
             message.isLoading = false
             this.stopAssistantLoadingProgress(message)
             this.requestAssistantEvolutionSuggestionCheck()
           } else if (task.status === 'cancelled') {
-            message.content = 'WPS 操作已停止。'
+            message.content = '察元AI操作已停止。'
             message.isLoading = false
             this.stopAssistantLoadingProgress(message)
           } else if (task.status === 'abnormal') {
@@ -10841,9 +10879,9 @@ export default {
       message.activeWpsCapabilityRun = {
         ...message.activeWpsCapabilityRun,
         status: 'cancelled',
-        statusMessage: '正在停止本次 WPS 操作...'
+        statusMessage: '正在停止本次 察元AI操作...'
       }
-      this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, '用户手动停止了本次 WPS 操作。')
+      this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, '用户手动停止了本次 察元AI操作。')
       this.saveHistory()
     },
     getCapabilityFieldValueText(field) {
@@ -10857,12 +10895,12 @@ export default {
       const label = String(capability?.label || '未命名操作').trim()
       const desc = String(capability?.description || '').trim()
       return desc
-        ? `已识别到可直接调用的 WPS 能力：${label}。${desc} 请确认参数后继续执行。`
-        : `已识别到可直接调用的 WPS 能力：${label}。请确认参数后继续执行。`
+        ? `已识别到可直接调用的 察元AI能力：${label}。${desc} 请确认参数后继续执行。`
+        : `已识别到可直接调用的 察元AI能力：${label}。请确认参数后继续执行。`
     },
     buildWpsCapabilityConfirmPrompt(capability) {
       const label = String(capability?.label || '本次操作').trim()
-      return `系统已根据当前语义和文档上下文尽量预填 ${label} 所需参数。确认后会直接调用对应 WPS API。`
+      return `系统已根据当前语义和文档上下文尽量预填 ${label} 所需参数。确认后会直接调用对应文档接口。`
     },
     createPendingWpsCapabilityForm(capability, text = '', options = {}) {
       const currentSavePath = getCurrentDocumentSavePath() || ''
@@ -10885,7 +10923,7 @@ export default {
         status: 'pending',
         summaryText: options.summaryText || this.buildWpsCapabilitySummaryText(capability),
         confirmPrompt: options.confirmPrompt || this.buildWpsCapabilityConfirmPrompt(capability),
-        statusMessage: options.statusMessage || '请在会话内确认这次 WPS 操作的参数。',
+        statusMessage: options.statusMessage || '请在会话内确认这次 察元AI操作的参数。',
         autoContinueSecondsLeft: 0,
         capabilityKey: capability?.capabilityKey || '',
         capabilityLabel: capability?.label || '',
@@ -10926,8 +10964,8 @@ export default {
     },
     async runWpsCapabilityTaskFromMessage(message, capabilityKey, options = {}) {
       const capability = getCapabilityBusItem(capabilityKey) || getWpsCapabilityByKey(capabilityKey)
-      if (!capability) throw new Error('未找到对应的 WPS 能力')
-      const taskTitle = capability.label || 'WPS 操作'
+      if (!capability) throw new Error('未找到对应的 察元AI能力')
+      const taskTitle = capability.label || '察元AI操作'
       const params = options.params && typeof options.params === 'object' ? options.params : {}
       const { taskId, promise } = startWpsCapabilityTask({
         capabilityKey,
@@ -10935,21 +10973,21 @@ export default {
         requirementText: options.requirementText || '',
         params
       })
-      if (!taskId) throw new Error('WPS 任务启动失败，未能创建任务')
+      if (!taskId) throw new Error('察元AI任务启动失败，未能创建任务')
       message.isLoading = true
-      message.content = `已开始执行 WPS 操作“${taskTitle}”，可在当前消息中查看进度与结果。`
+      message.content = `已开始执行 察元AI操作“${taskTitle}”，可在当前消息中查看进度与结果。`
       message.activeWpsCapabilityRun = {
         taskId,
         status: 'running',
         summaryText: `正在执行“${taskTitle}”...`,
-        statusMessage: 'WPS 操作已启动，正在执行...',
+        statusMessage: '察元AI操作已启动，正在执行...',
         showDetails: false,
         details: [],
         progress: 8,
         current: 0,
         total: 3
       }
-      this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 WPS 操作“${taskTitle}”。`)
+      this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 察元AI操作“${taskTitle}”。`)
       this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
       promise.catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
@@ -10969,12 +11007,12 @@ export default {
         return
       }
       pending.status = 'applying'
-      pending.statusMessage = options.autoTriggered === true ? '已按当前表单自动继续执行...' : '正在启动 WPS 操作...'
+      pending.statusMessage = options.autoTriggered === true ? '已按当前表单自动继续执行...' : '正在启动 察元AI操作...'
       this.saveHistory()
       const capabilityKey = String(pending.capabilityKey || '').trim()
       const params = this.buildWpsCapabilityParams(pending)
       message.pendingWpsCapabilityForm = null
-      // WPS 能力执行（插表格/保存等）纳入文档写锁排队
+      // 察元AI能力执行（插表格/保存等）纳入文档写锁排队
       const { promise } = withDocumentWriteLock({ label: `wps-capability.${capabilityKey || 'run' }` }, () =>
         this.runWpsCapabilityTaskFromMessage(message, capabilityKey, {
           requirementText: pending.originalText,
@@ -10989,7 +11027,7 @@ export default {
       this.clearAssistantParameterAutoContinue(message?.id)
       message.pendingWpsCapabilityForm = null
       if (!String(message.content || '').trim()) {
-        message.content = '已取消本次 WPS 操作。'
+        message.content = '已取消本次 察元AI操作。'
       }
       this.saveHistory()
     },
@@ -12796,7 +12834,7 @@ export default {
         return {
           kind: 'wps-capability',
           confidence: 'high',
-          reason: '请求更像直接调用 WPS 能力。'
+          reason: '请求更像直接调用 察元AI能力。'
         }
       }
       // 判断/审查类问题:用户在让 AI 评估正确性,不是让 AI 改文档。
@@ -12886,7 +12924,7 @@ export default {
                 '4. 报告、总结文件、导出文件、图片/视频/语音生成、下载附件，归为 generated-output。',
                 '5. 只有明确提到某个助手、要求创建助手，或确实依赖可复用助手配置时，才归为 assistant-task。',
                 '6. 如果不确定，默认选择 chat。',
-                '7. 若用户明显要操作当前 WPS 文档（纠错别字、翻译选区、全文摘要、脱密、删改格式等）或调用保存/插入等原生能力，或生成报告/图片/音视频，绝不能仅因措辞像“帮我想想”就归为 chat；必须归入对应的 document-operation、wps-capability、generated-output 或 assistant-task。',
+                '7. 若用户明显要操作当前文档（纠错别字、翻译选区、全文摘要、脱密、删改格式等）或调用保存/插入等原生能力，或生成报告/图片/音视频，绝不能仅因措辞像“帮我想想”就归为 chat；必须归入对应的 document-operation、wps-capability、generated-output 或 assistant-task。',
                 'JSON 格式：{"kind":"","confidence":"high|medium|low","reason":""}'
               ].join('\n')
             },
@@ -13116,7 +13154,7 @@ export default {
       if (!model?.providerId || !model?.modelId) return null
       const snapshot = this.resolveBestSelectionContext()
       const systemPrompt = [
-        '你是一个 WPS 文档操作路由器，负责先判断用户想执行哪一种文档操作。',
+        '你是一个 文档操作路由器，负责先判断用户想执行哪一种文档操作。',
         '只输出合法 JSON，不要输出解释、代码块或多余文本。',
         'primaryAction 只能是以下之一：document-revision:proofread、document-revision:clarify、document-revision:correct-description、document-revision:formalize、document-revision:polish、document-revision:term-unify、document-delete、document-text-edit、document-relocation、document-format、document-comment、document-aware、selection-translate、document-declassify、document-declassify-restore、secret-keyword-extract、unsupported、chat。',
         '若用户要对全文做占位符脱密、打开脱密流程、替换敏感实体为占位符，primaryAction 选 document-declassify；若已脱密需输入密码恢复原文，选 document-declassify-restore；若仅提取涉密关键词并以批注标注、不强调完整脱密对话框，选 secret-keyword-extract。',
@@ -15772,8 +15810,8 @@ export default {
       this.finalizeRouteResolutionPrompt(
         message,
         detail
-          ? `已识别到 WPS 直接操作需求，但还无法确定具体能力。${detail} 请补充更明确的动作，例如“保存文档”“另存为”“设置字体为宋体”“把选中文字改成红色”。`
-          : '已识别到 WPS 直接操作需求，但还无法确定具体能力。请补充更明确的动作，例如“保存文档”“另存为”“设置字体为宋体”“把选中文字改成红色”。',
+          ? `已识别到 察元AI直接操作需求，但还无法确定具体能力。${detail} 请补充更明确的动作，例如“保存文档”“另存为”“设置字体为宋体”“把选中文字改成红色”。`
+          : '已识别到 察元AI直接操作需求，但还无法确定具体能力。请补充更明确的动作，例如“保存文档”“另存为”“设置字体为宋体”“把选中文字改成红色”。',
         { clearKeys: ['pendingWpsCapabilityForm'] }
       )
     },
@@ -17626,12 +17664,12 @@ export default {
         if (routeKind === 'wps-capability') {
           const wpsCapabilityRoute = await resolveWpsCapabilityRoute(text, model)
           if (wpsCapabilityRoute?.capabilityKey) {
-            assistantMsg.content = '已识别到可直接执行的 WPS 操作，请确认参数后继续。'
+            assistantMsg.content = '已识别到可直接执行的 察元AI操作，请确认参数后继续。'
             const capability = getCapabilityBusItem(wpsCapabilityRoute.capabilityKey) || getWpsCapabilityByKey(wpsCapabilityRoute.capabilityKey)
             assistantMsg.pendingWpsCapabilityForm = this.createPendingWpsCapabilityForm(capability, text, {
               statusMessage: wpsCapabilityRoute.reason
                 ? `识别结果：${wpsCapabilityRoute.reason}`
-                : '已识别到 WPS 直接操作能力，请确认参数。'
+                : '已识别到 察元AI直接操作能力，请确认参数。'
             })
             assistantMsg.isLoading = false
             this.stopAssistantLoadingProgress(assistantMsg)
@@ -22166,6 +22204,75 @@ export default {
   word-break: break-word;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+}
+
+/* Markdown 渲染内容:md 块级元素内部要收 pre-wrap,否则表格/列表被换行符撑乱 */
+.message-text.md-body {
+  white-space: normal;
+}
+.message-text.md-body :is(p, ul, ol) {
+  margin: 0 0 6px;
+}
+.message-text.md-body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 10px 0 6px;
+  line-height: 1.35;
+}
+.message-text.md-body h1 { font-size: 1.25em; }
+.message-text.md-body h2 { font-size: 1.15em; }
+.message-text.md-body h3,
+.message-text.md-body h4 { font-size: 1.05em; }
+.message-text.md-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+  font-size: 12px;
+  display: block; /* 窄面板横向滚动而非挤压换行 */
+  overflow-x: auto;
+}
+.message-text.md-body th,
+.message-text.md-body td {
+  border: 1px solid rgba(120, 130, 150, 0.35);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.message-text.md-body th {
+  background: rgba(120, 130, 150, 0.12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.message-text.md-body code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: rgba(120, 130, 150, 0.14);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.message-text.md-body pre {
+  background: rgba(120, 130, 150, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.message-text.md-body pre code {
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+.message-text.md-body blockquote {
+  margin: 6px 0;
+  padding: 2px 10px;
+  border-left: 3px solid rgba(120, 130, 150, 0.4);
+  color: #556;
+}
+.message-text.md-body hr {
+  border: none;
+  border-top: 1px solid rgba(120, 130, 150, 0.3);
+  margin: 8px 0;
+}
+.message-text.md-body :is(ul, ol) {
+  padding-left: 20px;
 }
 
 .message-text.message-text-waiting {

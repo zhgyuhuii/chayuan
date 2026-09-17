@@ -69,7 +69,7 @@ const BUILTIN_WORKFLOW_TOOLS = [
     icon: 'BUS',
     group: 'integration',
     groupLabel: '集成连接',
-    description: '通过统一 capability bus 调用任意 namespace 能力，适合复用 WPS 与通用 utility 能力。',
+    description: '通过统一 capability bus 调用任意 namespace 能力，适合复用察元AI与通用 utility 能力。',
     config: {
       capabilityKey: '',
       paramsText: '{}'
@@ -77,11 +77,11 @@ const BUILTIN_WORKFLOW_TOOLS = [
   },
   {
     type: 'wps-capability',
-    title: 'WPS 能力',
+    title: '察元AI能力',
     icon: 'WPS',
     group: 'integration',
     groupLabel: '集成连接',
-    description: '调用统一 capability bus 执行 WPS 原生能力，如替换文本、格式设置、插入结构等。',
+    description: '调用统一 capability bus 执行 察元AI原生能力，如替换文本、格式设置、插入结构等。',
     config: {
       capabilityKey: '',
       paramsText: '{}'

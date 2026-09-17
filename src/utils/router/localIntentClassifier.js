@@ -7,7 +7,7 @@
  * 5 类意图(与 AIAssistantDialog.resolvePrimaryConversationIntent 对齐):
  *   - chat                普通问答 / 闲聊 / 写作
  *   - document-operation  操作文档(改写/翻译/插入/批注/格式)
- *   - wps-capability      WPS 原生能力(保存/插表/字体/对齐)
+ *   - wps-capability      察元AI原生能力(保存/插表/字体/对齐)
  *   - generated-output    多模态生成 / 报告导出
  *   - assistant-task      明确点名某个助手
  *
@@ -33,7 +33,7 @@ const KIND_ASST = 'assistant-task'
  *   subKind: 可选,具体子能力 / 助手 ID 提示
  */
 const RULES = [
-  // ---------- WPS 原生能力(高置信)----------
+  // ---------- 察元AI原生能力(高置信)----------
   { pattern: /(?:保存|另存为|保存到|导出到|存盘|存档).{0,12}(文档|文件)?/, kind: KIND_WPS, score: 90, subKind: 'save-document' },
   { pattern: /(?:加密|设置密码).{0,8}(?:文档|文件)/, kind: KIND_WPS, score: 90, subKind: 'encrypt-document' },
   { pattern: /(?:解密|去掉密码|移除密码|取消加密).{0,8}(?:文档|文件)/, kind: KIND_WPS, score: 90, subKind: 'decrypt-document' },

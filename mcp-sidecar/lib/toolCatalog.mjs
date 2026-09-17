@@ -26,10 +26,11 @@ function tool(def) {
 export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.10.0' }
 
 export const SERVER_INSTRUCTIONS = [
-  'You are connected to 察元 WPS MCP. End users speak natural Chinese/English only — they never name tools.',
+  'You are connected to 察元AI MCP. End users speak natural Chinese/English only — they never name tools.',
   'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export). Do not invent fine-grained tool names.',
   'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE). Prefer resource chayuan://guide/tool-routing for layer routing.',
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
+  'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled, including blank files and template copies. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
   'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → proofread_*/declassify_*/kb_*/assistants_*.',
   'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
   'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply.',
@@ -394,24 +395,6 @@ const CORE_TOOLS = [
         },
         confirmed: { type: 'boolean', description: 'false/omit=preview; true=write all ops.' },
         title: { type: 'string', description: 'Optional undo/title label.' }
-      }
-    }
-  }),
-
-  tool({
-    name: 'document_new',
-    description: [
-      'WHAT: Create a blank document, or open templatePath as a new working copy.',
-      'WHEN: 「新建文档」「从模板开一份」 before writing sample content.',
-      'NOT: Does not save to a path (use document_save).',
-      'EXAMPLE: {} or {"templatePath":"C:\\\\Templates\\\\blank.dotx"}'
-    ].join(' '),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        templatePath: { type: 'string', description: 'Optional local template/doc path.' }
       }
     }
   }),

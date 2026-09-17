@@ -76,13 +76,7 @@ export function resetWriteBaselines() {
   baselines.clear()
 }
 
-/**
- * 校验指定 token 的基线。基线为空=放行（该回合起点没有可用文档）。
- * 基线记录的是另一篇文档=拒绝：无论是用户中途切换（模型还拿旧文档的读取在
- * 规划写入）还是 UI 直调链路跨文档误用，都应重新建立上下文。模型经
- * document.activate/open/new 主动切文档本身走写锁，写后会滚动更新本 token
- * 的基线到新文档，后续写自然通过——不依赖这里的放行。
- */
+// 跨 WebView 可能没有本地基线，回合目标文档仍由 expectDocId 独立校验。
 function verifyWriteBaseline(ownerToken) {
   const baseline = baselines.get(String(ownerToken || ANON_TOKEN))
   if (!baseline || !baseline.fp) return { ok: true }
@@ -169,7 +163,7 @@ export function withDocumentWriteLock(opts = {}, fn) {
       throw makeError('DOC_WRITE_LOCK_CANCELLED', '已取消等待文档写锁，本次写回未执行。')
     }
     const nowDocId = getActiveDocId()
-    if (expectDocId && nowDocId && expectDocId !== nowDocId) {
+    if (expectDocId && expectDocId !== nowDocId) {
       throw makeError('DOC_SWITCHED', '排队等待期间活动文档已切换，本次写回已取消（避免写到错误文档）。')
     }
     if (owner) {
@@ -195,14 +189,14 @@ export function withDocumentWriteLock(opts = {}, fn) {
         await new Promise((resolve) => setTimeout(resolve, 300))
       } catch { /* ignore */ }
       owner = null
-      // 写后滚动更新基线（无论成败）：只更新调用者自己的 token（PR5 起不再洗白
-      // 其它回合）+ 匿名槽。若期间活动文档切换了（verdict.docSwitched 或写入本身
-      // 切了文档），在新文档上重立基线——同回合后续写以新文档为参照。
-      const rollFp = getDocumentFingerprint()
+      // 回合基线不能因写后沉淀期间切换文档而重新绑定到另一篇文档。
       const rollDocId = getActiveDocId()
-      baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
-      if (baselineToken !== ANON_TOKEN) {
-        baselines.set(ANON_TOKEN, { docId: rollDocId, fp: rollFp })
+      if (baselineToken === ANON_TOKEN || rollDocId === nowDocId) {
+        const rollFp = getDocumentFingerprint()
+        baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
+        if (baselineToken !== ANON_TOKEN) {
+          baselines.set(ANON_TOKEN, { docId: rollDocId, fp: rollFp })
+        }
       }
       notifySubscribers()
     }

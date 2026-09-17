@@ -80,10 +80,13 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
     .filter(t => t && t.status !== 'completed' && String(t?.content || '').trim())
   const lines = [
-    '你是察元助手页内的文档智能体。通过 MCP 工具操作当前 WPS 文档与其它已配置的 HTTP MCP 服务。',
+    '你是察元助手页内的文档智能体。通过 MCP 工具操作当前文档与其它已配置的 HTTP MCP 服务。',
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
     '禁止调用 declassify_*。写操作直接执行（confirmed 由系统自动处理）；较大范围的修改可先 dryRun/预览再落笔。',
+    '【仅当前文档】所有编写、输入、改写和排版都在当前打开的文档中完成。禁止新建空白文档、从模板另开文档、打开临时文件、切换活动文档或启动/重启应用；不得借助其它 MCP 服务绕过。用户要求写一篇文章或生成文档，不等于授权创建窗口；即使明确要求新建，也请用户手动新建并打开后再继续。',
+    '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
+    '【没有文档或桥接失败】当前没有打开文档时停止文档操作，提示用户手动打开目标文档后重试；工具失败不得以新建、重新打开文档或重启宿主作为恢复手段。',
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
@@ -179,6 +182,7 @@ export async function runMcpChatOrchestrator({
   historyMessages = [],
   previousTodos = [],
   writeBaselineToken = '',
+  targetDocumentId,
   loopHistory = [],
   signal,
   onProgress,
@@ -223,12 +227,12 @@ export async function runMcpChatOrchestrator({
   // WPS_AGENT_OFFLINE。提前失败，避免模型连续多轮撞同一错误、烧完轮次上限
   // 才放弃（实测 DeepSeek 会反复重试 wps_launch/proofread_run 6 轮）。
   if (hz.ok && hz.agentOnline === false) {
-    pushStep('WPS Agent 未连接', 'sidecar 在线，但 WPS 加载项未注册，文档工具不可用')
+    pushStep('察元AI服务未连接', '本机服务在线，但察元AI加载项未注册，文档工具不可用')
     return {
       ok: false,
       fallback: true,
       reason: 'agent_offline',
-      content: '察元与 WPS 的桥接未连接（Agent 离线）：sidecar 正常，但 WPS 里的察元加载项没有注册。请重启 WPS（或重开文档窗口）让加载项重新连接后重试。',
+      content: '察元AI与文档的桥接未连接（服务离线）：本机服务正常，但察元AI加载项没有注册。请重启应用（或重开文档窗口）让加载项重新连接后重试。',
       steps,
       usedServers: []
     }
@@ -354,6 +358,7 @@ export async function runMcpChatOrchestrator({
       mergedTools,
       pushProgress,
       writeBaselineToken,
+      targetDocumentId,
       onTodoWrite: (list) => {
         todos = normalizeTodoList(list)
         onTodos?.(todos)

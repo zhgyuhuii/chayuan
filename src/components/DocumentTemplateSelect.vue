@@ -71,7 +71,7 @@ export default {
       try {
         const app = window.Application
         if (!app || !app.Documents) {
-          this.showMessage('无法访问 WPS 文档对象')
+          this.showMessage('无法访问文档对象')
           return
         }
         if (this.selectedId === '__blank__') {

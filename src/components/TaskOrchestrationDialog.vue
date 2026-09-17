@@ -1114,7 +1114,7 @@
           </select>
           <div class="meta-row">
             {{ toolConfigDialog.toolType === 'wps-capability'
-              ? '兼容旧版 WPS 能力节点；如需调 utility 等第二类 namespace，请改用“能力总线”节点。'
+              ? '兼容旧版 察元AI能力节点；如需调 utility 等第二类 namespace，请改用“能力总线”节点。'
               : '支持执行 wps.* 与 utility.* 等不同 namespace 的统一能力。' }}
           </div>
           <label class="field-label">参数 JSON</label>

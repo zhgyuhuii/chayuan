@@ -639,49 +639,10 @@ export async function handleDocumentApplyOps(params = {}) {
   }
 }
 
-export async function handleDocumentNew(params = {}) {
-  const app = window.Application
-  if (!app?.Documents) {
-    const err = new Error('Documents API unavailable')
-    err.code = 'WPS_API_UNAVAILABLE'
-    throw err
-  }
-  const templatePath = String(params.templatePath || params.path || '').trim()
-  if (templatePath) {
-    try {
-      if (typeof app.Documents.Open === 'function') {
-        try {
-          app.Documents.Open(templatePath, false, false, true)
-        } catch {
-          app.Documents.Open(templatePath)
-        }
-      } else if (typeof app.Documents.OpenFromUrl === 'function') {
-        app.Documents.OpenFromUrl(templatePath)
-      } else {
-        throw new Error('Open unavailable')
-      }
-      return { ok: true, created: false, openedTemplate: true, document: docInfo() }
-    } catch (e) {
-      const err = new Error(e?.message || 'Failed to open template')
-      err.code = 'DOCUMENT_NEW_FAILED'
-      throw err
-    }
-  }
-  try {
-    if (typeof app.Documents.Add === 'function') {
-      app.Documents.Add()
-    } else {
-      const err = new Error('Documents.Add unavailable')
-      err.code = 'WPS_API_UNAVAILABLE'
-      throw err
-    }
-  } catch (e) {
-    if (e?.code) throw e
-    const err = new Error(e?.message || 'Documents.Add failed')
-    err.code = 'DOCUMENT_NEW_FAILED'
-    throw err
-  }
-  return { ok: true, created: true, document: docInfo() }
+export async function handleDocumentNew() {
+  const err = new Error('已禁用自动新建文档，请在当前打开的文档中编写；没有文档时请先手动打开目标文档。')
+  err.code = 'DOCUMENT_CREATION_DISABLED'
+  throw err
 }
 
 export async function handleDocumentSave(params = {}) {

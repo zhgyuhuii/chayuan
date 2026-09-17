@@ -331,7 +331,7 @@ export default {
         if (this.task.type === 'wps-capability') {
           const current = Number(this.task.current || 0)
           const total = Number(this.task.total || 0)
-          return total > 0 ? `正在执行：第 ${current} / ${total} 步` : '正在执行 WPS 操作...'
+          return total > 0 ? `正在执行：第 ${current} / ${total} 步` : '正在执行 察元AI操作...'
         }
         if (stage === 'calling_model') return '正在调用模型...'
         if (stage === 'applying_result') return '正在写回文档...'
@@ -348,7 +348,7 @@ export default {
           return this.task.data?.applyResult?.message || `已完成，共添加 ${Number(this.task.data?.commentCount || 0)} 处批注`
         }
         if (this.task.type === 'wps-capability') {
-          return this.task.data?.applyResult?.message || 'WPS 操作已完成'
+          return this.task.data?.applyResult?.message || '察元AI操作已完成'
         }
         return this.task.data?.applyResult?.message || '任务已完成'
       }
@@ -387,19 +387,19 @@ export default {
       const entryMap = {
         dialog: '会话入口',
         'ribbon-direct': '顶部菜单',
-        'wps-capability': 'WPS 原生能力'
+        'wps-capability': '察元AI原生能力'
       }
       const intentMap = {
         chat: '普通对话',
         'document-operation': '文档处理',
         'assistant-task': '助手任务',
-        'wps-capability': 'WPS 能力',
+        'wps-capability': '察元AI能力',
         'generated-output': '生成输出'
       }
       const executionMap = {
         'direct-chat': '直接对话',
         'runner-task': '助手执行',
-        'wps-task': 'WPS 执行',
+        'wps-task': '察元AI执行',
         'generated-file-task': '生成文件'
       }
       const parts = [

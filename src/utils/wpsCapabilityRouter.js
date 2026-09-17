@@ -104,7 +104,7 @@ export async function inferWpsCapabilityWithModel(text = '', model = null) {
     routingPromptHint: item.routingPromptHint
   }))
   const systemPrompt = [
-    '你是一个 WPS 直接操作能力路由器，负责判断用户是否在要求直接调用 WPS API，而不是让 AI 生成内容。',
+    '你是一个 察元AI直接操作能力路由器，负责判断用户是否在要求直接调用文档接口，而不是让 AI 生成内容。',
     '只输出合法 JSON，不要输出解释。',
     '如果用户是在要求“保存、另存为、选择路径后保存、加密、选择路径后加密、插入表格、插入空白页、插入分页符”等直接操作，请返回 capabilityKey。',
     '如果不是直接操作，请返回 capabilityKey 为空字符串。',

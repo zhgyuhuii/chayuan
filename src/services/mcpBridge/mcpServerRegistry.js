@@ -12,7 +12,7 @@ export const MCP_TOOL_NS_SEP = '__'
 export function getBuiltinChayuanServer() {
   return {
     id: CHAYUAN_SERVER_ID,
-    name: '察元 WPS',
+    name: '察元AI',
     url: MCP_URL,
     healthzUrl: MCP_HEALTHZ_URL,
     baseUrl: MCP_BASE_URL,
@@ -230,17 +230,19 @@ export function parseNamespacedTool(namespaced) {
   }
 }
 
-/**
- * Chayuan tools allowed in in-page orchestrator.
- * Default-allow everything except declassify_* (trusted in-app channel only).
- * 此前是前缀白名单（wps_/document_/proofread_/kb_retrieve/assistants_），
- * 导致 format_run/format_para/style/layout 等排版工具虽在 catalog 与系统提示词里、
- * agent 会话却"未挂载"（2026-09-17「按438c设置字体」任务实锤）。
- */
+// 页内智能体不能改变宿主窗口或活动文档，否则可能销毁承载对话的 WebView。
+const DOCUMENT_LIFECYCLE_TOOLS = new Set([
+  'document_new',
+  'document_open',
+  'document_ensure_open',
+  'document_activate',
+  'wps_launch'
+])
+
 export function isChayuanToolAllowed(toolName) {
   const n = String(toolName || '')
   if (!n) return false
-  return !n.startsWith('declassify')
+  return !n.startsWith('declassify') && !DOCUMENT_LIFECYCLE_TOOLS.has(n)
 }
 
 export function getEnabledMcpServers() {

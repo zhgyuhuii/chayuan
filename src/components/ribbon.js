@@ -1217,13 +1217,13 @@ async function exportAllTablesToExcel() {
       // 尝试获取或创建WPS表格应用程序
       let ketApp = null
       
-      console.log('尝试获取WPS表格应用程序...')
+      console.log('尝试获取表格应用...')
       
       // 尝试通过GetObject获取已运行的WPS表格实例
       if (window.Application && window.Application.GetObject) {
         try {
           ketApp = window.Application.GetObject('', 'Ket.Application')
-          console.log('✓ 成功获取已运行的WPS表格实例')
+          console.log('✓ 成功获取已运行的表格应用实例')
         } catch (e) {
           console.log('获取已运行实例失败:', e.message || e.toString())
         }
@@ -1299,11 +1299,11 @@ async function exportAllTablesToExcel() {
           ketApp.Quit()
           
           saved = true
-          console.log('✓ 成功通过WPS表格保存文件')
+          console.log('✓ 成功通过表格应用保存文件')
           alert(`成功导出${tables.Count}个表格到: ${finalFilePath}`)
           
         } catch (e) {
-          console.error('使用WPS表格保存失败:', e)
+          console.error('使用表格应用保存失败:', e)
           console.error('错误详情:', {
             message: e.message,
             name: e.name,
@@ -1313,15 +1313,15 @@ async function exportAllTablesToExcel() {
             try {
               ketApp.Quit()
             } catch (e2) {
-              console.error('关闭WPS表格失败:', e2)
+              console.error('关闭表格应用失败:', e2)
             }
           }
         }
       } else {
-        console.log('无法获取WPS表格应用程序，将使用xlsx库生成文件')
+        console.log('无法获取表格应用，将使用xlsx库生成文件')
       }
     } catch (e) {
-      console.error('尝试使用WPS表格保存时出错:', e)
+      console.error('尝试使用表格应用保存时出错:', e)
     }
     
     // 方法2: 如果WPS表格方法失败，使用xlsx库生成Excel文件

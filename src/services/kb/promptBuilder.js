@@ -127,7 +127,7 @@ export function build({ mode = 'qa', sources = [], userQuery = '', selectionText
       const sel = String(selectionText || '').trim()
       if (!sel) {
         error = 'missing_selection'
-        userPrompt = `【缺少待核对原文】\n请用户先在 WPS 文档中选中要核对的段落,然后通过"知识库核对本段"再次发起;` +
+        userPrompt = `【缺少待核对原文】\n请用户先在文档中选中要核对的段落,然后通过"知识库核对本段"再次发起;` +
           `不要核对其它内容,也不要凭空生成"待核对文本"。\n\n【知识库片段】\n${sourcesBlock}`
       } else {
         userPrompt = `【待核对原文】\n${sel}\n\n【知识库片段】\n${sourcesBlock}`

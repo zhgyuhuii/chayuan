@@ -181,5 +181,34 @@ globalThis.window = { Application: { get ActiveDocument() { return state.doc } }
   ok(other.fp === '', 'T10 未登记 token 无基线（写入视为无保护放行）')
 }
 
+{
+  resetWriteBaselines()
+  setWriteBaseline(undefined, undefined, 'pinned-turn')
+  const originalId = state.doc.FullName
+  let wrote
+  const writing = new Promise(resolve => { wrote = resolve })
+  const first = withDocumentWriteLock({ baselineToken: 'pinned-turn', expectDocId: originalId }, async () => {
+    wrote()
+    return 'done'
+  })
+  await writing
+  state.doc = makeDoc('docB.docx', '不能写入的文档')
+  await first.promise
+  ok(getWriteBaseline('pinned-turn').docId === originalId, 'T11 写后等待期间切文档不重绑定回合基线')
+  const next = withDocumentWriteLock({ baselineToken: 'pinned-turn' }, async () => 'must-not-run')
+  ok((await errCode(next.promise)) === 'DOCUMENT_MODIFIED_SINCE_BASELINE', 'T11 后续写不能落到切换后的文档')
+}
+
+{
+  resetWriteBaselines()
+  let calls = 0
+  const w = withDocumentWriteLock({ baselineToken: 'other-webview-turn', expectDocId: 'docA.docx' }, async () => { calls++ })
+  ok((await errCode(w.promise)) === 'DOC_SWITCHED' && calls === 0, 'T12 未登记 token 仍按传入的回合文档拒绝误写')
+  state.doc = null
+  const closed = withDocumentWriteLock({ expectDocId: 'docA.docx' }, async () => { calls++ })
+  ok((await errCode(closed.promise)) === 'DOC_SWITCHED' && calls === 0, 'T12 原文档关闭后不执行写入')
+  state.doc = makeDoc('docA.docx', '第一段张三\r第二段李四\r第三段王五')
+}
+
 console.log(failed === 0 ? `\nALL ${passed} TESTS PASSED` : `\n${failed} FAILED / ${passed} passed`)
 process.exitCode = failed === 0 ? 0 : 1

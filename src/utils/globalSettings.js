@@ -104,7 +104,7 @@ function saveToFile(obj) {
   } catch (e) {
     if (_isPathSeparatorRejection(e)) {
       _fileWriteDisabled = true
-      console.info('globalSettings saveToFile: 当前 WPS 宿主不支持带分隔符的文件路径,改用 localStorage 持久化。')
+      console.info('globalSettings saveToFile: 当前应用宿主不支持带分隔符的文件路径,改用 localStorage 持久化。')
       return false
     }
     console.warn('globalSettings saveToFile:', e)

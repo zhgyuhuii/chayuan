@@ -388,12 +388,12 @@ import SourceCodeLinks from './common/SourceCodeLinks.vue'
 const PRODUCT_FAMILY = [
   {
     key: 'wps',
-    name: '察元 WPS AI 文档助手',
+    name: '察元AI 文档助手',
     sub: '限量免费 · 自带模型不限量',
     icon: '📄',
     tone: 'plain',
     current: true,
-    pitch: '装到 WPS 里,文档级 AI 写作 / 改写 / 摘要 / 引用,内置域内知识库。',
+    pitch: '装到文档应用里,文档级 AI 写作 / 改写 / 摘要 / 引用,内置域内知识库。',
     points: [
       '2000+ 内置助手 · 200+ 行业,8 种写回',
       '域内知识库 RAG · 引用气泡 · 原文下载',

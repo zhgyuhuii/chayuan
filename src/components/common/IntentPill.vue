@@ -40,7 +40,7 @@
 const KIND_VISUAL = {
   chat:                 { visual: 'chat',     icon: '💬', text: '对话',           hint: '将作为普通对话回复'              },
   'document-operation': { visual: 'doc-op',   icon: '⚡', text: '操作',           hint: '将对当前文档执行操作'             },
-  'wps-capability':     { visual: 'doc-op',   icon: '⚡', text: '操作',           hint: '将调用 WPS 原生能力'              },
+  'wps-capability':     { visual: 'doc-op',   icon: '⚡', text: '操作',           hint: '将调用 察元AI原生能力'              },
   'generated-output':   { visual: 'gen',      icon: '✨', text: '生成',           hint: '将生成图 / 音 / 视频 / 报告'      },
   'assistant-task':     { visual: 'asst',     icon: '🤖', text: '助手',           hint: '将运行某个智能助手'                }
 }

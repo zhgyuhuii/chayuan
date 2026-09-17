@@ -1,7 +1,7 @@
 /**
  * Unified MCP Agent dispatcher — handles jobs from sidecar long-poll.
  */
-import { withDocumentWriteLock, setWriteBaseline } from '../documentWriteLock.js'
+import { withDocumentWriteLock } from '../documentWriteLock.js'
 import {
   startSpellCheckAllTask,
   startSpellCheckSelectionTask,
@@ -484,11 +484,22 @@ export async function dispatchMcpJob(job = {}) {
     // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
     const baselineToken = String(params.__baselineToken || '')
     delete params.__baselineToken
+    const expectDocId = params.__expectedDocId
+    delete params.__expectedDocId
+    if (expectDocId !== undefined) {
+      const doc = window.Application?.ActiveDocument
+      if (!expectDocId || !doc) {
+        throw Object.assign(new Error('当前没有可写的目标文档，请手动打开文档后重新发送指令。'), { code: 'NO_ACTIVE_DOCUMENT' })
+      }
+      if (String(doc.FullName || doc.Name || '') !== expectDocId) {
+        throw Object.assign(new Error('活动文档已切换，本回合仍绑定原文档，已停止操作以免写入其它文档。'), { code: 'DOC_SWITCHED' })
+      }
+    }
     if (isWrite) {
       // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
       // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
       const { promise } = withDocumentWriteLock(
-        { label: method, ...(baselineToken ? { baselineToken } : {}) },
+        { label: method, ...(baselineToken ? { baselineToken } : {}), ...(expectDocId !== undefined ? { expectDocId } : {}) },
         () => dispatchMcpJobInner(method, params)
       )
       return promise.then(
@@ -539,14 +550,6 @@ async function dispatchMcpJobInner(method, params) {
       return handleDocumentInsert(params)
     case 'document.apply_ops':
       return handleDocumentApplyOps(params)
-    case 'document.reset_baseline': {
-      // sidecar 的 document_new OS 打开路径收尾:新文档成为活动文档后,按当前
-      // 文档重立该回合的 OCC 基线(旧基线指向旧文档,必然失配,不刷则同回合
-      // 后续写全被 DOCUMENT_MODIFIED_SINCE_BASELINE 拦成死循环)。
-      // fp/docId 传 undefined=setWriteBaseline 自动取当前活动文档。
-      setWriteBaseline(undefined, undefined, String(params.baselineToken || ''))
-      return { ok: true, reset: true }
-    }
     case 'document.new':
       return handleDocumentNew(params)
     case 'document.save':

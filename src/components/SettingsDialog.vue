@@ -349,7 +349,7 @@
               />
               <select v-model="capabilityAuditNamespaceFilter" class="config-input backup-history-filter-select">
                 <option value="">全部命名空间</option>
-                <option value="wps">WPS 原生</option>
+                <option value="wps">察元AI 原生</option>
                 <option value="utility">Utility 扩展</option>
               </select>
               <select v-model="capabilityAuditStatusFilter" class="config-input backup-history-filter-select">
@@ -1692,7 +1692,7 @@
             <div class="config-header backup-history-header">
               <div class="config-header-text">
                 <h4>{{ selectedCapabilityAuditRecord?.capabilityLabel || selectedCapabilityAuditRecord?.capabilityKey || '能力调用审计' }}</h4>
-                <p class="config-header-desc">查看 capability bus 与 WPS 能力执行的来源、参数、结果和失败原因。</p>
+                <p class="config-header-desc">查看 capability bus 与 察元AI能力执行的来源、参数、结果和失败原因。</p>
               </div>
               <button
                 v-if="selectedCapabilityAuditLinkedTask"
@@ -1902,7 +1902,7 @@
                 </p>
                 <p class="path-hint">错误日志目录（只读）：{{ errorLogDirectoryDisplay }}</p>
                 <p class="path-hint">
-                  若该目录下没有生成 .log：多为路径不可写或相对路径未被 WPS 接受。此时最近错误会缓存在插件存储键
+                  若该目录下没有生成 .log：多为路径不可写或相对路径未被应用接受。此时最近错误会缓存在插件存储键
                   NdErrorLogFallback；进程闪退、原生崩溃可能在落盘前终止，磁盘上仍可能没有文件。
                 </p>
                 <button class="btn-link" :disabled="isFormSaved" @click="useDefault">使用默认路径</button>
@@ -2018,7 +2018,7 @@
                         class="config-input"
                         type="text"
                         :readonly="mcpEditorForm.builtin"
-                        placeholder="如 filesystem / 察元 WPS"
+                        placeholder="如 filesystem / 察元AI"
                       />
                     </label>
                     <label class="mcp-editor-field mcp-editor-field--full">
@@ -2993,7 +2993,7 @@ export default {
       if (!s) return '尚未运行'
       const parts = []
       parts.push(s.useLongPoll ? 'Agent 继续长轮询' : '可评估切 WebSocket')
-      parts.push(s.allowWpsSpawn ? '可尝试 WPS 内 spawn（仍建议安装器自启）' : '勿把 WPS spawn 当主路径')
+      parts.push(s.allowWpsSpawn ? '可尝试应用内 spawn（仍建议安装器自启）' : '勿把应用内 spawn 当主路径')
       parts.push(`存活探针：${s.ribbonSurvival || '—'}`)
       return parts.join('；')
     },
@@ -5491,7 +5491,7 @@ export default {
           return
         }
       } catch (e) {
-        console.warn('WPS 打开链接失败:', e)
+        console.warn('打开链接失败:', e)
       }
       try {
         window.open(url, '_blank', 'noopener,noreferrer')
@@ -6865,7 +6865,7 @@ export default {
         dialog: '对话框',
         workflow: '工作流',
         'workflow-tool': '工作流工具',
-        'wps-task': 'WPS 任务',
+        'wps-task': '察元AI任务',
         assistant: '助手'
       }
       return mapping[normalized] || normalized || '未记录'
@@ -6903,7 +6903,7 @@ export default {
     getCapabilityNamespaceLabel(namespace) {
       const normalized = String(namespace || '').trim()
       const mapping = {
-        wps: 'WPS 原生',
+        wps: '察元AI 原生',
         utility: 'Utility 扩展'
       }
       return mapping[normalized] || normalized || '未记录'

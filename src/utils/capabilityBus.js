@@ -105,7 +105,7 @@ const CAPABILITY_NAMESPACE_META = {}
 function buildNamespaceMeta(namespace, meta = {}) {
   return {
     namespace,
-    label: normalizeString(meta.label, namespace === 'wps' ? 'WPS 原生能力' : namespace),
+    label: normalizeString(meta.label, namespace === 'wps' ? '察元AI原生能力' : namespace),
     description: normalizeString(meta.description),
     manifestVersion: normalizeString(meta.manifestVersion, '1.0.0'),
     pluginType: normalizeString(meta.pluginType, 'internal'),
@@ -149,8 +149,8 @@ function ensureDefaultCapabilityNamespaces() {
   if (!CAPABILITY_NAMESPACES.wps) {
     CAPABILITY_NAMESPACES.wps = createWpsNamespaceHandler()
     CAPABILITY_NAMESPACE_META.wps = buildNamespaceMeta('wps', {
-      label: 'WPS 原生能力',
-      description: 'WPS 文档原生能力集合，支持写回、插入、格式与文件级操作。'
+      label: '察元AI原生能力',
+      description: '文档原生能力集合，支持写回、插入、格式与文件级操作。'
     })
   }
   if (!CAPABILITY_NAMESPACES.utility) {

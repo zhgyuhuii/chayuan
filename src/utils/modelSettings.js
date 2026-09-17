@@ -4,7 +4,7 @@
  */
 
 import { loadGlobalSettings, saveGlobalSettings } from './globalSettings.js'
-import { getModelLogoPath } from './modelLogos.js'
+import { getModelLogoPath, hasKnownModelLogo } from './modelLogos.js'
 import { inferModelRecordType, inferModelType, matchesModelType } from './modelTypeUtils.js'
 import { getDesktopModels, DESKTOP_PROVIDER_PREFIX } from '../services/desktop/desktopStore.js'
 
@@ -323,7 +323,10 @@ export function getModelGroupsFromSettings(modelType) {
 
     groups.push({
       label: getProviderDisplayName(configKey),
-      icon: getModelLogoPath(configKey) || 'images/ai-assistant.svg',
+      // 仅在厂商确有已知 logo 时才填 icon——无 logo 厂商留空,UI 直接渲染
+      // 首字徽标,不再发出注定 404 的 <img> 请求(此前无条件塞路径,导致
+      // 分组头永远走 <img> 分支、显示破图标)
+      icon: hasKnownModelLogo(configKey) ? getModelLogoPath(configKey) : '',
       providerId: configKey,
       models
     })
@@ -343,7 +346,7 @@ export function getModelGroupsFromSettings(modelType) {
       const groupLabel = groupKey === 'local' ? '本地模型' : (getProviderDisplayName(groupKey) || groupKey)
       groups.push({
         label: `察元桌面版 · ${groupLabel}`,
-        icon: getModelLogoPath(providerId) || 'images/logo-avatar.png',
+        icon: hasKnownModelLogo(providerId) ? getModelLogoPath(providerId) : '',
         providerId,
         models: models.map(m => ({
           id: `${providerId}|${m.id}`,

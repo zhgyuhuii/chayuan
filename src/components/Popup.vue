@@ -2162,7 +2162,7 @@ export default {
       const normalized = String(entry || '').trim()
       if (normalized === 'dialog') return '对话框'
       if (normalized === 'ribbon-direct') return '顶部菜单'
-      if (normalized === 'wps-capability') return 'WPS 能力入口'
+      if (normalized === 'wps-capability') return '察元AI能力入口'
       return normalized || '-'
     },
     formatPrimaryIntent(intent) {
@@ -2170,7 +2170,7 @@ export default {
       if (normalized === 'chat') return '普通对话'
       if (normalized === 'document-operation') return '文档处理'
       if (normalized === 'assistant-task') return '助手任务'
-      if (normalized === 'wps-capability') return 'WPS 能力'
+      if (normalized === 'wps-capability') return '察元AI能力'
       if (normalized === 'generated-output') return '生成输出'
       return normalized || '-'
     },
@@ -2178,7 +2178,7 @@ export default {
       const normalized = String(mode || '').trim()
       if (normalized === 'direct-chat') return '直接对话'
       if (normalized === 'runner-task') return '助手执行'
-      if (normalized === 'wps-task') return 'WPS 执行'
+      if (normalized === 'wps-task') return '察元AI执行'
       if (normalized === 'generated-file-task') return '生成文件'
       return normalized || '-'
     },
@@ -2200,7 +2200,7 @@ export default {
       const normalized = String(source || '').trim()
       if (normalized === 'ribbon-direct') return '顶部菜单直接执行'
       if (normalized === 'dialog') return '对话框'
-      if (normalized === 'wps-capability') return 'WPS 能力入口'
+      if (normalized === 'wps-capability') return '察元AI能力入口'
       if (normalized === 'document-declassify-dialog') return '脱密对话框'
       return normalized || '-'
     },

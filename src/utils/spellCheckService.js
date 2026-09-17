@@ -1010,7 +1010,7 @@ function replaceIssueTextInDocument(doc, chunkStart, issue, chunkText, anchorOpt
     }
   } catch (e) {
     console.warn('replaceIssueTextInDocument failed:', e)
-    return { ok: false, reasonCode: 'wps_replace_failed', reasonLabel: 'WPS 替换失败' }
+    return { ok: false, reasonCode: 'wps_replace_failed', reasonLabel: '察元AI替换失败' }
   }
 }
 
@@ -1557,7 +1557,7 @@ async function prepareSpellCheckAllArgs({ onProgress, onChunkContent, onError, o
   const app = getApplication()
   const doc = app?.ActiveDocument
   if (!doc) {
-    const msg = !app ? '无法获取 WPS 应用对象，请确保在 WPS 中运行' : '当前没有打开任何文档'
+    const msg = !app ? '无法获取应用对象，请确保在文档环境中运行' : '当前没有打开任何文档'
     console.error('spellCheck:', msg)
     onError?.(msg)
     throw new Error(msg)
@@ -1596,7 +1596,7 @@ async function prepareSpellCheckSelectionArgs({ onProgress, onChunkContent, onEr
   const doc = app?.ActiveDocument
   const selection = app?.Selection
   if (!doc || !selection) {
-    const msg = !app ? '无法获取 WPS 应用对象' : '无法获取文档或选区，请先选中要检查的文本'
+    const msg = !app ? '无法获取应用对象' : '无法获取文档或选区，请先选中要检查的文本'
     console.error('spellCheck:', msg)
     onError?.(msg)
     throw new Error(msg)

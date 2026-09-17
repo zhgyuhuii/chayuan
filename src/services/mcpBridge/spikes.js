@@ -146,7 +146,7 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
       verdict: 'NO_SHELLEXECUTE_API',
       candidates,
       elapsedMs: Date.now() - startedAt,
-      note: '无 OAAssist.ShellExecute → 放弃 WPS 内 spawn，Windows 用自研安装器/手动启动'
+      note: '无 OAAssist.ShellExecute → 放弃应用内 spawn，Windows 用自研安装器/手动启动'
     }
   }
 
@@ -195,7 +195,7 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
       launchError,
       candidates: spikeCmdCandidates,
       elapsedMs: Date.now() - startedAt,
-      note: 'ShellExecute 调用失败 → 勿把 WPS spawn 当主路径'
+      note: 'ShellExecute 调用失败 → 勿把应用内 spawn 当主路径'
     }
   }
 
@@ -249,7 +249,7 @@ export async function spikeShellExecute({ waitMs = 6000 } = {}) {
     elapsedMs: Date.now() - startedAt,
     note: ok
       ? 'ShellExecute 对本地脚本有效 → Phase 3 可尝试 spawn sidecar（仍建议安装器自启为主）'
-      : 'ShellExecute 调用无可见效果（新版 WPS 常见）→ 放弃 WPS 内 spawn 为主路径'
+      : 'ShellExecute 调用无可见效果（新版应用常见）→ 放弃应用内 spawn 为主路径'
   }
 }
 
@@ -285,7 +285,7 @@ export function getAgentAliveProbe() {
         id: 'alive',
         ok: false,
         verdict: 'NO_DATA',
-        note: '尚无心跳记录；打开 WPS 并保持 sidecar 在线后等待'
+        note: '尚无心跳记录；打开文档并保持本机服务在线后等待'
       }
     }
     const state = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -306,7 +306,7 @@ export function getAgentAliveProbe() {
       stale: sinceLastMs > 90_000,
       note: ok30
         ? '已存活 ≥30 分钟 → 心跳策略可维持当前'
-        : `已连续记录约 ${aliveMin} 分钟；请保持 WPS 空闲观察是否被回收`
+        : `已连续记录约 ${aliveMin} 分钟；请保持应用空闲观察是否被回收`
     }
   } catch (e) {
     return {

@@ -249,7 +249,7 @@ export function startWpsCapabilityTask(options = {}) {
 export async function executeWpsCapabilityTask(options = {}) {
   const capabilityKey = String(options.capabilityKey || '').trim()
   const capability = getWpsCapabilityByKey(capabilityKey)
-  if (!capability) throw new Error('未找到对应的 WPS 能力')
+  if (!capability) throw new Error('未找到对应的 察元AI能力')
   const requirementText = String(options.requirementText || '').trim()
   const params = options.params && typeof options.params === 'object' ? options.params : {}
   const riskLevel = inferCapabilityRiskLevel(capability, 'wps')
@@ -299,8 +299,8 @@ export async function executeWpsCapabilityTask(options = {}) {
     })
     throw new Error(quotaDecision.reason || '能力调用已达到配额限制')
   }
-  const taskTitle = String(options.taskTitle || capability.label || 'WPS 任务').trim() || 'WPS 任务'
-  const initialEvents = ['已创建 WPS 直接操作任务。', '正在校验参数并准备执行。']
+  const taskTitle = String(options.taskTitle || capability.label || '察元AI任务').trim() || '察元AI任务'
+  const initialEvents = ['已创建察元AI直接操作任务。', '正在校验参数并准备执行。']
   const taskId = addTask({
     type: 'wps-capability',
     title: taskTitle,
@@ -334,7 +334,7 @@ export async function executeWpsCapabilityTask(options = {}) {
   }
   activeCapabilityRuns.set(taskId, runState)
   try {
-    const step1Events = appendEvent(initialEvents, '参数校验完成，开始调用 WPS API。')
+    const step1Events = appendEvent(initialEvents, '参数校验完成，开始调用文档接口。')
     updateTask(taskId, {
       current: 1,
       progress: 30,
@@ -471,7 +471,7 @@ export async function executeWpsCapabilityTask(options = {}) {
         fullOutput: failedText,
         resultSummary: failedText,
         progressStage: error?.code === 'TASK_CANCELLED' ? 'cancelled' : 'failed',
-        progressEvents: appendEvent(['已创建 WPS 直接操作任务。'], failedText),
+        progressEvents: appendEvent(['已创建察元AI直接操作任务。'], failedText),
         estimatedRemainingMs: 0,
         elapsedMs: Date.now() - runState.startedAtMs,
         avgStepMs: 0,

@@ -381,12 +381,12 @@ export function addCommentPinnedToExactText(doc, expectedText, commentText, {
     }
     if (!comment) {
       console.warn('addCommentPinnedToExactText failed:', e)
-      return { ok: false, reasonCode: 'wps_comment_failed', reasonLabel: 'WPS 批注写入失败' }
+      return { ok: false, reasonCode: 'wps_comment_failed', reasonLabel: '察元AI批注写入失败' }
     }
   }
 
   if (!comment) {
-    return { ok: false, reasonCode: 'wps_comment_failed', reasonLabel: 'WPS 批注写入失败' }
+    return { ok: false, reasonCode: 'wps_comment_failed', reasonLabel: '察元AI批注写入失败' }
   }
 
   const scope = readCommentScope(comment)
@@ -427,7 +427,7 @@ export function addCommentPinnedToExactText(doc, expectedText, commentText, {
         start,
         end,
         reasonCode: 'comment_scope_expanded',
-        reasonLabel: '已添加批注，但 WPS 将锚点扩展到更大范围（常见于表格单元格）',
+        reasonLabel: '已添加批注，但应用将锚点扩展到更大范围（常见于表格单元格）',
         matchedBy,
         scope,
         warning: 'scope_expanded'

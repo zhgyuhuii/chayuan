@@ -231,18 +231,18 @@
 <script>
 /*
  * 拓扑数据 — 文案对齐 /work/website/src/config/productCopy.js 的 EDITION_COMPARE 与 FEATURES_COPY。
- * highlights 取自官方网站,relations 写明本产品(WPS 文档助手)在家族里的相对定位与共享边界。
+ * highlights 取自官方网站,relations 写明本产品(察元AI文档助手)在家族里的相对定位与共享边界。
  */
 const PRODUCTS = [
   {
     key: 'wps',
-    name: '察元 WPS AI 文档助手',
+    name: '察元AI 文档助手',
     icon: '📄',
     sub: '开源 · 免费 · Apache-2.0',
-    tagline: '装到 WPS 里,文档级 AI',
+    tagline: '装到文档应用里,文档级 AI',
     accent: 'plain',
     current: true,
-    lead: '你现在使用的就是这个产品 — 一个开源、可自托管、零成本的 WPS Writer 加载项。它把对话、检索、审校与写回都留在编辑器里,不需要切换窗口。',
+    lead: '你现在使用的就是这个产品 — 一个开源、可自托管、零成本的文档加载项。它把对话、检索、审校与写回都留在编辑器里,不需要切换窗口。',
     highlights: [
       '20+ 内置助手:摘要 / 改写 / 翻译 / 关键词 / AI 痕迹 / 保密检查',
       '远程知识库 RAG:问题改写 → 批量召回 → 去重 → 重排 → 引用 prompt',
@@ -272,7 +272,7 @@ const PRODUCTS = [
       '国产化:Kylin V10 / UOS / openKylin / deepin · x86_64 / aarch64 / loongarch64'
     ],
     relations: [
-      '与"WPS 文档助手"(你正在用的)共享:对话引擎 / 知识库结构 / 设计系统',
+      '与"察元AI文档助手"(你正在用的)共享:对话引擎 / 知识库结构 / 设计系统',
       '与"服务版 / 至臻版"共享:同一份桌面端能力,服务版/至臻版把它升级为多人服务化部署',
       '不依赖云:可以全程内网 / 断网运行 — 政企可用'
     ]
@@ -326,7 +326,7 @@ const MODULES = [
     name: '察元智库',
     icon: '📚',
     tagline: 'Knowledge Universe',
-    availability: 'WPS / 桌面 / 服务 / 至臻',
+    availability: '察元AI / 桌面 / 服务 / 至臻',
     lead: '"察元智库"是把五类异构知识源(文档 / 结构化数据 / 外部向量 / 办公库 / 图像)统一到一个 RAG 入口的引擎层。',
     highlights: [
       '`doc:` 文档库:PDF / Word / Excel / Markdown / HTML / 图像 自动解析 + 切片 + 嵌入',
@@ -337,7 +337,7 @@ const MODULES = [
       '一个端点 `POST /api/v1/kb-query/search`,自动路由到对应 adapter'
     ],
     relations: [
-      '本产品(WPS 助手)可直接消费远程智库,带引用气泡和原文下载',
+      '本产品(察元AI)可直接消费远程智库,带引用气泡和原文下载',
       '桌面版/服务版/至臻版的"察元智库"是同一套 schema 与 API,只是部署位置不同',
       '与"训练数据中心"的橙色虚线:标注样本回流到智库,改善检索质量'
     ]
@@ -347,7 +347,7 @@ const MODULES = [
     name: '模型广场',
     icon: '🤖',
     tagline: '170+ 模型 · 18+ 厂商',
-    availability: 'WPS / 桌面 / 服务 / 至臻',
+    availability: '察元AI / 桌面 / 服务 / 至臻',
     lead: '把"对话 / 视觉 / 嵌入 / 语音 / 图像"五类模型分类配置,所有助手按 capability 继承默认模型,密钥本地落盘。',
     highlights: [
       '云端:DeepSeek / 通义 / 文心 / 智谱 / Kimi / 豆包 / OpenAI / Anthropic / Gemini',
@@ -370,12 +370,12 @@ const MODULES = [
     lead: '完整的 Word / Excel / PPT 在线编辑能力,直接接入察元智库的 RAG 与多模型路由,适合企业内的"边写边问"场景。',
     highlights: [
       '在线 Word / Excel / PPT 编辑',
-      '与 WPS 加载项(本产品)互通文档,但部署形态不同',
+      '与察元AI加载项(本产品)互通文档,但部署形态不同',
       '深度结合智库与模型广场,文档自动纳入 office 库统一查询',
       '至臻版独占模块(服务版与桌面版不含)'
     ],
     relations: [
-      '本产品(WPS 加载项)是"桌面 Office + AI"的方案;察元办公是"在线 Office + AI"的方案 — 两条路径互补',
+      '本产品(察元AI加载项)是"桌面 Office + AI"的方案;察元办公是"在线 Office + AI"的方案 — 两条路径互补',
       '橙色虚线:办公文档自动纳入察元智库,统一被检索'
     ]
   },
@@ -393,7 +393,7 @@ const MODULES = [
       '至臻版独占模块'
     ],
     relations: [
-      '本产品(WPS 助手)有"任务编排"是简化版的同一类概念',
+      '本产品(察元AI)有"任务编排"是简化版的同一类概念',
       '橙色虚线:智能空间 → 应用市场,空间编排里直接拉应用作为节点'
     ]
   },
@@ -407,12 +407,12 @@ const MODULES = [
     highlights: [
       '应用库:可发布 / 订阅 / 灰度',
       '可被智能空间作为工作流节点直接调用',
-      '可挂载到我的待办 / Office / WPS 入口',
+      '可挂载到我的待办 / Office / 察元AI入口',
       '至臻版独占模块'
     ],
     relations: [
       '橙色虚线:智能空间编排应用、训练数据中心反哺应用质量',
-      '本产品(WPS 助手)的"自定义助手"是简化版的应用 — 都是把 prompt + 输入 + 输出 + 写回打包'
+      '本产品(察元AI)的"自定义助手"是简化版的应用 — 都是把 prompt + 输入 + 输出 + 写回打包'
     ]
   },
   {
@@ -440,7 +440,7 @@ const ENGINE = {
   name: '统一引擎(Unified Engine)',
   icon: '⚙️',
   tagline: '所有察元产品共享的中枢',
-  lead: '统一引擎不是一个 SKU,它是被所有 4 个产品共同使用的"底层":同一套对话引擎、同一套知识库结构、同一套设计系统。这也是为什么从 WPS 助手切换到桌面版/服务版/至臻版时,你的助手、KB、模型几乎"零迁移成本"。',
+  lead: '统一引擎不是一个 SKU,它是被所有 4 个产品共同使用的"底层":同一套对话引擎、同一套知识库结构、同一套设计系统。这也是为什么从察元AI切换到桌面版/服务版/至臻版时,你的助手、KB、模型几乎"零迁移成本"。',
   highlights: [
     '对话引擎:模型路由 / 助手系统 / 工具调用 / MCP 协议',
     '知识库结构:doc / src / vec / office / img 五类知识源 schema 一致',

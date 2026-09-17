@@ -60,7 +60,7 @@ function warnFileSystemUnavailableOnce() {
   const app = getApplication()
   if (!app) {
     console.warn(
-      '[GlobalErrorLogger] 无 WPS Application.FileSystem（常见于用浏览器直接打开本地调试页）。异常仍会写入 NdErrorLogFallback；在 WPS 内打开加载项后可写磁盘日志。'
+      '[GlobalErrorLogger] 无应用 FileSystem（常见于用浏览器直接打开本地调试页）。异常仍会写入 NdErrorLogFallback；在 WPS 内打开加载项后可写磁盘日志。'
     )
   } else {
     console.warn('[GlobalErrorLogger] Application 已找到但 FileSystem 不可用，异常已写入 NdErrorLogFallback。')
@@ -168,7 +168,7 @@ function prepareLogDirectoriesOnInstall() {
   if (tried.length > 0) {
     console.warn('[GlobalErrorLogger] 启动时未能创建或可写任一日志目录（已尝试创建路径）', {
       tried,
-      hint: '请确认「数据路径」所在磁盘可写，或检查 WPS 对路径的访问权限'
+      hint: '请确认「数据路径」所在磁盘可写，或检查应用对路径的访问权限'
     })
   }
 }
