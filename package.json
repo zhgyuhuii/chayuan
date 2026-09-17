@@ -37,7 +37,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port 3894",
+		"dev": "vite --port 3889",
 		"build": "vite build",
 		"preview": "vite preview",
 		"mcp:sidecar": "node mcp-sidecar/server.mjs",
