@@ -674,7 +674,7 @@
               <p v-else class="welcome-support-hint">
                 欢迎关注微信公众号「智灵鸟科技」并访问 <a href="https://aidooo.com" target="_blank" rel="noreferrer" class="welcome-support-link" @click.prevent="openExternalWebsite('https://aidooo.com')">aidooo.com</a>；关注与支持二维码在可用时将显示在上方。
               </p>
-              <WelcomeAdSlots embedded />
+              <WelcomeAdSlots embedded @open-external="openExternalWebsite" />
               <div class="welcome-entitlement">
                 <template v-if="entitlementSummary.licensed">
                   <span class="welcome-entitlement-badge">已购买</span>
