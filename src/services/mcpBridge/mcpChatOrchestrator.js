@@ -31,9 +31,9 @@ const MAX_ROUNDS = 16
 
 // 回合启动提速：工具清单短 TTL 缓存。此前每回合都要 initialize + tools/list（本机
 // 两个串行 HTTP 往返，上游 MCP 每个还要白名单同步 + 拉取，动辄数百 ms 起）——连续
-// 对话时这些延迟全部叠加在首字之前。缓存 60s 内直接复用；白名单/启用状态变化最迟
-// 60s 后生效，对工具目录这种准静态数据是可接受的窗口。
-const TOOLS_CACHE_TTL_MS = 60_000
+// 对话时这些延迟全部叠加在首字之前。缓存 5 分钟内直接复用；白名单/启用状态变化最迟
+// 5 分钟后生效，对工具目录这种准静态数据是可接受的窗口。
+const TOOLS_CACHE_TTL_MS = 300_000
 let localToolsCache = { at: 0, tools: null }
 const upstreamToolsCache = new Map() // serverId → { at, tools }
 
@@ -83,13 +83,13 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
     '禁止调用 declassify_*。写文档前先 dryRun/预览；需要 confirmed=true 的写回交给用户确认，不要自行编造 confirmed=true。',
-    '【任务清单·强制顺序】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：第 1 轮必须先调用 todo_write 列出完整计划，在此之前禁止调用任何其他工具（只读工具也不行）；随后严格按清单推进——每开始一项，先 todo_write 把它置 in_progress；每完成一项，立即 todo_write 置 completed 再开始下一项；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
+    '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
     '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。',
     '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。',
     pendingPrev.length
-      ? `【沿用清单】上一轮任务清单尚有未完成项：${pendingPrev.map(t => t.content).join('；')}。先调用 todo_write 重建该清单（用户已确认/已完成的部分标 completed，本轮要做的第一项置 in_progress），沿用它继续执行，不要另立新清单。`
+      ? `【沿用清单】上一轮任务清单尚有未完成项：${pendingPrev.map(t => t.content).join('；')}。把 todo_write 重建该清单（用户已确认/已完成的部分标 completed，本轮要做的第一项置 in_progress）与本轮第一个真实工具调用同轮并行提交，沿用原清单继续执行，不要另立新清单。`
       : '',
     '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。',
     '【改正正文·流程】proofread_run 返回后汇总问题；按用户选择走「写成批注」(proofread_apply_comments) 或「改正正文」出口，不要只用批注交差。',
@@ -181,6 +181,7 @@ export async function runMcpChatOrchestrator({
   loopHistory = [],
   signal,
   onProgress,
+  onTurnText,
   onTodos,
   onSnapshot,
   confirmHandler
@@ -303,13 +304,18 @@ export async function runMcpChatOrchestrator({
 
   // 首次变更前快照（PR7）：loop 在第一个 mutating 工具执行前调用；页面直读
   // WPS API 取全文，供消息卡「撤销本次修改」一键回滚。读不到文档返回 undefined。
+  // 超长文档同步读全文会卡住 WebView 主线程（整秒级），此时放弃快照——撤销卡
+  // 优雅降级（不显示），不为极端大文档牺牲整轮流畅度。
+  const SNAPSHOT_MAX_TEXT_CHARS = 200_000
   const captureDocSnapshot = () => {
     try {
       const doc = window.Application?.ActiveDocument
       if (!doc) return undefined
+      const text = String(doc.Content?.Text || '')
+      if (text.length > SNAPSHOT_MAX_TEXT_CHARS) return undefined
       return {
         docId: String(doc.FullName || doc.Name || ''),
-        text: String(doc.Content?.Text || ''),
+        text,
         at: Date.now()
       }
     } catch {
@@ -364,6 +370,9 @@ export async function runMcpChatOrchestrator({
       }),
       skill,
       events: {
+        // 流式透出：每轮模型的累计文本实时回调（循环层 onDelta 累加），调用方借此
+        // 在等待工具轮结束前就渲染模型的过程叙述，消除整轮死寂感
+        onText: (text) => onTurnText?.(text),
         onToolStart: (call) => pushStep(`调用 ${call.name}`, JSON.stringify(call.input ?? {}).slice(0, 200)),
         onToolExecuted: ({ call, execution, snapshotBefore }) => {
           const detail = execution.isError ? toolErrorDetail(execution.output) : String(execution.output || '')
@@ -376,7 +385,10 @@ export async function runMcpChatOrchestrator({
       },
       maxTurns: MAX_ROUNDS,
       maxHistory: Infinity, // 单轮编排内不裁历史；跨轮由 loopHistory restore + compaction 承接
-      compaction: { maxBytes: 128 * 1024, keepRecentBytes: 48 * 1024 },
+      // 压缩预算收紧 + 禁用 LLM 摘要：跨回合上下文按轻量原则保留（128KB 时代每回合
+      // 全量 prefill 旧工具输出，回合耗时随对话单调上涨；超阈值时的 LLM 摘要调用还会
+      // 在下一回合开头同步阻塞最多 30s）。机械摘要零额外延迟，质量对本场景够用。
+      compaction: { maxBytes: 48 * 1024, keepRecentBytes: 16 * 1024, disableLlmSummary: true },
       captureSnapshot: captureDocSnapshot
     })
     loopRef = loop
@@ -420,23 +432,76 @@ export async function runMcpChatOrchestrator({
   }
 }
 
-/** 持久化裁剪：从尾部保留到 ~96KB；开头不允许是孤立的 tool 结果（协议配对要求） */
-function trimLoopHistoryForStorage(messages, maxBytes = 96 * 1024) {
+/**
+ * 持久化裁剪：跨回合只带「轻上下文」。
+ *
+ * PR7 最初按 96KB 原样恢复全部 loop 历史（含工具输出），下一回合每轮模型请求
+ * 都要全量 prefill 这些旧输出——回合耗时随对话长度单调上涨，连续对话越聊越慢。
+ * 现按三层瘦身：
+ *   1. 陈旧工具输出截断：最近 2 条 tool 消息保留较长原文（2000 字），更早的截到 500 字；
+ *   2. assistant 消息剥离 reasoning（跨回合无上下文价值，纯占体积）；
+ *   3. 尾部字节预算收紧到 ~24KB，且裁剪只落在安全头部（不允许孤立 tool 结果或
+ *      带未回应 tool_calls 的 assistant 开头，保持 tool_use/tool_result 配对完整）。
+ * 追问上一轮结论靠保留的助手结论文本即可，不需要整份工具输出。
+ */
+const STORE_TOOL_OUTPUT_RECENT = 2
+const STORE_TOOL_OUTPUT_FULL_CHARS = 2000
+const STORE_TOOL_OUTPUT_STALE_CHARS = 500
+
+function slimLoopMessageForStorage(message, staleTool) {
+  const m = message
+  if (m?.role === 'tool') {
+    const cap = staleTool ? STORE_TOOL_OUTPUT_STALE_CHARS : STORE_TOOL_OUTPUT_FULL_CHARS
+    return {
+      ...m,
+      results: (m.results || []).map(r => {
+        const output = String(r.output || '')
+        return output.length > cap
+          ? { ...r, output: `${output.slice(0, cap)}…(truncated for storage)` }
+          : r
+      })
+    }
+  }
+  if (m?.role === 'assistant' && m.reasoning) {
+    return { ...m, reasoning: undefined }
+  }
+  return m
+}
+
+function trimLoopHistoryForStorage(messages, maxBytes = 24 * 1024) {
   if (!Array.isArray(messages) || !messages.length) return []
-  let total = 0
-  // 默认 0=全部保留；超预算时改为「保留起点」（尾部最近的先满足预算）
-  let cut = 0
+  // 从尾部倒序数 tool 消息：最近 N 条完整保留，更早的截断输出
+  let toolSeen = 0
+  const slimmed = []
   for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role === 'tool') {
+      toolSeen++
+      slimmed.unshift(slimLoopMessageForStorage(m, toolSeen > STORE_TOOL_OUTPUT_RECENT))
+    } else {
+      slimmed.unshift(slimLoopMessageForStorage(m, false))
+    }
+  }
+  // 尾部字节预算：从尾部累计，超预算处定裁剪点
+  let total = 0
+  let cut = 0
+  for (let i = slimmed.length - 1; i >= 0; i--) {
     let size = 0
-    try { size = JSON.stringify(messages[i]).length } catch { size = 4096 }
+    try { size = JSON.stringify(slimmed[i]).length } catch { size = 4096 }
     if (total + size > maxBytes) {
       cut = i + 1
       break
     }
     total += size
   }
-  let kept = messages.slice(cut)
-  while (kept.length && kept[0]?.role === 'tool') kept = kept.slice(1)
+  let kept = slimmed.slice(cut)
+  // 安全头部：推进到 user 消息（或纯文本 assistant）开头，保证协议配对完整
+  while (kept.length) {
+    const head = kept[0]
+    if (head?.role === 'user') break
+    if (head?.role === 'assistant' && !Array.isArray(head.toolCalls)) break
+    kept = kept.slice(1)
+  }
   return JSON.parse(JSON.stringify(kept))
 }
 

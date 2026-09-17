@@ -28,7 +28,7 @@ function isWriteTool(serverId, toolName) {
 /** 客户端 todo 工具：不落 sidecar，只经 onTodoWrite 回调透出给消息卡渲染 */
 const TODO_WRITE_TOOL = {
   name: 'todo_write',
-  description: '维护本轮任务清单（整表替换式更新）。当请求包含 ≥2 个可独立交付的子任务或明确多步流程时，先调用它写入全部计划；开始某项前将其置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress。单一简单请求不要使用。',
+  description: '维护本轮任务清单（整表替换式更新）。当请求包含 ≥2 个可独立交付的子任务或明确多步流程时使用：与首个真实工具调用放在同一条消息里并行提交（列出完整计划、首项置 in_progress），之后每次状态更新都随下一批真实工具调用搭车提交，不要单独占用一轮。开始某项前将其置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress。单一简单请求不要使用。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -225,7 +225,7 @@ export function createMcpDocumentSkill({
      * 而实际成功写操作数不足时，强制追加一轮纠偏——谎报被拦，模型要么补齐操作
      * 要么修正总结。只对明确数量声明生效（正则限界），避免误伤泛泛表述。
      */
-    verifyResponse(finalText, executed) {
+    verifyResponse(finalText) {
       const text = String(finalText || '')
       const claimed = []
       const RE = /已[^。；;\n]{0,10}?(\d+)\s*(?:处|条|个|段|次|项)/g
@@ -248,7 +248,14 @@ export function createMcpDocumentSkill({
         onTodoWrite?.(todos)
         const done = todos.filter(t => t.status === 'completed').length
         return {
-          output: JSON.stringify({ ok: true, total: todos.length, done }),
+          // hint 常驻回灌：模型单独发 todo_write 时提醒下轮搭车，避免清单更新
+          // 独占模型轮次（每多一轮 = 一次全上下文模型往返）
+          output: JSON.stringify({
+            ok: true,
+            total: todos.length,
+            done,
+            hint: '清单已更新。后续 todo_write 状态更新请与下一批真实工具调用放在同一条消息里并行提交，不要单独占用一轮。'
+          }),
           summary: `任务清单已更新（${done}/${todos.length} 完成）`
         }
       }
