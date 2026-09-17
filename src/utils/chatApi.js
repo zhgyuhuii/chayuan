@@ -237,11 +237,14 @@ export function getChatApiConfig(ribbonModelId) {
  * @param {string} [options.providerId] - 可选，与 modelId 一起使用
  * @param {string} [options.modelId] - 可选，与 providerId 一起使用
  * @param {Array<{role: string, content: string}>} options.messages - 消息列表
- * @param {function(string)} options.onChunk - 收到每个 chunk 时回调
+ * @param {function(string)} options.onChunk - 收到每个文本 chunk 时回调
+ * @param {function(object)} [options.onEvent] - 收到每个解析成功的 SSE JSON 事件时回调。
+ *   onChunk 只提取 delta.content/reasoning_content，会丢掉 delta.tool_calls 等其余分片；
+ *   需要完整增量（如 agent 传输层聚合 tool_calls）的调用方改用本回调。
  * @param {function()} options.onDone - 完成时回调
  * @param {function(string)} options.onError - 错误时回调
  */
-export async function streamChatCompletion({ ribbonModelId, providerId, modelId, messages, onChunk, onDone, onError, signal, timeoutMs, requestTimeoutMs, ...extraBody }) {
+export async function streamChatCompletion({ ribbonModelId, providerId, modelId, messages, onChunk, onEvent, onDone, onError, signal, timeoutMs, requestTimeoutMs, ...extraBody }) {
   let cfg = null
   if (providerId && modelId) {
     cfg = getChatApiConfigByProvider(providerId, modelId)
@@ -308,6 +311,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
           if (data === '[DONE]') continue
           try {
             const obj = JSON.parse(data)
+            onEvent?.(obj)
             const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.delta?.reasoning_content
             if (delta) onChunk?.(delta)
           } catch (_) {
@@ -322,6 +326,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
         if (data !== '[DONE]') {
           try {
             const obj = JSON.parse(data)
+            onEvent?.(obj)
             const delta = obj?.choices?.[0]?.delta?.content ?? obj?.choices?.[0]?.delta?.reasoning_content
             if (delta) onChunk?.(delta)
           } catch (_) {

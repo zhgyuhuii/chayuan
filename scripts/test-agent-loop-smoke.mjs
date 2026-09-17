@@ -22,7 +22,8 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /* ────────── 桩模块 ────────── */
 
 const STUBS = {
-  // src/utils/chatApi.js → 只暴露编排器用到的 chatCompletionMessage
+  // src/utils/chatApi.js → 暴露编排器传输层用到的两个入口：
+  // streamChatCompletion（流式主通道，与真实实现同构）+ chatCompletionMessage（回落）
   [join(REPO, 'src/utils/chatApi.js')]: `
     export async function chatCompletionMessage(body) {
       const m = globalThis.__MOCK__
@@ -38,6 +39,32 @@ const STUBS = {
         tool_calls: step.tool_calls || [],
         raw: {}
       }
+    }
+    export async function streamChatCompletion(opts) {
+      const m = globalThis.__MOCK__
+      m.requests.push({
+        providerId: opts.providerId, modelId: opts.modelId, ribbonModelId: opts.ribbonModelId,
+        messages: opts.messages, tools: opts.tools, tool_choice: opts.tool_choice
+      })
+      const step = m.chatScript[m.chatIdx]
+      if (step && step.throw) {
+        // 流式报错不消耗脚本步：传输层会拿同一请求体做非流式回落，
+        // 届时命中同一错误步（镜像真实网关对同 body 返回同 4xx）
+        opts.onError?.(step.throw.message || String(step.throw))
+        return
+      }
+      m.chatIdx += 1
+      if (!step) { opts.onError?.('chat script exhausted'); return }
+      await new Promise(r => setTimeout(r, step.delay || 0))
+      // 文本按 delta 分片、tool_calls 走 OpenAI 流式分片（index/id/name/arguments）
+      for (const frag of String(step.content || '').match(/[\\s\\S]{1,7}/g) || []) {
+        opts.onEvent?.({ choices: [{ delta: { content: frag } }] })
+      }
+      const calls = Array.isArray(step.tool_calls) ? step.tool_calls : []
+      calls.forEach((c, i) => opts.onEvent?.({
+        choices: [{ delta: { tool_calls: [{ index: i, id: c.id, function: { name: c.function.name, arguments: c.function.arguments } }] } }]
+      }))
+      opts.onDone?.()
     }
   `,
   // src/services/mcpBridge/mcpServerRegistry.js
@@ -192,6 +219,8 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
 }
 
 // 场景 4：模型报 tools 不支持 → 自动切 JSON 兼容协议整轮重跑
+// （流式主通道报错后传输层先做一次非流式回落——同一 body 同样 4xx——
+//   失败上抛编排器才降级；降级请求取最后一条，不再是固定下标 1）
 {
   const m = baseMock()
   m.chatScript = [
@@ -204,7 +233,7 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_locate', 'S4 degraded tool executed')
   A(r.steps.some(s => s.label.includes('JSON 兼容层')), 'S4 step 兼容层')
   // 降级请求不携带 tools，system 带 JSON 协议后缀
-  const degradedReq = m.requests[1]
+  const degradedReq = m.requests[m.requests.length - 1]
   A(!degradedReq.tools, 'S4 degraded request has no tools field')
   A(degradedReq.messages[0].content.includes('JSON'), 'S4 degraded system suffix')
   console.log('✓ S4 tools 不支持自动降级')
@@ -336,7 +365,8 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   ]
   const r = await run({})
   A(r.ok === false && r.fallback === true && r.reason === 'model_error', 'S12 model_error, got ' + r.reason)
-  A(m.requests.length === 1, 'S12 loop ran exactly once (no degraded re-run), requests=' + m.requests.length)
+  // 2 次 = 流式主通道 + 非流式回落（传输层内部重试，非循环层降级重跑）
+  A(m.requests.length === 2, 'S12 loop ran exactly once (transport fallback only), requests=' + m.requests.length)
   A(!r.steps.some(s => s.label.includes('JSON 兼容层')), 'S12 no JSON-compat step')
   A(String(r.content).includes('连续多轮工具调用全部失败'), 'S12 localized guard message, got ' + r.content)
   console.log('✓ S12 守卫熔断错误不触发降级重跑')
@@ -387,6 +417,45 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(req.messages.some(x => x.role === 'tool' && x.tool_call_id === 't1'), 'S14 历史工具结果进入请求（追问可答）')
   A(Array.isArray(r.loopMessages) && r.loopMessages.length >= 4, 'S14 结果返回 loopMessages 供下回合续接')
   console.log('✓ S14 跨回合上下文 restore（工具结论不丢）')
+}
+
+// 场景 15：空流 → 非流式回落整取（流式主通道返回零内容零工具时的兜底链路）
+{
+  const m = baseMock()
+  m.chatScript = [
+    { content: '', tool_calls: [] },
+    { content: '经非流式回落取得完整回复。' }
+  ]
+  const r = await run({})
+  A(r.ok === true, 'S15 ok')
+  A(r.content.includes('非流式回落'), 'S15 fallback content used, got: ' + r.content)
+  A(m.requests.length === 2, 'S15 stream attempt + non-stream fallback, requests=' + m.requests.length)
+  console.log('✓ S15 空流回落非流式整取')
+}
+
+// 场景 16：跨回合轻上下文——陈旧工具输出截断 + 尾部预算，回灌请求不再全量携带旧输出
+{
+  const m = baseMock()
+  m.chatScript = [{ content: '好的。' }]
+  const bigOutput = 'X'.repeat(8000)
+  const loopHistory = [
+    { role: 'user', text: '第一轮指令' },
+    { role: 'assistant', text: '', toolCalls: [{ id: 't1', name: 'chayuan__document_locate', input: { text: 'a' } }] },
+    { role: 'tool', results: [{ id: 't1', name: 'chayuan__document_locate', output: bigOutput, isError: false }] },
+    { role: 'assistant', text: '第一轮完成。' },
+    { role: 'user', text: '第二轮指令' },
+    { role: 'assistant', text: '', toolCalls: [{ id: 't2', name: 'chayuan__document_locate', input: { text: 'b' } }] },
+    { role: 'tool', results: [{ id: 't2', name: 'chayuan__document_locate', output: bigOutput, isError: false }] },
+    { role: 'assistant', text: '第二轮完成。' }
+  ]
+  const r = await run({ loopHistory })
+  A(r.ok === true, 'S16 ok')
+  A(Array.isArray(r.loopMessages), 'S16 loopMessages returned')
+  const stored = JSON.stringify(r.loopMessages)
+  A(!stored.includes(bigOutput), 'S16 大体积工具输出不再原样持久化')
+  A(stored.includes('第一轮完成') && stored.includes('第二轮完成'), 'S16 助手结论文本保留（追问可答）')
+  A(stored.length < 8000 * 1.2, 'S16 持久化体积受控, size=' + stored.length)
+  console.log('✓ S16 跨回合轻上下文（陈旧输出截断）')
 }
 
 console.log('ALL SCENARIOS PASSED')

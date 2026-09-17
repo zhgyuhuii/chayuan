@@ -378,7 +378,32 @@
         @close="activeToolId = ''"
       />
       <!-- 消息区域 -->
-      <div v-if="!activeToolId" class="messages-container" ref="messagesRef">
+      <div v-if="!activeToolId" class="messages-container" :class="{ 'has-ruler': composerRulerTicks.length > 0 }" ref="messagesRef">
+        <!-- 历史刻度尺:每颗刻度=当前会话一轮提问,悬停变长+预览,点击定位 -->
+        <div v-if="composerRulerTicks.length" class="composer-ruler" aria-label="对话历史刻度">
+          <button
+            v-for="tick in composerRulerTicks"
+            :key="tick.messageId"
+            type="button"
+            class="composer-ruler-tick"
+            :class="{ 'is-active': hoveredRulerTickId === tick.messageId }"
+            :aria-label="tick.question || '历史提问'"
+            @mouseenter="hoveredRulerTickId = tick.messageId"
+            @mouseleave="hoveredRulerTickId = ''"
+            @focus="hoveredRulerTickId = tick.messageId"
+            @blur="hoveredRulerTickId = ''"
+            @click="locateChatTurn(tick)"
+          >
+            <span
+              v-if="hoveredRulerTickId === tick.messageId"
+              class="composer-ruler-tooltip"
+            >
+              <span class="composer-ruler-tooltip-q">{{ tick.question || '（空）' }}</span>
+              <span v-if="tick.replyFirstLine" class="composer-ruler-tooltip-a">{{ tick.replyFirstLine }}</span>
+              <span v-if="tick.timeLabel" class="composer-ruler-tooltip-t">{{ tick.timeLabel }}</span>
+            </span>
+          </button>
+        </div>
         <!-- 执行中的任务清单漂浮卡：回合进行中常驻右上角、可折叠/展开；回合结束自动隐藏 -->
         <div v-if="mcpTodoFloat" class="mcp-todo-float-anchor">
           <div class="mcp-todo-float">
@@ -751,6 +776,10 @@
                         :style="{ width: `${getAssistantLoadingPercent(msg)}%` }"
                       ></span>
                     </div>
+                    <div
+                      v-if="String(msg.mcpStreamingText || '').trim()"
+                      class="message-waiting-stream"
+                    >{{ msg.mcpStreamingText }}<span class="cursor">▊</span></div>
                     <LongTaskRunCard
                       v-for="taskRun in getMessageLongTaskRunEntries(msg, { onlyRunning: true })"
                       :key="`${msg.id}-${taskRun.key}-inline`"
@@ -2080,32 +2109,7 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
-        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen, 'has-ruler': composerRulerTicks.length > 0 }">
-          <!-- 历史刻度尺:每颗刻度=当前会话一轮提问,悬停变长+预览,点击定位 -->
-          <div v-if="composerRulerTicks.length" class="composer-ruler" aria-label="对话历史刻度">
-            <button
-              v-for="tick in composerRulerTicks"
-              :key="tick.messageId"
-              type="button"
-              class="composer-ruler-tick"
-              :class="{ 'is-active': hoveredRulerTickId === tick.messageId }"
-              :aria-label="tick.question || '历史提问'"
-              @mouseenter="hoveredRulerTickId = tick.messageId"
-              @mouseleave="hoveredRulerTickId = ''"
-              @focus="hoveredRulerTickId = tick.messageId"
-              @blur="hoveredRulerTickId = ''"
-              @click="locateChatTurn(tick)"
-            >
-              <span
-                v-if="hoveredRulerTickId === tick.messageId"
-                class="composer-ruler-tooltip"
-              >
-                <span class="composer-ruler-tooltip-q">{{ tick.question || '（空）' }}</span>
-                <span v-if="tick.replyFirstLine" class="composer-ruler-tooltip-a">{{ tick.replyFirstLine }}</span>
-                <span v-if="tick.timeLabel" class="composer-ruler-tooltip-t">{{ tick.timeLabel }}</span>
-              </span>
-            </button>
-          </div>
+        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen }">
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -2204,12 +2208,17 @@
                   stroke-linecap="round"
                 />
               </svg>
+              <span
+                v-if="selectedModelIcon && failedModelLogos[publicAssetUrl(selectedModelIcon)]"
+                class="composer-tool-logo-badge composer-tool-logo-badge--fallback"
+              >{{ getModelFirstChar(selectedModelName) }}</span>
               <img
-                v-if="selectedModelIcon"
+                v-else-if="selectedModelIcon"
                 :src="publicAssetUrl(selectedModelIcon)"
                 class="composer-tool-logo-badge"
                 alt=""
                 decoding="async"
+                @error="onModelLogoError"
               />
             </button>
             <div v-if="modelDropdownOpen" class="model-dropdown">
@@ -2227,12 +2236,18 @@
                     @mousedown.prevent="toggleModelGroupCollapsed(group.providerId)"
                   >
                     <span class="model-group-arrow">▾</span>
+                    <span
+                      v-if="failedModelLogos[publicAssetUrl(group.icon || getModelLogoPath(group.providerId))]"
+                      class="model-group-icon model-group-icon--fallback"
+                    >{{ getModelFirstChar(group.label) }}</span>
                     <img
+                      v-else
                       :src="publicAssetUrl(group.icon || getModelLogoPath(group.providerId))"
                       class="model-group-icon"
                       alt=""
                       loading="lazy"
                       decoding="async"
+                      @error="onModelLogoError"
                     />
                     <span>{{ group.label }}</span>
                   </div>
@@ -2244,12 +2259,18 @@
                       :class="{ active: selectedModelId === m.id }"
                       @mousedown.prevent="selectModel(m)"
                     >
+                      <span
+                        v-if="failedModelLogos[publicAssetUrl(getModelLogoPath(m.providerId))]"
+                        class="model-option-icon model-option-icon--fallback"
+                      >{{ getModelFirstChar(m.name || m.modelId) }}</span>
                       <img
+                        v-else
                         :src="publicAssetUrl(getModelLogoPath(m.providerId))"
                         class="model-option-icon"
                         alt=""
                         loading="lazy"
                         decoding="async"
+                        @error="onModelLogoError"
                       />
                       <span>{{ m.name || m.modelId }}</span>
                     </div>
@@ -4278,6 +4299,7 @@ export default {
       openChatTabs: [],
       hoveredRulerTickId: '',
       rulerHighlightMessageId: '',
+      failedModelLogos: {},
       assistantItems: [],
       assistantGroupCollapsed: {},
       chatSearchText: '',
@@ -4344,6 +4366,9 @@ export default {
       historyStorageSource: '',
       historySavePersister: null,
       pendingHistorySavePayload: null,
+      // 脏标记式保存：saveHistory 只置脏，序列化推迟到节流器真正写盘时（见 saveHistory）
+      historySaveDirty: false,
+      pendingHistorySaveOptions: null,
       taskListUnsubscribe: null,
       assistantEvolutionSuggestion: null,
       assistantEvolutionCheckTimer: null,
@@ -5887,6 +5912,10 @@ export default {
         reason: '文档智能体已开启，本轮经 MCP 编排（与外部智能体同通道）。'
       }
       assistantMsg.mcpSteps = []
+      // 流式叙述字段：每轮模型的累计文本经 onTurnText 节流写入，等待态卡片内
+      // 实时渲染（工具轮期间模型的过程说明立即可见，不再是整轮死寂的进度条）
+      assistantMsg.mcpStreamingText = ''
+      let mcpStreamRenderAt = 0
       this.updateAssistantLoadingProgress(assistantMsg, {
         label: '文档智能体处理中…',
         detail: '正在连接 MCP 并编排工具',
@@ -5930,6 +5959,15 @@ export default {
           writeBaselineToken,
           loopHistory: previousLoopHistory,
           signal: ctrl?.signal,
+          onTurnText: (text) => {
+            // 100ms 节流：onText 按模型输出频率逐 token 触发，直接透传会造成高频重渲染
+            const t = String(text || '')
+            if (!t) return
+            const now = Date.now()
+            if (now - mcpStreamRenderAt < 100) return
+            mcpStreamRenderAt = now
+            assistantMsg.mcpStreamingText = t
+          },
           confirmHandler: ({ serverId, toolName, namespacedName, args, meta, signal }) =>
             this.requestMcpWriteConfirm({
               assistantMsg,
@@ -6026,12 +6064,14 @@ export default {
           assistantMsg.lane = ''
           assistantMsg.primaryRoute = null
           assistantMsg.content = ''
+          assistantMsg.mcpStreamingText = ''
           this.clearMcpTurnCtx(turnChatId)
           this.settleGlobalStreamingFlag()
           return { handled: false, fallback: true, reason: result.reason }
         }
 
         assistantMsg.content = String(result.content || '已完成。')
+        assistantMsg.mcpStreamingText = ''
         if (result.proofreadCard) {
           assistantMsg.mcpProofreadCard = {
             ...result.proofreadCard,
@@ -6067,6 +6107,7 @@ export default {
           assistantMsg.isLoading = false
           // 停止语义:保留已流出内容并追加标记;无内容时才用整句提示
           const prevContent = String(assistantMsg.content || '').trim()
+          assistantMsg.mcpStreamingText = ''
           assistantMsg.content = prevContent
             ? `${prevContent}\n\n（已停止）`
             : '已停止文档智能体本轮执行。'
@@ -6077,6 +6118,7 @@ export default {
         assistantMsg.isLoading = false
         assistantMsg.lane = ''
         assistantMsg.content = ''
+        assistantMsg.mcpStreamingText = ''
         this.mcpSoftBanner = '文档智能体执行失败，将尝试内置助手链路'
         return { handled: false, fallback: true, reason: e?.message || 'mcp_error' }
       }
@@ -6357,6 +6399,15 @@ export default {
       this._rulerHighlightTimer = window.setTimeout(() => {
         this.rulerHighlightMessageId = ''
       }, 1800)
+    },
+    onModelLogoError(e) {
+      const src = e.target?.src || ''
+      if (src && !this.failedModelLogos[src]) {
+        this.$set(this.failedModelLogos, src, true)
+      }
+    },
+    getModelFirstChar(name) {
+      return (name || '?').charAt(0).toUpperCase()
     },
     getMessagePrimaryRouteDetail(message) {
       const label = this.getMessagePrimaryRouteLabel(message)
@@ -7886,7 +7937,9 @@ export default {
     },
     buildHistorySavePayload(options = {}) {
       const storageKeys = this.getHistoryStorageKeys(options.scopeKey)
-      // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent),避免污染持久化;草稿会话不落库
+      // 序列化前剔除渲染缓存字段(_renderedHtml/_renderedContent)与回合内临时字段
+      // （pendingMcpToolConfirm/mcpStreamingText 持回调/流式草稿，JSON 序列化丢弃后
+      // 重载只剩死数据），避免污染持久化;草稿会话不落库
       const cleanHistory = this.chatHistory
         .filter(chat => !chat?.draft)
         .map(chat => ({
@@ -7895,7 +7948,7 @@ export default {
           // 序列化前剔除渲染缓存字段与回合内临时确认卡（pendingMcpToolConfirm 持
           // 回调函数，JSON 序列化丢弃后重载只剩死卡片），避免污染持久化
           // eslint-disable-next-line no-unused-vars
-          ? chat.messages.map(({ _renderedHtml, _renderedContent, pendingMcpToolConfirm, ...m }) => m)
+          ? chat.messages.map(({ _renderedHtml, _renderedContent, pendingMcpToolConfirm, mcpStreamingText, ...m }) => m)
           : chat?.messages
       }))
       return {
@@ -7921,7 +7974,14 @@ export default {
         wait: 320,
         idle: true,
         leading: false,
-        getValue: () => this.pendingHistorySavePayload,
+        // 惰性取值：真正要写时才检查脏标记并构建序列化（saveHistory 只置脏）
+        getValue: () => {
+          if (this.historySaveDirty) {
+            this.historySaveDirty = false
+            this.pendingHistorySavePayload = this.buildHistorySavePayload(this.pendingHistorySaveOptions || {})
+          }
+          return this.pendingHistorySavePayload
+        },
         serialize: (payload) => payload
           ? `${payload.storageKeys?.history || ''}\n${payload.currentChatId || ''}\n${payload.historyJson || '[]'}`
           : '',
@@ -7946,14 +8006,29 @@ export default {
         if (!options.skipScopeResolve && !this.historyStorageScopeKey) {
           this.ensureHistoryStorageScope()
         }
-        this.pendingHistorySavePayload = this.buildHistorySavePayload(options)
+        // 只置脏标记，序列化推迟到真正要写时（节流器 getValue）：此前每个进度步骤
+        // tick 都全量 JSON.stringify 全部会话（含 loopHistory 大对象），运行期主线
+        // 程被反复占用——智能体多轮执行时的掉帧源之一
+        this.pendingHistorySaveOptions = options
+        this.historySaveDirty = true
         if (options.immediate === true || options.flush === true) {
-          this.writeHistorySavePayload(this.pendingHistorySavePayload)
+          this.flushHistorySaveNow()
           return
         }
         this.ensureHistorySavePersister()()
       } catch (e) {
         console.debug('保存对话历史失败:', e)
+      }
+    },
+    flushHistorySaveNow() {
+      try {
+        if (this.historySaveDirty) {
+          this.historySaveDirty = false
+          this.pendingHistorySavePayload = this.buildHistorySavePayload(this.pendingHistorySaveOptions || {})
+        }
+        this.writeHistorySavePayload(this.pendingHistorySavePayload)
+      } catch (e) {
+        console.debug('立即保存对话历史失败:', e)
       }
     },
     normalizeChatRecord(chat) {
@@ -19519,6 +19594,19 @@ export default {
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
   pointer-events: none;
 }
+.composer-tool-logo-badge--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  font-weight: 700;
+  color: #fff;
+  background: #6366f1;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+  pointer-events: none;
+  line-height: 1;
+}
 .composer-tool-badge {
   position: absolute;
   top: 1px;
@@ -19595,23 +19683,23 @@ export default {
   color: #b91c1c;
 }
 
-/* ── 历史刻度尺:输入框左缘,每颗刻度=一轮提问 ── */
-.composer-shell.has-ruler {
-  padding-left: 26px;
-  /* 刻度预览浮层需要溢出容器显示(与 model-open 下拉同机制) */
-  overflow: visible;
+/* ── 历史刻度尺:消息区左缘,每颗刻度=一轮提问 ── */
+.messages-container.has-ruler {
+  padding-left: 30px;
 }
 .composer-ruler {
-  position: absolute;
-  left: 6px;
-  top: 12px;
-  bottom: 12px;
-  width: 16px;
+  position: sticky;
+  left: 0;
+  top: 0;
+  float: left;
+  width: 20px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
   align-items: center;
   z-index: 6;
+  flex-shrink: 0;
 }
 .composer-ruler-tick {
   position: relative;
@@ -22277,6 +22365,20 @@ export default {
   transition: width 0.24s ease;
 }
 
+/* 智能体流式叙述：等待态卡片内实时显示模型当轮输出的过程说明 */
+.message-waiting-stream {
+  margin-top: 8px;
+  max-height: 7.5em;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent);
+  mask-image: linear-gradient(180deg, #000 78%, transparent);
+}
+
 .message-text.has-inline-actions {
   padding-bottom: 10px;
 }
@@ -23269,6 +23371,17 @@ export default {
   flex-shrink: 0;
   border-radius: 4px;
 }
+.model-group-icon--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #6366f1;
+  border-radius: 4px;
+  line-height: 1;
+}
 
 .model-group-models {
   padding: 2px 0 4px 0;
@@ -23308,6 +23421,17 @@ export default {
   object-fit: contain;
   flex-shrink: 0;
   border-radius: 4px;
+}
+.model-option-icon--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #6366f1;
+  border-radius: 4px;
+  line-height: 1;
 }
 
 .model-select {
