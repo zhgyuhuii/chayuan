@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from './config.mjs'
 /**
  * Agent long-poll hub: register / poll / result + MCP job bridging.
  */
-export function createAgentHub() {
+export function createAgentHub({ logger } = {}) {
   /** @type {Map<string, { agentId: string, protocolVersion: number, addonVersion: string, windowId: string, lastSeen: number, waiters: Array<{ resolve: Function, timer: any }> }>} */
   const agents = new Map()
   /** @type {Array<{ jobId: string, method: string, params: any, createdAt: number, resolve: Function, reject: Function, timer: any, assignedAgentId?: string }>} */
@@ -48,8 +48,20 @@ export function createAgentHub() {
     return online[0]
   }
 
+  const droppedAt = new Map() // agentId → 被踢时间：惩罚期内拒绝重注册（防坏 webview 立即回锅洗白 strike）
+  const REREGISTER_BAN_MS = 60_000
+
   function register(body = {}) {
     const agentId = String(body.agentId || '').trim() || `agent-${cryptoRandom()}`
+    const bannedAt = droppedAt.get(agentId)
+    if (bannedAt && now() - bannedAt < REREGISTER_BAN_MS) {
+      return {
+        ok: false,
+        code: 'AGENT_BANNED',
+        retryAfterMs: REREGISTER_BAN_MS - (now() - bannedAt)
+      }
+    }
+    droppedAt.delete(agentId)
     const protocolVersion = Number(body.protocolVersion || PROTOCOL_VERSION)
     const addonVersion = String(body.addonVersion || '')
     const windowId = String(body.windowId || '')
@@ -62,7 +74,9 @@ export function createAgentHub() {
       agent.addonVersion = addonVersion
       agent.windowId = windowId || agent.windowId
       agent.lastSeen = now()
-      agent.timeoutStrikes = 0
+      // 保留 timeoutStrikes：重注册不再洗白前科——双 webview 曾共用 agentId 轮流
+      // re-register 把 strike 清零，坏执行者永远踢不掉（2026-09-17 实证 agent_dropped
+      // 一次未触发）。webview 刷新自愈后首个成功结果（submitResult）自然清零。
     }
     return {
       ok: true,
@@ -88,6 +102,10 @@ export function createAgentHub() {
     job.assignedAgentId = agent.agentId
     inflight.set(job.jobId, job)
     agent.lastSeen = now()
+    // 派发归属留痕：排查「哪个 webview 接的 job / 坏 agent 抢任务」的关键字段
+    try {
+      logger?.({ ev: 'job_assign', jobId: job.jobId, method: job.method, agentId: agent.agentId, windowId: agent.windowId })
+    } catch { /* ignore */ }
     w.resolve(job)
     return true
   }
@@ -96,8 +114,9 @@ export function createAgentHub() {
     while (pendingJobs.length) {
       const agent = pickAgent()
       if (!agent) break
-      // Prefer agent with idle waiter
-      const withWaiter = [...agents.values()].find(a => a.waiters.length && now() - a.lastSeen < 60_000)
+      // Prefer agent with idle waiter；有超时前科的（strike>0，疑似半死 webview）排最后
+      const fresh = [...agents.values()].filter(a => a.waiters.length && now() - a.lastSeen < 60_000)
+      const withWaiter = fresh.find(a => !a.timeoutStrikes) || fresh[0]
       const target = withWaiter || agent
       if (!target.waiters.length) break
       const job = pendingJobs.shift()
@@ -115,7 +134,10 @@ export function createAgentHub() {
     const a = agents.get(String(agentId || ''))
     if (!a) return Promise.resolve({ error: { code: 'AGENT_NOT_REGISTERED' } })
     a.lastSeen = now()
-    a.timeoutStrikes = 0
+    // 注意：poll 不清 timeoutStrikes——半死 webview（长轮询活着但执行 WPS 调用
+    // 永久挂起）会持续吃超时又持续 poll，若 poll 清零则永远凑不齐 3 连击踢不出；
+    // strike 只能由成功结果（submitResult）洗清。2026-09-17 实证：坏 agent 吃了
+    // 6 次超时未被踢，最后在坏桥上执行 document.new → Documents.Add → WPS 崩溃。
 
     // Immediate job?
     if (pendingJobs.length) {
@@ -164,6 +186,16 @@ export function createAgentHub() {
       a.lastSeen = now()
       a.timeoutStrikes = 0
     }
+    try {
+      logger?.({
+        ev: 'job_result',
+        jobId,
+        method: job.method,
+        ok: body.ok !== false,
+        ms: Date.now() - Number(job.createdAt || 0),
+        ...(body.ok === false ? { errorCode: body.error?.code || '', message: String(body.error?.message || '').slice(0, 200) } : {})
+      })
+    } catch { /* ignore */ }
     if (body.ok === false) {
       job.reject(Object.assign(new Error(body.error?.message || 'AGENT_JOB_FAILED'), {
         code: body.error?.code || 'AGENT_JOB_FAILED',
@@ -188,15 +220,20 @@ export function createAgentHub() {
     }
     a.waiters = []
     agents.delete(id)
+    droppedAt.set(id, now())
+    try { logger?.({ ev: 'agent_dropped', agentId: id, reason, windowId: a.windowId }) } catch { /* ignore */ }
     console.warn(`[agentHub] dropped agent ${id} (${reason})`)
   }
 
   function callAgent(method, params = {}, { timeoutMs = 120_000 } = {}) {
     pruneStale()
     if (![...agents.values()].some(a => now() - a.lastSeen < 60_000)) {
+      try { logger?.({ ev: 'job_reject_offline', method }) } catch { /* ignore */ }
       return Promise.reject(Object.assign(new Error('WPS Agent offline'), { code: 'WPS_AGENT_OFFLINE' }))
     }
     const jobId = `job-${Date.now().toString(36)}-${cryptoRandom()}`
+    const dispatchedAt = Date.now()
+    try { logger?.({ ev: 'job_dispatch', jobId, method }) } catch { /* ignore */ }
     return new Promise((resolve, reject) => {
       const job = {
         jobId,
@@ -221,6 +258,7 @@ export function createAgentHub() {
               else console.warn(`[agentHub] job timeout (strike ${a.timeoutStrikes}/3) agent=${assigned}`)
             }
           }
+          try { logger?.({ ev: 'job_timeout', jobId, method, timeoutMs, agentId: assigned || '' }) } catch { /* ignore */ }
           reject(Object.assign(new Error(`Agent job timeout ${timeoutMs}ms`), { code: 'AGENT_JOB_TIMEOUT' }))
         }, timeoutMs)
       }

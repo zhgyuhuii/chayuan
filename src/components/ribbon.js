@@ -126,10 +126,8 @@ function openAIAssistant(query = {}) {
     focusExistingAIAssistantWindow(query)
     return
   }
-  // 浮窗已开：聚焦并投递 query
-  if (focusExistingAIAssistantWindow(query)) {
-    return
-  }
+  // 失焦不代表窗口失效；重建会丢失仍在执行的任务。
+  if (focusExistingAIAssistantWindow(query)) return
   // 无实例：按记忆形态打开；停靠切换失败时 manager 静默回退浮窗
   dock.openAs(dock.getMode(), query).catch((e) => {
     console.warn('[ribbon] openAIAssistant 按形态打开失败:', e)

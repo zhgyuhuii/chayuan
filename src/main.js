@@ -59,6 +59,12 @@ router.isReady().then(() => {
 
 try { initRuntimeSync() } catch { /* 静默 */ }
 
+// 每 webview 自启 MCP Agent 长轮询（桥接兜底）：ribbon 的 OnAddinLoad 注册路径
+// 单发无重试且可能被 jsaddons 安全层拦环回，浮窗/面板等任意 webview 起来都能注册。
+import('./services/mcpBridge/autoAgent.js')
+  .then(({ startAutoAgent }) => startAutoAgent())
+  .catch(() => { /* 静默：桥接不可用时工具调用会有明确的离线提示 */ })
+
 // 启动时后台探测一次本机察元桌面版（fire-and-forget）；失败静默，用户点知识库刷新会再探。
 import('./services/desktop/index.js')
   .then(({ desktopProbe }) => desktopProbe.detect())

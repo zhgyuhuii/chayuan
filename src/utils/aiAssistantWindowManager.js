@@ -96,22 +96,15 @@ export function focusExistingAIAssistantWindow(query = {}) {
   return true
 }
 
-export function reopenExistingAIAssistantWindow(query = {}) {
+export function isAIAssistantWindowBusy() {
   const current = readStorageJson(LOCK_KEY)
-  if (!isFreshLock(current)) return false
-
-  const ownerInstanceId = String(current.instanceId || '')
-  if (!ownerInstanceId) return false
-
-  sendWindowRequest(ownerInstanceId, 'reopen', query)
-  // 立即释放旧锁，让新窗口可以同步打开并接管所有权。
-  removeStorageKey(LOCK_KEY)
-  return true
+  return isFreshLock(current) && current.busy === true
 }
 
 export function createAIAssistantWindowSession(onRequest, options = {}) {
   const instanceId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
   const heartbeatMs = Number(options.heartbeatMs) > 0 ? Number(options.heartbeatMs) : HEARTBEAT_MS
+  const isBusy = typeof options.isBusy === 'function' ? options.isBusy : null
   let lockMode = normalizeLockMode(options.mode)
   let heartbeatTimer = null
   let storageHandler = null
@@ -123,7 +116,8 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
     return writeStorageJson(LOCK_KEY, {
       instanceId,
       updatedAt: Date.now(),
-      mode: lockMode
+      mode: lockMode,
+      busy: isBusy ? !!isBusy() : false
     })
   }
 
@@ -156,6 +150,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
     if (!payload) return
     if (String(payload.targetInstanceId || '') !== instanceId) return
     const action = normalizeAction(payload.action)
+    if (action !== 'focus' && isBusy?.()) return
     if (action === 'focus') {
       focusCurrentWindow()
     }
@@ -172,7 +167,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
     const foreign = current && current.instanceId !== instanceId ? current : null
     // 停靠面板由 dockManager 在交接事务内创建，凭 handover 标记接管锁
     const handoverTakeover = !!(foreign && isHandoverLock(foreign) && claimOptions.takeOverHandover === true)
-    if (foreign && !handoverTakeover && !allowReopen && isFreshLock(foreign)) {
+    if (foreign && !handoverTakeover && isFreshLock(foreign) && (!allowReopen || foreign.busy)) {
       sendWindowRequest(foreign.instanceId, 'focus', initialQuery)
       return { ok: false, reason: 'duplicate', ownerInstanceId: foreign.instanceId }
     }
@@ -214,7 +209,8 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
 
   return {
     claimOwnership,
-    releaseOwnership
+    releaseOwnership,
+    syncState: heartbeatWriteLock
   }
 }
 
@@ -235,6 +231,7 @@ export function readAIAssistantLock() {
  */
 export function markAIAssistantHandover(mode = 'taskpane') {
   const previous = readStorageJson(LOCK_KEY)
+  if (isFreshLock(previous) && previous.busy) return { ok: false, previous }
   const ok = writeStorageJson(LOCK_KEY, {
     instanceId: HANDOVER_INSTANCE_ID,
     handover: true,

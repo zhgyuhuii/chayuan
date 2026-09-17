@@ -16,12 +16,38 @@ import {
 } from './mcpServerRegistry.js'
 import { callLocalTool, callUpstreamTool } from './mcpHttpClient.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
+import { logEvent } from '../../utils/globalErrorLogger.js'
 
 const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|document_new|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export)$/
 
-function isWriteTool(serverId, toolName) {
+// 聚合域工具（名字=工具，action 区分读写）的只读 action：不注入 confirmed、
+// 不带 OCC 基线 token、不算 mutated（否则 style list / comment list 会被当写操作）
+const AGGREGATE_READ_ACTIONS = {
+  comment: ['list'],
+  revision: ['list'],
+  style: ['list', 'audit'],
+  nav: ['location', 'outline'],
+  toc: [],
+  bookmark: ['list', 'goto'],
+  layout: [],
+  table: ['list', 'header_read', 'row_read', 'column_read', 'cell_read', 'export'],
+  image: ['list', 'export'],
+  hyperlink: ['list'],
+  headerfooter: ['get'],
+  watermark: [],
+  export: []
+}
+
+function isAggregateReadAction(toolName, args) {
+  const actions = AGGREGATE_READ_ACTIONS[toolName]
+  if (!actions) return false
+  return actions.includes(String(args?.action || '').trim())
+}
+
+function isWriteTool(serverId, toolName, args) {
   if (serverId === CHAYUAN_SERVER_ID) {
     if (toolName === 'proofread_run') return false
+    if (isAggregateReadAction(toolName, args)) return false
     return WRITE_TOOL_RE.test(toolName) || toolName.endsWith('_apply')
   }
   return false
@@ -34,8 +60,9 @@ function isWriteTool(serverId, toolName) {
  */
 function needsAutoConfirm(serverId, toolName, args) {
   if (serverId !== CHAYUAN_SERVER_ID) return false
+  if (isAggregateReadAction(toolName, args)) return false
   if (toolName === 'proofread_apply_comments') return true
-  return isWriteTool(serverId, toolName) && args?.dryRun !== true
+  return isWriteTool(serverId, toolName, args) && args?.dryRun !== true
 }
 
 /** 客户端 todo 工具：不落 sidecar，只经 onTodoWrite 回调透出给消息卡渲染 */
@@ -225,6 +252,17 @@ export function createMcpDocumentSkill({
       ].join('')
     },
     async executeTool(call, signal) {
+      const toolT0 = Date.now()
+      const toolLogEnd = (ok, extra = {}) => {
+        try {
+          logEvent('tool_end', {
+            tool: call?.name || '',
+            ok,
+            ms: Date.now() - toolT0,
+            ...extra
+          })
+        } catch { /* 日志失败不影响工具执行 */ }
+      }
       if (call?.name === TODO_WRITE_TOOL.name) {
         const todos = normalizeTodoList(call?.input?.todos)
         onTodoWrite?.(todos)
@@ -261,7 +299,7 @@ export function createMcpDocumentSkill({
           }
           // 写工具带上回合 OCC 基线 token（__baselineToken 为保留字段，dispatch 层
           // 弹出后用于 withDocumentWriteLock 校验，不会进入真实 WPS 调用参数）
-          if (writeBaselineToken && isWriteTool(serverId, toolName)) {
+          if (writeBaselineToken && isWriteTool(serverId, toolName, args)) {
             args.__baselineToken = writeBaselineToken
           }
           if (toolName === 'proofread_run') {
@@ -275,8 +313,9 @@ export function createMcpDocumentSkill({
         const card = extractProofreadCard(toolName, args, result)
         if (card) onProofreadCard?.(card)
         const output = summarizeToolResult(result)
-        const mutated = !result?.isError && isWriteTool(serverId, toolName)
+        const mutated = !result?.isError && isWriteTool(serverId, toolName, args)
         if (mutated) executedWriteOps += countWriteOps(toolName, args, result)
+        toolLogEnd(!result?.isError)
         return {
           output,
           summary: output.slice(0, 120) || nsName,
@@ -284,6 +323,7 @@ export function createMcpDocumentSkill({
           mutated
         }
       } catch (e) {
+        toolLogEnd(false, { code: e?.code || '', message: String(e?.message || '').slice(0, 160) })
         return {
           output: JSON.stringify({ ok: false, error: e?.code || 'TOOL_ERROR', message: e?.message || String(e) }),
           isError: true,

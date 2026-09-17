@@ -5,6 +5,7 @@
 import fs from 'node:fs'
 import { listDomains, searchDomainsOffline } from './catalog.mjs'
 import {
+  activateAndSaveWpsMac,
   findWpsExecutable,
   isDocumentVisibleInWindows,
   listVisibleWpsWindows,
@@ -121,7 +122,7 @@ function toolRoutingGuide() {
       { id: 'L2b-switch', tools: ['document_activate', 'document_open', 'document_ensure_open'] },
       { id: 'L3-locate', tools: ['document_locate', 'nav'] },
       { id: 'L4-words', tools: ['document_replace', 'document_insert', 'document_apply_ops'] },
-      { id: 'L5-look', tools: ['format_run', 'format_para', 'format_apply_ops', 'style', 'system_fonts_list'] },
+      { id: 'L5-look', tools: ['format_read', 'format_run', 'format_para', 'format_apply_ops', 'style', 'system_fonts_list'] },
       { id: 'L6-review', tools: ['comment', 'revision'] },
       { id: 'L7-layout', tools: ['layout', 'nav', 'toc', 'bookmark'] },
       { id: 'L8-objects', tools: ['table', 'image', 'hyperlink', 'headerfooter', 'watermark', 'export'] },
@@ -129,6 +130,7 @@ function toolRoutingGuide() {
     ],
     routes: [
       { intent: '改错别字/改措辞', use: ['document_replace', 'document_apply_ops'], never: ['format_run', 'style'] },
+      { intent: '查每段字体/字号/样式/排版现状（只读）', use: ['format_read'], never: ['format_run'] },
       { intent: '加粗/变色/字号/字体/删除线/拼音', use: ['format_run', 'format_apply_ops'], never: ['document_replace'] },
       { intent: '对齐/行距', use: ['format_para'], never: ['format_run'] },
       { intent: '设为标题样式', use: ['style'], never: ['format_run only'] },
@@ -194,6 +196,11 @@ function userIntentsGuide() {
         userSays: ['这篇太长了分段读', 'Read this long document in chunks'],
         playbook: ['document_meta', 'document_chunks until hasMore=false'],
         primaryTools: ['document_meta', 'document_chunks']
+      },
+      {
+        userSays: ['看看每段用的什么字体', '正文现在是什么字号', '排版符合要求吗'],
+        playbook: ['format_read scope=document (or anchor)', 'compare against the requested spec'],
+        primaryTools: ['format_read', 'system_fonts_list']
       },
       {
         userSays: ['把这段加粗标红', '字号加大两点', '给标题加拼音'],
@@ -705,19 +712,112 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
         }
       }
       case 'document_new': {
+        // 不走 jsapi Documents.Add():该调用经加载项 webview 执行会以 ksojscore
+        // EXC_BAD_ACCESS 崩掉整个 WPS(2026-09-17 三次实锤,含一次环境完全健康的
+        // 对照)。改为 sidecar 写出空白 docx → 系统打开(等同用户双击文件)→ 等
+        // agent 确认新文档成为活动文档 → 刷新该回合的写锁基线(文档已切换,旧
+        // 基线必然失配,不刷则同回合后续写全被 OCC 拦成死循环)。
         try {
-          const result = await agentHub.callAgent('document.new', args, { timeoutMs: 30_000 })
-          audit?.append({ tool: name, ok: true })
-          return jsonResult(result)
+          if (String(args.templatePath || args.path || '').trim()) {
+            const result = await agentHub.callAgent('document.new', args, { timeoutMs: 60_000 })
+            audit?.append({ tool: name, ok: true })
+            return jsonResult(result)
+          }
+          const fsMod = await import('node:fs')
+          const osMod = await import('node:os')
+          const pathMod = await import('node:path')
+          const { blankDocxBuffer } = await import('./blankDocx.mjs')
+          const stamp = Date.now().toString(36)
+          const blankPath = pathMod.join(osMod.tmpdir(), `chayuan-blank-${stamp}.docx`)
+          fsMod.writeFileSync(blankPath, blankDocxBuffer())
+          const exe = getServerMeta?.()?.config?.wpsExecutable || findWpsExecutable?.() || ''
+          const osOpen = openPathWithOs(blankPath, { wpsExe: exe })
+          if (!osOpen?.ok) {
+            return jsonError(osOpen?.code || 'OS_OPEN_FAILED', osOpen?.error || 'failed to open blank docx via OS', osOpen)
+          }
+          // 轮询确认新文档就位(最多 ~12s)
+          let meta = null
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 2000))
+            try {
+              meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 8_000 })
+              if (meta && String(meta.name || '').includes('chayuan-blank')) break
+            } catch { /* retry */ }
+          }
+          const token = String(args.__baselineToken || '')
+          if (token) {
+            try {
+              await agentHub.callAgent('document.reset_baseline', { baselineToken: token }, { timeoutMs: 8_000 })
+            } catch { /* 基线刷新尽力而为 */ }
+          }
+          audit?.append({ tool: name, ok: true, via: 'os-open', path: blankPath })
+          return jsonResult({ ok: true, created: true, viaOsOpen: true, path: blankPath, document: meta })
         } catch (e) {
           return jsonError(e.code || 'ERROR', e.message, e.details)
         }
       }
       case 'document_save': {
+        // jsapi 的 Save()/SaveAs2() 经 jsaddons 桥执行会崩 WPS(2026-09-17 真机
+        // 实验 A/B 双崩,ksojscore)。改走原生路径:激活 WPS + 模拟 Cmd+S(菜单
+        // 保存,等同用户手按);轮询 doc.Saved 确认落盘。args.path(另存为)=
+        // 原生保存后 OS 复制到目标路径。
         try {
-          const result = await agentHub.callAgent('document.save', args, { timeoutMs: 60_000 })
-          audit?.append({ tool: name, path: args.path || '' })
-          return jsonResult(result)
+          if (args.via === 'jsapi') {
+            // 实验后门(排查用):强制走 jsapi 保存路径(先重立匿名基线以越过 OCC)
+            try {
+              await agentHub.callAgent('document.reset_baseline', { baselineToken: '' }, { timeoutMs: 8_000 })
+            } catch { /* ignore */ }
+            const result = await agentHub.callAgent('document.save', args, { timeoutMs: 60_000 })
+            audit?.append({ tool: name, ok: true, via: 'jsapi' })
+            return jsonResult(result)
+          }
+          const targetPath = String(args.path || '').trim()
+          let meta = null
+          try {
+            meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 10_000 })
+          } catch (e) {
+            return jsonError(e.code || 'ERROR', e.message)
+          }
+          const docPath = String(meta?.fullName || '')
+          const needsSave = meta?.saved === false
+          if (needsSave) {
+            if (typeof activateAndSaveWpsMac !== 'function') {
+              return jsonError('SAVE_NATIVE_UNSUPPORTED', '原生保存通道不可用')
+            }
+            const saveOut = await activateAndSaveWpsMac()
+            if (!saveOut.ok) {
+              const denied = /不允许辅助访问|-1719|not allowed assistive/i.test(String(saveOut.error || ''))
+              return jsonError(
+                denied ? 'SAVE_ASSISTIVE_DENIED' : (saveOut.code || 'SAVE_NATIVE_FAILED'),
+                denied
+                  ? '原生保存需要辅助功能授权：请到 系统设置→隐私与安全性→辅助功能，为 osascript（或运行 sidecar 的 node）打开开关后重试；或手动按 Cmd+S 保存当前文档。'
+                  : (saveOut.error || 'native save failed'),
+                saveOut
+              )
+            }
+            for (let i = 0; i < 6; i++) {
+              await new Promise((r) => setTimeout(r, 1200))
+              try {
+                meta = await agentHub.callAgent('document.meta', {}, { timeoutMs: 8_000 })
+                if (meta?.saved !== false) break
+              } catch { /* retry */ }
+            }
+            if (meta?.saved === false) {
+              return jsonError('SAVE_NOT_CONFIRMED', '已发送保存指令但文档保存状态未确认，请手动按 Cmd+S 核对')
+            }
+          }
+          let savedPath = docPath
+          if (targetPath && docPath && targetPath !== docPath) {
+            const fsMod = await import('node:fs')
+            try {
+              fsMod.copyFileSync(docPath, targetPath)
+              savedPath = targetPath
+            } catch (e) {
+              return jsonError('SAVEAS_COPY_FAILED', `另存复制失败: ${e.message}`, { from: docPath, to: targetPath })
+            }
+          }
+          audit?.append({ tool: name, ok: true, path: savedPath })
+          return jsonResult({ ok: true, path: savedPath, fileName: String(savedPath || '').split('/').pop() || '文档', viaNative: true, document: meta })
         } catch (e) {
           return jsonError(e.code || 'ERROR', e.message, e.details)
         }
@@ -865,6 +965,13 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
       case 'comment_list': {
         try {
           return jsonResult(await agentHub.callAgent('comment.list', args, { timeoutMs: 60_000 }))
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
+      case 'format_read': {
+        try {
+          return jsonResult(await agentHub.callAgent('format.read', args, { timeoutMs: 90_000 }))
         } catch (e) {
           return jsonError(e.code || 'ERROR', e.message, e.details)
         }

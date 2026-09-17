@@ -1,7 +1,7 @@
 /**
  * Unified MCP Agent dispatcher — handles jobs from sidecar long-poll.
  */
-import { withDocumentWriteLock } from '../documentWriteLock.js'
+import { withDocumentWriteLock, setWriteBaseline } from '../documentWriteLock.js'
 import {
   startSpellCheckAllTask,
   startSpellCheckSelectionTask,
@@ -39,6 +39,7 @@ import {
 import {
   handleCommentList,
   handleCommentDelete,
+  handleFormatRead,
   handleFormatRun,
   handleFormatPara,
   handleFormatApplyOps,
@@ -91,6 +92,7 @@ import {
   handleStyleAudit
 } from './objectStructureDispatch.js'
 import { activateHostWindow } from '../../utils/windowActivation.js'
+import { logEvent } from '../../utils/globalErrorLogger.js'
 
 /** Bring opened doc + WPS main window to foreground (Open alone often leaves UI hidden/behind). */
 function revealOpenedDocument(activate = true) {
@@ -445,23 +447,70 @@ const DOC_WRITE_METHODS = new Set([
 /**
  * @param {{ method: string, params?: any }} job
  */
+// Re-entrancy guard: prevents concurrent dispatchMcpJob calls from interleaving
+// synchronous WPS API calls on the main thread, which can corrupt the ksojscore
+// JIT code cache and cause EXC_BAD_ACCESS crashes.
+let _isDispatching = false
+const _dispatchQueue = []
+
+// 运行日志序号：job_start/job_end 按 id 配对；崩溃后日志里无 end 的最大 id = 崩溃时执行中的 job
+let _jobLogSeq = 0
+
 export async function dispatchMcpJob(job = {}) {
-  const method = String(job.method || '')
-  const params = { ...(job.params || {}) }
-  // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
-  // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
-  const baselineToken = String(params.__baselineToken || '')
-  delete params.__baselineToken
-  if (DOC_WRITE_METHODS.has(method)) {
-    // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
-    // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
-    const { promise } = withDocumentWriteLock(
-      { label: method, ...(baselineToken ? { baselineToken } : {}) },
-      () => dispatchMcpJobInner(method, params)
-    )
-    return promise
+  if (_isDispatching) {
+    return new Promise((resolve, reject) => {
+      _dispatchQueue.push({ job, resolve, reject })
+    })
   }
-  return dispatchMcpJobInner(method, params)
+
+  _isDispatching = true
+  const method = String(job.method || '')
+  const reqId = ++_jobLogSeq
+  const startedAt = Date.now()
+  const isWrite = DOC_WRITE_METHODS.has(method)
+  logEvent('job_start', { reqId, method, write: isWrite })
+  const jobEndLog = (outcome, extra = {}) => {
+    logEvent('job_end', {
+      reqId,
+      method,
+      outcome,
+      ms: Date.now() - startedAt,
+      ...extra
+    })
+  }
+  try {
+    const params = { ...(job.params || {}) }
+    // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
+    // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
+    const baselineToken = String(params.__baselineToken || '')
+    delete params.__baselineToken
+    if (isWrite) {
+      // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
+      // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
+      const { promise } = withDocumentWriteLock(
+        { label: method, ...(baselineToken ? { baselineToken } : {}) },
+        () => dispatchMcpJobInner(method, params)
+      )
+      return promise.then(
+        (v) => { jobEndLog('ok'); return v },
+        (e) => { jobEndLog('error', { code: e?.code || '', message: String(e?.message || '').slice(0, 200) }); throw e }
+      )
+    }
+    try {
+      const v = await dispatchMcpJobInner(method, params)
+      jobEndLog('ok')
+      return v
+    } catch (e) {
+      jobEndLog('error', { code: e?.code || '', message: String(e?.message || '').slice(0, 200) })
+      throw e
+    }
+  } finally {
+    _isDispatching = false
+    const next = _dispatchQueue.shift()
+    if (next) {
+      Promise.resolve().then(() => dispatchMcpJob(next.job).then(next.resolve, next.reject))
+    }
+  }
 }
 
 async function dispatchMcpJobInner(method, params) {
@@ -490,6 +539,14 @@ async function dispatchMcpJobInner(method, params) {
       return handleDocumentInsert(params)
     case 'document.apply_ops':
       return handleDocumentApplyOps(params)
+    case 'document.reset_baseline': {
+      // sidecar 的 document_new OS 打开路径收尾:新文档成为活动文档后,按当前
+      // 文档重立该回合的 OCC 基线(旧基线指向旧文档,必然失配,不刷则同回合
+      // 后续写全被 DOCUMENT_MODIFIED_SINCE_BASELINE 拦成死循环)。
+      // fp/docId 传 undefined=setWriteBaseline 自动取当前活动文档。
+      setWriteBaseline(undefined, undefined, String(params.baselineToken || ''))
+      return { ok: true, reset: true }
+    }
     case 'document.new':
       return handleDocumentNew(params)
     case 'document.save':
@@ -584,6 +641,8 @@ async function dispatchMcpJobInner(method, params) {
       return handleCommentList(params)
     case 'comment.delete':
       return handleCommentDelete(params)
+    case 'format.read':
+      return handleFormatRead(params)
     case 'format.run':
       return handleFormatRun(params)
     case 'format.para':

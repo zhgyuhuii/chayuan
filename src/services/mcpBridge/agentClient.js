@@ -52,24 +52,34 @@ export function setStoredToken(token) {
 function ensureAgentId() {
   if (_agentId) return _agentId
   const existing = String(storageGet(PLUGIN_STORAGE_AGENT_ID_KEY) || '').trim()
-  if (existing) {
-    _agentId = existing
-    return _agentId
-  }
-  _agentId = `wps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  storageSet(PLUGIN_STORAGE_AGENT_ID_KEY, _agentId)
+  const base = existing || `wps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  if (!existing) storageSet(PLUGIN_STORAGE_AGENT_ID_KEY, base)
+  // 按 webview 路由隔离 agent 身份：浮窗/主页面/TaskPane 共享 PluginStorage 的
+  // base id，但它们是健康度各异的不同执行者。共用一个 agentId 会在 sidecar 里
+  // 合体成一条记录——windowId 来回翻转、strike 被重注册反复清零、job 随机派给
+  // 坏桥执行者（2026-09-17 两度实锤：document.new 落到坏桥 → ksojscore 崩溃）。
+  const route = String(window.location?.hash || '').replace(/^#+/, '').trim()
+    || String(window.location?.pathname || '').trim()
+  const suffix = route.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 24)
+  _agentId = suffix ? `${base}--${suffix}` : base
   return _agentId
 }
 
 let _cachedSidecarToken = null
 function sidecarAccessToken() {
-  if (_cachedSidecarToken !== null) return _cachedSidecarToken
-  try {
-    _cachedSidecarToken = readSidecarToken() || ''
-  } catch {
-    _cachedSidecarToken = ''
+  if (_cachedSidecarToken === null) {
+    try {
+      _cachedSidecarToken = readSidecarToken() || ''
+    } catch {
+      _cachedSidecarToken = ''
+    }
   }
-  return _cachedSidecarToken
+  if (_cachedSidecarToken) return _cachedSidecarToken
+  // 文件 token 读不到（wpsjs debug 的 http origin 页面无法从 URL 推导家目录）
+  // 时回退 bootstrap 已获取的 token——否则 register 永远匿名 401、agent 永远
+  // 离线（2026-09-17 实锤：sidecar 正常但加载项注册不上，audit 里 agent_rejected
+  // 反复出现）
+  return String(_token || '').trim()
 }
 
 async function fetchJson(url, options = {}) {
@@ -142,7 +152,12 @@ async function register() {
     agentId,
     protocolVersion: MCP_PROTOCOL_VERSION,
     addonVersion: getAddonVersion(),
-    windowId: String(window.name || 'ribbon')
+    // window.name 在多个 webview 里同名（都是 ribbon），拼上路由让 sidecar 审计
+    // 能区分是谁接的 job（排查"某 webview 接 job 永久挂起"时一眼定位）
+    windowId: [
+      String(window.name || 'ribbon'),
+      String(window.location?.hash || window.location?.pathname || '')
+    ].filter(Boolean).join('@').slice(0, 80)
   }
   const data = await fetchJson(`${MCP_BASE_URL}/agent/register`, {
     method: 'POST',

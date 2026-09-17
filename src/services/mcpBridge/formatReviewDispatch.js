@@ -214,6 +214,171 @@ function buildWillChange(changes = {}) {
   )
 }
 
+// ---- format.read：逐段读取字体/字号/样式（只读） ----
+// WPS/VBA 惯例：三态属性 -1=true / 0=false / 9999999(wdUndefined)=段内混合；
+// Font.Size 混合=9999999；Font.Name 混合=''；Font.Color 为 RGB 整数（低字节=R）。
+const FORMAT_READ_ALIGN_NAMES = { 0: 'left', 1: 'center', 2: 'right', 3: 'justify', 4: 'distribute' }
+const FORMAT_READ_SPACING_RULES = {
+  0: 'single', 1: 'one_point_five', 2: 'double', 3: 'at_least', 4: 'exactly', 5: 'multiple'
+}
+const WD_UNDEFINED = 9999999
+
+function readTriStateAttr(value) {
+  const n = Number(value)
+  if (n === -1 || n === 1) return true
+  if (n === 0) return false
+  return null // 9999999 / 不可读 = 混合或未知
+}
+
+function fontColorToHex(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0 || n > 0xFFFFFF) return null
+  const rgb = Math.round(n)
+  const r = rgb & 0xFF
+  const g = (rgb >> 8) & 0xFF
+  const b = (rgb >> 16) & 0xFF
+  return `#${[r, g, b].map(x => x.toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+}
+
+function readFontOfRange(range) {
+  try {
+    const f = range?.Font
+    if (!f) return null
+    const name = String(f.Name ?? '')
+    const size = Number(f.Size)
+    const underline = Number(f.Underline)
+    return {
+      name: name || null,
+      size: Number.isFinite(size) && size !== WD_UNDEFINED ? size : null,
+      bold: readTriStateAttr(f.Bold),
+      italic: readTriStateAttr(f.Italic),
+      underline: underline === 0 ? false : (underline === WD_UNDEFINED || !Number.isFinite(underline)) ? null : true,
+      color: fontColorToHex(f.Color)
+    }
+  } catch {
+    return null
+  }
+}
+
+function readParaFormatOfRange(range) {
+  try {
+    const pf = range?.ParagraphFormat
+    if (!pf) return null
+    const num = (v) => {
+      const n = Number(v)
+      return Number.isFinite(n) && n !== WD_UNDEFINED ? n : null
+    }
+    return {
+      align: FORMAT_READ_ALIGN_NAMES[num(pf.Alignment)] || null,
+      lineSpacingRule: FORMAT_READ_SPACING_RULES[num(pf.LineSpacingRule)] || null,
+      lineSpacing: num(pf.LineSpacing),
+      spaceBefore: num(pf.SpaceBefore),
+      spaceAfter: num(pf.SpaceAfter),
+      firstLineIndent: num(pf.FirstLineIndent)
+    }
+  } catch {
+    return null
+  }
+}
+
+function readStyleNameOfRange(range) {
+  try {
+    return String(range?.Style?.NameLocal || range?.Style?.Name || '') || null
+  } catch {
+    return null
+  }
+}
+
+// 让出主线程：大循环里的同步 WPS API 调用洪峰有腐蚀 ksojscore JIT code cache 的
+// 前科（EXC_BAD_ACCESS，见 dispatch.js 顶部注释），分段间让 UI/微任务呼吸一下
+function yieldToUi() {
+  return new Promise((resolve) => window.setTimeout(resolve, 0))
+}
+
+// 逐字符读取并聚合为相同格式的连续片段；仅用于小区间精读（每段 ≤300 字符）
+async function readRunsInRange(doc, start, end, maxChars = 300) {
+  const length = Math.min(end - start, maxChars)
+  const runs = []
+  let cur = null
+  let curSig = ''
+  for (let i = 0; i < length; i++) {
+    if (i > 0 && i % 100 === 0) await yieldToUi()
+    let font = null
+    let ch = ''
+    try {
+      const r = doc.Range(start + i, start + i + 1)
+      font = readFontOfRange(r)
+      ch = String(r.Text || '')
+    } catch { /* skip unreadable char */ }
+    if (!font) continue
+    const sig = JSON.stringify(font)
+    if (cur && sig === curSig) {
+      cur.text += ch
+    } else {
+      cur = { ...font, text: ch }
+      curSig = sig
+      runs.push(cur)
+    }
+  }
+  return runs
+}
+
+export async function handleFormatRead(params = {}) {
+  const doc = requireDoc()
+  let anchor = resolveAnchorRange(doc, params)
+  if (!anchor) {
+    // 只读操作：无锚点且无选区时默认全文（写作工具默认拒绝，这里安全）
+    const content = doc.Content
+    anchor = { start: Number(content.Start || 0), end: Number(content.End || 0), range: content, how: 'document' }
+  }
+  const granularity = String(params.granularity || 'summary')
+  const limit = Math.min(Math.max(Number(params.limit) || 40, 1), 120)
+  const paragraphsObj = anchor.range?.Paragraphs
+  const total = Number(paragraphsObj?.Count || 0)
+  const items = []
+  for (let i = 1; i <= total && items.length < limit; i++) {
+    // 每读 20 段让出主线程一次（document 级全量读可达百余段，全程同步会长时间
+    // 占死 CrBrowserMain 并放大 JIT 腐蚀风险）
+    if (i > 1 && (i - 1) % 20 === 0) await yieldToUi()
+    let prRange = null
+    try {
+      prRange = paragraphsObj.Item(i)?.Range
+    } catch { continue }
+    if (!prRange) continue
+    let text = ''
+    try {
+      text = String(prRange.Text || '')
+    } catch { /* keep empty */ }
+    const item = {
+      index: i,
+      start: Number(prRange.Start),
+      end: Number(prRange.End),
+      preview: text.replace(/[\r\n\u0007\u000b\u000c]/g, '').slice(0, 80),
+      style: readStyleNameOfRange(prRange),
+      para: readParaFormatOfRange(prRange),
+      font: readFontOfRange(prRange)
+    }
+    if (granularity === 'runs' && item.end - item.start <= 301) {
+      item.runs = await readRunsInRange(doc, item.start, item.end, 300)
+    }
+    items.push(item)
+  }
+  return {
+    ok: true,
+    read: true,
+    anchor: { start: anchor.start, end: anchor.end, how: anchor.how },
+    granularity,
+    paragraphCount: total,
+    returned: items.length,
+    truncated: total > items.length,
+    nextHint: total > items.length
+      ? `仅返回前 ${items.length} 段；用 start/end 锚点（anchor.start/end 为基准）继续读其余段落`
+      : null,
+    paragraphs: items,
+    document: docInfo(doc)
+  }
+}
+
 export async function handleCommentList(params = {}) {
   const doc = requireDoc()
   const comments = doc.Comments

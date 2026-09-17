@@ -529,14 +529,25 @@ function writeLogLine(line) {
 }
 
 function logError(type, payload) {
+  logEvent(type, payload, { level: 'error' })
+}
+
+/**
+ * 运行日志（过程事件）：与错误日志同一条落盘链路（按天分片/30 天保留/磁盘失败回退）。
+ * 排查 WPS 崩溃（EXC_BAD_ACCESS 进程级闪退，前端无法在崩溃瞬间写日志）的关键：
+ * 崩溃前最后一条无配对结束的事件（如 job_start 无 job_end）即崩溃时正在执行的操作。
+ * 注意密度控制：只记 job / 工具调用 / 回合级事件，不记轮次/进度级高频事件。
+ */
+export function logEvent(type, payload = {}, { level = 'info' } = {}) {
   const line = safeStringify({
     ts: new Date().toISOString(),
+    level,
     type,
     ...payload
   })
 
   const ok = writeLogLine(line)
-  if (!ok && lastDiskSkipReason !== 'no_fs') {
+  if (!ok && level === 'error' && lastDiskSkipReason !== 'no_fs') {
     console.error('[GlobalErrorLogger] 日志写入失败', line)
   }
 }

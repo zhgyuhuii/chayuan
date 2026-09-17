@@ -26,6 +26,7 @@ import Util from '../../components/js/util.js'
 import { getApp } from './hostBridge.js'
 import {
   HANDOVER_INSTANCE_ID,
+  isAIAssistantWindowBusy,
   markAIAssistantHandover,
   readAIAssistantLock,
   restoreAIAssistantLock,
@@ -446,6 +447,7 @@ export function createAIAssistantDockManager(deps = {}) {
    * 任何一步失败：回滚锁 + 删新建面板；原形态为浮窗则保持浮窗，否则回退打开浮窗。
    */
   async function dockTo(mode, query = {}) {
+    if (isAIAssistantWindowBusy()) return { ok: false, reason: 'assistant-busy' }
     const normalized = normalizeDockMode(mode)
     if (!normalized || normalized === 'float') {
       return { ok: false, reason: 'invalid-mode' }
@@ -535,6 +537,7 @@ export function createAIAssistantDockManager(deps = {}) {
 
   /** 停靠 → 浮窗：先开浮窗（reopen 认领交接锁），宽限后删旧面板。 */
   async function undockToFloat(query = {}) {
+    if (isAIAssistantWindowBusy()) return { ok: false, reason: 'assistant-busy' }
     const mark = markAIAssistantHandover('float')
     if (!mark.ok) {
       return { ok: false, reason: 'handover-write-failed' }
@@ -560,6 +563,7 @@ export function createAIAssistantDockManager(deps = {}) {
    * 切换中途失败自动回退浮窗（静默，调用方可选提示）。
    */
   async function openAs(mode, query = {}) {
+    if (isAIAssistantWindowBusy()) return { ok: false, reason: 'assistant-busy' }
     const normalized = normalizeDockMode(mode) || 'float'
     if (normalized === 'float') {
       try {
@@ -584,6 +588,7 @@ export function createAIAssistantDockManager(deps = {}) {
 
   /** 全形态关闭（保持形态记忆，下次按上次形态打开）。 */
   function closeAll() {
+    if (isAIAssistantWindowBusy()) return { ok: false, reason: 'assistant-busy' }
     const pane = getOpenPane()
     // 与 undockToFloat 同理：Delete 可能销毁发起方 webview，存储写入全部前置
     clearPaneState()

@@ -899,27 +899,44 @@
                       v-for="(todo, todoIdx) in msg.mcpTodos"
                       :key="`${msg.id}-mcp-todo-${todoIdx}`"
                       class="mcp-todo-item"
-                      :class="`is-${todo.status}`"
+                      :class="`is-${getMcpTodoDisplayStatus(todo, msg)}`"
                     >
                       <span
-                        v-if="todo.status === 'in_progress'"
+                        v-if="getMcpTodoDisplayStatus(todo, msg) === 'in_progress'"
                         class="mcp-todo-spinner"
                         aria-hidden="true"
                       ></span>
-                      <span v-else class="mcp-todo-icon">{{ todo.status === 'completed' ? '✓' : '○' }}</span>
+                      <span v-else class="mcp-todo-icon">{{ getMcpTodoDisplayStatus(todo, msg) === 'completed' ? '✓' : '○' }}</span>
                       <span class="mcp-todo-content">{{ todo.content }}</span>
                     </div>
                   </div>
                   <div
                     v-if="msg.role === 'assistant' && Array.isArray(msg.mcpSteps) && msg.mcpSteps.length"
                     class="mcp-steps-list"
+                    :class="{ 'is-collapsed': msg.mcpStepsExpanded !== true }"
                   >
-                    <div
-                      v-for="(step, stepIdx) in msg.mcpSteps.slice(-8)"
-                      :key="`${msg.id}-mcp-step-${stepIdx}`"
-                      class="mcp-steps-item"
+                    <button
+                      type="button"
+                      class="mcp-steps-toggle"
+                      :title="msg.mcpStepsExpanded === true ? '收起执行过程' : '展开执行过程详情'"
+                      @click="toggleMcpSteps(msg)"
                     >
-                      {{ step.label }}<span v-if="step.detail"> · {{ step.detail }}</span>
+                      <span class="mcp-steps-toggle-arrow" aria-hidden="true">{{ msg.mcpStepsExpanded === true ? '▾' : '▸' }}</span>
+                      <span class="mcp-steps-toggle-title">执行过程</span>
+                      <span class="mcp-steps-toggle-count">{{ msg.mcpSteps.length }} 步</span>
+                      <span
+                        v-if="msg.mcpStepsExpanded !== true"
+                        class="mcp-steps-toggle-last"
+                      >{{ (msg.mcpSteps[msg.mcpSteps.length - 1] || {}).label || '' }}</span>
+                    </button>
+                    <div v-show="msg.mcpStepsExpanded === true" class="mcp-steps-body">
+                      <div
+                        v-for="(step, stepIdx) in msg.mcpSteps"
+                        :key="`${msg.id}-mcp-step-${stepIdx}`"
+                        class="mcp-steps-item"
+                      >
+                        {{ step.label }}<span v-if="step.detail"> · {{ step.detail }}</span>
+                      </div>
                     </div>
                   </div>
                 </template>
@@ -4398,8 +4415,8 @@ export default {
           return {
             ...item,
             active,
-            disabled: active || this.dockSwitching,
-            hint: active ? '当前窗口位置' : ''
+            disabled: active || this.dockSwitching || this.isWindowBusy,
+            hint: this.isWindowBusy ? '任务执行中，请先停止任务或等待完成' : (active ? '当前窗口位置' : '')
           }
         })
     },
@@ -4525,6 +4542,15 @@ export default {
       const a = this.activeMcpTurnContexts || {}
       const b = this.activeLegacyTurnContexts || {}
       return Object.keys(a).length > 0 || Object.keys(b).length > 0
+    },
+    isWindowBusy() {
+      return this.anyChatTurnRunning || this.isStreaming || !!(
+        this.activeDocumentRevisionRunContext ||
+        this.activeDocumentAwareRunContext ||
+        this.activeGeneratedOutputRunContext ||
+        this.docWriteLockState?.locked || this.docWriteLockState?.queue?.length ||
+        Object.values(this.sendRoutingLocks || {}).some(Boolean)
+      )
     },
     activeChatStreaming() {
       // 当前会话是否处于可视的流式/等待态：回合上下文优先；
@@ -4735,6 +4761,12 @@ export default {
     }
   },
   watch: {
+    isWindowBusy: {
+      flush: 'sync',
+      handler() {
+        this.aiAssistantWindowSession?.syncState?.()
+      }
+    },
     userInput() {
       this.$nextTick(() => this.adjustComposerHeight())
     },
@@ -4786,6 +4818,8 @@ export default {
     this._idleHandles = []
     this.aiAssistantWindowSession = createAIAssistantWindowSession((request) => {
       this.handleAIAssistantWindowRequest(request)
+    }, {
+      isBusy: () => this.isWindowBusy
     })
     bootMark('createAIAssistantWindowSession 完成')
     // 停靠态（?mode=taskpane，由 aiAssistantDockManager 创建）：先写 ready/size 协议标记
@@ -5030,10 +5064,11 @@ export default {
       }
     },
     async handleDockAction(action) {
-      if (this.dockSwitching) return
+      if (this.dockSwitching || this.isWindowBusy) return
       const item = this.dockMenuItems.find((i) => i.action === action)
       if (item && (item.disabled || item.active)) return
       this.closeDockMenu()
+      this.flushHistorySave()
       if (action === 'close') {
         if (this.aiAssistantTaskPaneMode) {
           // 停靠态：先自行释放锁再销毁面板（Delete 可能连带销毁本 webview，
@@ -5058,8 +5093,6 @@ export default {
           // 成功后本 webview 通常即将消失：停靠态由 manager 删面板；浮窗态切停靠
           // 需自行关窗（close 请求的 storage 事件不会在本窗口触发）
           if (!this.aiAssistantTaskPaneMode && action !== 'float') {
-            this.aiAssistantWindowSession?.releaseOwnership?.()
-            this.aiAssistantWindowSession = null
             this.closeWindow()
           }
           return
@@ -5711,6 +5744,23 @@ export default {
       const todos = Array.isArray(msg?.mcpTodos) ? msg.mcpTodos : []
       return todos.filter(t => t?.status === 'completed').length
     },
+    /** 该消息的 MCP 回合是否仍在执行：失败/停止/完成后 in_progress 项的中断态据此判定 */
+    isMcpTurnActiveForMessage(msg) {
+      return !!msg && this.activeMcpTurnContexts?.[this.currentChatId]?.messageId === msg.id
+    },
+    /**
+     * 清单项的展示状态：回合已结束（失败/停止/完成但模型没来得及更新 todo_write）时，
+     * 残留的 in_progress 视为 pending——spinner 不再转动，图标回到 ○。
+     */
+    getMcpTodoDisplayStatus(todo, msg) {
+      const status = String(todo?.status || 'pending')
+      if (status === 'in_progress' && !this.isMcpTurnActiveForMessage(msg)) return 'pending'
+      return status
+    },
+    toggleMcpSteps(msg) {
+      if (!msg) return
+      msg.mcpStepsExpanded = msg.mcpStepsExpanded !== true
+    },
     getMessagePrimaryRouteLabel(message) {
       if (message?.lane === 'mcp') return '文档智能体（MCP）'
       const kind = String(message?.primaryRoute?.kind || '').trim()
@@ -5843,6 +5893,8 @@ export default {
         reason: '文档智能体已开启，本轮经 MCP 编排（与外部智能体同通道）。'
       }
       assistantMsg.mcpSteps = []
+      // 执行过程默认展开（回合进行中可见进度）；各终态分支自动折叠，历史消息默认折叠
+      assistantMsg.mcpStepsExpanded = true
       // 流式叙述字段：每轮模型的累计文本经 onTurnText 节流写入，等待态卡片内
       // 实时渲染（工具轮期间模型的过程说明立即可见，不再是整轮死寂的进度条）
       assistantMsg.mcpStreamingText = ''
@@ -5932,6 +5984,7 @@ export default {
             if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
+            assistantMsg.mcpStepsExpanded = false
             this.clearMcpTurnCtx(turnChatId)
             this.settleGlobalStreamingFlag()
             this.saveHistory()
@@ -5946,6 +5999,7 @@ export default {
             this.mcpSoftBanner = 'WPS 桥接未连接：请重启 WPS 让察元加载项重新注册'
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
+            assistantMsg.mcpStepsExpanded = false
             this.clearMcpTurnCtx(turnChatId)
             this.settleGlobalStreamingFlag()
             this.saveHistory()
@@ -5967,6 +6021,7 @@ export default {
           this.mcpSoftBanner = `本机文档服务未就绪（${failReasonText}），发送将使用内置助手`
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
+          assistantMsg.mcpStepsExpanded = false
           assistantMsg.lane = ''
           assistantMsg.primaryRoute = null
           assistantMsg.content = ''
@@ -5998,6 +6053,7 @@ export default {
         if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
+        assistantMsg.mcpStepsExpanded = false
         this.clearMcpTurnCtx(turnChatId)
         this.settleGlobalStreamingFlag()
         this.saveHistory()
@@ -6009,6 +6065,7 @@ export default {
         if (e?.name === 'AbortError' || e?.code === 'ABORTED') {
           this.stopAssistantLoadingProgress(assistantMsg)
           assistantMsg.isLoading = false
+          assistantMsg.mcpStepsExpanded = false
           // 停止语义:保留已流出内容并追加标记;无内容时才用整句提示
           const prevContent = String(assistantMsg.content || '').trim()
           assistantMsg.mcpStreamingText = ''
@@ -6020,6 +6077,7 @@ export default {
         }
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
+        assistantMsg.mcpStepsExpanded = false
         assistantMsg.lane = ''
         assistantMsg.content = ''
         assistantMsg.mcpStreamingText = ''
@@ -6943,10 +7001,15 @@ export default {
       })
     },
     closeWindow() {
+      if (this.isWindowBusy) return false
+      this.flushHistorySave()
+      this.aiAssistantWindowSession?.releaseOwnership?.()
+      this.aiAssistantWindowSession = null
       try {
         if (window.close) window.close()
+        return true
       } catch (_) {
-        // Ignore window close failures in embedded dialogs.
+        return false
       }
     },
     // 停靠协议：挂载即写 ready 握手 + 真实 innerWidth/Height（resize 防抖刷新）。
@@ -7004,24 +7067,15 @@ export default {
       if (String(query?.from || '').trim() === 'context') {
         this.refreshSelectionContext()
       }
-      // dockTo/undockToFloat 原子交接的收尾请求：释放锁并退出。
-      // 浮窗自行关窗；停靠面板只释放（面板对象的销毁由 manager 侧 Delete 完成）
-      if (action === 'close') {
-        this.aiAssistantWindowSession?.releaseOwnership?.()
-        this.aiAssistantWindowSession = null
-        if (!this.aiAssistantTaskPaneMode) {
-          window.setTimeout(() => {
-            this.closeWindow()
-          }, 30)
+      if (action === 'close' || action === 'reopen') {
+        if (this.isWindowBusy) return
+        if (action === 'close' && this.aiAssistantTaskPaneMode) {
+          this.flushHistorySave()
+          this.aiAssistantWindowSession?.releaseOwnership?.()
+          this.aiAssistantWindowSession = null
+        } else {
+          window.setTimeout(() => this.closeWindow(), 30)
         }
-        return
-      }
-      if (action === 'reopen') {
-        this.aiAssistantWindowSession?.releaseOwnership?.()
-        this.aiAssistantWindowSession = null
-        window.setTimeout(() => {
-          this.closeWindow()
-        }, 30)
         return
       }
       this.consumeExternalPromptQuery(query)
@@ -7038,7 +7092,7 @@ export default {
       this.$nextTick(() => this.adjustComposerHeight())
       if (String(query?.autoSend || '').trim() === '1') {
         window.setTimeout(() => {
-          if (String(this.userInput || '').trim() === prompt && !this.anyChatTurnRunning) {
+          if (String(this.userInput || '').trim() === prompt && !this.isWindowBusy && !this.dockSwitching) {
             this.sendMessage()
           }
         }, 80)
@@ -17367,6 +17421,7 @@ export default {
       inAppAlert(msg || '操作失败', { title: '操作失败' })
     },
     async sendMessage() {
+      if (this.dockSwitching) return
       const sendStartedAt = Date.now()
       const text = this.userInput.trim()
       // 并行模型：本会话已有回合（聊天/流式/MCP）时禁止重复发送；其它 tab 的回合不受影响
@@ -19760,6 +19815,46 @@ export default {
   line-height: 1.4;
 }
 .mcp-steps-item + .mcp-steps-item {
+  margin-top: 2px;
+}
+/* 执行过程折叠头部：默认折叠（历史消息/回合结束），小箭头 + 最近一步摘要 */
+.mcp-steps-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  color: #556;
+  text-align: left;
+  cursor: pointer;
+}
+.mcp-steps-toggle:hover {
+  color: #1c5a9e;
+}
+.mcp-steps-toggle-arrow {
+  flex: none;
+  width: 10px;
+  color: #8896ab;
+}
+.mcp-steps-toggle-title {
+  flex: none;
+  font-weight: 600;
+}
+.mcp-steps-toggle-count {
+  flex: none;
+  color: #8896ab;
+  font-variant-numeric: tabular-nums;
+}
+.mcp-steps-toggle-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8896ab;
+}
+.mcp-steps-body {
   margin-top: 2px;
 }
 .mcp-todo-card {

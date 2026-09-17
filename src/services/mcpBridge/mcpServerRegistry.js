@@ -230,16 +230,17 @@ export function parseNamespacedTool(namespaced) {
   }
 }
 
-/** Chayuan tools allowed in in-page orchestrator (no declassify*). */
+/**
+ * Chayuan tools allowed in in-page orchestrator.
+ * Default-allow everything except declassify_* (trusted in-app channel only).
+ * 此前是前缀白名单（wps_/document_/proofread_/kb_retrieve/assistants_），
+ * 导致 format_run/format_para/style/layout 等排版工具虽在 catalog 与系统提示词里、
+ * agent 会话却"未挂载"（2026-09-17「按438c设置字体」任务实锤）。
+ */
 export function isChayuanToolAllowed(toolName) {
   const n = String(toolName || '')
-  if (!n || n.startsWith('declassify')) return false
-  if (n.startsWith('wps_')) return true
-  if (n.startsWith('document_')) return true
-  if (n.startsWith('proofread_')) return true
-  if (n === 'kb_retrieve') return true
-  if (n.startsWith('assistants_')) return true
-  return false
+  if (!n) return false
+  return !n.startsWith('declassify')
 }
 
 export function getEnabledMcpServers() {

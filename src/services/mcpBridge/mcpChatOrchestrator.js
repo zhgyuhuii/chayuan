@@ -23,6 +23,7 @@ import {
 } from './mcpHttpClient.js'
 import { createAgentCoreTransport } from './agentCoreTransport.js'
 import { createMcpDocumentSkill, normalizeTodoList } from './agentCoreSkill.js'
+import { logEvent } from '../../utils/globalErrorLogger.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
 // 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
@@ -86,6 +87,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
     '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
+    '【排版前先读】查每段字体/字号/样式/对齐/行距现状（只读）→ format_read（scope=document 或锚点；granularity=runs 看段内混排明细）；设置才用 format_run/format_para/style。用户给出排版规范（如「按438c/公文格式」）时：format_read 摸清现状 → 逐类 format_apply_ops/style 批量设置 → format_read 复核。',
     '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。',
     '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。',
     pendingPrev.length
@@ -185,6 +187,12 @@ export async function runMcpChatOrchestrator({
   onSnapshot
 } = {}) {
   const steps = []
+  const turnLogT0 = Date.now()
+  logEvent('mcp_turn_start', {
+    model: String(model?.name || model?.modelId || ''),
+    servers: (getEnabledMcpServers() || []).map(s => s.id).join(','),
+    textPreview: String(userText || '').slice(0, 80)
+  })
   let todos = []
   const pushStep = (label, detail = '') => {
     const step = { at: Date.now(), label, detail }
@@ -405,6 +413,7 @@ export async function runMcpChatOrchestrator({
 
   if (typeof out.error === 'string' && out.error) {
     if (signal?.aborted) throw abortError()
+    logEvent('mcp_turn_end', { outcome: 'model_error', ms: Date.now() - turnLogT0, steps: steps.length })
     return { ok: false, fallback: true, reason: 'model_error', content: localizeLoopError(out.error), steps, usedServers, todos }
   }
   const r = out.result || {}
@@ -412,6 +421,7 @@ export async function runMcpChatOrchestrator({
   const fallbackText = r.turnLimit
     ? '已达到工具调用轮次上限，请根据上方步骤继续或重试。'
     : '已完成。'
+  logEvent('mcp_turn_end', { outcome: r.turnLimit ? 'turn_limit' : 'ok', ms: Date.now() - turnLogT0, steps: steps.length })
   return {
     ok: true,
     content: String(r.text || '').trim() || fallbackText,

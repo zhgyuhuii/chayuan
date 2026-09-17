@@ -253,3 +253,35 @@ export default {
   isDocumentVisibleInWindows,
   writeMcpServerJson
 }
+
+/**
+ * macOS 原生保存：激活 WPS 并模拟 Cmd+S。
+ * 背景：jsapi 的 Save()/SaveAs2() 经 jsaddons 桥执行会以 ksojscore 崩溃收场
+ * （2026-09-17 真机实验 A/B 双崩）；菜单保存（用户手按 Cmd+S）从不出问题，
+ * 本函数走同一路径。非 macOS 返回 unsupported，调用方回落 jsapi。
+ */
+export async function activateAndSaveWpsMac() {
+  if (process.platform !== 'darwin') {
+    return { ok: false, code: 'NOT_MACOS', error: 'native save path is macOS-only' }
+  }
+  const { execFile } = await import('node:child_process')
+  const run = (script) => new Promise((resolve) => {
+    execFile('osascript', ['-e', script], { timeout: 8000 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, out: String(stdout || '').trim(), err: String(stderr || err?.message || '').trim() })
+    })
+  })
+  const act = await run('tell application id "com.kingsoft.wpsoffice.mac" to activate')
+  if (!act.ok) return { ok: false, code: 'ACTIVATE_FAILED', error: act.err }
+  await new Promise((r) => setTimeout(r, 600))
+  // 优先走「文件 > 保存」菜单点击：与 keystroke 不同层的 AX 调用（本仓有过
+  // System Events click 成功先例）；keystroke 在这台 WPS 上报 AppleEvent
+  // 超时(-1712)且事件未送达（实验 C：saved 仍 false）。
+  const menu = await run(
+    'tell application "System Events" to tell process "wpsoffice" to click menu item "保存" of menu "文件" of menu bar 1'
+  )
+  if (menu.ok) return { ok: true, via: 'menu' }
+  // 兜底：模拟 Cmd+S（部分环境 keystroke 可用）
+  const key = await run('tell application "System Events" to keystroke "s" using command down')
+  if (key.ok) return { ok: true, via: 'keystroke' }
+  return { ok: false, code: 'NATIVE_SAVE_FAILED', error: `menu: ${menu.err} | keystroke: ${key.err}` }
+}

@@ -185,6 +185,15 @@ export function withDocumentWriteLock(opts = {}, fn) {
     try {
       return await fn()
     } finally {
+      // 写后沉淀：部分写操作（典型=分页符 break.insert）返回时 WPS 对文档结构的
+      // 二次更新（段落计数/全文 Text）尚未完成，立即取指纹会把「未沉淀态」存成
+      // 基线，随后真实指纹漂移 → 本 token 的所有后续写全部撞
+      // DOCUMENT_MODIFIED_SINCE_BASELINE（2026-09-17 实测：首个 break.insert ok、
+      // 之后同回合写永久被拦直至回合轮次烧尽）。持锁静置 300ms 等 WPS 沉淀后再
+      // 采样滚动，把基线钉在稳定态。
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 300))
+      } catch { /* ignore */ }
       owner = null
       // 写后滚动更新基线（无论成败）：只更新调用者自己的 token（PR5 起不再洗白
       // 其它回合）+ 匿名槽。若期间活动文档切换了（verdict.docSwitched 或写入本身

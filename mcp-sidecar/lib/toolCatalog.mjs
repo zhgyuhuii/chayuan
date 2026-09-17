@@ -671,6 +671,30 @@ const CORE_TOOLS = [
 
   // ─── P0: format / comment review / revision / nav / breaks ───────────────
   tool({
+    name: 'format_read',
+    description: [
+      'WHAT: READ current formatting of paragraphs (no change): style name, font name/size/bold/italic/underline/color, align/line-spacing/space/first-line-indent, per paragraph.',
+      'WHEN: 「看看每段的字体」「正文现在是什么字号」「核对排版是否符合要求」「按某规范设置字体前先看现状」「format_run 之后验证」.',
+      'NOT: Read-only — changing anything is format_run/format_para/style. Text content is document_get_text.',
+      'HOW: scope=document|selection|paragraph, or anchor originalText/start-end. granularity=summary (default: whole-paragraph font, mixed values as null) | runs (per-run detail, paragraphs ≤300 chars only). limit caps paragraphs (default 40).',
+      'EXAMPLE: {"scope":"document"} / {"originalText":"第一章 总则","granularity":"runs"}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        originalText: { type: 'string' },
+        start: { type: 'number' },
+        end: { type: 'number' },
+        hintStart: { type: 'number' },
+        scope: { type: 'string', enum: ['selection', 'paragraph', 'document'] },
+        granularity: { type: 'string', enum: ['summary', 'runs'], description: 'Default summary.' },
+        limit: { type: 'number', description: 'Max paragraphs returned (default 40, max 120).' }
+      }
+    }
+  }),
+  tool({
     name: 'comment_list',
     description: [
       'WHAT: List comments in the active document (author, body, anchor snippet, index).',

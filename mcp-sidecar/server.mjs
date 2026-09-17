@@ -29,7 +29,11 @@ import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
 const dataDir = ensureDataDir()
 const token = loadOrCreateToken()
 const port = getPort()
-const agentHub = createAgentHub()
+// audit 同时充当 sidecar 运行日志：agentHub 的 job 派发/结果/超时均写入 audit.jsonl，
+// 与前端 logs/YYYY-M-D.log 双向印证（崩溃时 sidecar 侧最后 dispatch 的 method =
+// WPS 内正在执行的调用，前端侧对应 job_start 无 job_end）
+const audit = createAuditLog(dataDir)
+const agentHub = createAgentHub({ logger: (entry) => audit.append(entry) })
 const startedAt = Date.now()
 /** @type {Array<{ at: number, source: string }>} */
 const spikeMarkers = []
@@ -164,7 +168,6 @@ function getServerMeta() {
   }
 }
 
-const audit = createAuditLog(dataDir)
 const mcpServerMeta = writeMcpServerJson(dataDir, port)
 console.log(`[chayuan-mcp] mcp-server.json → ${mcpServerMeta.file}`)
 
@@ -352,6 +355,16 @@ async function handleAgent(req, res, pathname) {
   // Agent 长轮询是 WPS 加载项专属通道：任意本机进程可注册假 agent / 提交假结果
   // 投毒工具调用，故整个 /agent/* 要求 token
   if (!isTrusted(req)) {
+    // 拒绝留痕（排查「agent 离线但 sidecar 正常」的关键证据：401=客户端没拿到
+    // token，常见于 http origin 的 dev 页面读不到 dataDir/token 文件）
+    try {
+      audit.append({
+        ev: 'agent_rejected',
+        route: pathname,
+        ua: String(req.headers['user-agent'] || '').slice(0, 120),
+        origin: String(req.headers['origin'] || '').slice(0, 120)
+      })
+    } catch { /* ignore */ }
     unauthorized(res)
     return
   }
@@ -410,6 +423,21 @@ const server = http.createServer(async (req, res) => {
 
     // Connection info for settings page (URL only; token optional legacy field)
     if (pathname === '/token' && req.method === 'GET') {
+      // bootstrap=1：为拿不到文件 token 的客户端（wpsjs debug 的 http origin 页面
+      // 无法从 URL 推导家目录读 dataDir/token）发放真 token，解开 /agent/* 的注册
+      // 死锁（2026-09-17 实锤：dev 模式 register 匿名 401 → agent 永远离线，
+      // 而 healthz//mcp 开放 → 表现为「sidecar 正常但加载项未注册」）。
+      // 安全等价：sidecar 仅绑 127.0.0.1，且 token 文件本机本就 -rw-r--r-- 可读；
+      // token 防的是无本机文件能力的远程方（环回不可达），发放不降低防护。
+      if (url.searchParams.get('bootstrap') === '1') {
+        sendJson(res, 200, {
+          url: getServerMeta().url,
+          port,
+          authRequired: true,
+          token
+        })
+        return
+      }
       sendJson(res, 200, {
         url: getServerMeta().url,
         port,

@@ -75,10 +75,13 @@ export function saveActiveDocument() {
   if (!currentPath) {
     throw new Error('当前文档尚未保存，请先提供保存路径或使用另存为')
   }
-  if (typeof doc.Save === 'function') {
-    doc.Save()
-  } else if (typeof doc.SaveAs2 === 'function') {
+  // Save() 经 jsaddons 桥执行会崩 WPS(2026-09-17 真机实验A:调用即崩,与
+  // Documents.Add 同族的 ksojscore 崩溃)。改用 SaveAs2 原地另存达成保存语义;
+  // Save 仅作无 SaveAs2 环境的兜底。
+  if (typeof doc.SaveAs2 === 'function') {
     doc.SaveAs2(currentPath, getDocumentFormat(doc))
+  } else if (typeof doc.Save === 'function') {
+    doc.Save()
   } else {
     throw new Error('当前环境不支持保存文档')
   }
