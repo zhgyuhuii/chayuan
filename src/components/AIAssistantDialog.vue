@@ -767,7 +767,7 @@
                   <div class="message-waiting-state">
                     <div class="message-waiting-head">
                       <span class="message-waiting-title">{{ getAssistantLoadingLabel(msg) }}</span>
-                      <span class="message-waiting-percent">{{ getAssistantLoadingPercent(msg) }}%</span>
+                      <span class="message-waiting-percent">{{ getAssistantLoadingPercentText(msg) }}</span>
                     </div>
                     <div class="message-waiting-detail">{{ getAssistantLoadingDetail(msg) }}</div>
                     <div class="message-waiting-progress" aria-hidden="true">
@@ -5743,6 +5743,25 @@ export default {
       if (!Number.isFinite(value)) return 0
       return Math.max(0, Math.min(99, Math.round(value)))
     },
+    /**
+     * 等待卡百分比文本：≥90% 区间改显「经过时间」。假爬升封顶 82 后，90+ 只会由
+     * 真实步骤/真实进度触达——那里固定显示 9X% 看不出回合还活着，走秒的时长比
+     * 「还差几个点」诚实（tickAt 由加载定时器在 ≥90 区间持续刷新驱动重渲染）。
+     */
+    getAssistantLoadingPercentText(msg) {
+      const percent = this.getAssistantLoadingPercent(msg)
+      if (percent >= 90) {
+        const startedAt = Number(msg?.loadingState?.startedAt || msg?.loadingState?.tickAt || 0)
+        if (startedAt > 0) {
+          const secs = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+          if (secs < 60) return `${secs} 秒`
+          const mins = Math.floor(secs / 60)
+          if (mins < 60) return `${mins} 分 ${secs % 60} 秒`
+          return `${Math.floor(mins / 60)} 时 ${mins % 60} 分`
+        }
+      }
+      return `${percent}%`
+    },
     getAssistantLoadingLabel(msg) {
       return prepareDialogDisplayText(String(msg?.loadingState?.label || '已发送，正在思考...'))
     },
@@ -6353,6 +6372,7 @@ export default {
         label: '已发送，正在准备请求...',
         detail: '内容已加入会话，正在整理上下文与附件信息。',
         percent: 8,
+        startedAt: Date.now(),
         ...initialState
       }
       this.assistantLoadingMessageId = message.id || ''
@@ -6361,14 +6381,30 @@ export default {
           this.stopAssistantLoadingProgress(message, { keepState: true })
           return
         }
-        // 真实进度（校对 X/Y 段）时由 updateAssistantLoadingProgress 钉住百分比，定时器
-        // 停止上爬，避免把真实进度压回 93% 上限。
-        if (message.loadingState?.pinned) return
-        const current = Number(message.loadingState?.percent || 0)
+        const state = message.loadingState
+        const current = Number(state?.percent || 0)
+        // ≥90% 区间显示的是「经过时间」而非百分比：这里只刷新 tickAt 驱动走秒
+        // 重渲染，百分比本身不动（钉住/到顶两种停留态都靠它续秒）。
+        const bumpTick = () => {
+          if (current >= 90) message.loadingState = { ...state, tickAt: Date.now() }
+        }
+        // 真实进度（校对 X/Y 段）由 updateAssistantLoadingProgress 钉住百分比：不爬升。
+        if (state?.pinned) {
+          bumpTick()
+          return
+        }
+        // 假爬升默认封顶 82（真实步骤到达后 updateAssistantLoadingProgress 会把
+        // fakeCeiling 压到「步骤估算-6」）。此前固定 93 封顶 + 只升不降的棘轮让
+        // 步骤推进在数字上完全不可见——长回合「一直 93%」即源于此。
+        const ceiling = Number.isFinite(Number(state?.fakeCeiling)) ? Number(state.fakeCeiling) : 82
+        if (current >= ceiling) {
+          bumpTick()
+          return
+        }
         const delta = current < 24 ? 3 : current < 48 ? 2 : current < 72 ? 1 : 0.4
-        const next = Math.min(93, Math.round((current + delta) * 10) / 10)
+        const next = Math.min(ceiling, Math.round((current + delta) * 10) / 10)
         message.loadingState = {
-          ...message.loadingState,
+          ...state,
           percent: next
         }
       }, 280)
@@ -6380,7 +6416,15 @@ export default {
       let pinned = message.loadingState?.pinned
       if (patch.pinned === true) pinned = true
       else if (patch.pinned === false) pinned = false
-      message.loadingState = {
+      // 钉住的真实进度（如校对 X/Y 段）不走只升不降的棘轮，直接采用上报值：
+      // 假进度爬得再高，真实数字也要如实回落显示，否则虚高的百分比永远压不下去。
+      const useDirect = pinned === true && Number.isFinite(nextPercent)
+      const percent = useDirect
+        ? Math.max(0, Math.min(99, nextPercent))
+        : Number.isFinite(nextPercent)
+          ? Math.max(currentPercent, Math.min(99, nextPercent))
+          : currentPercent
+      const next = {
         ...(message.loadingState || {
           label: '已发送，正在思考...',
           detail: '',
@@ -6388,10 +6432,15 @@ export default {
         }),
         ...patch,
         pinned,
-        percent: Number.isFinite(nextPercent)
-          ? Math.max(currentPercent, Math.min(99, nextPercent))
-          : currentPercent
+        percent,
+        tickAt: Date.now()
       }
+      // 非钉住的步骤估算：把假爬升上限压到「估算-6」，让每个真实步骤的到来都能
+      // 把数字往上顶一步，而不是被假进度提前顶死在封顶值上。
+      if (!useDirect && patch.pinned === false && Number.isFinite(nextPercent)) {
+        next.fakeCeiling = Math.max(40, Math.min(82, nextPercent - 6))
+      }
+      message.loadingState = next
     },
     stopAssistantLoadingProgress(message = null, options = {}) {
       if (this.assistantLoadingTimer) {
