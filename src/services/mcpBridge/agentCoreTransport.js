@@ -176,7 +176,13 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
         // 已流出任何内容/工具分片时不再重试（重放会与 UI 已见增量重复）。
         const fallbackNonStreaming = (reason) => {
           if (settled) return
-          if (streamedText || toolAgg.count()) {
+          if (toolAgg.count()) {
+            // 工具参数分片未聚完连接即断：完整 tool call 从未投递、历史未被
+            // 触碰，带上契约标记让循环层安全重放一轮（已透出的文本会被重渲）。
+            fail(new Error(`流在工具参数传输中途中断 (while sending tool arguments); the connection was dropped`))
+            return
+          }
+          if (streamedText) {
             fail(new Error(reason))
             return
           }
