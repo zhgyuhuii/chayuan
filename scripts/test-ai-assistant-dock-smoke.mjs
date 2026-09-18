@@ -108,7 +108,7 @@ function createFakeWindow({ storage, app }) {
   const win = {
     localStorage: storage,
     Application: app || null,
-    location: { protocol: 'file:', href: 'file:///addons/chayuan_4.1.2/index.html' },
+    location: { protocol: 'file:', href: 'file:///addons/chayuan_5.1.2/index.html' },
     screen: { width: 1600, availWidth: 1600 },
     devicePixelRatio: 1,
     setTimeout: timers.setTimeout,
