@@ -19,8 +19,9 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -37,7 +38,8 @@ const TARGETS = [
   { bun: 'bun-linux-arm64', file: 'chayuan-mcp-linux-arm64' }
 ]
 
-function findBun() {
+/** 定位 bun 可执行文件；找不到返回 null（不退出，供打包脚本按需降级）。 */
+export function findBun() {
   // Windows 上 npm 全局装的 bun 常是 bun.cmd/bun.ps1 包装器，execFileSync('bun') 会失败；
   // 需直接定位 bun.exe（BUN 环境变量、BUN_INSTALL、npm 全局 node_modules、where）。
   const candidates = []
@@ -46,6 +48,11 @@ function findBun() {
     candidates.push(path.join(process.env.BUN_INSTALL, 'bin', 'bun.exe'))
     candidates.push(path.join(process.env.BUN_INSTALL, 'bin', 'bun'))
   }
+  // bun 官方安装脚本默认装到 ~/.bun/bin/bun（不在 PATH 时最常见的遗漏位置）
+  try {
+    candidates.push(path.join(os.homedir(), '.bun', 'bin', 'bun.exe'))
+    candidates.push(path.join(os.homedir(), '.bun', 'bin', 'bun'))
+  } catch { /* ignore */ }
   try {
     const npmRoot = execFileSync('npm', ['root', '-g'], { encoding: 'utf8' }).trim()
     candidates.push(path.join(npmRoot, 'bun', 'bin', 'bun.exe'))
@@ -74,8 +81,7 @@ function findBun() {
       return c
     } catch { /* try next */ }
   }
-  console.error('未找到 bun。请先安装：npm install -g bun  或  https://bun.sh')
-  process.exit(1)
+  return null
 }
 
 function pickTargets() {
@@ -122,15 +128,24 @@ function packOne(bunBin, target) {
   console.log(`[ok] ${target.bun} → ${path.relative(ROOT, produced)} (${fs.statSync(produced).size} bytes)`)
 }
 
-function main() {
+/**
+ * 重编全部（或指定）sidecar 目标。供打包脚本在暂存前自动调用，
+ * 保证安装包内永远内置与 mcp-sidecar/ 源码一致的二进制。
+ * @returns {{ok: number, failed: number, targets: Array}} 编译结果统计
+ */
+export function rebuildSidecarBinaries(targetShortNames) {
   const bunBin = findBun()
-  const targets = pickTargets()
+  if (!bunBin) {
+    throw new Error('未找到 bun。请先安装：npm install -g bun  或  https://bun.sh')
+  }
+  const targets = targetShortNames?.length
+    ? TARGETS.filter((t) => targetShortNames.includes(t.file.replace(/^chayuan-mcp-/, '').replace(/\.exe$/, '')))
+    : TARGETS
   if (!targets.length) {
-    console.error('No matching targets. Known:', TARGETS.map((t) => t.file.replace(/^chayuan-mcp-/, '').replace(/\.exe$/, '')).join(', '))
-    process.exit(1)
+    throw new Error(`No matching targets. Known: ${TARGETS.map((t) => t.file.replace(/^chayuan-mcp-/, '').replace(/\.exe$/, '')).join(', ')}`)
   }
   fs.mkdirSync(BIN_DIR, { recursive: true })
-  console.log(`Building ${targets.length} target(s) with Bun: ${targets.map((t) => t.bun).join(', ')}`)
+  console.log(`[sidecar] rebuilding ${targets.length} target(s): ${targets.map((t) => t.bun).join(', ')}`)
   let failed = 0
   for (const t of targets) {
     try {
@@ -140,8 +155,28 @@ function main() {
       console.error(`[FAIL] ${t.bun}: ${e?.message || e}`)
     }
   }
-  if (failed) process.exitCode = 1
-  console.log(`Done. ${targets.length - failed}/${targets.length} ok. Artifacts in ${path.relative(ROOT, BIN_DIR)}/`)
+  console.log(`[sidecar] done. ${targets.length - failed}/${targets.length} ok → ${path.relative(ROOT, BIN_DIR)}/`)
+  return { ok: targets.length - failed, failed, targets }
 }
 
-main()
+function main() {
+  const targets = pickTargets()
+  if (!targets.length) {
+    console.error('No matching targets. Known:', TARGETS.map((t) => t.file.replace(/^chayuan-mcp-/, '').replace(/\.exe$/, '')).join(', '))
+    process.exit(1)
+  }
+  try {
+    const r = rebuildSidecarBinaries(
+      targets.map((t) => t.file.replace(/^chayuan-mcp-/, '').replace(/\.exe$/, ''))
+    )
+    if (r.failed) process.exitCode = 1
+  } catch (e) {
+    console.error(e?.message || e)
+    process.exit(1)
+  }
+}
+
+// 仅作为命令直接执行时跑 main；被 import（build-wps-addon 等）时只暴露函数
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+}

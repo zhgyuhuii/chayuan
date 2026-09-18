@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { releaseArtifactFilename, installHint } from './lib/release-platform.mjs'
+import { findBun, rebuildSidecarBinaries } from './build-mcp-binary.mjs'
 
 const require = createRequire(import.meta.url)
 const _7z = require('node-7z')
@@ -150,6 +151,20 @@ async function main() {
 	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 	const { name, version } = pkg
 	const displayName = pkg.displayName || '察元AI文档助手'
+
+	// 0. 无条件重编 windows-x64 sidecar：staging 已存在时不会触发 build:wps-all 的
+	//    自动重建，这里必须独立重编，否则 exe 会一直嵌旧二进制甚至报缺文件退出。
+	//    逃生口 CHAYUAN_SKIP_BINARY_REBUILD=1。
+	if (process.env.CHAYUAN_SKIP_BINARY_REBUILD !== '1') {
+		if (findBun()) {
+			const r = rebuildSidecarBinaries(['windows-x64'])
+			if (r.failed > 0) {
+				console.warn('[sidecar] windows-x64 编译失败，exe 可能嵌入旧二进制')
+			}
+		} else {
+			console.warn('[sidecar] 未找到 bun，沿用既有 windows-x64 二进制（可能过期）。安装 bun 后打包将自动重编。')
+		}
+	}
 
 	// 1. 确保 release/install-staging 存在（插件目录 + publish.xml + mcp-sidecar）
 	const staging = path.join(root, 'release', 'install-staging')

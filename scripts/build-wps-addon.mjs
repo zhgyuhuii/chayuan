@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import { currentReleaseTriple, releaseArtifactFilename } from './lib/release-platform.mjs'
+import { findBun, rebuildSidecarBinaries } from './build-mcp-binary.mjs'
 
 const require = createRequire(import.meta.url)
 const fsEx = require('fs-extra')
@@ -220,6 +221,23 @@ async function main() {
 	if (!fs.existsSync(distDir)) {
 		console.error('dist/ missing. Run vite build first.')
 		process.exit(1)
+	}
+
+	// 打包前自动重编 sidecar 二进制：staging 只拷当前平台产物且从不重建，
+	// 若不重编，安装包会一直内置旧二进制（2026-09-18 曾停留 5 周前 + windows 从未编出）。
+	// bun 全目标编译仅数秒；逃生口 --skip-binary-rebuild / CHAYUAN_SKIP_BINARY_REBUILD=1。
+	const skipBinaryRebuild =
+		argv.includes('--skip-binary-rebuild') || process.env.CHAYUAN_SKIP_BINARY_REBUILD === '1'
+	if (offline && !skipBinaryRebuild) {
+		if (findBun()) {
+			const r = rebuildSidecarBinaries()
+			if (r.failed > 0) {
+				// 不硬失败：staging 会回落 node server.mjs，但必须让打包者看见
+				console.warn(`[sidecar] ${r.failed} 个目标编译失败，安装包可能内置旧二进制或缺失（缺失时回落 node server.mjs）`)
+			}
+		} else {
+			console.warn('[sidecar] 未找到 bun，沿用 mcp-sidecar/bin/ 既有二进制（可能过期）。安装 bun 后打包将自动重编。')
+		}
 	}
 
 	fsEx.ensureDirSync(releaseRoot)
