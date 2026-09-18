@@ -91,17 +91,27 @@ function packOne(bunBin, target) {
   // windows 目标 Bun 会自动补 .exe，故 outfile 给不带扩展名的主干
   const stem = target.file.replace(/\.exe$/, '')
   const outfile = path.join(BIN_DIR, stem)
-  const args = [
+  const baseArgs = [
     'build', '--compile',
     '--target', target.bun,
     '--outfile', outfile,
   ]
   // Windows 控制台子系统默认会弹黑窗；安装器/开机自启需要无窗口后台常驻。
+  // 但 bun 1.3.x 只允许在 Windows 主机上编译时用 --windows-hide-console，
+  // mac 交叉编译会被拒。此时降级编普通控制台版：autostart 的 start-mcp.cmd
+  // 本就用 powershell Start-Process -WindowStyle Hidden 拉起，正常路径不弹窗；
+  // 缺 exe 则 Windows 安装直接失败（回落 node server.mjs），两害取其轻。
   if (target.bun.startsWith('bun-windows-')) {
-    args.push('--windows-hide-console')
+    try {
+      execFileSync(bunBin, [...baseArgs, '--windows-hide-console', ENTRY], { stdio: 'inherit', cwd: ROOT })
+    } catch (e) {
+      if (process.platform === 'win32') throw e
+      console.warn('[warn] 当前主机不支持 --windows-hide-console 交叉编译，降级为普通控制台版（经 start-mcp.cmd 隐藏拉起，不受影响）')
+      execFileSync(bunBin, [...baseArgs, ENTRY], { stdio: 'inherit', cwd: ROOT })
+    }
+  } else {
+    execFileSync(bunBin, [...baseArgs, ENTRY], { stdio: 'inherit', cwd: ROOT })
   }
-  args.push(ENTRY)
-  execFileSync(bunBin, args, { stdio: 'inherit', cwd: ROOT })
   const produced = path.join(BIN_DIR, target.file)
   if (!fs.existsSync(produced)) {
     throw new Error(`预期产物未生成：${produced}`)
