@@ -4273,9 +4273,9 @@ export default {
     WelcomeAdSlots
   },
   data() {
-    updateInfo: null,
-    showUpdateBanner: false,
     return {
+      updateInfo: null,
+      showUpdateBanner: false,
       aiDialogAssetsInline: AI_DIALOG_ASSETS_INLINE,
       activeSidebarTab: 'assistants',
       mcpUrl: MCP_URL || 'http://127.0.0.1:62588/mcp',
