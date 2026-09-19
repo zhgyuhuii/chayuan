@@ -1,5 +1,9 @@
 <template>
   <div class="ai-assistant-dialog">
+    <div v-if="showUpdateBanner" class="cy-update-banner" @click="goDownloadUpdate">
+      察元AI文档助手 {{ updateInfo.version }} 可用 · 点击下载安装包
+      <span class="cy-update-close" @click.stop="showUpdateBanner=false">×</span>
+    </div>
     <!-- 窗口形态菜单：整个窗口右上角的单按钮下拉（计划 §3.7；浮窗/停靠两态通用）。
          挂在根容器而非 main-area：main-area 的 `.main-area > *` 会把子元素强制
          position:relative 并压 z-index，导致按钮掉进文档流、菜单与按钮分离且被遮挡 -->
@@ -2084,6 +2088,34 @@
               </div>
             </div>
           </div>
+          <!-- 支持我们随缘提示:任务成功完成后低频出现(见 tipJar.js 频控),
+               流式文案+内嵌收款码;用户开始打字/发消息立即收起 -->
+          <div
+            v-if="tipJarBubble.visible"
+            class="tipjar-bubble"
+            role="status"
+            @mouseenter="pauseTipJarAutoHide"
+            @mouseleave="resumeTipJarAutoHide"
+          >
+            <button type="button" class="tipjar-close" aria-label="关闭提示" @click="dismissTipJar('later')">×</button>
+            <p class="tipjar-copy">{{ tipJarBubble.displayText }}<span v-if="tipJarBubble.typing" class="tipjar-cursor">▊</span></p>
+            <div class="tipjar-qr-row">
+              <img
+                v-if="purchaseQrDataUrl"
+                :src="purchaseQrDataUrl"
+                alt="微信收款码"
+                class="tipjar-qr"
+                decoding="async"
+              />
+              <div v-else class="tipjar-qr tipjar-qr--placeholder">生成中…</div>
+              <span class="tipjar-qr-label">微信扫码</span>
+            </div>
+            <div class="tipjar-actions">
+              <button type="button" class="tipjar-btn tipjar-btn--primary" @click="resolveTipJar('supported')">已支持 ❤️</button>
+              <button type="button" class="tipjar-btn" @click="dismissTipJar('later')">以后再说</button>
+              <button type="button" class="tipjar-btn tipjar-btn--ghost" @click="dismissTipJar('never')">不再提示</button>
+            </div>
+          </div>
         </template>
       </div>
 
@@ -2760,6 +2792,13 @@ import {
   recordDialogOpen,
   resolveStarPrompt
 } from '../utils/starPrompt.js'
+import {
+  recordTaskDone as tipJarRecordTaskDone,
+  markShown as tipJarMarkShown,
+  withAbandoned as tipJarWithAbandoned,
+  resolveTipJar as tipJarResolve,
+  pickCopy as tipJarPickCopy
+} from '../utils/tipJar.js'
 import { openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { MCP_URL } from '../services/mcpBridge/config.js'
 import {
@@ -4234,6 +4273,8 @@ export default {
     WelcomeAdSlots
   },
   data() {
+    updateInfo: null,
+    showUpdateBanner: false,
     return {
       aiDialogAssetsInline: AI_DIALOG_ASSETS_INLINE,
       activeSidebarTab: 'assistants',
@@ -4296,6 +4337,10 @@ export default {
       starPromptThanks: false,
       starPromptThanksText: '',
       starBadgeResolved: false,
+      // 「支持我们」随缘提示:visible=气泡在展示;displayText=流式已打出的部分;
+      // typing=流式进行中;tipJarState 镜像频控状态,避免反复读 localStorage
+      tipJarBubble: { visible: false, displayText: '', typing: false },
+      tipJarState: {},
       welcomePromptIndex: -1,
       displayedWelcomePrompt: '',
       fullWelcomePrompt: '',
@@ -4776,6 +4821,12 @@ export default {
         this.aiAssistantWindowSession?.syncState?.()
       }
     },
+    // 回合结束 → 支持提示裁决。只在「任意回合在跑 → 全部结束」的下降沿触发一次;
+    // 结束时校验当前会话末条 AI 消息非失败/停止态(成功才讨赏),用户正在打字则放弃本次。
+    anyChatTurnRunning(running, prev) {
+      if (prev !== true || running !== false) return
+      this.considerTipJarAfterTurn()
+    },
     userInput() {
       this.$nextTick(() => this.adjustComposerHeight())
     },
@@ -4823,6 +4874,7 @@ export default {
     }
   },
   mounted() {
+    this.initUpdateBanner()
     bootMark('AIAssistantDialog mounted 进入')
     this._idleHandles = []
     this.aiAssistantWindowSession = createAIAssistantWindowSession((request) => {
@@ -4986,6 +5038,19 @@ export default {
     if (this.desktopUnsub) { this.desktopUnsub(); this.desktopUnsub = null }
   },
   methods: {
+    /** 官网升级提醒（静默，aidooo.com） */
+    async initUpdateBanner() {
+      try {
+        const { checkUpdate } = await import('../utils/updateCheck.js')
+        const info = await checkUpdate(this.pluginVersion || window.PLUGIN_VERSION)
+        if (info) { this.updateInfo = info; this.showUpdateBanner = true }
+      } catch { /* 静默 */ }
+    },
+    goDownloadUpdate() {
+      try { if (this.updateInfo && this.updateInfo.url) window.open(this.updateInfo.url, '_blank') } catch { }
+      this.showUpdateBanner = false
+    },
+
     // ------------------------------------------------------------------
     // 窗口形态（停靠）菜单：计划 §5.2 提交 B
     // ------------------------------------------------------------------
@@ -8839,6 +8904,118 @@ export default {
     openPurchaseDialog() {
       this.openDialogRoute('/purchase-guide-dialog', { reason: 'purchase' }, '购买授权', 460, 660, true)
     },
+    /* ── 「支持我们」随缘提示(tipJar) ── */
+
+    /**
+     * 回合成功结束后的裁决入口。共识约束:
+     *  - 只有聊天回合成功结束才触发;失败/手动停止不弹
+     *  - 用户正在输入时放弃本次(绝不与用户抢输入框)
+     *  - 二维码未就绪先异步预热,就绪前只出文案流式
+     */
+    considerTipJarAfterTurn() {
+      try {
+        if (this.isWindowBusy || this.isComposerBusy()) return
+        const msgs = this.currentMessages
+        const last = Array.isArray(msgs) && msgs.length ? msgs[msgs.length - 1] : null
+        if (!last || last.role !== 'assistant') return
+        // 失败/停止态不讨赏
+        if (last.error || last.stopped || last.isError || last.failed) return
+        const { show } = tipJarRecordTaskDone(this.tipJarState)
+        this.syncTipJarState()
+        if (!show) return
+        // 二维码懒加载(与欢迎区共用 purchaseQrDataUrl)
+        if (!this.purchaseQrDataUrl) this.loadPurchaseQr()
+        this.startTipJarBubble()
+      } catch (e) {
+        console.debug('tipJar 裁决失败:', e)
+      }
+    },
+    /** 用户正在输入框打字/聚焦 → 不打扰 */
+    isComposerBusy() {
+      const el = this.$refs.composerInputRef
+      if (!el) return false
+      if (el === document.activeElement) return true
+      return !!String(this.userInput || '').trim()
+    },
+    startTipJarBubble() {
+      // 弹出前最后一刻再查:用户恰好开始打字则放弃(频控不消耗本次,下回合再裁)
+      if (this.isComposerBusy()) {
+        this.tipJarState = tipJarWithAbandoned(this.tipJarState)
+        return
+      }
+      const copy = tipJarMarkShown(this.tipJarState)
+      this.syncTipJarState()
+      this.tipJarBubble = { visible: true, displayText: '', typing: true }
+      this.$nextTick(() => this.scrollToBottomIfChatActive(this.currentChatId))
+      this.streamTipJarCopy(copy)
+    },
+    /** 逐字流式:32ms/字,全部打完再等 4s 打字机光标收尾(气泡保持展示,自动隐藏见下) */
+    streamTipJarCopy(copy) {
+      this.stopTipJarStream()
+      const chars = Array.from(String(copy || ''))
+      let i = 0
+      this._tipJarStreamTimer = setInterval(() => {
+        if (!this.tipJarBubble.visible) { this.stopTipJarStream(); return }
+        i += 1
+        this.tipJarBubble.displayText = chars.slice(0, i).join('')
+        if (i >= chars.length) {
+          this.stopTipJarStream()
+          this.tipJarBubble.typing = false
+          this.armTipJarAutoHide()
+        }
+      }, 32)
+    },
+    stopTipJarStream() {
+      if (this._tipJarStreamTimer) {
+        clearInterval(this._tipJarStreamTimer)
+        this._tipJarStreamTimer = null
+      }
+    },
+    /** 展示 30s 后自动收起;悬停暂停 */
+    armTipJarAutoHide() {
+      this.clearTipJarAutoHide()
+      this._tipJarAutoHideTimer = setTimeout(() => {
+        this.hideTipJarBubble()
+      }, 30000)
+    },
+    pauseTipJarAutoHide() {
+      this.clearTipJarAutoHide()
+    },
+    resumeTipJarAutoHide() {
+      if (this.tipJarBubble.visible && !this.tipJarBubble.typing) this.armTipJarAutoHide()
+    },
+    clearTipJarAutoHide() {
+      if (this._tipJarAutoHideTimer) {
+        clearTimeout(this._tipJarAutoHideTimer)
+        this._tipJarAutoHideTimer = null
+      }
+    },
+    /** 即时收起(用户打字/发消息),不打断已有表态 */
+    hideTipJarBubble() {
+      this.stopTipJarStream()
+      this.clearTipJarAutoHide()
+      this.tipJarBubble = { visible: false, displayText: '', typing: false }
+    },
+    dismissTipJar(kind) {
+      tipJarResolve(kind)
+      this.syncTipJarState()
+      this.hideTipJarBubble()
+    },
+    resolveTipJar(kind) {
+      tipJarResolve('supported')
+      this.syncTipJarState()
+      this.hideTipJarBubble()
+      // 已支持 → 打开「支持我们」弹窗(微信收款码大图 + 购买/分享入口)
+      this.openSidebarFooterSupportDialog('support')
+    },
+    syncTipJarState() {
+      try {
+        this.tipJarState = JSON.parse(localStorage.getItem('nd_tip_jar_prompt') || '{}')
+      } catch {
+        this.tipJarState = {}
+      }
+    },
+
     openSidebarFooterSupportDialog(mode = 'follow') {
       this.sidebarFooterSupportDialogMode = mode === 'support' ? 'support' : 'follow'
     },
@@ -11664,6 +11841,8 @@ export default {
       this.$refs.attachmentInputRef?.click?.()
     },
     handleComposerInput() {
+      // 用户开始打字 → 立即收起支持提示(共识兜底:绝不与用户抢输入区)
+      if (this.tipJarBubble.visible) this.hideTipJarBubble()
       this.adjustComposerHeight()
     },
     handleComposerKeydown(event) {
@@ -17509,6 +17688,8 @@ export default {
     },
     async sendMessage() {
       if (this.dockSwitching) return
+      // 发消息即收起支持提示(兜底:placeholder 场景外的残余气泡)
+      if (this.tipJarBubble.visible) this.hideTipJarBubble()
       const sendStartedAt = Date.now()
       const text = this.userInput.trim()
       // 并行模型：本会话已有回合（聊天/流式/MCP）时禁止重复发送；其它 tab 的回合不受影响
@@ -19406,6 +19587,121 @@ export default {
   font-size: 12px;
   line-height: 1.45;
 }
+
+/* 「支持我们」随缘提示气泡:对话流末尾,AI 语气文案 + 内嵌收款码(频控见 tipJar.js) */
+.tipjar-bubble {
+  position: relative;
+  margin: 4px 44px 14px 46px;
+  padding: 12px 14px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  background: linear-gradient(150deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.86));
+  color: #e2e8f0;
+  animation: tipjar-rise 0.3s ease both;
+}
+
+@keyframes tipjar-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tipjar-bubble { animation: none; }
+}
+
+.tipjar-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tipjar-close:hover { color: #94a3b8; }
+
+.tipjar-copy {
+  margin: 0;
+  padding-right: 16px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #cbd5e1;
+}
+
+.tipjar-cursor {
+  color: #7dd3fc;
+  animation: tipjar-blink 0.9s step-end infinite;
+}
+
+@keyframes tipjar-blink {
+  50% { opacity: 0; }
+}
+
+.tipjar-qr-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin: 10px 0 8px;
+}
+
+.tipjar-qr {
+  width: 108px;
+  height: 108px;
+  border-radius: 8px;
+  background: #fff;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.tipjar-qr--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.tipjar-qr-label {
+  color: #64748b;
+  font-size: 10.5px;
+}
+
+.tipjar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tipjar-btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.tipjar-btn:hover { border-color: rgba(125, 211, 252, 0.5); }
+
+.tipjar-btn--primary {
+  border: none;
+  background: linear-gradient(135deg, #5b7cfa, #8b5cf6);
+  color: #fff;
+}
+
+.tipjar-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+}
+
+.tipjar-btn--ghost:hover { color: #94a3b8; }
 
 /* GitHub Star 提示卡：未点赞引导 / 已点赞致谢（文案见 starPrompt.js 注释） */
 .star-prompt-card {
