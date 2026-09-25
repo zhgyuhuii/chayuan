@@ -93,6 +93,32 @@ function pickTargets() {
   })
 }
 
+/**
+ * 把 Bun 产出的 Windows exe 从控制台子系统(CUI=3)改写为 GUI 子系统(2)，
+ * 与 bun 在 Windows 主机上编译时 --windows-hide-console 的效果等效：
+ * 双击/ShellExecute 直启不再弹常驻黑窗（sidecar 走 HTTP 端口，不依赖控制台 stdio）。
+ * 改的是 PE Optional Header 的 Subsystem 字段（e_lfanew+92，PE32/PE32+ 同偏移）；
+ * Windows 加载器不校验用户态 exe 的 CheckSum，改后可直接运行。
+ * 任何结构校验不过都原样保留（启动路径仍有 start-mcp.cmd 隐藏拉起兜底）。
+ */
+function patchPeSubsystemToGui(exePath) {
+  const buf = fs.readFileSync(exePath)
+  if (buf.length < 0x40 + 4 || buf.readUInt16LE(0) !== 0x5a4d) { // 'MZ'
+    return 'skip: 不是 PE(MZ) 文件'
+  }
+  const peOff = buf.readUInt32LE(0x3c)
+  if (peOff <= 0 || peOff + 4 + 20 + 70 > buf.length || buf.readUInt32LE(peOff) !== 0x00004550) { // 'PE\0\0'
+    return 'skip: PE 头定位失败'
+  }
+  const subsystemOff = peOff + 4 + 20 + 68
+  const subsystem = buf.readUInt16LE(subsystemOff)
+  if (subsystem === 2) return 'skip: 已是 GUI 子系统'
+  if (subsystem !== 3) return `skip: 未知子系统值 ${subsystem}`
+  buf.writeUInt16LE(2, subsystemOff)
+  fs.writeFileSync(exePath, buf)
+  return 'patched'
+}
+
 function packOne(bunBin, target) {
   // windows 目标 Bun 会自动补 .exe，故 outfile 给不带扩展名的主干
   const stem = target.file.replace(/\.exe$/, '')
@@ -103,17 +129,21 @@ function packOne(bunBin, target) {
     '--outfile', outfile,
   ]
   // Windows 控制台子系统默认会弹黑窗；安装器/开机自启需要无窗口后台常驻。
-  // 但 bun 1.3.x 只允许在 Windows 主机上编译时用 --windows-hide-console，
-  // mac 交叉编译会被拒。此时降级编普通控制台版：autostart 的 start-mcp.cmd
-  // 本就用 powershell Start-Process -WindowStyle Hidden 拉起，正常路径不弹窗；
-  // 缺 exe 则 Windows 安装直接失败（回落 node server.mjs），两害取其轻。
+  // bun 1.3.x 只允许在 Windows 主机上编译时用 --windows-hide-console，mac/Linux
+  // 交叉编译会被拒：先编控制台版，再把 PE Subsystem 改写为 GUI，效果等效。
+  // 两者都不成立时仍有 start-mcp.cmd 隐藏拉起兜底（缺 exe 则 Windows 安装直接
+  // 失败回落 node server.mjs，两害取其轻）。
   if (target.bun.startsWith('bun-windows-')) {
-    try {
+    if (process.platform === 'win32') {
       execFileSync(bunBin, [...baseArgs, '--windows-hide-console', ENTRY], { stdio: 'inherit', cwd: ROOT })
-    } catch (e) {
-      if (process.platform === 'win32') throw e
-      console.warn('[warn] 当前主机不支持 --windows-hide-console 交叉编译，降级为普通控制台版（经 start-mcp.cmd 隐藏拉起，不受影响）')
+    } else {
       execFileSync(bunBin, [...baseArgs, ENTRY], { stdio: 'inherit', cwd: ROOT })
+      const r = patchPeSubsystemToGui(path.join(BIN_DIR, target.file))
+      if (r === 'patched') {
+        console.log('[ok] PE 子系统 CUI→GUI（等效 --windows-hide-console，直启/双击不弹黑窗）')
+      } else {
+        console.warn(`[warn] 未能改写 PE 子系统（${r}），产物为控制台版——请经 start-mcp.cmd 隐藏拉起`)
+      }
     }
   } else {
     execFileSync(bunBin, [...baseArgs, ENTRY], { stdio: 'inherit', cwd: ROOT })

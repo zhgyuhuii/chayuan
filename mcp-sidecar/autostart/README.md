@@ -18,4 +18,4 @@ mcp-sidecar\autostart\install-windows-user.cmd
 mcp-sidecar\autostart\install-windows-user.cmd /uninstall
 ```
 
-脚本会把 sidecar 复制到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\`，并写入用户 Run 键；登录后无窗口后台启动（Windows 二进制以 `--windows-hide-console` 编译）。
+脚本会把 sidecar 复制到 `%LOCALAPPDATA%\chayuan-wps\mcp\runtime\`，并写入用户 Run 键；登录后无窗口后台启动（Windows 二进制为 GUI 子系统，等效 `--windows-hide-console`，交叉编译产物同样生效）。

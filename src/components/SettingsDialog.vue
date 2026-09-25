@@ -2486,6 +2486,7 @@
 
 <script>
 import { activateHostWindow } from '../utils/windowActivation.js'
+import { buildChatUrl } from '../utils/chatApi.js'
 import { getLocalEngineSpec, probeLocalEngine, installLocalEngine, getPullHint } from '../utils/localEngineSetup.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
@@ -6023,25 +6024,7 @@ export default {
       }
       this.showMessage('正在检测连接...', 'info')
       try {
-        const base = apiUrl.replace(/\/+$/, '')
-        const isOllama = this.isOllamaLikeProvider(this.selectedModel?.id)
-        let url, options
-        if (isOllama) {
-          url = base + '/api/tags'
-          options = { method: 'GET' }
-        } else {
-          const isQianfan = base.includes('qianfan.baidubce.com') || /\/v\d+$/.test(base)
-          const modelsPath = isQianfan || base.endsWith('/v1') ? '/models' : '/v1/models'
-          url = base + modelsPath
-          const firstKey = apiKey.split(',')[0].trim()
-          options = {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${firstKey}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        }
+        const { url, options } = this.buildProbeRequest(apiUrl, apiKey, this.selectedModel?.id)
         const res = await fetch(url, options)
         if (res.ok) {
           this.showMessage('连接成功，API 可用', 'success')
@@ -6052,6 +6035,8 @@ export default {
             msg = '401 未授权：请检查 API 密钥是否正确、是否已过期，或该密钥是否有访问权限'
           } else if (res.status === 403) {
             msg = '403 禁止访问：API 密钥可能无权限访问此接口'
+          } else if (res.status === 404) {
+            msg = `404 未找到接口（探测 ${url}）：请确认服务已启动、地址正确`
           } else if (text) {
             try {
               const err = JSON.parse(text)
@@ -6064,6 +6049,25 @@ export default {
         console.error('API 检测失败:', e)
         this.showMessage('连接失败: ' + (e.message || '网络错误'), 'error')
       }
+    },
+    // 真 Ollama：探测用 Ollama 私有的 /api/tags。其余 Ollama 类(xinference/oneapi/fastchat/
+    // new-api/lm-studio)只有 OpenAI 兼容的 /v1/models——对它们打 /api/tags 会 404
+    // (Xinference 连接报 404 的根因)。
+    isRealOllamaProvider(providerId) {
+      return ['ollama', 'OLLAMA'].some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
+    },
+    // 组装"检测连接/拉取模型"共用的探测请求，返回 { url, options, isOllamaTags }
+    buildProbeRequest(apiUrl, apiKey, providerId) {
+      const base = String(apiUrl || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+      if (this.isRealOllamaProvider(providerId)) {
+        // 用户可能填了带 /v1 结尾的地址（chat 可用），但 /api/tags 挂在根路径下，探测前剥掉
+        return { url: base.replace(/\/v\d+$/i, '') + '/api/tags', options: { method: 'GET' }, isOllamaTags: true }
+      }
+      const modelsPath = /\/v\d+$/.test(base) || base.includes('qianfan.baidubce.com') ? '/models' : '/v1/models'
+      const firstKey = String(apiKey || '').split(',')[0].trim()
+      const headers = { 'Content-Type': 'application/json' }
+      if (firstKey) headers['Authorization'] = `Bearer ${firstKey}`
+      return { url: base + modelsPath, options: { method: 'GET', headers }, isOllamaTags: false }
     },
     // 判断是否为 Ollama 类（无需密钥）的提供商
     isOllamaLikeProvider(providerId) {
@@ -6084,15 +6088,7 @@ export default {
     },
     // 获取 API 预览 URL（实际调用的 chat 接口）
     getApiPreviewUrl() {
-      if (!this.currentModelConfig.apiUrl) return ''
-      const url = this.currentModelConfig.apiUrl.trim().replace(/\/+$/, '')
-      if (/\/v\d+$/.test(url) || url.includes('qianfan.baidubce.com')) {
-        return url + '/chat/completions'
-      }
-      if (url.endsWith('/v1')) {
-        return url + '/chat/completions'
-      }
-      return url + '/v1/chat/completions'
+      return buildChatUrl(this.currentModelConfig.apiUrl)
     },
     // 刷新模型系列（真实调用 API）
     async refreshModelSeries() {
@@ -6108,25 +6104,7 @@ export default {
       }
       this.showMessage('正在获取模型列表...', 'info')
       try {
-        const base = apiUrl.replace(/\/+$/, '')
-        const isOllama = this.isOllamaLikeProvider(this.selectedModel?.id)
-        let url, options
-        if (isOllama) {
-          url = base + '/api/tags'
-          options = { method: 'GET' }
-        } else {
-          const isQianfan = base.includes('qianfan.baidubce.com') || /\/v\d+$/.test(base)
-          const modelsPath = isQianfan || base.endsWith('/v1') ? '/models' : '/v1/models'
-          url = base + modelsPath
-          const firstKey = apiKey.split(',')[0].trim()
-          options = {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${firstKey}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        }
+        const { url, options } = this.buildProbeRequest(apiUrl, apiKey, this.selectedModel?.id)
         const res = await fetch(url, options)
         if (!res.ok) {
           // LongCat 等部分 API 不支持 GET /v1/models，404 时使用预设模型
@@ -6141,12 +6119,12 @@ export default {
               return
             }
           }
-          const text = await res.text()
-          this.showMessage(`获取模型列表失败: ${res.status}`, 'error')
+          const hint = res.status === 404 ? `（探测 ${url}，请确认服务已启动、地址正确）` : ''
+          this.showMessage(`获取模型列表失败: ${res.status}${hint}`, 'error')
           return
         }
         const data = await res.json()
-        const models = this.parseModelsFromResponse(data, isOllama)
+        const models = this.parseModelsFromResponse(data)
         if (models.length > 0) {
           this.currentModelConfig.modelSeries = models
           this.updateModelConfig()
@@ -6159,23 +6137,16 @@ export default {
         this.showMessage('获取失败: ' + (e.message || '网络错误'), 'error')
       }
     },
-    // 解析 API 返回的模型列表（兼容 OpenAI / Ollama 格式），并推断模型类型
-    parseModelsFromResponse(data, isOllama) {
-      if (isOllama) {
-        const list = data.models || data
-        if (!Array.isArray(list)) return []
-        return list.map(m => {
-          const id = m.name || m.id || m
-          const name = (m.name || m.id || m) + (m.details?.parameter_size ? ` (${m.details.parameter_size})` : '')
-          const source = m && typeof m === 'object' ? m : {}
-          return { id, name, type: inferModelRecordType({ ...source, id, name }) }
-        })
-      }
-      const list = data.data || data.models || (Array.isArray(data) ? data : [])
+    // 解析 API 返回的模型列表。Ollama /api/tags 返回 { models: [...] }（条目是 name/model 字段），
+    // OpenAI 兼容端点（Xinference/One-API/云厂商等）返回 { data: [...] }（条目是 id 字段），两种都认。
+    parseModelsFromResponse(data) {
+      const list = data?.models || data?.data || (Array.isArray(data) ? data : [])
       if (!Array.isArray(list)) return []
       return list.map(m => {
+        // id 是请求 chat 时要传的标识（OpenAI 契约），优先取；name/model 仅用于展示
         const id = m.id || m.name || String(m)
-        const name = m.id || m.name || String(m)
+        const name = (m.model || m.model_name || m.name || m.id || String(m)) +
+          (m.details?.parameter_size ? ` (${m.details.parameter_size})` : '')
         const source = m && typeof m === 'object' ? m : {}
         return { id, name, type: inferModelRecordType({ ...source, id, name }) }
       })

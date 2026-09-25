@@ -1,9 +1,5 @@
 <template>
   <div class="ai-assistant-dialog">
-    <div v-if="showUpdateBanner" class="cy-update-banner" @click="goDownloadUpdate">
-      察元AI文档助手 {{ updateInfo.version }} 可用 · 点击下载安装包
-      <span class="cy-update-close" @click.stop="showUpdateBanner=false">×</span>
-    </div>
     <!-- 窗口形态菜单：整个窗口右上角的单按钮下拉（计划 §3.7；浮窗/停靠两态通用）。
          挂在根容器而非 main-area：main-area 的 `.main-area > *` 会把子元素强制
          position:relative 并压 z-index，导致按钮掉进文档流、菜单与按钮分离且被遮挡 -->
@@ -244,7 +240,7 @@
             <a
               href="#"
               class="sidebar-footer-text-btn"
-              @click.prevent="feedbackDialogVisible = true"
+              @click.prevent="chatEmbedVisible = true"
             >反馈及建议</a>
           </div>
         </div>
@@ -372,6 +368,15 @@
         >
           <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
         </button>
+      </div>
+      <!-- 官网升级提醒：置于对话框内部、消息区上方，避免在根容器横向 flex 里挤压整体布局 -->
+      <div
+        v-if="!activeToolId && showUpdateBanner"
+        class="cy-update-banner"
+        @click="goDownloadUpdate"
+      >
+        <span class="cy-update-banner-text">察元AI文档助手 {{ updateInfo.version }} 可用 · 点击下载安装包</span>
+        <span class="cy-update-close" @click.stop="showUpdateBanner = false">×</span>
       </div>
       <!-- 工具助手面板:与对话区互斥,activeToolId 非空时占据右侧主区 -->
       <ToolAssistantPanel
@@ -2509,6 +2514,9 @@
       @close="feedbackDialogVisible = false"
     />
 
+    <!-- 在线客服：iframe 嵌察元机器人聊天页（与官网同一界面）；离线时展示公众号二维码 -->
+    <ChatEmbed :visible="chatEmbedVisible" @close="chatEmbedVisible = false" />
+
     <HelpManualDialog
       :visible="helpManualVisible"
       :mcp-url="mcpUrl"
@@ -2854,6 +2862,7 @@ import { resolveExactToolRequest } from '../services/documentIntelligence/exactT
 import LongTaskRunCard from './LongTaskRunCard.vue'
 import KbSelectorDialog from './KbSelectorDialog.vue'
 import FeedbackDialog from './FeedbackDialog.vue'
+import ChatEmbed from './ChatEmbed.vue'
 import HelpManualDialog from './HelpManualDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
 import ToolAssistantPanel from './ToolAssistantPanel.vue'
@@ -4267,6 +4276,7 @@ export default {
     KbSelectorDialog,
     KbSourceStrip,
     FeedbackDialog,
+    ChatEmbed,
     HelpManualDialog,
     ToolAssistantPanel,
     SourceCodeLinks,
@@ -4408,6 +4418,7 @@ export default {
       assistantHighlightTimer: null,
       desktopUnsub: null,
       feedbackDialogVisible: false,
+      chatEmbedVisible: false,
       helpManualVisible: false
     }
   },
@@ -5042,12 +5053,15 @@ export default {
     async initUpdateBanner() {
       try {
         const { checkUpdate } = await import('../utils/updateCheck.js')
-        const info = await checkUpdate(this.pluginVersion || window.PLUGIN_VERSION)
+        // 版本口径在 updateCheck.js 内统一取 __APP_VERSION__（运行版本真源），
+        // 仅服务端最新版严格高于运行版本时才返回提醒信息
+        const info = await checkUpdate()
         if (info) { this.updateInfo = info; this.showUpdateBanner = true }
       } catch { /* 静默 */ }
     },
     goDownloadUpdate() {
-      try { if (this.updateInfo && this.updateInfo.url) window.open(this.updateInfo.url, '_blank') } catch { }
+      // 裸 window.open 在 WPS 内嵌 CEF 会被静默拦截，复用多重回退的打开通道
+      if (this.updateInfo && this.updateInfo.url) this.openExternalWebsite(this.updateInfo.url)
       this.showUpdateBanner = false
     },
 
@@ -19273,6 +19287,58 @@ export default {
 .main-area > * {
   position: relative;
   z-index: 1;
+}
+
+/* 官网升级提醒条：对话框内部、消息区上方的一条细横幅，可整体点击下载、×关闭 */
+.cy-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+  padding: 5px 12px;
+  border: 1px solid rgba(124, 108, 220, 0.35);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(237, 233, 254, 0.92), rgba(224, 242, 254, 0.88));
+  color: #4c3fa3;
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.cy-update-banner:hover {
+  border-color: rgba(124, 108, 220, 0.6);
+  background: linear-gradient(135deg, rgba(230, 224, 252, 0.96), rgba(214, 235, 252, 0.92));
+}
+
+.cy-update-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cy-update-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.cy-update-close:hover {
+  opacity: 1;
+  background: rgba(76, 63, 163, 0.12);
 }
 
 .messages-container {

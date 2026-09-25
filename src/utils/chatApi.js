@@ -19,6 +19,20 @@ function isOllamaLike(providerId) {
   return OLLAMA_LIKE.some(id => String(providerId || '').toLowerCase() === id.toLowerCase())
 }
 
+/**
+ * 由用户填写的 API 地址推导 chat 端点。
+ * 兼容三种填法：纯主机(:端口)、以 /v1(/v2…) 结尾、或直接粘贴完整 /chat/completions 端点
+ * （后缀已存在时不重复追加，避免打出 .../v1/chat/completions/v1/chat/completions 的 404）。
+ */
+export function buildChatUrl(rawUrl) {
+  const apiUrl = String(rawUrl || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+  if (!apiUrl) return ''
+  // 百度千帆 qianfan.baidubce.com/v2 等已含版本路径，直接追加 /chat/completions
+  return /\/v\d+$/.test(apiUrl) || apiUrl.includes('qianfan.baidubce.com')
+    ? `${apiUrl}/chat/completions`
+    : `${apiUrl}/v1/chat/completions`
+}
+
 // 本地类 provider：Ollama 类自托管，或察元桌面版镜像组(经 62581 转发，WPS 端免 key)。
 function isLocalLikeProvider(providerId) {
   return isOllamaLike(providerId) || isDesktopProviderId(providerId)
@@ -187,16 +201,9 @@ export function getChatApiConfigByProvider(providerId, modelId) {
   }
   const config = getModelConfig(providerId)
   if (!config || !config.apiUrl?.trim()) return null
-  const apiUrl = config.apiUrl.trim().replace(/\/+$/, '')
-  // 百度千帆 qianfan.baidubce.com/v2 等已含版本路径，直接追加 /chat/completions
-  const chatUrl = /\/v\d+$/.test(apiUrl) || apiUrl.includes('qianfan.baidubce.com')
-    ? `${apiUrl}/chat/completions`
-    : apiUrl.endsWith('/v1')
-      ? `${apiUrl}/chat/completions`
-      : `${apiUrl}/v1/chat/completions`
   return {
     apiKey: (config.apiKey || '').trim(),
-    apiUrl: chatUrl,
+    apiUrl: buildChatUrl(config.apiUrl),
     model: modelId
   }
 }
@@ -217,15 +224,9 @@ export function getChatApiConfig(ribbonModelId) {
     ribbonModelId
   const config = getModelConfig(provider)
   if (!config || !config.apiUrl?.trim()) return null
-  const apiUrl = config.apiUrl.trim().replace(/\/+$/, '')
-  const chatUrl = /\/v\d+$/.test(apiUrl) || apiUrl.includes('qianfan.baidubce.com')
-    ? `${apiUrl}/chat/completions`
-    : apiUrl.endsWith('/v1')
-      ? `${apiUrl}/chat/completions`
-      : `${apiUrl}/v1/chat/completions`
   return {
     apiKey: (config.apiKey || '').trim(),
-    apiUrl: chatUrl,
+    apiUrl: buildChatUrl(config.apiUrl),
     model: ribbonModelId
   }
 }

@@ -70,4 +70,12 @@ pkgbuild \
 
 rm -rf "$PKG_ROOT" "$SCRIPTS_DIR"
 node "$ROOT/scripts/write-release-manifest.mjs" "release/${NAME}-${VERSION}-macos-${ARCH_ID}.pkg"
-echo "Built: $OUT_PKG (macOS ${ARCH_ID}; double-click to install; may need Right-click → Open if unsigned)"
+echo "Built: $OUT_PKG (macOS ${ARCH_ID})"
+# 无签名 pkg 的分发约束（本机无 Developer ID 证书时必然遇到）：
+# - 本机直接双击安装不受影响；但经微信/浏览器等渠道分发，接收端文件会带
+#   com.apple.quarantine 隔离属性，Gatekeeper 拦截无签名 pkg，报「Apple无法验证…」。
+# - 接收端解除任选其一：xattr -d com.apple.quarantine <pkg>；
+#   或 系统设置 → 隐私与安全性 → 仍要打开；或终端 sudo installer -pkg <pkg> -target /。
+# - 根治：加入 Apple Developer Program 后，构建链路加 Developer ID Application 签
+#   内含 Mach-O（mcp-sidecar/bin/chayuan-mcp-macos-*）+ productsign 签 pkg +
+#   notarytool 公证 + stapler 装订，即可下载后直接双击安装。
