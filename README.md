@@ -4,33 +4,60 @@
 
 # 察元 AI 文档助手 · Chayuan AI Document Assistant
 
-**WPS 文字智能加载项 / WPS 文档智能体** — 在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
+**WPS 文字智能加载项 / WPS 文档智能体** — 以**内嵌智能体**在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Version](https://img.shields.io/badge/version-4.1.2-purple.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-5.1.4-purple.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
 
-> **关键词 / Keywords：** WPS 加载项 · WPS 文字 AI · **文档智能体** · **WPS 智能体** · **多文档校对与修正** · 错别字检查 · 拼写语法检查 · **MCP / Model Context Protocol** · 离线文档 AI · 本地大模型 · 知识库 RAG · 公文校对 · WPS Office add-in · document AI agent · proofreading · offline LLM · 察元 AI 助手
+> **关键词 / Keywords：** WPS 加载项 · WPS 文字 AI · **内嵌智能体** · **文档智能体** · **WPS 智能体** · **多文档校对与修正** · 错别字检查 · 拼写语法检查 · **MCP / Model Context Protocol** · 离线文档 AI · 本地大模型 · 知识库 RAG · 公文校对 · WPS Office add-in · document AI agent · proofreading · offline LLM · 察元 AI 助手
 
 ---
 
-## v4.1 新增 — 表格结构写回 · 技能与加载项双向自启
+## v5.x 更新说明 — 内嵌智能体 · 接入智能体 · 停靠双形态
 
-> 本次主线两条:**文档智能体不仅能读表格、改表格里的字,还能按口语「在哪插」插入行 / 列、合并单元格**;新增 `wps-skill-chayuan` 技能,**一条命令同时装好 WPS 加载项 + MCP 自启服务 + AI 客户端技能**——装技能即装加载项,装加载项即带技能。
+> 5.x 主线三条：**内嵌智能体**——对话窗内置完整智能体循环（agent-core 内核），不只问答，能规划任务、列清单、调工具、直接写回文档；**接入智能体**——本机 MCP 文档智能体服务全面加固，外部 AI 智能体接入更稳、更快、更安全；**停靠双形态**——浮窗 / 左右停靠一键切换，与 WPS 文档平分屏幕。
 
-- **表格结构写回**:`table` 域 9 → **12 个 action**,新增 `row_insert` / `column_insert`(按「在哪插」定位锚点行/列)、`cell_merge`(同行=合并列、同列=合并行);AI 先 `header_read`/`column_read` 找锚点,工具只按显式坐标执行
-- **文档智能体工具 26 → 46**:新增 `caption`(题注枚举)、`field`(域 list + 构造 SEQ/TOC)聚合域,`image.list` 增补 alt/wrap/前后文;MCP 目录升至 `0.10.0`
-- **wps-skill-chayuan 技能 + 双向自启**:`install-wps-skill-chayuan.{ps1,sh}` 一个脚本四步闭环——装加载项 + MCP 自启 + 四级体检 + 投放技能(Claude/Cursor/Codex)
-- **保留并兼容**:v4.0 的 MCP 多 Agent 对接、离线/内网部署、知识库 RAG、多文档校对全部不变,外部客户端配置无需改动
+### 内嵌智能体（对话窗自带真智能体）
 
-> **v4.1.2 补丁(2026-08-17)**:sidecar 全面隐藏启动——修复黑窗常驻、关窗即断 MCP 的问题:安装器/开机自启/加载项「启动本机服务」全部改 PowerShell 隐藏启动,「运行 Spike」在 sidecar 掉线时可自愈拉起。详见 [RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) §八。
->
-> **v4.1.1 补丁(2026-08-14)**:一行命令安装脚本稳定性集中修复——PS 5.1 编码与空 `$PSScriptRoot` 崩溃、`-Fetch` 包根定位、aidooo manifest sha256 强校验、sidecar 重启后加载项约 8s 自愈、`-Fetch` 临时目录退出即清理(此前每次残留 ≈290 MB)。详见 [RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) §七。
+- **智能体内循环**：对话窗内置 chayuan-office agent-core 完整循环——多轮规划、连续工具调用、跨回合记忆，长任务一口气做完，不再"一问一答贴文字"
+- **任务清单先列后做**：智能体首轮必先列 todo 清单，边做边勾（N/M 实时进度），跨回合沿用未完成清单不重复建单
+- **过程全透出**：工具调用与进度流式实时显示；等待卡重构（显示经过时间，不再"卡在 24% 不动"）；回复 Markdown 渲染
+- **多会话并行**：右栏多会话页签，各会话回合状态独立互不干扰；发送键即全车道停止键
 
-完整发布说明:[RELEASE_NOTES_v4.1.md](RELEASE_NOTES_v4.1.md) ｜ 历史版本:[v4.0.0](RELEASE_NOTES_v4.0.md) · [v3.0(RAG)](RELEASE_NOTES_v3.0.md)
+### 写回安全（借鉴 Claude Code / opencode 的成熟方案）
+
+- **文档写锁 + FIFO 排队 + OCC 写前校验**：内置助手与 MCP 写工具同级串行，多个智能体同写一个文档不再互相覆盖；写回冲突显式确认重试
+- **写前快照 + 一键撤销**：首次写回前自动快照，改坏了随时回退；智能体按指令直接落笔，不再逐笔打断
+- **权限三档可选**：变更前确认（默认）/ 自动执行 / 完全访问
+- **sidecar 最小 token 鉴权 + 调用方审计**：本机进程不再默认等效可信
+
+### 接入智能体（本机 MCP 服务加固）
+
+- 外部 AI 智能体（Claude Code / OpenAI Codex / Cursor / Hermes / OpenClaw 等）经 MCP 直读写本机 WPS 文档——对外契约与客户端配置不变，老用户零改动
+- **连不上说得清原因**：服务未就绪三级分诊、环回拦截旁路判定、auto-spike 版本闸门；WPS Agent 离线快速失败，不再白烧模型轮次
+- **全链自愈**：桥接自愈 + sidecar 掉线自愈拉起；真机四大崩溃定案根治，运行日志可查
+- **打包自动重编 sidecar 二进制**：安装包不再可能内置旧版 MCP
+
+### 停靠双形态
+
+- 浮窗 / 左右停靠一键切换（窗口右上角形态菜单），停靠面板宽 = 屏幕一半，与文档平分屏幕；停靠切换提速，停靠时自动折叠侧栏
+
+### 离线与模型
+
+- **本地引擎一键安装**：Ollama / LM Studio 安装检测与引导，国内网络自动探测择优下载源 + 镜像提示
+- **模型端点智能推导**：支持直接粘贴完整 `/chat/completions` 端点（防重复拼接 404）；修复 Xinference 连接探测 404
+- **官网升级提醒**：打开对话窗静默检查 aidooo.com，有新版顶部提醒条点击直达安装包下载，断网静默不打扰
+
+### 版本补丁
+
+- **5.1.2（2026-09-18）**：macOS arm64 安装包重打，内置新编 sidecar 二进制
+- **5.1.4（2026-09-25）**：在线客服嵌入（侧栏「反馈及建议」直达官网机器人聊天页，离线回落公众号二维码）；Windows sidecar 改 GUI 子系统，双击直启不再弹黑窗；升级检查版本口径统一取自 package.json，绝不误报
+
+历史版本：[v4.1（表格结构写回 · 技能双向自启）](RELEASE_NOTES_v4.1.md) · [v4.0.0（本机 MCP 文档智能体）](RELEASE_NOTES_v4.0.md) · [v3.0（远程知识库 RAG）](RELEASE_NOTES_v3.0.md)
 
 ---
 
