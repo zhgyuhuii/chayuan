@@ -20,7 +20,8 @@ import {
 export const PRESENTATION_WRITE_ACTIONS = new Set([
   'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout',
   'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add',
-  'slideshow_run', 'export', 'slide_export_image'
+  'slideshow_run', 'export', 'slide_export_image',
+  'notes_set', 'format_uniform'
 ])
 
 /** ppLayout 枚举（官方值子集） */
@@ -434,6 +435,119 @@ function handleSlideExportImage(params) {
   return { ok: true, path, index: Number(safeGet(() => slide.SlideIndex, params.index)) }
 }
 
+/**
+ * 写演讲者备注（口播稿）。params:
+ *   notes: [{ slide: 页码, text: 备注文本 }]，或 { slide, text } 单页形式
+ * 备注页占位符探测顺序：Placeholders(2)（ppPlaceholderBody）→ 逐 shape 找
+ * 带 TextFrame 的 body 占位符（type 2）→ 名称含 "Notes" 的形状。
+ */
+function setSlideNotes(slide, text) {
+  const payload = String(text ?? '')
+  const notesPage = slide.NotesPage
+  try {
+    const ph = notesPage.Placeholders?.Item?.(2)
+    if (ph?.TextFrame) {
+      ph.TextFrame.TextRange.Text = payload
+      return true
+    }
+  } catch { /* 走逐形状兜底 */ }
+  const shapes = notesPage.Shapes
+  const count = Number(safeGet(() => shapes.Count, 0))
+  for (let i = 1; i <= count; i++) {
+    const sh = shapes.Item(i)
+    try {
+      const type = Number(safeGet(() => sh.PlaceholderFormat?.Type, -1))
+      if (type === 2 && sh.TextFrame) {
+        sh.TextFrame.TextRange.Text = payload
+        return true
+      }
+    } catch { /* ignore */ }
+  }
+  for (let i = 1; i <= count; i++) {
+    const sh = shapes.Item(i)
+    try {
+      if (/notes/i.test(String(safeGet(() => sh.Name, ''))) && sh.TextFrame) {
+        sh.TextFrame.TextRange.Text = payload
+        return true
+      }
+    } catch { /* ignore */ }
+  }
+  return false
+}
+
+function handleNotesSet(params) {
+  const pres = getActivePresentation()
+  const app = window.Application
+  let items = Array.isArray(params.notes) ? params.notes : null
+  if (!items && (params.slide !== undefined || params.text !== undefined)) {
+    items = [{ slide: params.slide, text: params.text }]
+  }
+  if (!items || !items.length) throw hostError('INVALID_PARAMS', 'notes_set 需要 notes 数组（[{slide, text}]）或 slide+text')
+  let written = 0
+  const failed = []
+  withScreenUpdating(app, () => {
+    for (const item of items) {
+      const idx = Number(item?.slide) || 0
+      if (!idx) { failed.push({ slide: item?.slide ?? null, reason: '缺少页码' }); continue }
+      let slide
+      try { slide = resolveSlide(pres, idx) } catch (e) { failed.push({ slide: idx, reason: String(e?.message || e) }); continue }
+      if (setSlideNotes(slide, item?.text ?? '')) written += 1
+      else failed.push({ slide: idx, reason: '未找到备注占位符' })
+    }
+  })
+  return { ok: failed.length === 0, written, failed, total: items.length, presentation: safeGet(() => pres.Name) }
+}
+
+/**
+ * 全套统一排版（美化）。params: { fontName?, titleSize?, bodySize?, color? }
+ * 逐页逐形状：有 TextFrame 的形状按占位符角色套标题/正文规格；表格跳过。
+ */
+function handleFormatUniform(params) {
+  const pres = getActivePresentation()
+  const app = window.Application
+  const fontName = String(params.fontName || '').trim()
+  const titleSize = Number(params.titleSize) || 0
+  const bodySize = Number(params.bodySize) || 0
+  const color = params.color !== undefined && params.color !== null ? colorToBgr(params.color) : null
+  if (!fontName && !titleSize && !bodySize && color === null) {
+    throw hostError('INVALID_PARAMS', 'format_uniform 至少提供 fontName / titleSize / bodySize / color 之一')
+  }
+  const slides = pres.Slides
+  const slideCount = Number(safeGet(() => slides.Count, 0))
+  let touchedShapes = 0
+  let touchedSlides = 0
+  withScreenUpdating(app, () => {
+    for (let s = 1; s <= slideCount; s++) {
+      const slide = slides.Item(s)
+      const shapes = slide.Shapes
+      const shapeCount = Number(safeGet(() => shapes.Count, 0))
+      let slideTouched = false
+      for (let i = 1; i <= shapeCount; i++) {
+        const sh = shapes.Item(i)
+        try {
+          if (Number(safeGet(() => sh.HasTextFrame, 0)) === 0) continue
+          const textFrame = sh.TextFrame
+          if (!textFrame) continue
+          const isTitle = i === 1 || Number(safeGet(() => sh.PlaceholderFormat?.Type, -1)) === 13 || /title/i.test(String(safeGet(() => sh.Name, '')))
+          const range = textFrame.TextRange
+          if (fontName) range.Font.Name = fontName
+          if (isTitle && titleSize) range.Font.Size = titleSize
+          if (!isTitle && bodySize) range.Font.Size = bodySize
+          if (color !== null) range.Font.Color = color
+          touchedShapes += 1
+          slideTouched = true
+        } catch { /* 单形状失败不连累整页 */ }
+      }
+      if (slideTouched) touchedSlides += 1
+    }
+  })
+  return {
+    ok: true, slides: slideCount, touchedSlides, touchedShapes,
+    applied: { fontName: fontName || null, titleSize: titleSize || null, bodySize: bodySize || null, color: params.color || null },
+    presentation: safeGet(() => pres.Name)
+  }
+}
+
 /* --------------------------- 入口 --------------------------- */
 
 const READ_HANDLERS = {
@@ -456,7 +570,9 @@ const WRITE_HANDLERS = {
   table_add: handleTableAdd,
   slideshow_run: handleSlideshowRun,
   export: handleExport,
-  slide_export_image: handleSlideExportImage
+  slide_export_image: handleSlideExportImage,
+  notes_set: handleNotesSet,
+  format_uniform: handleFormatUniform
 }
 
 /**

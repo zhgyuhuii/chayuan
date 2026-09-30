@@ -1,10 +1,14 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="ribbon.OnAddinLoad">
     <ribbon startFromScratch="false">
         <tabs>
-            <!-- 演示宿主只保留一个入口：点击打开聊天页，一切操作经聊天→MCP→演示 -->
+            <!-- 演示宿主：单开入口 + 4 个跨行业高频常驻助手（设计定稿：ribbon=一键直达，面板=全集） -->
             <tab id="tabAssistantWpp" label="察元AI助理">
                 <group id="groupAIAssistantWpp" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistant" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistantWpp" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppGen" label="生成PPT" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppSummary" label="整套摘要" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppBeautify" label="美化统一" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppNotes" label="口播稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                 </group>
             </tab>
         </tabs>

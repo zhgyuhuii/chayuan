@@ -3231,6 +3231,35 @@ function OnAction(control) {
       openAIAssistant()
       break
     }
+    // 表格/演示宿主的常驻助手按钮（设计定稿：ribbon=跨行业高频一键直达）：
+    // 配方提示词写入 PluginStorage，面板（已开或新开）经轮询通道拾取并预填输入框
+    case 'btnEtFormula':
+    case 'btnEtInsight':
+    case 'btnEtChart':
+    case 'btnEtClean':
+    case 'btnWppGen':
+    case 'btnWppSummary':
+    case 'btnWppBeautify':
+    case 'btnWppNotes': {
+      const RIBBON_ASSISTANT_PROMPTS = {
+        btnEtFormula: { prompt: '请为当前表格生成公式并写入指定单元格（优先用 SUM/SUMIF/VLOOKUP 等标准函数，数字由表格自己计算）。我的需求：' },
+        btnEtInsight: { prompt: '请分析当前工作表的已用数据区域（不要修改表格），输出：1) 数据概况（行列数与字段含义）；2) 关键趋势与结构占比；3) 异常值或缺失提醒；4) 最值得注意的 5 个要点。结论要带具体数字依据。', autoSend: true },
+        btnEtChart: { prompt: '请根据当前工作表数据生成图表：先读取数据判断字段类型，推荐最合适的图型并说明理由，再用工具创建图表。我的补充要求：' },
+        btnEtClean: { prompt: '请检查当前工作表已用区域的数据质量：重复行、空值单元格、日期/数字/文本格式混写、首尾多余空格。先输出问题清单（位置+类型+建议处理方式），不要直接修改，等我回复"确认清理"后再执行。', autoSend: true },
+        btnWppGen: { prompt: '请为我生成一套演示稿：先给出大纲（页码+每页标题+要点），等我确认后逐页生成。主题与要求：' },
+        btnWppSummary: { prompt: '请通读当前演示稿全部页面（slide_list + slide_read），在第 1 页之后新增一页摘要页（layout 用 text），标题"核心要点"，列出整套内容的 3-5 条要点。', autoSend: true },
+        btnWppBeautify: { prompt: '请统一当前演示稿排版：全部页面中文字体设为微软雅黑，标题字号 28、正文 18（format_uniform），表格形状跳过。完成后报告触及页数与形状数，并提醒我预览确认效果。', autoSend: true },
+        btnWppNotes: { prompt: '请为当前演示稿的每一页生成演讲者备注（口播稿）：先逐页读取内容，再为每页写口语化的演讲词（每页 3-5 句，衔接自然），用 notes_set 写入对应页的备注。', autoSend: true }
+      }
+      const preset = RIBBON_ASSISTANT_PROMPTS[eleId]
+      if (preset?.prompt) {
+        try {
+          window.Application.PluginStorage.setItem('ai_chat_prefill_prompt', JSON.stringify({ prompt: preset.prompt, autoSend: !!preset.autoSend, at: Date.now() }))
+        } catch (e) { console.warn('[ribbon] 写预填提示词失败:', e) }
+      }
+      openAIAssistant()
+      break
+    }
     case 'btnTaskOrchestration':
       try {
         if (focusExistingTaskOrchestrationWindow()) {
@@ -3743,6 +3772,17 @@ function getRibbonImageRelative(control) {
     'menuTableBatch': 'images/menu-table-batch.svg',
     'menuImageBatch': 'images/select-images.svg',
     'btnAIAssistant': 'images/ai-assistant.svg',
+    // 表格/演示宿主常驻助手按钮（配方提示词见 OnAction RIBBON_ASSISTANT_PROMPTS）
+    'btnAIAssistantEt': 'images/ai-assistant.svg',
+    'btnAIAssistantWpp': 'images/ai-assistant.svg',
+    'btnEtFormula': 'images/ai-assistant.svg',
+    'btnEtInsight': 'images/ai-assistant.svg',
+    'btnEtChart': 'images/ai-assistant.svg',
+    'btnEtClean': 'images/ai-assistant.svg',
+    'btnWppGen': 'images/ai-assistant.svg',
+    'btnWppSummary': 'images/ai-assistant.svg',
+    'btnWppBeautify': 'images/ai-assistant.svg',
+    'btnWppNotes': 'images/ai-assistant.svg',
     'btnAITraceCheck': 'images/ai-trace-check.svg',
     'btnTaskList': 'images/report.svg',
     'btnTaskOrchestration': 'images/task-orchestration.svg',

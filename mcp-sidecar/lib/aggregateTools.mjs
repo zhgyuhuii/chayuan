@@ -200,7 +200,9 @@ export function resolveAggregateCall(toolName, args = {}) {
       table_add: { method: 'presentation.table_add', args: rest, requireConfirmed: true },
       slideshow_run: { method: 'presentation.slideshow_run', args: rest, requireConfirmed: true },
       export: { method: 'presentation.export', args: rest, requireConfirmed: true },
-      slide_export_image: { method: 'presentation.slide_export_image', args: rest, requireConfirmed: true }
+      slide_export_image: { method: 'presentation.slide_export_image', args: rest, requireConfirmed: true },
+      notes_set: { method: 'presentation.notes_set', args: rest, requireConfirmed: true },
+      format_uniform: { method: 'presentation.format_uniform', args: rest, requireConfirmed: true }
     }
   }
 
@@ -715,11 +717,11 @@ export const AGGREGATE_TOOLS = [
   tool({
     name: 'presentation',
     description: [
-      'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add) / slideshow_run / export (pdf|images) / slide_export_image.',
-      'WHEN: user asks anything about PPT/幻灯片/演示文稿/slides while WPS 演示 is the host, e.g. 「加一页标题页」「把第2页的错别字改掉」「插入图片」「导出PDF」「开始放映」.',
+      'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add) / notes_set (speaker notes per slide) / format_uniform (unify fonts/sizes/colors across all slides) / slideshow_run / export (pdf|images) / slide_export_image.',
+      'WHEN: user asks anything about PPT/幻灯片/演示文稿/slides while WPS 演示 is the host, e.g. 「加一页标题页」「把第2页的错别字改掉」「插入图片」「给每页写演讲备注」「统一字体」「导出PDF」「开始放映」.',
       'NOT: Not for Word documents. Text edits need shapeIndex (slide_read/shape_list first).',
-      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). textbox_add/picture_add/table_add use points; defaults center-ish.',
-      'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"text_replace","index":2,"find":"去年","replace":"本年度","confirmed":true} ; {"action":"picture_add","index":3,"path":"/Users/me/Desktop/logo.png","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). notes_set: notes=[{slide,text}] or slide+text. format_uniform: fontName/titleSize/bodySize/color — table shapes are skipped.',
+      'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"notes_set","notes":[{"slide":1,"text":"开场白：各位领导好"},{"slide":2,"text":"本页强调三个数字"}],"confirmed":true} ; {"action":"format_uniform","fontName":"微软雅黑","titleSize":28,"bodySize":18,"confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     inputSchema: {
@@ -727,7 +729,7 @@ export const AGGREGATE_TOOLS = [
       additionalProperties: false,
       required: ['action'],
       properties: {
-        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'slideshow_run', 'export', 'slide_export_image'] },
+        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'notes_set', 'format_uniform', 'slideshow_run', 'export', 'slide_export_image'] },
         confirmed: { type: 'boolean' },
         index: { type: 'number', description: '幻灯片序号（1-based；缺省=最后一页或活动页视 action 而定）' },
         from: { type: 'number' }, to: { type: 'number' },
@@ -735,6 +737,10 @@ export const AGGREGATE_TOOLS = [
         title: { type: 'string' }, content: { type: 'string' },
         find: { type: 'string' }, replace: { type: 'string' },
         shapeIndex: { type: 'number' }, text: { type: 'string' }, append: { type: 'boolean' },
+        notes: { type: 'array', items: { type: 'object', properties: { slide: { type: 'number' }, text: { type: 'string' } } }, description: 'notes_set 每页备注 [{slide, text}]' },
+        fontName: { type: 'string', description: 'format_uniform 统一字体名' },
+        titleSize: { type: 'number', description: 'format_uniform 标题字号' },
+        bodySize: { type: 'number', description: 'format_uniform 正文字号' },
         fontSize: { type: 'number' }, color: { type: 'string' },
         path: { type: 'string', description: 'picture_add 图片路径 / export 导出路径' },
         rows: { type: 'number' }, cols: { type: 'number' },

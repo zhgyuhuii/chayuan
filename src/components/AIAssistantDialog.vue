@@ -2827,6 +2827,7 @@ import {
   runMcpChatOrchestrator
 } from '../services/mcpBridge/mcpChatOrchestrator.js'
 import { startSidecarBestEffort } from '../services/mcpBridge/sidecarLauncher.js'
+import { getHostAssistantItems } from '../utils/assistant/hostAssistants.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
@@ -4517,6 +4518,36 @@ export default {
     selectedModel() {
       return this.filteredModelList.find(m => m.id === this.selectedModelId) || this.filteredModelList[0]
     },
+    /** 宿主助手模式：表格/演示宿主显示精编配方集（非文字宿主） */
+    hostAssistantMode() {
+      const host = detectAddonType()
+      return host === 'et' || host === 'wpp'
+    },
+    /**
+     * 消费 ribbon 常驻助手按钮写入的预填提示词（ai_chat_prefill_prompt）。
+     * 以 at 时间戳判重：面板已开时点击按钮 → 轮询通道 1.5s 内拾取；未开时
+     * 新面板 mount 首个 tick 拾取。只预填不发送（用户补充占位内容后发送）。
+     */
+    tryConsumeRibbonPrefillPrompt() {
+      let data = null
+      try {
+        const raw = window.Application?.PluginStorage?.getItem('ai_chat_prefill_prompt')
+        data = raw ? JSON.parse(raw) : null
+      } catch (_) { return }
+      const at = Number(data?.at || 0)
+      if (!data?.prompt || at <= Number(this._lastPrefillConsumedAt || 0)) return
+      this._lastPrefillConsumedAt = at
+      // 正在执行回合时不打断输入区（预填覆盖用户未发送的草稿）
+      if (this.isStreaming || this.sendRoutingLocks?.[this.currentChatId]) return
+      this.userInput = String(data.prompt)
+      if (data.autoSend) {
+        this.sendMessage()
+        return
+      }
+      this.$nextTick(() => {
+        try { this.$refs?.composerInputRef?.focus?.() } catch (_) { /* ignore */ }
+      })
+    },
     selectedModelName() {
       return this.selectedModel?.name || this.selectedModel?.modelId || (this.hasConfiguredChatModels ? '选择模型' : '配置模型')
     },
@@ -4989,6 +5020,8 @@ export default {
     // 感知间隔会拒启）——sync 极轻（属性读取+字符串比较），直接裸 interval
     this._scopeSyncTimer = setInterval(() => {
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
+      // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
+      try { this.tryConsumeRibbonPrefillPrompt() } catch (_) { /* 忽略单次异常 */ }
     }, 1500)
     window.addEventListener('mousemove', this.handleSidebarResize)
     window.addEventListener('mouseup', this.stopSidebarResize)
@@ -7646,6 +7679,14 @@ export default {
       }
     },
     loadAssistantItems() {
+      // 宿主分流（设计定稿）：表格宿主只见表格助手、演示宿主只见演示助手；
+      // 文字宿主维持文档助手现状。助手 = 配方（hostAssistants.js），
+      // 点击行为见 runAssistant 的 host-assistant 分支。
+      const host = detectAddonType()
+      if (host === 'et' || host === 'wpp') {
+        this.assistantItems = getHostAssistantItems(host)
+        return
+      }
       this.assistantItems = getAssistantSettingItems(
         getCustomAssistants(),
         loadAssistantSettings()
@@ -8144,7 +8185,9 @@ export default {
       if (this.assistantSearchText) return false
       const s = this.assistantGroupCollapsed[groupKey]
       if (s !== undefined) return !!s
-      // 默认:收藏 / 系统功能 / 文本分析 / 自定义 展开;其余行业领域组默认折叠
+      // 表格/演示宿主的助手包是精编小集合（通用高频+行业包），默认全展开；
+      // 文字宿主:收藏 / 系统功能 / 文本分析 / 自定义 展开,其余行业领域组默认折叠
+      if (this.hostAssistantMode) return false
       return !['__fav__', 'core', 'analysis', 'custom'].includes(groupKey)
     },
     toggleAssistantGroup(groupKey) {
@@ -17957,6 +18000,19 @@ export default {
       if (!item?.key || this.assistantRunLoadingKey) return
       if (this.activeMcpTurnContexts?.[this.currentChatId]?.messageId) {
         await inAppAlert('文档智能体正在写文档，请等待完成或停止后再执行助手。', { title: '请稍候' })
+        return
+      }
+      // 宿主助手配方（表格/演示）：点击 = 把配方提示词填入输入框。
+      // mode=send 立即发送（纯只读/上下文自足的配方）；mode=prefill 仅预填，
+      // 用户补充方括号里的占位内容后回车发送。走正常聊天回合管线（远程回合+工具）。
+      if (item.type === 'host-assistant' && item.prompt) {
+        this.assistantRunLoadingKey = ''
+        this.activeToolId = ''
+        this.userInput = String(item.prompt)
+        if (item.mode === 'send') this.sendMessage()
+        else this.$nextTick(() => {
+          try { this.$refs?.composerInputRef?.focus?.() } catch (_) { /* ignore */ }
+        })
         return
       }
       // 同步置锁:必须在任何 await 之前。否则快速连点会在下面 confirmAssistantRun 的 await 处
