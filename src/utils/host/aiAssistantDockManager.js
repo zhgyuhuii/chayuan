@@ -219,7 +219,9 @@ export function createAIAssistantDockManager(deps = {}) {
 
   // -- 形态记忆 --
   function getMode() {
-    return normalizeDockMode(readRaw(KEYS.mode)) || 'float'
+    // 首次默认停靠左侧（设计定稿 §2.4）：「默认」只管第一印象，用户切过之后
+    // setMode 落键，这里尊重记忆原样返回
+    return normalizeDockMode(readRaw(KEYS.mode)) || 'left'
   }
   function setMode(mode) {
     const normalized = normalizeDockMode(mode)

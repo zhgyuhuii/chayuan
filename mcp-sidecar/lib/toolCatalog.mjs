@@ -1495,6 +1495,38 @@ const CORE_TOOLS = [
         limit: { type: 'number' }
       }
     }
+  }),
+
+  // ── 聊天回合托管（AI助手对话跟随文档）：面板派发、ribbon 基座 webview 执行 ──
+  // 进度/结果经加载项级 PluginStorage 共享键回传，面板直接读取，不经过 sidecar。
+  tool({
+    name: 'chat_turn',
+    description: [
+      'INTERNAL: Start one AI-assistant chat turn in the ribbon-base webview so generation',
+      'survives taskpane remounts (document switches). Called by the assistant pane, not by the LLM.',
+      'Args: turnId, scopeKey, host (wps|et|wpp), userText, model{name,modelId,apiKey,apiUrl,...},',
+      'selectionCtx, kbBound, historyMessages, previousTodos, loopHistory, docId.',
+      'Returns { ok, accepted, turnId } immediately; progress is observed via PluginStorage key ai_chat_turn:<turnId>.'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: true,
+      required: ['turnId', 'scopeKey', 'host', 'userText', 'model'],
+      properties: {
+        turnId: { type: 'string' },
+        scopeKey: { type: 'string' },
+        host: { type: 'string', enum: ['wps', 'et', 'wpp'] },
+        userText: { type: 'string' },
+        model: { type: 'object' },
+        selectionCtx: { type: 'object' },
+        kbBound: { type: 'boolean' },
+        historyMessages: { type: 'array' },
+        previousTodos: { type: 'array' },
+        loopHistory: { type: 'array' },
+        docId: { type: 'string' }
+      }
+    }
   })
 ]
 

@@ -462,7 +462,10 @@ async function testDockManager(mod) {
   {
     const ctx = freshDock()
     const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
-    assert('默认形态为 float', dock.getMode() === 'float')
+    // 设计定稿 §2.4：无记忆时首次默认停靠左侧；用户选择后记忆优先
+    assert('默认形态为 left（首次默认停靠左侧）', dock.getMode() === 'left')
+    dock.setMode('float')
+    assert('用户切过浮窗后记忆尊重 float', dock.getMode() === 'float')
     const res = await dock.openAs('float', { prompt: 'hi' })
     assert(
       'openAs(float) 走 ShowDialog 且 URL 带路由',

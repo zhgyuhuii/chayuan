@@ -9,10 +9,24 @@ function normalizeHostType(raw) {
   return s === 'et' || s === 'wpp' ? s : 'wps'
 }
 
-/** job 目标解析：'any' 匹配任意宿主执行者 */
+/** job 目标解析：'any' 匹配任意宿主执行者；'ribbon:<host>' 只匹配宿主主页面（ribbon 基座 webview） */
 function normalizeTarget(raw) {
   const s = String(raw || '').toLowerCase().trim()
+  if (s.startsWith('ribbon:')) {
+    const host = s.slice('ribbon:'.length).trim()
+    return `ribbon:${host === 'et' || host === 'wpp' ? host : 'wps'}`
+  }
   return s === 'et' || s === 'wpp' ? s : s === 'any' ? 'any' : 'wps'
+}
+
+/**
+ * ribbon 基座判定：windowId 形如 'ribbon@#/'（根路由主页面）。
+ * 聊天面板 webview 的 windowId 是 'ribbon@#/ai-assistant?...'（带面板路由），
+ * 必须排除——面板页会在文档切换时被 WPS 重挂载，不能承载跨切换的后台回合。
+ */
+function isRibbonBaseAgent(agent) {
+  const wid = String(agent.windowId || '')
+  return wid.startsWith('ribbon@') && !wid.includes('/ai-assistant')
 }
 
 /**
@@ -30,6 +44,11 @@ function targetForMethod(method) {
 }
 
 function matchesTarget(agent, target) {
+  const t = String(target || '')
+  if (t.startsWith('ribbon:')) {
+    if (normalizeHostType(agent.addonType) !== normalizeHostType(t.slice('ribbon:'.length))) return false
+    return isRibbonBaseAgent(agent)
+  }
   if (!target || target === 'any') return true
   return normalizeHostType(agent.addonType) === target
 }

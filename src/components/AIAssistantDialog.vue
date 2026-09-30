@@ -2816,8 +2816,11 @@ import {
   setMcpServerEnabled
 } from '../services/mcpBridge/mcpServerRegistry.js'
 import {
+  callLocalTool,
   probeMcpHealthBundle
 } from '../services/mcpBridge/mcpHttpClient.js'
+import { getChatApiConfigByProvider } from '../utils/chatApi.js'
+import { detectAddonType } from '../utils/host/hostType.js'
 import {
   applyProofreadComments,
   applyProofreadTextFixes,
@@ -2878,6 +2881,20 @@ import { getFingerprint as getPurchaseFingerprint } from '../utils/license/finge
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
 const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
+// ── 远程回合观察（AI助手对话跟随文档）───────────────────────────────
+// runner（ribbon 基座 webview）把回合状态写穿到这些键，面板任意次重挂载后
+// 按 turnId 恢复观察——生成不再随面板重挂载而中断
+const REMOTE_TURN_KEY_PREFIX = 'ai_chat_turn:'
+const REMOTE_TURN_CANCEL_PREFIX = 'ai_chat_turn_cancel:'
+const REMOTE_TURN_PENDING_PREFIX = 'ai_chat_pending:'
+const REMOTE_TURN_POLL_MS = 400
+const REMOTE_TURN_STALE_MS = 10_000
+// 会话容量预算（设计定稿 §2.7）：单文档 ≤200KB 且 ≤100 条消息（50 轮），
+// 全局 ≤30 个文档键 LRU。超限裁最旧，面板提示「更早的会话已清理」
+const SCOPE_BUDGET_BYTES = 200_000
+const SCOPE_BUDGET_MESSAGES = 100
+const SCOPE_LRU_KEY = 'ai_chat_scope_lru'
+const SCOPE_LRU_MAX = 30
 const STORAGE_KEY_HISTORY_SCOPE_PREFIX = 'ai_assistant_chat_history_scope'
 const STORAGE_KEY_CURRENT_SCOPE_PREFIX = 'ai_assistant_current_chat_id_scope'
 const STORAGE_KEY_LEGACY_HISTORY_MIGRATED = 'ai_assistant_chat_history_legacy_migrated'
@@ -5975,6 +5992,261 @@ export default {
         fileName: String(snap?.fileName || snap?.name || '').trim()
       }
     },
+    // ── 远程回合（AI助手对话跟随文档）────────────────────────────────
+    // 面板页在文档切换时被 WPS 强制重挂载（2026-09-30 真机实验），生成循环
+    // 必须跑在 ribbon 基座 webview（跨切换存活）。派发成功返回 turnId，面板
+    // 轮询 PluginStorage 共享键观察；派发失败（基座离线/忙/配置缺失）返回
+    // null，调用方落回本地循环——行为与旧版完全一致。
+    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, historyMessages, previousTodos, previousLoopHistory }) {
+      try {
+        const providerId = String(model?.providerId || '').trim()
+        const modelId = String(model?.modelId || model?.id || '').trim()
+        if (!providerId || !modelId) return null
+        const cfg = getChatApiConfigByProvider(providerId, modelId)
+        if (!cfg?.apiUrl) return null
+        const turnId = `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+        const result = await callLocalTool('chat_turn', {
+          turnId,
+          scopeKey: this.historyStorageScopeKey || 'no_active_document',
+          host: detectAddonType(),
+          userText: String(text || ''),
+          model: {
+            id: model.id,
+            providerId,
+            modelId,
+            name: model.name || modelId,
+            apiKey: cfg.apiKey,
+            apiUrl: cfg.apiUrl
+          },
+          selectionCtx: this.buildMcpSelectionCtx(),
+          kbBound: this.currentChatKbBinding.kbNames.length > 0,
+          historyMessages,
+          previousTodos,
+          loopHistory: previousLoopHistory
+        })
+        const payload = result?.structuredContent || result
+        if (payload?.ok && payload?.accepted) {
+          // 消息先带 turnId 落库：派发后任何时刻重挂载，loadHistory 都能按
+          // mcpRemoteTurnId 找回本消息并恢复观察
+          assistantMsg.mcpRemoteTurnId = turnId
+          assistantMsg.mcpRemoteSettled = false
+          this.saveHistory()
+          return turnId
+        }
+        return null
+      } catch (e) {
+        console.info('[mcp] remote turn dispatch failed, fallback to local:', e?.message || e)
+        return null
+      }
+    },
+    readRemoteTurnState(turnId) {
+      try {
+        const raw = window.Application?.PluginStorage?.getItem(REMOTE_TURN_KEY_PREFIX + String(turnId))
+        return raw ? JSON.parse(raw) : null
+      } catch (_) {
+        return null
+      }
+    },
+    applyRemoteTurnProgress(assistantMsg, state) {
+      if (Array.isArray(state.steps)) assistantMsg.mcpSteps = state.steps.slice()
+      if (typeof state.streamText === 'string' && state.streamText) {
+        assistantMsg.mcpStreamingText = state.streamText
+      }
+      if (Array.isArray(state.todos) && state.todos.length) assistantMsg.mcpTodos = state.todos
+      const last = state.steps?.[state.steps.length - 1]
+      const realPercent = Number(last?.progress)
+      if (Number.isFinite(realPercent)) {
+        this.updateAssistantLoadingProgress(assistantMsg, {
+          label: last.label || '文档智能体处理中…',
+          detail: last.detail || '',
+          percent: realPercent,
+          pinned: true
+        })
+      } else {
+        this.updateAssistantLoadingProgress(assistantMsg, {
+          label: '文档智能体处理中…',
+          detail: `已在后台执行 ${state.steps?.length || 0} 步（切换文档不中断）`,
+          percent: Math.min(90, 20 + (state.steps?.length || 0) * 8),
+          pinned: false
+        })
+      }
+    },
+    mergeRemoteTurnOutcome(assistantMsg, state, turnChatId) {
+      assistantMsg.mcpRemoteSettled = true
+      assistantMsg.mcpStreamingText = ''
+      if (state.phase === 'done') {
+        assistantMsg.content = String(state.content || '已完成。')
+        assistantMsg.mcpSteps = Array.isArray(state.steps) ? state.steps : []
+        if (state.proofreadCard) {
+          assistantMsg.mcpProofreadCard = { ...state.proofreadCard, applied: false, applying: false }
+        }
+        if (Array.isArray(state.loopMessages) && state.loopMessages.length) {
+          for (const m of (this.currentMessages || [])) {
+            if (m && m.id !== assistantMsg?.id && Array.isArray(m.mcpLoopHistory)) {
+              m.mcpLoopHistory = []
+            }
+          }
+          assistantMsg.mcpLoopHistory = state.loopMessages
+        }
+        if (Array.isArray(state.todos) && state.todos.length) assistantMsg.mcpTodos = state.todos
+      } else if (state.phase === 'cancelled') {
+        const prev = String(assistantMsg.content || '').trim()
+        assistantMsg.content = prev ? `${prev}\n\n（已停止）` : '已停止文档智能体本轮执行。'
+      } else {
+        // error：远程回合模型失败——镜像本地 model_error 文案，不静默回落
+        assistantMsg.content = String(state.content || '文档智能体调用模型失败')
+        assistantMsg.mcpSteps = Array.isArray(state.steps) ? state.steps : []
+      }
+      this.stopAssistantLoadingProgress(assistantMsg)
+      assistantMsg.isLoading = false
+      assistantMsg.mcpStepsExpanded = false
+      this.clearMcpTurnCtx(turnChatId)
+      this.settleGlobalStreamingFlag()
+      try {
+        const scopeKey = String(state.scopeKey || this.historyStorageScopeKey || '')
+        if (scopeKey) {
+          window.Application?.PluginStorage?.removeItem(REMOTE_TURN_PENDING_PREFIX + scopeKey)
+        }
+      } catch (_) { /* ignore */ }
+      this.saveHistory()
+      this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
+    },
+    async waitForRemoteMcpTurn({ turnId, assistantMsg, ctrl, turnChatId }) {
+      const storage = () => window.Application?.PluginStorage
+      // 用户点停止 → 写取消键（runner 心跳消费并 abort），继续观察到终态落地
+      if (ctrl) {
+        const onAbort = () => {
+          try { storage()?.setItem(REMOTE_TURN_CANCEL_PREFIX + String(turnId), '1') } catch (_) {}
+        }
+        if (ctrl.signal.aborted) onAbort()
+        else ctrl.signal.addEventListener('abort', onAbort, { once: true })
+      }
+      // 无限轮询由终态/陈旧判定收敛：phase 终态合并退出；running 且心跳
+      // 超过 REMOTE_TURN_STALE_MS 视为执行侧（基座 webview）死亡 → 中断收尾
+      for (;;) {
+        await new Promise(r => setTimeout(r, REMOTE_TURN_POLL_MS))
+        const state = this.readRemoteTurnState(turnId)
+        if (!state) continue
+        if (state.phase === 'running') {
+          this.applyRemoteTurnProgress(assistantMsg, state)
+          if (Date.now() - Number(state.updatedAt || 0) > REMOTE_TURN_STALE_MS) {
+            assistantMsg.mcpRemoteSettled = true
+            assistantMsg.mcpStreamingText = ''
+            const partial = String(state.streamText || '').trim()
+            assistantMsg.content = partial
+              ? `${partial}\n\n（生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。）`
+              : '生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。'
+            assistantMsg.mcpInterrupted = true
+            this.stopAssistantLoadingProgress(assistantMsg)
+            assistantMsg.isLoading = false
+            assistantMsg.mcpStepsExpanded = false
+            this.clearMcpTurnCtx(turnChatId)
+            this.settleGlobalStreamingFlag()
+            this.saveHistory()
+            this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
+            return
+          }
+          continue
+        }
+        this.mergeRemoteTurnOutcome(assistantMsg, state, turnChatId)
+        return
+      }
+    },
+    // 重挂载恢复：loadHistory 后调用。当前 scope 有进行中/未合并的远程回合 →
+    // 找到带同 turnId 的消息继续观察或直接合并终态
+    resumeRemoteMcpTurnsAfterLoad() {
+      try {
+        const scopeKey = this.historyStorageScopeKey
+        if (!scopeKey) return
+        const pendingTurnId = String(window.Application?.PluginStorage?.getItem(REMOTE_TURN_PENDING_PREFIX + scopeKey) || '')
+        if (!pendingTurnId) return
+        const state = this.readRemoteTurnState(pendingTurnId)
+        if (!state) {
+          window.Application?.PluginStorage?.removeItem(REMOTE_TURN_PENDING_PREFIX + scopeKey)
+          return
+        }
+        const msg = (this.currentMessages || []).find(m => m?.mcpRemoteTurnId === pendingTurnId)
+        if (!msg || msg.mcpRemoteSettled) {
+          window.Application?.PluginStorage?.removeItem(REMOTE_TURN_PENDING_PREFIX + scopeKey)
+          return
+        }
+        if (state.phase === 'running') {
+          msg.isLoading = true
+          msg.mcpSteps = Array.isArray(state.steps) ? state.steps.slice() : []
+          this.startAssistantLoadingProgress(msg, {
+            label: '文档智能体后台执行中…',
+            detail: '切换文档期间生成未中断，正在恢复观察。',
+            percent: 30
+          })
+          this.waitForRemoteMcpTurn({ turnId: pendingTurnId, assistantMsg: msg, ctrl: null, turnChatId: this.currentChatId })
+        } else {
+          this.mergeRemoteTurnOutcome(msg, state, this.currentChatId)
+        }
+      } catch (e) {
+        console.warn('resume remote mcp turn failed:', e?.message || e)
+      }
+    },
+    // 容量预算（设计定稿 §2.7）：保存前裁剪当前 scope —— 单会话 ≤200KB 且
+    // ≤100 条消息；超限从最旧的非当前会话开始丢消息体（保留占位与标题），
+    // 当前会话最后动。返回是否发生过裁剪（供 UI 提示）。
+    enforceScopeBudgetOnPayload(cleanHistory) {
+      let trimmed = false
+      const currentId = this.currentChatId
+      const capMessages = (chat) => {
+        const msgs = Array.isArray(chat?.messages) ? chat.messages : []
+        if (msgs.length > SCOPE_BUDGET_MESSAGES) {
+          chat.messages = msgs.slice(msgs.length - SCOPE_BUDGET_MESSAGES)
+          trimmed = true
+        }
+      }
+      for (const chat of cleanHistory) capMessages(chat)
+      const sizeOf = (list) => JSON.stringify(list).length
+      if (sizeOf(cleanHistory) <= SCOPE_BUDGET_BYTES) return trimmed
+      // 从最旧会话开始清空消息体（当前会话保护到最后）
+      const ordered = [...cleanHistory].sort((a, b) => Number(a?.updatedAt || 0) - Number(b?.updatedAt || 0))
+      for (const chat of ordered) {
+        if (sizeOf(cleanHistory) <= SCOPE_BUDGET_BYTES) break
+        if (chat?.id === currentId) continue
+        if (Array.isArray(chat?.messages) && chat.messages.length) {
+          chat.messages = []
+          trimmed = true
+        }
+      }
+      // 仍超限：当前会话从最旧消息裁起（保留最近 SCOPE_BUDGET_MESSAGES 条）
+      if (sizeOf(cleanHistory) > SCOPE_BUDGET_BYTES) {
+        const cur = cleanHistory.find(c => c?.id === currentId)
+        if (cur && Array.isArray(cur.messages) && cur.messages.length > 10) {
+          cur.messages = cur.messages.slice(cur.messages.length - 10)
+          trimmed = true
+        }
+      }
+      return trimmed
+    },
+    // 全局 LRU（≤30 个文档键）：scope 切换即 touch；超限驱逐最久未用 scope 的
+    // 历史+当前指针。PluginStorage 无枚举 API，索引自维护。
+    touchScopeLru(scopeKey) {
+      const key = String(scopeKey || '').trim()
+      if (!key || key === 'no_active_document') return
+      try {
+        const storage = window.Application?.PluginStorage
+        if (!storage) return
+        let lru = []
+        try {
+          const raw = storage.getItem(SCOPE_LRU_KEY)
+          lru = raw ? JSON.parse(raw) : []
+        } catch (_) { lru = [] }
+        lru = lru.filter(k => k !== key)
+        lru.unshift(key)
+        while (lru.length > SCOPE_LRU_MAX) {
+          const evict = lru.pop()
+          if (evict && evict !== key) {
+            storage.removeItem(`${STORAGE_KEY_HISTORY_SCOPE_PREFIX}:${evict}`)
+            storage.removeItem(`${STORAGE_KEY_CURRENT_SCOPE_PREFIX}:${evict}`)
+          }
+        }
+        storage.setItem(SCOPE_LRU_KEY, JSON.stringify(lru))
+      } catch (_) { /* 索引维护失败不影响主流程 */ }
+    },
     async runMcpExclusiveTurn({ text, model, prepared, assistantMsg }) {
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
       // MCP 回合按会话隔离：并行 tab 各自持有回合上下文
@@ -6026,6 +6298,22 @@ export default {
         .filter(m => m && m.id !== assistantMsg?.id && m.role === 'assistant' && Array.isArray(m.mcpLoopHistory) && m.mcpLoopHistory.length)
         .pop()
       const previousLoopHistory = prevLoopMsg ? prevLoopMsg.mcpLoopHistory : []
+
+      // ── 远程回合优先（AI助手对话跟随文档）────────────────────────
+      // 派发成功 → 轮询共享键观察（切文档重挂载不中断）；失败 → 落回下方
+      // 本地循环（原地生成，行为与旧版一致）
+      const remoteTurnId = await this.tryDispatchRemoteMcpTurn({
+        text,
+        model,
+        assistantMsg,
+        historyMessages,
+        previousTodos,
+        previousLoopHistory
+      })
+      if (remoteTurnId) {
+        await this.waitForRemoteMcpTurn({ turnId: remoteTurnId, assistantMsg, ctrl, turnChatId })
+        return { handled: true }
+      }
 
       try {
         const result = await runMcpChatOrchestrator({
@@ -7889,6 +8177,8 @@ export default {
       this.historyStorageScopeKey = scopeKey
       this.historyStorageDocumentLinkId = String(scopeInfo.documentLinkId || '').trim()
       this.historyStorageSource = String(scopeInfo.source || '').trim()
+      // 全局 LRU touch：记录本 scope 活跃时间，超 30 键时驱逐最久未用的会话
+      this.touchScopeLru(scopeKey)
       return scopeKey
     },
     getHistoryStorageKeys(scopeKey = '') {
@@ -7963,6 +8253,8 @@ export default {
           this.currentChatId = null
         }
         this.initOpenChatTabsAfterLoad()
+        // 远程回合恢复：重挂载后按 pending 指针接回进行中/未合并的回合
+        this.resumeRemoteMcpTurnsAfterLoad()
       } catch (e) {
         console.warn('加载对话历史失败:', e)
       }
@@ -7980,6 +8272,8 @@ export default {
           ? chat.messages.map(({ _renderedHtml, _renderedContent, mcpStreamingText, ...m }) => m)
           : chat?.messages
       }))
+      // 容量预算（设计定稿 §2.7）：序列化前裁剪到单 scope ≤200KB / ≤100 条
+      this.enforceScopeBudgetOnPayload(cleanHistory)
       return {
         storageKeys,
         historyJson: JSON.stringify(cleanHistory),

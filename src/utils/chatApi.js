@@ -191,6 +191,23 @@ function normalizeChatApiErrorMessage(status, rawText, fallbackText = '') {
  * @param {string} modelId - 模型清单中的模型 id（如 deepseek-chat）
  * @returns {{ apiKey: string, apiUrl: string, model: string } | null}
  */
+
+// 远程回合（chat.turn 在 ribbon 基座 webview 执行）的 API 配置注入：面板把已
+// 解析的 apiKey/apiUrl 随任务参数带来，runner 在本 webview 设置覆盖——基座侧
+// localStorage 不保证与面板一致，不能依赖 getModelConfig 在本侧再解析一次。
+const _cfgOverrides = new Map()
+
+export function setChatApiConfigOverride(providerId, cfg) {
+  const pid = String(providerId || '').trim()
+  if (!pid) return
+  if (!cfg) _cfgOverrides.delete(pid)
+  else _cfgOverrides.set(pid, { apiKey: String(cfg.apiKey || ''), apiUrl: String(cfg.apiUrl || '') })
+}
+
+export function getChatApiConfigOverride(providerId) {
+  return _cfgOverrides.get(String(providerId || '').trim()) || null
+}
+
 export function getChatApiConfigByProvider(providerId, modelId) {
   if (!providerId || !modelId) return null
   if (isDesktopProviderId(providerId)) {
@@ -198,6 +215,10 @@ export function getChatApiConfigByProvider(providerId, modelId) {
     const base = String(getDesktopBaseUrl() || '').replace(/\/+$/, '')
     if (!base) return null
     return { apiKey: '', apiUrl: `${base}/v1/chat/completions`, model: modelId }
+  }
+  const override = getChatApiConfigOverride(providerId)
+  if (override && override.apiUrl) {
+    return { apiKey: override.apiKey, apiUrl: buildChatUrl(override.apiUrl), model: modelId }
   }
   const config = getModelConfig(providerId)
   if (!config || !config.apiUrl?.trim()) return null

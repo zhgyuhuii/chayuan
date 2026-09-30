@@ -98,6 +98,14 @@ import { handleSpreadsheetAction, SPREADSHEET_WRITE_ACTIONS } from './spreadshee
 import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presentationDispatch.js'
 import { getHostActiveObjectId } from './hostDispatch.js'
 
+// 聊天回合托管（AI助手对话跟随文档）：懒加载——只有 ribbon 基座真正接到 chat.*
+// job 时才拉取模块（连带 orchestrator/agent-core 的 chunk），其它 webview 零开销
+let _chatTurnRunnerMod = null
+function loadChatTurnRunner() {
+  if (!_chatTurnRunnerMod) _chatTurnRunnerMod = import('./chatTurnRunner.js')
+  return _chatTurnRunnerMod
+}
+
 /** Bring opened doc + WPS main window to foreground (Open alone often leaves UI hidden/behind). */
 function revealOpenedDocument(activate = true) {
   if (activate === false) return { activated: false }
@@ -560,6 +568,15 @@ export async function dispatchMcpJob(job = {}) {
 }
 
 async function dispatchMcpJobInner(method, params) {
+  // 聊天回合托管（AI助手对话跟随文档）：ack 模式——handleChatTurn 立即返回，
+  // 回合循环 detached 执行（跨文档切换存活）；绝不能 await 编排器，否则再入
+  // 守卫会把后续内部工具 job 全部堵死在 _dispatchQueue
+  if (method === 'chat.turn' || method === 'chat.turn_cancel') {
+    const mod = await loadChatTurnRunner()
+    return method === 'chat.turn'
+      ? mod.handleChatTurn(params)
+      : mod.cancelChatTurn(params)
+  }
   // 表格/演示宿主工具：前缀路由（agentHub 已按宿主投递，这里双保险再按 action 分发）
   if (method.startsWith('spreadsheet.')) {
     return handleSpreadsheetAction(method.slice('spreadsheet.'.length), params)

@@ -423,6 +423,28 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
   async function handleToolsCall(name, args = {}) {
     const meta = getServerMeta()
 
+    // ── 聊天回合托管（AI助手对话跟随文档）────────────────────────────
+    // 面板派发回合到 ribbon 基座 webview（跨文档切换存活），ack 模式：agent 端
+    // 立即 submitResult 确认接单，回合循环 detached 执行；进度经 PluginStorage
+    // 共享键回传（面板直读），本调用只承担「接单确认」。target 必须带 ribbon:
+    // 前缀——聊天面板 agent 的 windowId 带面板路由，被 matchesTarget 排除。
+    if (name === 'chat_turn') {
+      const p = args && typeof args === 'object' ? args : {}
+      const host = ['et', 'wpp'].includes(String(p.host)) ? String(p.host) : 'wps'
+      if (!p.turnId || !p.scopeKey || !String(p.userText || '').trim() || !p.model) {
+        return jsonError('INVALID_PARAMS', 'chat_turn 需要 turnId / scopeKey / userText / model')
+      }
+      try {
+        const result = await agentHub.callAgent('chat.turn', p, {
+          timeoutMs: 30_000,
+          target: `ribbon:${host}`
+        })
+        return jsonResult(result)
+      } catch (e) {
+        return jsonError(e.code || 'ERROR', e.message, e.details)
+      }
+    }
+
     // Domain aggregate + one-release legacy aliases (fine-grained → {tool,action})
     let toolName = name
     let toolArgs = args && typeof args === 'object' ? { ...args } : {}
