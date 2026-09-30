@@ -24,6 +24,7 @@ import {
 import { createAgentCoreTransport } from './agentCoreTransport.js'
 import { createMcpDocumentSkill, normalizeTodoList } from './agentCoreSkill.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
+import { loadGlobalSettings } from '../../utils/globalSettings.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
@@ -105,7 +106,18 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     isEt
       ? '【跨宿主】可只读其它宿主作数据源，但只写当前工作簿（写其它宿主会被身份校验拦截）。需要演示稿/文档内容时用 presentation(action=slide_list|slide_read) / document_get_text 只读提取。'
       : isWpp
-        ? '【跨宿主】可只读其它宿主作内容源，但只写当前演示文稿。需要 Word 内容用 document_get_text 只读提取（文档转 PPT），需要表格数据用 spreadsheet(action=range_read) 只读提取；首次写入前系统会自动校验目标身份，无需你处理。'
+        ? (() => {
+            let src = 'auto'
+            try { src = String(loadGlobalSettings()?.imageSource || 'auto') } catch (_) { /* 设置读不到按 auto */ }
+            const imgLines = {
+              auto: '【配图·三级生图】需要插图时依次尝试：① generate_image（已配置生图模型）② image_search（网络搜图）③ presentation(action=svg_add) 内联矢量图形兜底。上级来源失败（返回 ok:false）才降级下一级，禁止跳级硬试；插画/图标/抽象背景用 ①③，真实照片/实物用 ②。',
+              model: '【配图·模型生图】插图一律 generate_image 生成（描述注明风格与配色），失败改 presentation(action=svg_add) 矢量兜底；禁止改用 image_search。',
+              web: '【配图·网络搜图】插图一律 image_search 搜索后 presentation(action=picture_add) 插入，失败改 presentation(action=svg_add) 矢量兜底；禁止改用 generate_image。',
+              svg: '【配图·矢量优先】插图一律 presentation(action=svg_add) 内联矢量图形（每个图形一个语义单元：图标/图示/装饰，单个 ≤1.5k 字符，一页 2-4 个），不用搜图/生图。'
+            }
+            const crossHost = '【跨宿主】可只读其它宿主作内容源，但只写当前演示文稿。需要 Word 内容用 document_get_text 只读提取（文档转 PPT），需要表格数据用 spreadsheet(action=range_read) 只读提取；首次写入前系统会自动校验目标身份，无需你处理。'
+            return crossHost + (imgLines[src] || imgLines.auto)
+          })()
         : '',
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     host === 'wps'

@@ -320,7 +320,7 @@ export const HOST_ASSISTANT_PACKS = {
       icon: '✨',
       group: '通用高频',
       mode: 'prefill',
-      description: '一句话主题→大纲→逐页生成整套演示稿',
+      description: '一句话主题→大纲→逐页生成（支持三级配图：模型生图/搜图/矢量）',
       prompt: '请为我生成一套演示稿：先给出大纲（页码+每页标题+要点），等我确认后逐页生成。主题与要求：'
     },
     {
@@ -382,6 +382,37 @@ export const HOST_ASSISTANT_PACKS = {
       mode: 'send',
       description: '每页生成演讲者备注，口语化 3-5 句',
       prompt: '请为当前演示稿的每一页生成演讲者备注（口播稿）：先逐页读取内容，再为每页写口语化的演讲词（每页 3-5 句，衔接自然），用 notes_set 写入对应页的备注。'
+    },
+    // ── 配图（收割自 chayuan-office slides image-source 体系：web/model/svg 三级）──
+    {
+      id: 'wpp-img-web',
+      label: '搜图配图页',
+      shortLabel: '搜图配图',
+      icon: '🌐',
+      group: '配图',
+      mode: 'prefill',
+      description: 'image_search 搜真实图片插入（照片/实景类）',
+      prompt: '请为当前演示稿配图：用 image_search 搜索合适图片（关键词自拟），presentation picture_add 插入到指定页。图片失败改 svg_add 矢量兜底。页码与主题：'
+    },
+    {
+      id: 'wpp-img-model',
+      label: 'AI 生图配图',
+      shortLabel: 'AI 生图',
+      icon: '🎨',
+      group: '配图',
+      mode: 'prefill',
+      description: 'generate_image 生成插画/背景（风格可控）',
+      prompt: '请用 generate_image 生成配图（提示词注明插画风格与配色），presentation picture_add 插入。生图失败改 svg_add 矢量兜底。页面与插画主题：'
+    },
+    {
+      id: 'wpp-img-svg',
+      label: '矢量图标装饰',
+      shortLabel: '矢量装饰',
+      icon: '🔷',
+      group: '配图',
+      mode: 'send',
+      description: 'svg_add 语义单元矢量图形（免费可编辑）',
+      prompt: '请为当前演示稿的第 1 页添加矢量装饰：用 presentation svg_add 生成 2-3 个语义图标（如增长箭头/齿轮/对话气泡，扁平风格、蓝色系），错落排布在页面右下区域，不要遮挡标题。'
     },
     // ── 行业包：政企汇报 ──
     {

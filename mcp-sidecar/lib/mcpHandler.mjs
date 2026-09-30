@@ -13,6 +13,7 @@ import {
   openPathWithOs
 } from './platformBridge.mjs'
 import { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS } from './toolCatalog.mjs'
+import { imageSearchTool, generateImageTool } from './imageTools.mjs'
 import {
   AGGREGATE_TOOL_NAMES,
   LEGACY_TOOL_ALIASES,
@@ -276,7 +277,7 @@ function buildPromptMessages(name, args = {}) {
   return null
 }
 
-export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, launchWpsAndWait }) {
+export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, launchWpsAndWait, dataDir }) {
   /** @type {Map<string, any>} */
   const sessions = new Map()
 
@@ -486,6 +487,24 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
     }
 
     switch (name) {
+      // ── 图像工具（三级生图）：侧车原生执行，无需 webview ──
+      case 'image_search': {
+        try {
+          const result = await imageSearchTool(dataDir, { query: args?.query, count: args?.count })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
+      case 'generate_image': {
+        try {
+          const result = await generateImageTool(dataDir, { prompt: args?.prompt, size: args?.size })
+          if (result.ok) audit?.append({ tool: 'generate_image', confirmed: true })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
       case 'wps_status': {
         const agent = agentHub.status()
         let doc = null

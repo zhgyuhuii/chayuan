@@ -141,6 +141,16 @@ async function localRpc(method, params = {}, { signal, timeoutMs } = {}) {
   return res.json?.result
 }
 
+
+/** svg_add 光栅化产物落盘：POST /tmp-image（token 门禁），返回 {ok, path} */
+export async function uploadTmpImage(base64, ext = 'png', { signal, timeoutMs = 30000 } = {}) {
+  const res = await postJson(`${MCP_BASE_URL}/tmp-image`,
+    { base64, ext },
+    { headers: { 'X-Chayuan-Token': sidecarAccessToken() }, signal, timeoutMs })
+  if (!res.ok) throw new Error(res.json?.error || `落盘失败 HTTP ${res.status}`)
+  return res.json
+}
+
 export async function initializeLocal({ signal } = {}) {
   localSessionId = ''
   const result = await localRpc('initialize', {

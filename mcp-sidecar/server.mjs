@@ -25,6 +25,7 @@ import { isWebSocketUpgrade, acceptWebSocket } from './lib/miniWs.mjs'
 import { createAuditLog } from './lib/auditLog.mjs'
 import { writeMcpServerJson, findWpsExecutable, launchWps } from './lib/platformBridge.mjs'
 import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
+import { imageSearchTool, generateImageTool, saveTmpImage } from './lib/imageTools.mjs'
 
 const dataDir = ensureDataDir()
 const token = loadOrCreateToken()
@@ -232,7 +233,8 @@ const mcp = createMcpHandler({
   agentHub,
   getServerMeta,
   audit,
-  launchWpsAndWait
+  launchWpsAndWait,
+  dataDir
 })
 const upstreamProxy = createUpstreamProxy()
 
@@ -504,6 +506,27 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname.startsWith('/agent/')) {
       await handleAgent(req, res, pathname)
+      return
+    }
+
+    // 图像工具（三级生图）：image_search / generate_image 为侧车原生（无需 webview），
+    // /tmp-image 承接 svg_add 光栅化产物的落盘（token 门禁与 /agent/* 同级）
+    if (pathname === '/tmp-image' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, saveTmpImage(dataDir, body))
+      return
+    }
+    if (pathname === '/image/search' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, await imageSearchTool(dataDir, body))
+      return
+    }
+    if (pathname === '/image/generate' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, await generateImageTool(dataDir, body))
       return
     }
 

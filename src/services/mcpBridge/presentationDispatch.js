@@ -15,6 +15,7 @@ import {
   safeGet,
   hostError
 } from './hostDispatch.js'
+import { uploadTmpImage } from './mcpHttpClient.js'
 
 /** 写 action 集合（dispatch.js 写锁判定用） */
 export const PRESENTATION_WRITE_ACTIONS = new Set([
@@ -435,6 +436,61 @@ function handleSlideExportImage(params) {
   return { ok: true, path, index: Number(safeGet(() => slide.SlideIndex, params.index)) }
 }
 
+/** SVG 消毒：剥 <script>/事件属性/外部引用，仅留纯矢量内容（chayuan-office 同规则） */
+function sanitizeSvg(svg) {
+  let out = String(svg || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(xlink:href|href|src)\s*=\s*(?:"\s*https?:[^"]*"|'\s*https?:[^']*'|\s*https?:[^\s>]+)/gi, '')
+    .replace(/@import[^;]+;/gi, '')
+  if (!/<svg[\s>]/i.test(out)) throw hostError('INVALID_SVG', '内容不是有效的 SVG（缺少 <svg> 根元素）')
+  return out
+}
+
+/** webview canvas 光栅化：SVG 文本 → PNG base64（零原生依赖） */
+function rasterizeSvgToPng(svg, width = 1024) {
+  return new Promise((resolve) => {
+    try {
+      const b64 = btoa(unescape(encodeURIComponent(svg)))
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const w = Math.min(width || 1024, Math.max(img.width || width, 64))
+          const hgt = Math.round((img.height || w) * (w / (img.width || w)))
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = hgt
+          canvas.getContext('2d').drawImage(img, 0, 0, w, hgt)
+          const dataUri = canvas.toDataURL('image/png')
+          resolve(dataUri.split(',')[1] || null)
+        } catch (_) { resolve(null) }
+      }
+      img.onerror = () => resolve(null)
+      img.src = `data:image/svg+xml;base64,${b64}`
+    } catch (_) { resolve(null) }
+  })
+}
+
+/** svg_add：模型内联 SVG → 消毒 → 光栅化 → 侧车落盘 → picture_add 插入当前页 */
+async function handleSvgAdd(params) {
+  const pres = getActivePresentation()
+  const app = window.Application
+  const slide = resolveSlide(pres, params.index)
+  const svg = sanitizeSvg(params.svg)
+  const png = await rasterizeSvgToPng(svg, Number(params.width) || 1024)
+  if (!png) throw hostError('SVG_RASTERIZE_FAILED', 'SVG 光栅化失败（内容可能过于复杂），请简化图形后重试')
+  const saved = await uploadTmpImage(png, 'png')
+  if (!saved?.path) throw hostError('SVG_SAVE_FAILED', '光栅化产物落盘失败')
+  const shapes = withScreenUpdating(app, () => slide.Shapes.AddPicture(saved.path))
+  return {
+    ok: true,
+    slide: Number(safeGet(() => slide.SlideIndex, params.index)),
+    picturePath: saved.path,
+    shapeName: safeGet(() => shapes?.Name),
+    source: 'svg'
+  }
+}
+
 /**
  * 写演讲者备注（口播稿）。params:
  *   notes: [{ slide: 页码, text: 备注文本 }]，或 { slide, text } 单页形式
@@ -572,7 +628,8 @@ const WRITE_HANDLERS = {
   export: handleExport,
   slide_export_image: handleSlideExportImage,
   notes_set: handleNotesSet,
-  format_uniform: handleFormatUniform
+  format_uniform: handleFormatUniform,
+  svg_add: handleSvgAdd
 }
 
 /**

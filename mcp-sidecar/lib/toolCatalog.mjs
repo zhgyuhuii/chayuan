@@ -23,7 +23,7 @@ function tool(def) {
   return def
 }
 
-export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.11.0' }
+export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.13.0' }
 
 export const SERVER_INSTRUCTIONS = [
   'You are connected to 察元AI MCP. End users speak natural Chinese/English only — they never name tools.',
@@ -1530,9 +1530,56 @@ const CORE_TOOLS = [
   })
 ]
 
+
+
+// ── 图像工具（三级生图）：侧车原生执行，宿主无关。参考 chayuan-office image-source 体系 ──
+const IMAGE_TOOLS = [
+  tool({
+    name: 'image_search',
+    description: [
+      'WHAT: Search the web for a real photo/illustration, download it locally, return a file path.',
+      'WHEN: slide/sheet needs a real-world image (photos, scenery, product shots); image source is web/auto.',
+      'NOT: Not for icons/diagrams (draw with presentation svg_add). Returns only a local path — then insert with presentation picture_add.',
+      'HOW: {"query":"城市天际线 航拍","count":3}. If it returns ok:false, fall back to presentation svg_add (vector fallback) — never try other online sources.',
+      'EXAMPLE: {"query":"蓝色科技感背景"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['query'],
+      properties: {
+        query: { type: 'string', description: '图片内容搜索词' },
+        count: { type: 'number', description: '候选数量，默认 3' }
+      }
+    }
+  }),
+  tool({
+    name: 'generate_image',
+    description: [
+      'WHAT: Generate an image with the configured image model (OpenAI-compatible), save locally, return a file path.',
+      'WHEN: slide/sheet needs an illustration/icon/background that search cannot provide; image source is model/auto.',
+      'NOT: Not for real photos (image_search). Returns only a local path — then insert with presentation picture_add.',
+      'HOW: {"prompt":"扁平插画风格的数据增长曲线，蓝色主色调","size":"1024x1024"}. If it returns ok:false (unconfigured/failed), fall back to presentation svg_add — do NOT silently switch to image_search.',
+      'EXAMPLE: {"prompt":"扁平风格的团队协作插画，蓝白配色"}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['prompt'],
+      properties: {
+        prompt: { type: 'string', description: '生图描述（建议注明风格与配色）' },
+        size: { type: 'string', description: '尺寸，默认 1024x1024' }
+      }
+    }
+  })
+]
+
 export const TOOLS = [
   ...CORE_TOOLS.filter((t) => !REPLACED_FINE_GRAINED.has(t.name)),
-  ...AGGREGATE_TOOLS
+  ...AGGREGATE_TOOLS,
+  ...IMAGE_TOOLS
 ]
 
 export default { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS }
