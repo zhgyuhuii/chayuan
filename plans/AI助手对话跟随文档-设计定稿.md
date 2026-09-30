@@ -1,8 +1,36 @@
 # AI助手对话跟随文档 · 设计定稿
 
-> 状态：共识版 v1（2026-09-30，苏格拉底七问 + 真机实验定案，待批准开工）
+> 状态：**已实现并部署 v5.1.5（2026-09-30），真机验收由解锁哨兵自动执行中**
 > 原始诉求："AI助手对话框能不能跟着文档走 打开时默认放在左侧 这样每个文档就显示一个对话框"
 > 实验证据截图：`~/Desktop/chayuan-probe-shots/`（6 张，零代码真机实验）
+> 实现提交：`16dd7e6`；验收截图：`/tmp/chayuan-probe/`（A0-D1 序列）
+
+## 0.a 实现相对定稿的两处修正（调研后）
+
+1. **会话作用域不新建 FullName 键**——代码调研发现面板已有完整的三级作用域机制
+   （文档变量 docLinkId → 路径 → 名字，`resolveHistoryStorageScope`），文档变量方案
+   比 FullName 更好（SaveAs 后会话天然跟随）。本实现复用它，只补"生成连续性、
+   容量预算、默认形态"三块缺口。
+2. **模型配置注入**——ribbon 基座 webview 与面板的 localStorage 不保证同源共享，
+   chat.turn 参数携带面板解析好的 apiKey/apiUrl，runner 侧用
+   `setChatApiConfigOverride` 注入（chatApi 单点覆盖，两处解析路径共用）。
+
+## 0.b 部署要点（真机运维知识）
+
+- **WPS mac 沙盒实际读取的加载项目录是容器内路径**
+  `~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons/`，
+  非 `~/Library/Application Support/Kingsoft/wps/jsaddons/`（后者是 pkg 装的 root
+  空壳，两个目录都曾被误认为真身）。
+- **两个 jsaddons 目录的父目录都是 root 属主**（pkg 安装器所留）——普通用户无法
+  在其中创建目录。解法：jsaddons 的**父目录**（`.kingsoft/wps/`）是 zyh 属主，
+  `mv jsaddons jsaddons.root-bak-<日期>` 挪走后重建，一次治愈 root 陷阱。
+- 侧车二进制更新：`npm run mcp:build-binary macos-arm64`（bun）→
+  覆盖 `~/.config/chayuan-wps/mcp/runtime/bin/` → `launchctl bootout/bootstrap
+  com.chayuan.mcp`。
+- 模型配置可用**文件**预置：容器数据目录
+  `~/Containers/com.kingsoft.wpsoffice.mac/Data/Library/Application Support/chayuan/settings.json`
+  写 `{modelConfigs:{DEEPSEEK:{apiKey,apiUrl,enabled,modelSeries}}}`——
+  globalSettings 的 loadFromFile 优先级最高，两个 webview 读同一份，免去 UI 操作。
 
 ---
 
