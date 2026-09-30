@@ -4976,6 +4976,20 @@ export default {
     window.addEventListener('focus', this.handleWindowFocus)
     window.addEventListener('storage', this.handleStorageEvent)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    // WPS 同窗口内切换文档标签不产生 window focus（Linux 面板不随切档重挂载，
+    // mac 旧版靠重挂载掩盖了这一点）——必须监听宿主 WindowActivate 事件驱动
+    // 会话作用域切换，否则切到别的文档后对话不跟随（2026-09-30 VM 实测缺口）
+    try {
+      window.Application?.ApiEvent?.AddApiEventListener?.('WindowActivate', () => {
+        this.syncHistoryScopeWithActiveDocument()
+      })
+    } catch (_) { /* 宿主无 ApiEvent 时退化为仅 window focus 驱动 */ }
+    // 安全网轮询：ApiEvent 注册可能因 Application 注入时序静默失败，部分宿主
+    // 不派发该事件，且 taskpane webview 的 visibilityState 可能为 hidden（可见性
+    // 感知间隔会拒启）——sync 极轻（属性读取+字符串比较），直接裸 interval
+    this._scopeSyncTimer = setInterval(() => {
+      try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
+    }, 1500)
     window.addEventListener('mousemove', this.handleSidebarResize)
     window.addEventListener('mouseup', this.stopSidebarResize)
     bootMark('AIAssistantDialog mounted 同步部分结束')
@@ -5006,6 +5020,10 @@ export default {
   },
   beforeUnmount() {
     this.stopActiveMcpTurn()
+    if (this._scopeSyncTimer) {
+      clearInterval(this._scopeSyncTimer)
+      this._scopeSyncTimer = null
+    }
     if (this._lockStateUnsubscribe) {
       try { this._lockStateUnsubscribe() } catch { /* ignore */ }
       this._lockStateUnsubscribe = null
@@ -8141,7 +8159,16 @@ export default {
       }
     },
     resolveHistoryStorageScope() {
-      const doc = getActiveDocument()
+      // 宿主感知取活动对象：Writer=ActiveDocument，表格=ActiveWorkbook，演示=
+      // ActivePresentation。旧实现只认 ActiveDocument——表格/演示里恒为 null，
+      // 会话作用域退化为全局一个池（切文档对话不跟随，2026-09-30 VM 实测）。
+      // 注意逐项 try：部分宿主（Linux ET 实测）访问非本宿主的活动对象属性会
+      // 抛 COM 异常而非返回 undefined，链式短路访问会炸掉整个 resolve。
+      const app = window.Application
+      let doc = null
+      try { doc = app?.ActiveDocument || null } catch (_) { /* 非文字宿主 */ }
+      if (!doc) { try { doc = app?.ActiveWorkbook || null } catch (_) { /* 非表格宿主 */ } }
+      if (!doc) { try { doc = app?.ActivePresentation || null } catch (_) { /* 非演示宿主 */ } }
       const docLinkId = ensureDocumentChatLinkId(doc)
       const fullName = String(doc?.FullName || '').trim()
       const name = String(doc?.Name || '').trim()

@@ -591,7 +591,22 @@ async function dispatchMcpJobInner(method, params) {
         addonVersion: getAddonVersion(),
         agentOnline: true,
         document: getActiveDocumentInfo(),
-        addonType: detectAddonType()
+        addonType: detectAddonType(),
+        // 排查探针（定位后移除）：面板作用域同步心跳 + 本 webview 宿主对象探测
+        scopeDebug: (() => {
+          try {
+            const raw = window.Application?.PluginStorage?.getItem('ai_chat_scope_debug')
+            return raw ? JSON.parse(raw) : null
+          } catch (_) { return null }
+        })(),
+        probe: (() => {
+          const app = window.Application
+          const out = {}
+          try { out.activeDocument = app?.ActiveDocument ? !!app.ActiveDocument : false } catch (_) { out.activeDocument = 'throw' }
+          try { out.activeWorkbook = app?.ActiveWorkbook ? !!app.ActiveWorkbook : false } catch (_) { out.activeWorkbook = 'throw' }
+          try { out.activePresentation = app?.ActivePresentation ? !!app.ActivePresentation : false } catch (_) { out.activePresentation = 'throw' }
+          return out
+        })()
       }
     case 'document.get_text':
       return handleDocumentGetTextGuarded(params)
