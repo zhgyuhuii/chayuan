@@ -1,3 +1,4 @@
+/* eslint-env node */
 /**
  * 图像工具（三级生图，参考 chayuan-office image-source 体系）：
  *   image_search — 网络搜图（免 key 源：Openverse → DuckDuckGo 兜底），下载到本地返回路径
