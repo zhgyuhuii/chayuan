@@ -2820,7 +2820,7 @@ import {
   probeMcpHealthBundle
 } from '../services/mcpBridge/mcpHttpClient.js'
 import { getChatApiConfigByProvider } from '../utils/chatApi.js'
-import { detectAddonType } from '../utils/host/hostType.js'
+import { detectAddonType, resetAddonTypeCache } from '../utils/host/hostType.js'
 import {
   applyProofreadComments,
   applyProofreadTextFixes,
@@ -4523,31 +4523,6 @@ export default {
       const host = detectAddonType()
       return host === 'et' || host === 'wpp'
     },
-    /**
-     * 消费 ribbon 常驻助手按钮写入的预填提示词（ai_chat_prefill_prompt）。
-     * 以 at 时间戳判重：面板已开时点击按钮 → 轮询通道 1.5s 内拾取；未开时
-     * 新面板 mount 首个 tick 拾取。只预填不发送（用户补充占位内容后发送）。
-     */
-    tryConsumeRibbonPrefillPrompt() {
-      let data = null
-      try {
-        const raw = window.Application?.PluginStorage?.getItem('ai_chat_prefill_prompt')
-        data = raw ? JSON.parse(raw) : null
-      } catch (_) { return }
-      const at = Number(data?.at || 0)
-      if (!data?.prompt || at <= Number(this._lastPrefillConsumedAt || 0)) return
-      this._lastPrefillConsumedAt = at
-      // 正在执行回合时不打断输入区（预填覆盖用户未发送的草稿）
-      if (this.isStreaming || this.sendRoutingLocks?.[this.currentChatId]) return
-      this.userInput = String(data.prompt)
-      if (data.autoSend) {
-        this.sendMessage()
-        return
-      }
-      this.$nextTick(() => {
-        try { this.$refs?.composerInputRef?.focus?.() } catch (_) { /* ignore */ }
-      })
-    },
     selectedModelName() {
       return this.selectedModel?.name || this.selectedModel?.modelId || (this.hasConfiguredChatModels ? '选择模型' : '配置模型')
     },
@@ -4798,7 +4773,9 @@ export default {
       })
       // 浏览态(无搜索):补齐全部领域标题,未加载的显示 manifest 计数、空 items,
       // 实现「先出分组、点开再加载助手」。已加载的领域沿用其真实 items。
-      if (!search) {
+      // 宿主助手模式（表格/演示）不追加 Writer 领域组——否则 29 个表格助手会被
+      // 200+ 个 Writer 行业域组淹没（2026-09-30 用户实测反馈"未按类型过滤"）。
+      if (!search && !this.hostAssistantMode) {
         DOMAIN_ORDER.forEach((domain) => {
           const meta = DOMAIN_MANIFEST[domain]
           if (!meta) return
@@ -5019,6 +4996,17 @@ export default {
     // 不派发该事件，且 taskpane webview 的 visibilityState 可能为 hidden（可见性
     // 感知间隔会拒启）——sync 极轻（属性读取+字符串比较），直接裸 interval
     this._scopeSyncTimer = setInterval(() => {
+      try {
+        // 宿主变化检测先行：面板单实例复用（Linux 切宿主标签不重挂载），宿主变了
+        // 必须重载助手列表（表格/演示配方集切换）+ 刷新模型选择
+        resetAddonTypeCache()
+        const host = detectAddonType()
+        if (host !== this._lastLoadedHost) {
+          this._lastLoadedHost = host
+          this.loadAssistantItems()
+          this.refreshModelSelection({ refreshWelcomePrompt: this.currentMessages.length === 0 })
+        }
+      } catch (_) { /* 忽略单次异常 */ }
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
       // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
       try { this.tryConsumeRibbonPrefillPrompt() } catch (_) { /* 忽略单次异常 */ }
@@ -7678,6 +7666,32 @@ export default {
         this.handleWindowFocus()
       }
     },
+    /**
+     * 消费 ribbon 常驻助手按钮写入的预填提示词（ai_chat_prefill_prompt）。
+     * 以 at 时间戳判重：面板已开时点击按钮 → 轮询通道 1.5s 内拾取；未开时
+     * 新面板 mount 首个 tick 拾取。只预填不发送（用户补充占位内容后发送）。
+     */
+    tryConsumeRibbonPrefillPrompt() {
+      let data = null
+      try {
+        const raw = window.Application?.PluginStorage?.getItem('ai_chat_prefill_prompt')
+        data = raw ? JSON.parse(raw) : null
+      } catch (_) { return }
+      const at = Number(data?.at || 0)
+      if (!data?.prompt || at <= Number(this._lastPrefillConsumedAt || 0)) return
+      this._lastPrefillConsumedAt = at
+      // 正在执行回合时不打断输入区（预填覆盖用户未发送的草稿）
+      if (this.isStreaming || this.sendRoutingLocks?.[this.currentChatId]) return
+      this.userInput = String(data.prompt)
+      if (data.autoSend) {
+        this.sendMessage()
+        return
+      }
+      this.$nextTick(() => {
+        try { this.$refs?.composerInputRef?.focus?.() } catch (_) { /* ignore */ }
+      })
+    },
+
     loadAssistantItems() {
       // 宿主分流（设计定稿）：表格宿主只见表格助手、演示宿主只见演示助手；
       // 文字宿主维持文档助手现状。助手 = 配方（hostAssistants.js），

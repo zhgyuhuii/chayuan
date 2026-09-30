@@ -115,6 +115,36 @@ export const HOST_ASSISTANT_PACKS = {
       description: '两列流水按规则核对并标出差异',
       prompt: '请帮我核对流水：说明数据范围与匹配规则（例如 A 列银行流水 与 D 列账面记录，按金额+日期匹配），逐行核对后在差异行标记"未匹配"，最后汇总差异数量与金额。数据范围与规则：'
     },
+    {
+      id: 'et-fin-invoice',
+      label: '发票整理',
+      shortLabel: '发票整理',
+      icon: '🧾',
+      group: '财务',
+      mode: 'prefill',
+      description: '发票明细规范化：日期/税额/金额列标准化',
+      prompt: '请规范当前发票明细表：日期列统一为 YYYY-MM-DD，金额/税额列转为数字并保留两位小数，校验金额=不含税金额+税额（公式校验列），标出异常行。数据范围与特殊说明：'
+    },
+    {
+      id: 'et-fin-statements',
+      label: '三大报表指标',
+      shortLabel: '报表指标',
+      icon: '📊',
+      group: '财务',
+      mode: 'prefill',
+      description: '资产负债表/利润表常用指标计算（公式写入）',
+      prompt: '请为当前财务报表计算常用指标（公式写入新区域）：流动比率、速动比率、资产负债率、毛利率、净利率。请先读取表结构确认科目位置再写公式。指标口径补充：'
+    },
+    {
+      id: 'et-fin-budget',
+      label: '预算差异表',
+      shortLabel: '预算差异',
+      icon: '📉',
+      group: '财务',
+      mode: 'prefill',
+      description: '预算 vs 实际差异表（差异额+差异率公式）',
+      prompt: '请生成预算 vs 实际差异分析表：读取预算列与实际列，新增差异额（实际-预算）与差异率（差异额/预算，百分比格式）公式列，超支 10% 以上的行标红提示。数据范围：'
+    },
     // ── 行业包：电商运营 ──
     {
       id: 'et-ec-sales',
@@ -136,6 +166,36 @@ export const HOST_ASSISTANT_PACKS = {
       description: '直播数据漏斗转化分析与提升建议',
       prompt: '请分析当前直播数据表：计算从观看到下单的漏斗转化率（曝光→进入→互动→下单→成交），找出转化率明显偏低的环节，给出 3 条可执行的提升建议。只读分析，不要修改表。'
     },
+    {
+      id: 'et-ec-competitor',
+      label: '竞品价格对比',
+      shortLabel: '竞品对比',
+      icon: '⚖️',
+      group: '电商运营',
+      mode: 'prefill',
+      description: '多店铺/平台同款价格对比表',
+      prompt: '请生成竞品价格对比表：读取当前价格数据，按 商品×平台 汇总最低价/最高价/均价（公式），标出我方价格高于竞品均价的项。数据范围：'
+    },
+    {
+      id: 'et-ec-comments',
+      label: '留言情绪归类',
+      shortLabel: '留言归类',
+      icon: '💬',
+      group: '电商运营',
+      mode: 'send',
+      description: '客户留言按好评/吐槽/咨询归类并计数',
+      prompt: '请读取当前客户留言列，按 好评/吐槽/售后咨询/其它 语义归类：新建汇总表统计各类数量与占比，并在原表标记每条留言的类别。'
+    },
+    {
+      id: 'et-ec-stock',
+      label: '进销存统计',
+      shortLabel: '进销存',
+      icon: '📦',
+      group: '电商运营',
+      mode: 'prefill',
+      description: '期初+入库-出库=库存 公式核算',
+      prompt: '请核算当前进销存表：库存列用公式 =期初+入库-出账（按实际列名适配），标出库存为负或低于安全库存（如 <50）的商品行。数据范围与安全库存：'
+    },
     // ── 行业包：HR ──
     {
       id: 'et-hr-roster',
@@ -147,7 +207,67 @@ export const HOST_ASSISTANT_PACKS = {
       description: '部门/职级/性别/司龄分布汇总表',
       prompt: '请统计当前员工花名册：按部门、职级、性别、司龄区间输出分布汇总表（新建工作表存放），并给出 3 条数据观察。'
     },
+    {
+      id: 'et-hr-attendance',
+      label: '考勤汇总',
+      shortLabel: '考勤汇总',
+      icon: '⏰',
+      group: 'HR',
+      mode: 'prefill',
+      description: '出勤天数/迟到/缺卡按人汇总',
+      prompt: '请按人汇总当前考勤明细：出勤天数、迟到次数、缺卡次数（COUNTIF 公式），输出汇总表并标出异常员工。数据范围与考勤规则：'
+    },
+    {
+      id: 'et-hr-payroll',
+      label: '薪酬核算',
+      shortLabel: '薪酬核算',
+      icon: '💵',
+      group: 'HR',
+      mode: 'prefill',
+      description: '应发=基本+绩效-社保公积金 公式核算',
+      prompt: '请核算当前薪酬表：应发工资 = 基本 + 绩效 - 社保 - 公积金（公式写入，数字由表格计算），按应发排序并输出汇总（总额/人均）。数据范围与口径：'
+    },
+    {
+      id: 'et-hr-recruit',
+      label: '招聘漏斗',
+      shortLabel: '招聘漏斗',
+      icon: '🫂',
+      group: 'HR',
+      mode: 'send',
+      description: '投递→初筛→面试→offer 录用转化统计',
+      prompt: '请统计当前招聘记录表：各阶段人数（投递/初筛/面试/Offer/录用）与阶段转化率，输出漏斗汇总表和转化率最低的环节。'
+    },
     // ── 行业包：销售 ──
+    {
+      id: 'et-sale-rank',
+      label: '业绩排名',
+      shortLabel: '业绩排名',
+      icon: '🥇',
+      group: '销售',
+      mode: 'send',
+      description: '按销售额排名 + RANK 公式列',
+      prompt: '请对当前销售表做业绩排名：新增排名列（RANK 公式），按销售额降序，输出 Top10 与全团队合计（SUM 公式）。'
+    },
+    {
+      id: 'et-sale-forecast',
+      label: '销售预测',
+      shortLabel: '销售预测',
+      icon: '🔮',
+      group: '销售',
+      mode: 'send',
+      description: '按历史月度趋势给出下月预测与依据',
+      prompt: '请按当前月度销售数据做下月预测：计算近三月移动平均与环比增长率，给出下月预测值（写公式或注明算法）与判断依据。只读分析。'
+    },
+    {
+      id: 'et-sale-follow',
+      label: '客户跟进整理',
+      shortLabel: '客户跟进',
+      icon: '📇',
+      group: '销售',
+      mode: 'send',
+      description: '跟进记录按客户汇总Latest状态',
+      prompt: '请把当前客户跟进记录按客户汇总：最近一次跟进日期、最新状态、未跟进天数（TODAY-最近日期公式），标出超 7 天未跟进的客户。'
+    },
     {
       id: 'et-sale-commission',
       label: '提成计算',
@@ -168,6 +288,26 @@ export const HOST_ASSISTANT_PACKS = {
       mode: 'send',
       description: '平均分/及格率/优秀率/分数段分布',
       prompt: '请统计当前成绩表：各科平均分、及格率、优秀率、分数段分布（新建统计表存放，统计值用公式），并列出需要关注的学生名单。'
+    },
+    {
+      id: 'et-edu-attendance',
+      label: '考勤统计',
+      shortLabel: '考勤统计',
+      icon: '📋',
+      group: '教育',
+      mode: 'send',
+      description: '学生出勤/请假次数统计表',
+      prompt: '请统计当前考勤表：每个学生的出勤/请假/迟到次数（COUNTIF 公式），输出汇总表并标出请假超 3 次的学生。'
+    },
+    {
+      id: 'et-edu-budget',
+      label: '家庭记账',
+      shortLabel: '家庭记账',
+      icon: '🏠',
+      group: '教育',
+      mode: 'prefill',
+      description: '家庭收支表+月度结余公式',
+      prompt: '请创建家庭记账表：表头 日期/类别/项目/收入/支出/结余（结余=上行结余+收入-支出 公式链），预填 5 行示例。类别侧重：'
     }
   ],
 
@@ -264,6 +404,26 @@ export const HOST_ASSISTANT_PACKS = {
       description: '履职/业绩/不足改进/来年计划',
       prompt: '请生成一份述职报告演示稿：岗位职责履行情况 / 主要业绩（用数据说话）/ 不足与改进 / 来年工作计划，共 8 页左右。我的岗位与职责：'
     },
+    {
+      id: 'wpp-gov-party',
+      label: '党建课件',
+      shortLabel: '党建课件',
+      icon: 'flag',
+      group: '政企汇报',
+      mode: 'prefill',
+      description: '党建学习课件：红色主题、严肃版式',
+      prompt: '请生成一份党建学习课件：红色主色调、庄重版式，结构为 学习主题 / 精神解读 / 要点摘录 / 实践要求 / 学习小结，共 8 页左右。学习主题与要求：'
+    },
+    {
+      id: 'wpp-gov-meeting',
+      label: '会议纪要页',
+      shortLabel: '会议纪要',
+      icon: '🗂️',
+      group: '政企汇报',
+      mode: 'prefill',
+      description: '会议纪要转决议/行动项页',
+      prompt: '请把以下会议内容生成会议纪要页（1-2 页）：会议基本信息 / 讨论要点 / 决议事项 / 行动项与责任人。会议内容：'
+    },
     // ── 行业包：销售提案 ──
     {
       id: 'wpp-sale-pitch',
@@ -274,6 +434,26 @@ export const HOST_ASSISTANT_PACKS = {
       mode: 'prefill',
       description: '痛点/方案/优势/案例/报价结构',
       prompt: '请生成一份产品提案演示稿：客户痛点 / 解决方案 / 核心优势 / 成功案例 / 报价与合作方式，共 10 页左右。产品信息：'
+    },
+    {
+      id: 'wpp-sale-competitor',
+      label: '竞品对比页',
+      shortLabel: '竞品对比',
+      icon: '⚔️',
+      group: '销售提案',
+      mode: 'prefill',
+      description: '我方 vs 竞品 对比矩阵页',
+      prompt: '请生成竞品对比页：用 table_add 做对比矩阵（维度：功能/价格/服务/交付），我方 vs 主要竞品 2 家。我方产品与竞品信息：'
+    },
+    {
+      id: 'wpp-sale-case',
+      label: '案例展示页',
+      shortLabel: '案例展示',
+      icon: '🏅',
+      group: '销售提案',
+      mode: 'prefill',
+      description: '客户案例：背景/方案/成效数据页',
+      prompt: '请生成客户案例展示页（每案例 1 页：客户背景 / 部署方案 / 成效数据）。案例信息：'
     },
     // ── 行业包：咨询方案 ──
     {
@@ -286,6 +466,26 @@ export const HOST_ASSISTANT_PACKS = {
       description: '背景-目标-举措-里程碑 四段式框架页',
       prompt: '请生成一份咨询方案框架演示稿：背景与问题 / 目标与口径 / 关键举措 / 里程碑与分工 四段式，每段 2-3 页。项目背景：'
     },
+    {
+      id: 'wpp-con-review',
+      label: '项目复盘',
+      shortLabel: '项目复盘',
+      icon: '🔄',
+      group: '咨询方案',
+      mode: 'prefill',
+      description: '目标达成/亮点/问题/改进 复盘页组',
+      prompt: '请生成项目复盘演示稿：目标达成情况 / 亮点与经验 / 问题与根因 / 改进措施 四部分，共 6-8 页。项目信息：'
+    },
+    {
+      id: 'wpp-con-bp',
+      label: '商业计划骨架',
+      shortLabel: '商业计划',
+      icon: '🧱',
+      group: '咨询方案',
+      mode: 'prefill',
+      description: 'BP 骨架：市场/产品/模式/团队/财务',
+      prompt: '请生成商业计划书骨架演示稿：市场分析 / 产品与服务 / 商业模式 / 团队 / 财务预测 / 融资计划，共 10 页左右（框架+要点占位）。项目：'
+    },
     // ── 行业包：教育培训 ──
     {
       id: 'wpp-edu-course',
@@ -296,6 +496,47 @@ export const HOST_ASSISTANT_PACKS = {
       mode: 'prefill',
       description: '知识点分页课件+小结页',
       prompt: '请生成一份教学课件：按知识点分页（每页一个知识点，含要点与示例），结尾加小结页与思考题。课程主题与受众：'
+    },
+    {
+      id: 'wpp-edu-defense',
+      label: '答辩模板',
+      shortLabel: '答辩模板',
+      icon: '🎓',
+      group: '教育培训',
+      mode: 'prefill',
+      description: '毕业答辩：选题/方法/结论/致谢',
+      prompt: '请生成毕业答辩演示稿：选题背景 / 研究方法 / 核心结论 / 创新点 / 致谢，共 8 页左右。论文题目与核心内容：'
+    },
+    {
+      id: 'wpp-edu-quiz',
+      label: '习题互动页',
+      shortLabel: '习题互动',
+      icon: '❓',
+      group: '教育培训',
+      mode: 'prefill',
+      description: '课堂习题页（题目+答案翻页）',
+      prompt: '请生成课堂习题页：题目页 2-3 页（每页 1-2 道题），每题后跟一页答案解析。科目与知识点：'
+    },
+    // ── 行业包：通用职场 ──
+    {
+      id: 'wpp-work-weekly',
+      label: '周报转汇报页',
+      shortLabel: '周报汇报页',
+      icon: '📅',
+      group: '通用职场',
+      mode: 'prefill',
+      description: '本周工作/下周计划 两页式',
+      prompt: '请把以下周报内容生成汇报页（2 页：本周工作 / 下周计划）。周报内容：'
+    },
+    {
+      id: 'wpp-work-actions',
+      label: '行动项页',
+      shortLabel: '行动项',
+      icon: '✅',
+      group: '通用职场',
+      mode: 'prefill',
+      description: '会议/复盘转行动项与责任人页',
+      prompt: '请生成行动项跟踪页（table_add 表格：事项/责任人/截止日/状态）。待办内容：'
     }
   ]
 }
