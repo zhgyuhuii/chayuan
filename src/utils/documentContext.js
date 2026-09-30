@@ -253,6 +253,84 @@ function getDocumentStats(doc, range, paragraphCount = 0) {
 
 export function getSelectionContextSnapshot(options = {}) {
   const app = getApplication()
+  // 宿主感知：表格/演示宿主没有 Writer 的 Selection/段落模型，返回各自的
+  // 轻上下文（工作簿名/活动表/已用区域规模、演示文稿名/页数），供提示词注入
+  if (app?.ActiveWorkbook && !app?.ActiveDocument) {
+    try {
+      const wb = app.ActiveWorkbook
+      const sheet = wb.ActiveSheet
+      const used = sheet?.UsedRange
+      const readAddressSafe = (o) => {
+        try { const a = o?.Address(); return typeof a === 'string' ? a : '' } catch { return '' }
+      }
+      let rows = 0
+      let cols = 0
+      try { rows = Number(used?.Rows?.Count || 0) } catch { /* ignore */ }
+      try { cols = Number(used?.Columns?.Count || 0) } catch { /* ignore */ }
+      return {
+        kind: 'workbook',
+        text: '',
+        selectionText: '',
+        currentParagraphText: '',
+        previousParagraphText: '',
+        nextParagraphText: '',
+        documentName: String(safeGet(() => wb.Name || '', '') || ''),
+        documentCharCount: rows * cols,
+        documentExcerpt: '',
+        documentStats: {
+          totalPages: 0, wordCount: 0, characterCount: rows * cols,
+          characterCountWithSpaces: 0, paragraphCount: 0, currentPage: 0
+        },
+        position: { hasSelection: false, rangeStart: 0, rangeEnd: 0, paragraphIndex: 0, paragraphCount: 0, paragraphLabel: '' },
+        formatting: {},
+        hostContext: {
+          type: 'et',
+          activeSheet: String(safeGet(() => sheet?.Name || '', '') || ''),
+          usedRange: readAddressSafe(used),
+          usedRows: rows,
+          usedCols: cols
+        }
+      }
+    } catch { /* 落到下方 unknown */ }
+  }
+  if (app?.ActivePresentation && !app?.ActiveDocument) {
+    try {
+      const pres = app.ActivePresentation
+      let slideCount = 0
+      try { slideCount = Number(pres.Slides?.Count || 0) } catch { /* ignore */ }
+      const titles = []
+      for (let i = 1; i <= Math.min(slideCount, 10); i++) {
+        try {
+          const shapes = pres.Slides.Item(i).Shapes
+          if (Number(shapes.HasTitle) !== 0) {
+            titles.push(`第${i}页:${String(shapes.Title.TextFrame.TextRange.Text || '').slice(0, 24)}`)
+          }
+        } catch { /* ignore */ }
+      }
+      return {
+        kind: 'presentation',
+        text: '',
+        selectionText: '',
+        currentParagraphText: '',
+        previousParagraphText: '',
+        nextParagraphText: '',
+        documentName: String(safeGet(() => pres.Name || '', '') || ''),
+        documentCharCount: slideCount,
+        documentExcerpt: '',
+        documentStats: {
+          totalPages: slideCount, wordCount: 0, characterCount: 0,
+          characterCountWithSpaces: 0, paragraphCount: 0, currentPage: 0
+        },
+        position: { hasSelection: false, rangeStart: 0, rangeEnd: 0, paragraphIndex: 0, paragraphCount: 0, paragraphLabel: '' },
+        formatting: {},
+        hostContext: {
+          type: 'wpp',
+          slideCount,
+          titles: titles.join('；')
+        }
+      }
+    } catch { /* 落到下方 unknown */ }
+  }
   const doc = app?.ActiveDocument
   const selection = getSelection()
   const range = getSelectionRange(selection)

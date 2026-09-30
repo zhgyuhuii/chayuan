@@ -23,6 +23,7 @@ import {
 } from './mcpHttpClient.js'
 import { createAgentCoreTransport } from './agentCoreTransport.js'
 import { createMcpDocumentSkill, normalizeTodoList } from './agentCoreSkill.js'
+import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
@@ -74,35 +75,65 @@ function isToolsUnsupportedError(message) {
   return TOOLS_UNSUPPORTED_RE.test(s)
 }
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos }) {
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps' }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
     .filter(t => t && t.status !== 'completed' && String(t?.content || '').trim())
+  const isEt = host === 'et'
+  const isWpp = host === 'wpp'
+  const targetNoun = isEt ? '工作簿' : isWpp ? '演示文稿' : '文档'
+  const hostDomainHint = isEt
+    ? '【表格工具】一律用 spreadsheet(action=…) 操作当前工作簿：读值 range_read / used_range，写值 range_write（values 二维数组，"=…" 自动成为公式），改外观 format（style 对象），结构 row_insert|column_insert|sheet_add|sheet_rename，排序筛选 sort|autofilter，图表 chart_add，导出 export(format=pdf|csv)。改数值严禁用 format；改外观严禁用 range_write。'
+    : isWpp
+      ? '【演示工具】一律用 presentation(action=…) 操作当前演示文稿：读 slide_list|slide_read|shape_list，改字 text_replace（全页查替）| text_set（需 shapeIndex），加页 slide_add（layout: title|text|titleOnly|blank），插对象 textbox_add|picture_add|table_add（单位磅），删/复制/移页 slide_delete|slide_duplicate|slide_move，导出 export(format=pdf|images)，放映 slideshow_run。'
+      : '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。'
   const lines = [
-    '你是察元助手页内的文档智能体。通过 MCP 工具操作当前文档与其它已配置的 HTTP MCP 服务。',
+    `你是察元助手页内的${hostLabel(host)}宿主文档智能体。通过 MCP 工具操作当前${targetNoun}与其它已配置的 HTTP MCP 服务。`,
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
-    '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
-    '禁止调用 declassify_*。写操作直接执行（confirmed 由系统自动处理）；较大范围的修改可先 dryRun/预览再落笔。',
-    '【仅当前文档】所有编写、输入、改写和排版都在当前打开的文档中完成。禁止新建空白文档、从模板另开文档、打开临时文件、切换活动文档或启动/重启应用；不得借助其它 MCP 服务绕过。用户要求写一篇文章或生成文档，不等于授权创建窗口；即使明确要求新建，也请用户手动新建并打开后再继续。',
-    '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
-    '【没有文档或桥接失败】当前没有打开文档时停止文档操作，提示用户手动打开目标文档后重试；工具失败不得以新建、重新打开文档或重启宿主作为恢复手段。',
+    isEt || isWpp
+      ? `优先使用 chayuan__${isEt ? 'spreadsheet' : 'presentation'} 工具完成任务；可用 assistants_search / assistants_get 获取助手配方。`
+      : '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
+    '禁止调用 declassify_*。写操作直接执行（confirmed 由系统自动处理）；较大范围的修改可先预览再落笔。',
+    `【仅当前${targetNoun}】所有操作都在当前打开的${targetNoun}中完成。禁止新建文件、从模板另开文件、打开临时文件、切换活动对象或启动/重启应用；不得借助其它 MCP 服务绕过。用户要求生成内容，不等于授权创建窗口；即使明确要求新建，也请用户手动新建并打开后再继续。`,
+    isEt
+      ? '【写值落点】先用 spreadsheet(action=used_range 或 range_read) 确认现状与落点，再 range_write 写入；空白表直接从 A1（或用户指定单元格）写，有数据时保留原数据、写到用户指定区域或数据末尾下方，不得先清空已有数据。'
+      : isWpp
+        ? '【改字落点】先用 presentation(action=slide_read) 定位页与形状，再 text_set/text_replace 修改；新增内容用 textbox_add/slide_add，不得清空已有页。'
+        : '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
+    `【没有${targetNoun}或桥接失败】当前没有打开${targetNoun}时停止操作，提示用户手动打开目标文件后重试；工具失败不得以新建、重新打开文件或重启宿主作为恢复手段。`,
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
-    '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。',
-    '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。',
-    '【排版前先读】查每段字体/字号/样式/对齐/行距现状（只读）→ format_read（scope=document 或锚点；granularity=runs 看段内混排明细）；设置才用 format_run/format_para/style。用户给出排版规范（如「按438c/公文格式」）时：format_read 摸清现状 → 逐类 format_apply_ops/style 批量设置 → format_read 复核。',
-    '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。',
-    '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。',
+    host === 'wps'
+      ? '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。'
+      : '',
+    host === 'wps'
+      ? '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。'
+      : '',
+    host === 'wps'
+      ? '【排版前先读】查每段字体/字号/样式/对齐/行距现状（只读）→ format_read（scope=document 或锚点；granularity=runs 看段内混排明细）；设置才用 format_run/format_para/style。用户给出排版规范（如「按438c/公文格式」）时：format_read 摸清现状 → 逐类 format_apply_ops/style 批量设置 → format_read 复核。'
+      : '',
+    host === 'wps'
+      ? '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。'
+      : '',
+    host === 'wps'
+      ? '【批注/修订】comment(action=list|add|delete) / revision(action=mode|list|apply)；写操作 confirmed:true。'
+      : '',
     pendingPrev.length
       ? `【沿用清单】上一轮任务清单尚有未完成项：${pendingPrev.map(t => t.content).join('；')}。把 todo_write 重建该清单（用户已确认/已完成的部分标 completed，本轮要做的第一项置 in_progress）与本轮第一个真实工具调用同轮并行提交，沿用原清单继续执行，不要另立新清单。`
       : '',
-    '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。',
-    '【改正正文·流程】proofread_run 返回后汇总问题；按用户选择走「写成批注」(proofread_apply_comments) 或「改正正文」出口，不要只用批注交差。',
-    '【需要通读全文（翻译 / 改写 / 摘要）才用 document_chunks】每次 limit:8 尽量多读，cursor 只前进、不回退、不重读已读段落；读够立即停，把轮次留给写作工具，而不是反复分页。',
-    hasSel
-      ? `当前有选区（约 ${sel.charCount || '?'} 字）。用户提到「这段/选中」时，scope 用 selection。选区摘要：${String(sel.preview || '').slice(0, 240)}`
-      : '当前无选区，默认 scope=document。',
-    sel.fileName ? `当前文档：${sel.fileName}` : '',
+    hostDomainHint,
+    host === 'wps'
+      ? '【改正正文·流程】proofread_run 返回后汇总问题；按用户选择走「写成批注」(proofread_apply_comments) 或「改正正文」出口，不要只用批注交差。'
+      : '',
+    host === 'wps'
+      ? '【需要通读全文（翻译 / 改写 / 摘要）才用 document_chunks】每次 limit:8 尽量多读，cursor 只前进、不回退、不重读已读段落；读够立即停，把轮次留给写作工具，而不是反复分页。'
+      : '',
+    host === 'wps'
+      ? (hasSel
+          ? `当前有选区（约 ${sel.charCount || '?'} 字）。用户提到「这段/选中」时，scope 用 selection。选区摘要：${String(sel.preview || '').slice(0, 240)}`
+          : '当前无选区，默认 scope=document。')
+      : '',
+    sel.fileName ? `当前文件：${sel.fileName}` : '',
     kbBound ? '用户已绑定知识库：需要事实依据时先 chayuan__kb_retrieve。' : '',
     proofreadIntent === 'fix' ? '本轮用户意图偏「改正正文」。' : '',
     proofreadIntent === 'check' ? '本轮用户意图偏「检查/批注」。' : ''
@@ -280,8 +311,9 @@ export async function runMcpChatOrchestrator({
       pushStep(`跳过 ${server.name || server.id}`, r.error.message || String(r.error))
       continue
     }
+    const host = detectAddonType()
     for (const t of r.tools) {
-      if (server.id === CHAYUAN_SERVER_ID && !isChayuanToolAllowed(t.name)) continue
+      if (server.id === CHAYUAN_SERVER_ID && !isChayuanToolAllowed(t.name, host)) continue
       mergedTools.push({
         name: namespaceToolName(server.id, t.name),
         description: `[${server.name}] ${t.description || t.name}`,
@@ -307,7 +339,8 @@ export async function runMcpChatOrchestrator({
   if (signal?.aborted) throw abortError()
 
   const proofreadIntent = inferProofreadIntent(userText)
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos })
+  const host = detectAddonType()
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host })
   const seed = seedHistoryFrom(historyMessages)
   let proofreadCard = null
 

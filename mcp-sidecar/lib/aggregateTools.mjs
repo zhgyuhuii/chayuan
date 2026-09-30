@@ -159,6 +159,48 @@ export function resolveAggregateCall(toolName, args = {}) {
     },
     export: {
       file: { method: 'document.export', args: rest, requireConfirmed: true }
+    },
+    spreadsheet: {
+      status: { method: 'spreadsheet.status', args: rest },
+      sheet_list: { method: 'spreadsheet.sheet_list', args: rest },
+      sheet_add: { method: 'spreadsheet.sheet_add', args: rest, requireConfirmed: true },
+      sheet_rename: { method: 'spreadsheet.sheet_rename', args: rest, requireConfirmed: true },
+      sheet_delete: { method: 'spreadsheet.sheet_delete', args: rest, requireConfirmed: true },
+      used_range: { method: 'spreadsheet.used_range', args: rest },
+      range_read: { method: 'spreadsheet.range_read', args: rest },
+      range_write: { method: 'spreadsheet.range_write', args: rest, requireConfirmed: true },
+      find: { method: 'spreadsheet.find', args: rest },
+      find_replace: { method: 'spreadsheet.find_replace', args: rest, requireConfirmed: true },
+      row_insert: { method: 'spreadsheet.row_insert', args: rest, requireConfirmed: true },
+      row_delete: { method: 'spreadsheet.row_delete', args: rest, requireConfirmed: true },
+      column_insert: { method: 'spreadsheet.column_insert', args: rest, requireConfirmed: true },
+      column_delete: { method: 'spreadsheet.column_delete', args: rest, requireConfirmed: true },
+      sort: { method: 'spreadsheet.sort', args: rest, requireConfirmed: true },
+      autofilter: { method: 'spreadsheet.autofilter', args: rest, requireConfirmed: true },
+      format: { method: 'spreadsheet.format', args: rest, requireConfirmed: true },
+      chart_add: { method: 'spreadsheet.chart_add', args: rest, requireConfirmed: true },
+      chart_list: { method: 'spreadsheet.chart_list', args: rest },
+      chart_export: { method: 'spreadsheet.chart_export', args: rest, requireConfirmed: true },
+      export: { method: 'spreadsheet.export', args: rest, requireConfirmed: true }
+    },
+    presentation: {
+      status: { method: 'presentation.status', args: rest },
+      slide_list: { method: 'presentation.slide_list', args: rest },
+      slide_read: { method: 'presentation.slide_read', args: rest },
+      shape_list: { method: 'presentation.shape_list', args: rest },
+      slide_add: { method: 'presentation.slide_add', args: rest, requireConfirmed: true },
+      slide_delete: { method: 'presentation.slide_delete', args: rest, requireConfirmed: true },
+      slide_duplicate: { method: 'presentation.slide_duplicate', args: rest, requireConfirmed: true },
+      slide_move: { method: 'presentation.slide_move', args: rest, requireConfirmed: true },
+      slide_layout: { method: 'presentation.slide_layout', args: rest, requireConfirmed: true },
+      text_replace: { method: 'presentation.text_replace', args: rest, requireConfirmed: true },
+      text_set: { method: 'presentation.text_set', args: rest, requireConfirmed: true },
+      textbox_add: { method: 'presentation.textbox_add', args: rest, requireConfirmed: true },
+      picture_add: { method: 'presentation.picture_add', args: rest, requireConfirmed: true },
+      table_add: { method: 'presentation.table_add', args: rest, requireConfirmed: true },
+      slideshow_run: { method: 'presentation.slideshow_run', args: rest, requireConfirmed: true },
+      export: { method: 'presentation.export', args: rest, requireConfirmed: true },
+      slide_export_image: { method: 'presentation.slide_export_image', args: rest, requireConfirmed: true }
     }
   }
 
@@ -192,7 +234,9 @@ export const AGGREGATE_TOOL_NAMES = [
   'headerfooter',
   'watermark',
   'style',
-  'export'
+  'export',
+  'spreadsheet',
+  'presentation'
 ]
 
 export const AGGREGATE_TOOLS = [
@@ -607,6 +651,96 @@ export const AGGREGATE_TOOLS = [
         path: { type: 'string' },
         format: { type: 'string', enum: ['docx', 'pdf', 'doc'] },
         confirmed: { type: 'boolean' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'spreadsheet',
+    description: [
+      'WHAT: WPS 表格(ET/Spreadsheet) domain — operates the ACTIVE WORKBOOK in the WPS Spreadsheets host. status / sheet management (sheet_list|sheet_add|sheet_rename|sheet_delete) / cell IO (used_range|range_read|range_write) / search (find|find_replace) / structure (row_insert|row_delete|column_insert|column_delete) / sort|autofilter / format / charts (chart_add|chart_list|chart_export) / export (pdf|csv).',
+      'WHEN: user asks anything about 表格/Excel/工作簿/单元格/sheet/公式/图表 while WPS 表格 is the host, e.g. 「把A1写入姓名」「读取A1:C10」「按B列降序排序」「给表头加底色」「做个柱状图」「导出PDF/CSV」.',
+      'NOT: Not for tables inside a Writer document (use table). Not for reading files without WPS. range_write replaces cell values — it does not append; read first, then write.',
+      'HOW: Ranges are A1 notation ("A1:C10"). range_write takes values as 2-D array + startCell (default A1); strings starting with "=" are written as formulas. format takes style {bold,italic,fontSize,fontName,fontColor,bgColor,numberFormat,align,wrapText,border,merge,columnWidth,rowHeight} with hex colors ("#FF0000"). Writes need confirmed=true (preview returned first without it). Large sheets: read in batches (≤50000 cells/call), write in batches (≤5000 cells/call fallback).',
+      'EXAMPLE: {"action":"status"} ; {"action":"range_read","range":"A1:C10"} ; {"action":"range_write","startCell":"A1","values":[["姓名","分数"],["张三",90]],"confirmed":true} ; {"action":"sort","range":"A1:C20","keyColumn":2,"order":"desc","header":true,"confirmed":true} ; {"action":"format","range":"A1:C1","style":{"bold":true,"bgColor":"#DDEBF7"},"confirmed":true} ; {"action":"chart_add","dataRange":"A1:B10","type":"column","title":"月度销量","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action'],
+      properties: {
+        action: { type: 'string', enum: ['status', 'sheet_list', 'sheet_add', 'sheet_rename', 'sheet_delete', 'used_range', 'range_read', 'range_write', 'find', 'find_replace', 'row_insert', 'row_delete', 'column_insert', 'column_delete', 'sort', 'autofilter', 'format', 'chart_add', 'chart_list', 'chart_export', 'export'] },
+        confirmed: { type: 'boolean' },
+        sheet: { type: ['string', 'number'], description: '工作表名称或 1-based 序号；缺省=活动表' },
+        range: { type: 'string', description: 'A1 记法区域，如 A1:C10；缺省=UsedRange' },
+        startCell: { type: 'string', description: 'range_write 起始单元格（默认 A1）' },
+        values: { type: 'array', items: { type: 'array' }, description: 'range_write 二维数组；"=..." 写为公式' },
+        asFormula: { type: 'boolean' },
+        what: { type: 'string', description: 'find/find_replace 查找内容' },
+        replace: { type: 'string', description: 'find_replace 替换为' },
+        whole: { type: 'boolean', description: 'find/find_replace 整格匹配（默认部分匹配）' },
+        row: { type: 'number' }, col: { type: 'number' }, count: { type: 'number' },
+        name: { type: 'string', description: 'sheet_add/sheet_rename 目标名（≤31 字符）' },
+        index: { type: 'number', description: 'sheet_add 插入位次 / chart 定位' },
+        keyColumn: { type: 'number', description: 'sort 关键列（工作表绝对列号，D 列=4）' },
+        order: { type: 'string', enum: ['asc', 'desc'] },
+        header: { type: 'boolean', description: 'sort 首行是否表头' },
+        field: { type: 'number', description: 'autofilter 列（区域内 1-based）' },
+        criteria: { type: 'string' },
+        style: {
+          type: 'object',
+          description: 'format 样式对象',
+          properties: {
+            bold: { type: 'boolean' }, italic: { type: 'boolean' }, underline: { type: 'boolean' },
+            fontSize: { type: 'number' }, fontName: { type: 'string' },
+            fontColor: { type: 'string' }, bgColor: { type: 'string' },
+            numberFormat: { type: 'string' }, align: { type: 'string', enum: ['left', 'center', 'right'] },
+            wrapText: { type: 'boolean' }, border: { type: 'string', enum: ['thin', 'none'] },
+            merge: { type: 'boolean' },
+            columnWidth: { type: 'number', description: '列宽（字符单位，ET 官方口径）' },
+            rowHeight: { type: 'number', description: '行高（磅）' }
+          }
+        },
+        dataRange: { type: 'string', description: 'chart_add 数据区域（A1 记法）' },
+        type: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'line', 'pie', 'doughnut', 'scatter', 'area', 'radar'], description: 'chart_add 图表类型（默认 column）' },
+        title: { type: 'string' },
+        left: { type: 'number' }, top: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' },
+        format: { type: 'string', enum: ['pdf', 'csv'], description: 'export 格式；csv 走已用区域序列化' },
+        path: { type: 'string', description: '导出绝对路径' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'presentation',
+    description: [
+      'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add) / slideshow_run / export (pdf|images) / slide_export_image.',
+      'WHEN: user asks anything about PPT/幻灯片/演示文稿/slides while WPS 演示 is the host, e.g. 「加一页标题页」「把第2页的错别字改掉」「插入图片」「导出PDF」「开始放映」.',
+      'NOT: Not for Word documents. Text edits need shapeIndex (slide_read/shape_list first).',
+      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). textbox_add/picture_add/table_add use points; defaults center-ish.',
+      'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"text_replace","index":2,"find":"去年","replace":"本年度","confirmed":true} ; {"action":"picture_add","index":3,"path":"/Users/me/Desktop/logo.png","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action'],
+      properties: {
+        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'slideshow_run', 'export', 'slide_export_image'] },
+        confirmed: { type: 'boolean' },
+        index: { type: 'number', description: '幻灯片序号（1-based；缺省=最后一页或活动页视 action 而定）' },
+        from: { type: 'number' }, to: { type: 'number' },
+        layout: { type: 'string', description: '版式名 title|text|twoText|table|chart|titleOnly|blank 或 ppLayout 数字' },
+        title: { type: 'string' }, content: { type: 'string' },
+        find: { type: 'string' }, replace: { type: 'string' },
+        shapeIndex: { type: 'number' }, text: { type: 'string' }, append: { type: 'boolean' },
+        fontSize: { type: 'number' }, color: { type: 'string' },
+        path: { type: 'string', description: 'picture_add 图片路径 / export 导出路径' },
+        rows: { type: 'number' }, cols: { type: 'number' },
+        data: { type: 'array', items: { type: 'array' }, description: 'table_add 单元格文本二维数组' },
+        format: { type: 'string', enum: ['pdf', 'images'] },
+        width: { type: 'number' }, height: { type: 'number' }
       }
     }
   })

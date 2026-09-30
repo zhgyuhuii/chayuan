@@ -93,6 +93,10 @@ import {
 } from './objectStructureDispatch.js'
 import { activateHostWindow } from '../../utils/windowActivation.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
+import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
+import { handleSpreadsheetAction, SPREADSHEET_WRITE_ACTIONS } from './spreadsheetDispatch.js'
+import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presentationDispatch.js'
+import { getHostActiveObjectId } from './hostDispatch.js'
 
 /** Bring opened doc + WPS main window to foreground (Open alone often leaves UI hidden/behind). */
 function revealOpenedDocument(activate = true) {
@@ -142,17 +146,31 @@ function getUiVisibility() {
 function getActiveDocumentInfo() {
   try {
     const app = window.Application
-    const doc = app?.ActiveDocument
     const ui = getUiVisibility()
-    if (!doc) return { open: false, ui }
-    return {
-      open: true,
-      name: String(doc.Name || ''),
-      fullName: String(doc.FullName || ''),
-      saved: !!doc.Saved,
-      addonType: 'wps',
-      ui
+    const host = detectAddonType()
+    // 宿主感知：按当前宿主读取活动对象（window.Application 即宿主根对象）
+    const probe = (get, fields) => {
+      try {
+        const obj = get()
+        if (!obj) return null
+        const out = { open: true }
+        for (const [key, get2] of Object.entries(fields)) {
+          out[key] = get2(obj)
+        }
+        return out
+      } catch (e) {
+        return { open: false, error: e?.message || String(e) }
+      }
     }
+    const identity = (o) => String(o.FullName || o.Name || '')
+    const info =
+      host === 'et'
+        ? probe(() => app?.ActiveWorkbook, { name: (o) => String(o.Name || ''), fullName: identity, saved: (o) => !!o.Saved, sheetCount: (o) => Number(o.Worksheets?.Count || 0), activeSheet: (o) => String(o.ActiveSheet?.Name || '') })
+        : host === 'wpp'
+          ? probe(() => app?.ActivePresentation, { name: (o) => String(o.Name || ''), fullName: identity, saved: (o) => !!o.Saved, slideCount: (o) => Number(o.Slides?.Count || 0) })
+          : probe(() => app?.ActiveDocument, { name: (o) => String(o.Name || ''), fullName: identity, saved: (o) => !!o.Saved })
+    if (!info) return { open: false, ui, addonType: host }
+    return { ...info, ui, addonType: host }
   } catch (e) {
     return { open: false, error: e?.message || String(e), ui: getUiVisibility() }
   }
@@ -445,6 +463,20 @@ const DOC_WRITE_METHODS = new Set([
 ])
 
 /**
+ * 写方法判定：Writer 白名单 + 表格/演示 action 集合（前缀路由）。
+ */
+function isWriteMethod(method) {
+  if (DOC_WRITE_METHODS.has(method)) return true
+  if (method.startsWith('spreadsheet.')) {
+    return SPREADSHEET_WRITE_ACTIONS.has(method.slice('spreadsheet.'.length))
+  }
+  if (method.startsWith('presentation.')) {
+    return PRESENTATION_WRITE_ACTIONS.has(method.slice('presentation.'.length))
+  }
+  return false
+}
+
+/**
  * @param {{ method: string, params?: any }} job
  */
 // Re-entrancy guard: prevents concurrent dispatchMcpJob calls from interleaving
@@ -467,7 +499,7 @@ export async function dispatchMcpJob(job = {}) {
   const method = String(job.method || '')
   const reqId = ++_jobLogSeq
   const startedAt = Date.now()
-  const isWrite = DOC_WRITE_METHODS.has(method)
+  const isWrite = isWriteMethod(method)
   logEvent('job_start', { reqId, method, write: isWrite })
   const jobEndLog = (outcome, extra = {}) => {
     logEvent('job_end', {
@@ -487,12 +519,15 @@ export async function dispatchMcpJob(job = {}) {
     const expectDocId = params.__expectedDocId
     delete params.__expectedDocId
     if (expectDocId !== undefined) {
-      const doc = window.Application?.ActiveDocument
-      if (!expectDocId || !doc) {
-        throw Object.assign(new Error('当前没有可写的目标文档，请手动打开文档后重新发送指令。'), { code: 'NO_ACTIVE_DOCUMENT' })
+      // 宿主感知身份校验：文字/表格/演示分别对 ActiveDocument/ActiveWorkbook/
+      // ActivePresentation 比对，防止排队期间切档/切簿/切稿后写错对象
+      const activeId = getHostActiveObjectId()
+      const host = detectAddonType()
+      if (!expectDocId || !activeId) {
+        throw Object.assign(new Error(`当前没有可写的目标${host === 'et' ? '工作簿' : host === 'wpp' ? '演示文稿' : '文档'}，请手动打开后重新发送指令。`), { code: 'NO_ACTIVE_DOCUMENT' })
       }
-      if (String(doc.FullName || doc.Name || '') !== expectDocId) {
-        throw Object.assign(new Error('活动文档已切换，本回合仍绑定原文档，已停止操作以免写入其它文档。'), { code: 'DOC_SWITCHED' })
+      if (activeId !== expectDocId) {
+        throw Object.assign(new Error(`活动${hostLabel(host)}对象已切换，本回合仍绑定原对象，已停止操作以免写入其它文件。`), { code: 'DOC_SWITCHED' })
       }
     }
     if (isWrite) {
@@ -525,6 +560,13 @@ export async function dispatchMcpJob(job = {}) {
 }
 
 async function dispatchMcpJobInner(method, params) {
+  // 表格/演示宿主工具：前缀路由（agentHub 已按宿主投递，这里双保险再按 action 分发）
+  if (method.startsWith('spreadsheet.')) {
+    return handleSpreadsheetAction(method.slice('spreadsheet.'.length), params)
+  }
+  if (method.startsWith('presentation.')) {
+    return handlePresentationAction(method.slice('presentation.'.length), params)
+  }
   switch (method) {
     case 'wps.status':
       return {
@@ -532,7 +574,7 @@ async function dispatchMcpJobInner(method, params) {
         addonVersion: getAddonVersion(),
         agentOnline: true,
         document: getActiveDocumentInfo(),
-        addonType: 'wps'
+        addonType: detectAddonType()
       }
     case 'document.get_text':
       return handleDocumentGetTextGuarded(params)

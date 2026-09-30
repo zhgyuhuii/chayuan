@@ -200,7 +200,9 @@ async function launchWpsAndWait(params = {}) {
     }
   }
   const exe = params.exe || mcpServerMeta.config.wpsExecutable || findWpsExecutable(mcpServerMeta.file)
-  const spawned = launchWps(exe)
+  // host: 'wps'|'et'|'wpp' —— wps_launch 可指定拉起表格/演示组件（agentHub 按
+  // 宿主分槽后，需要对应宿主的执行者在线才能操作 ET/WPP）
+  const spawned = launchWps(exe, { host: params.host })
   if (!spawned.ok) {
     const err = new Error(spawned.error || 'WPS_SPAWN_FAILED')
     err.code = spawned.code || 'WPS_SPAWN_FAILED'

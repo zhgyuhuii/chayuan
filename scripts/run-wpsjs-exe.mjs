@@ -62,21 +62,43 @@ function sfxConfigBuffer(displayName) {
 /**
  * Windows 离线包 publish.xml：必须用 enable_dev（与官方 wpsjs CreatePublishXml 一致）。
  * enable=enable 在部分 Windows WPS 下不会加载本地 jsaddons 目录。
+ * 多宿主：主宿主 + 表格(et)/演示(wpp) 各一条，各指自己的目录（与 .pkg 产物同构）。
  */
 function publishXmlForWindowsOffline(pkg) {
 	const type = pkg.addonType || 'wps'
+	const entries = [
+		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable_dev" install="null" customDomain=""/>`,
+	]
+	for (const suffix of ['et', 'wpp']) {
+		entries.push(
+			`    <jsplugin name="${pkg.name}-${suffix}" type="${suffix}" url="${pkg.name}-${suffix}_${pkg.version}" version="${pkg.version}" enable="enable_dev" install="null" customDomain=""/>`
+		)
+	}
 	return Buffer.from(
 		`<?xml version="1.0" encoding="UTF-8"?>\n` +
 			`<jsplugins>\n` +
-			`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="enable_dev" install="null" customDomain=""/>\n` +
-			`</jsplugins>\n`,
+			entries.join('\n') +
+			`\n</jsplugins>\n`,
 		'utf-8'
 	)
 }
 
 /** 目标机执行的安装脚本：纯 ASCII，避免 CP936 下 UTF-8 中文拆坏命令。 */
-function buildCopyBat(pkg) {
+function buildCopyBat(pkg, hostFolders = []) {
 	const folder = `${pkg.name}_${pkg.version}`
+	const hostNames = hostFolders.map((h) => `${pkg.name}-${h}_${pkg.version}`)
+	// Replace-install cleanup: drop every chayuan/chayuan-et/chayuan-wpp version dir
+	// that is not one of the three just installed. Keep every character ASCII.
+	const rmOld = `
+echo cleaning old versions...>> "%LOG%"
+for /d %%D in ("%destination_folder%\\${pkg.name}_*") do call :rmold "%%~nxD"
+for /d %%D in ("%destination_folder%\\${pkg.name}-et_*") do call :rmold "%%~nxD"
+for /d %%D in ("%destination_folder%\\${pkg.name}-wpp_*") do call :rmold "%%~nxD"
+`
+	const copyBlocks = [`xcopy /E /I /Y /Q "${folder}" "%destination_folder%\\${folder}" >> "%LOG%" 2>&1`, `if errorlevel 1 goto :fail_addon`]
+	for (const hf of hostNames) {
+		copyBlocks.push(`if exist "${hf}" xcopy /E /I /Y /Q "${hf}" "%destination_folder%\\${hf}" >> "%LOG%" 2>&1`, `if errorlevel 1 goto :fail_addon`)
+	}
 	// Keep every character ASCII. Chinese comments here WILL break cmd.exe on CP936.
 	return Buffer.from(
 		`@echo off
@@ -96,9 +118,8 @@ if errorlevel 1 goto :fail_mkdir
 if not exist "%destination_folder%\\%source_folder%" mkdir "%destination_folder%\\%source_folder%"
 
 echo copying addon...>> "%LOG%"
-xcopy /E /I /Y /Q "%source_folder%" "%destination_folder%\\%source_folder%" >> "%LOG%" 2>&1
-if errorlevel 1 goto :fail_addon
-
+${copyBlocks.join('\n')}
+${rmOld}
 echo copying publish.xml...>> "%LOG%"
 copy /Y "publish.xml" "%destination_folder%\\publish.xml" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail_publish
@@ -121,6 +142,14 @@ echo Install OK. Please fully quit and restart WPS.
 echo Log: %LOG%
 ping -n 4 127.0.0.1 >nul
 exit /b 0
+
+:rmold
+rem replace-install: keep the three dirs of THIS build only
+if /i "%~1"=="${folder}" goto :eof
+` +
+			hostNames.map((hf) => `if /i "%~1"=="${hf}" goto :eof\n`).join('') +
+			`rmdir /s /q "%destination_folder%\\%~1" >> "%LOG%" 2>&1
+goto :eof
 
 :fail_mkdir
 echo FAILED: cannot create jsaddons dir>> "%LOG%"
@@ -198,10 +227,27 @@ async function main() {
 		// 排除 mcp-sidecar/bin（平台相关二进制由 copy.bat 单独释放到 %LOCALAPPDATA%）
 		filter: (src) => !src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`)
 	})
-	// Windows exe 专用 publish.xml（enable_dev），不复用 staging 里可能给 Linux 用的 enable
+	// 多宿主目录（表格/演示）：同样打包（各自的宿主 ribbon，不含 sidecar）
+	const hostAddons = []
+	try {
+		hostAddons.push(...(JSON.parse(fs.readFileSync(path.join(staging, 'install.json'), 'utf8')).hostAddons || []))
+	} catch { /* ignore */ }
+	const hostSuffixes = []
+	const hostDirs = []
+	for (const h of hostAddons) {
+		const hostSrc = path.join(staging, h.addonFolder)
+		if (!fs.existsSync(hostSrc)) continue
+		const hostDst = path.join(tmp, h.addonFolder)
+		fsEx.copySync(hostSrc, hostDst, {
+			filter: (src) => !src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`)
+		})
+		hostSuffixes.push(h.type)
+		hostDirs.push(hostDst)
+	}
+	// Windows exe 专用 publish.xml（enable_dev + 三宿主条目），不复用 staging 里可能给 Linux 用的 enable
 	fs.writeFileSync(path.join(tmp, 'publish.xml'), publishXmlForWindowsOffline(pkg))
 	fs.copyFileSync(SIDECAR_EXE, path.join(tmp, SIDECAR_EXE_NAME))
-	fs.writeFileSync(path.join(tmp, 'copy.bat'), buildCopyBat(pkg))
+	fs.writeFileSync(path.join(tmp, 'copy.bat'), buildCopyBat(pkg, hostSuffixes))
 
 	// 4. 7z 压缩载荷
 	const archive7z = path.join(tmp, `${name}.7z`)
@@ -211,6 +257,7 @@ async function main() {
 		path.join(tmp, 'publish.xml'),
 		path.join(tmp, SIDECAR_EXE_NAME),
 		addonDst,
+		...hostDirs,
 	])
 
 	// 5. 拼接 SFX：一次写完，避免 WriteStream 多次 write 大缓冲时截断

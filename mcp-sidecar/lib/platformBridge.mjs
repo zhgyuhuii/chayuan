@@ -90,16 +90,36 @@ export function findWpsExecutable(mcpServerJsonPath) {
 }
 
 /**
- * Launch WPS Writer (best-effort). Returns { ok, pid?, exe, error? }
+ * Launch WPS (best-effort). host: 'wps' | 'et' | 'wpp' — 选择拉起的组件入口。
+ * Windows/Linux 走统一启动器带 /prometheus /{wps|et|wpp}；mac 用 `open --args`
+ * 传同样开关（仅当 WPS 未运行时生效，已运行则只激活，best-effort）。
+ * Returns { ok, pid?, exe, error? }
  */
-export function launchWps(exePath, { args } = {}) {
+export function launchWps(exePath, { args, host } = {}) {
+  const normalizedHost = host === 'et' || host === 'wpp' ? host : 'wps'
+
+  if (process.platform === 'darwin' && normalizedHost !== 'wps' && !(Array.isArray(args) && args.length)) {
+    try {
+      const openArgs = ['-a', 'wpsoffice', '--args', '/prometheus', normalizedHost === 'et' ? '/et' : '/wpp']
+      const child = spawn('open', openArgs, { detached: true, stdio: 'ignore' })
+      child.unref()
+      return { ok: true, pid: child.pid, exe: 'open', args: openArgs }
+    } catch {
+      // open 失败回落到直接 spawn（exePath 在 mac 上是 wpsoffice 可执行）
+    }
+  }
+
   const exe = normalizePath(exePath)
   if (!exe || !fs.existsSync(exe)) {
     return { ok: false, code: 'WPS_EXECUTABLE_NOT_FOUND', error: 'WPS executable not found' }
   }
   const launchArgs = Array.isArray(args) && args.length
     ? args
-    : (process.platform === 'win32' ? ['/prometheus', '/wps'] : [])
+    : (process.platform === 'win32'
+        ? ['/prometheus', normalizedHost === 'et' ? '/et' : normalizedHost === 'wpp' ? '/wpp' : '/wps']
+        : (process.platform === 'linux' && normalizedHost !== 'wps')
+          ? ['/prometheus', normalizedHost === 'et' ? '/et' : '/wpp']
+          : [])
 
   try {
     const child = spawn(exe, launchArgs, {

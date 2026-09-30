@@ -17,8 +17,9 @@ import {
 import { callLocalTool, callUpstreamTool } from './mcpHttpClient.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
+import { detectAddonType } from '../../utils/host/hostType.js'
 
-const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export)$/
+const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export|spreadsheet|presentation)$/
 
 // 聚合域工具（名字=工具，action 区分读写）的只读 action：不注入 confirmed、
 // 不带 OCC 基线 token、不算 mutated（否则 style list / comment list 会被当写操作）
@@ -35,7 +36,9 @@ const AGGREGATE_READ_ACTIONS = {
   hyperlink: ['list'],
   headerfooter: ['get'],
   watermark: [],
-  export: []
+  export: [],
+  spreadsheet: ['status', 'sheet_list', 'used_range', 'range_read', 'find', 'chart_list'],
+  presentation: ['status', 'slide_list', 'slide_read', 'shape_list']
 }
 
 function isAggregateReadAction(toolName, args) {
@@ -224,7 +227,7 @@ export function createMcpDocumentSkill({
       TODO_WRITE_TOOL,
       ...(mergedTools || []).filter(t => {
         const { serverId, toolName } = parseNamespacedTool(t.name)
-        return serverId !== CHAYUAN_SERVER_ID || isChayuanToolAllowed(toolName)
+        return serverId !== CHAYUAN_SERVER_ID || isChayuanToolAllowed(toolName, detectAddonType())
       }).map(t => ({
         name: t.name,
         description: t.description,
@@ -299,8 +302,8 @@ export function createMcpDocumentSkill({
       try {
         let result
         if (serverId === CHAYUAN_SERVER_ID) {
-          if (!isChayuanToolAllowed(toolName)) {
-            throw Object.assign(new Error(`工具 ${toolName} 已禁用。请仅在当前打开的文档中编写，不要新建、打开或切换文档，也不要启动/重启应用；没有文档时请用户手动打开。`), { code: 'TOOL_NOT_ALLOWED' })
+          if (!isChayuanToolAllowed(toolName, detectAddonType())) {
+            throw Object.assign(new Error(`工具 ${toolName} 已禁用。请仅在当前打开的${detectAddonType() === 'et' ? '工作簿' : detectAddonType() === 'wpp' ? '演示文稿' : '文档'}中操作，不要新建、打开或切换文件，也不要启动/重启应用；没有打开文件时请用户手动打开。`), { code: 'TOOL_NOT_ALLOWED' })
           }
           if (targetDocumentId !== undefined && isWriteTool(serverId, toolName, args)) {
             if (!targetDocumentId) {

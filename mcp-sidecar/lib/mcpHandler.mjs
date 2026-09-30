@@ -448,7 +448,11 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
               ? 120_000
               : toolName === 'style' && resolved.action === 'audit'
                 ? 120_000
-                : 60_000
+                : (toolName === 'spreadsheet' || toolName === 'presentation') && (resolved.action === 'export' || resolved.action === 'chart_export' || resolved.action === 'slide_export_image')
+                  ? 180_000
+                  : (toolName === 'spreadsheet' || toolName === 'presentation')
+                    ? 90_000
+                    : 60_000
         const result = await agentHub.callAgent(resolved.method, resolved.args, { timeoutMs })
         if (toolArgs.confirmed === true) {
           audit?.append({ tool: toolName, action: resolved.action, confirmed: true })

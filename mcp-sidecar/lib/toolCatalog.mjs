@@ -23,17 +23,18 @@ function tool(def) {
   return def
 }
 
-export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.10.0' }
+export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.11.0' }
 
 export const SERVER_INSTRUCTIONS = [
   'You are connected to 察元AI MCP. End users speak natural Chinese/English only — they never name tools.',
-  'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export). Do not invent fine-grained tool names.',
+  'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export/spreadsheet/presentation). Do not invent fine-grained tool names.',
+  'Hosts: wps_status.agent.hosts shows which hosts are online. spreadsheet.* actions operate the ACTIVE WORKBOOK in WPS 表格 (requires et host online); presentation.* operate the ACTIVE PRESENTATION in WPS 演示 (requires wpp host online); document_*/format_*/table/comment/… operate Writer documents. Tool calls are auto-routed to the matching host.',
   'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE). Prefer resource chayuan://guide/tool-routing for layer routing.',
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
   'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled, including blank files and template copies. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
-  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → proofread_*/declassify_*/kb_*/assistants_*.',
+  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_*.',
   'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
-  'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply.',
+  'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply. In ET: 改值 → spreadsheet range_write; 改外观 → spreadsheet format.',
   'Multi-span edits: one format_apply_ops or document_apply_ops — never N×(locate+single write).',
   'For「翻译每一段并插到段后」: document_list_paragraphs → translate yourself → document_apply_ops(insert-after) from last paragraph upward.',
   'Switch docs: document_list_open then document_activate (query/name/path).',
@@ -58,17 +59,22 @@ const CORE_TOOLS = [
   tool({
     name: 'wps_launch',
     description: [
-      'WHAT: Start WPS Writer via OS process and wait until the 察元 Agent connects.',
-      'WHEN: 「启动WPS」「打开WPS软件」「agent offline / 先把WPS拉起来」. Use when wps_status.agentOnline is false.',
-      'NOT: Does not open a specific .docx path (after launch use document_open). Not for reading document text.',
-      'HOW: Optional waitAgentMs (default 20000, clamp 3000–120000).',
-      'EXAMPLE: {"waitAgentMs":20000}'
+      'WHAT: Start a WPS host component (文字/表格/演示) via OS process and wait until its 察元 Agent connects.',
+      'WHEN: 「启动WPS」「打开WPS表格」「打开WPS演示」「agent offline / 先把WPS拉起来」. Use when wps_status shows the target host offline.',
+      'NOT: Does not open a specific file path (after launch open files with document_open / by OS). Not for reading content.',
+      'HOW: host=wps|et|wpp (default wps). Optional waitAgentMs (default 20000, clamp 3000–120000). spreadsheet.* tools require host=et online; presentation.* require host=wpp.',
+      'EXAMPLE: {"host":"et","waitAgentMs":20000}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     inputSchema: {
       type: 'object',
       additionalProperties: false,
       properties: {
+        host: {
+          type: 'string',
+          enum: ['wps', 'et', 'wpp'],
+          description: 'Which host component to launch: wps=Writer, et=Spreadsheets, wpp=Presentation. Default wps.'
+        },
         waitAgentMs: {
           type: 'number',
           description: 'Milliseconds to wait for Agent heartbeat. Default 20000. Example: 20000'

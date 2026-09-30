@@ -186,13 +186,38 @@ EOF
 fi
 
 # install.json 读取（sed 解析，免 python/node，与 postinstall 同款）
+# 多宿主：第一个 addonFolder=主宿主目录，其余=表格/演示宿主目录
 INSTALL_JSON="$PAYLOAD/install.json"
 if [[ ! -f "$INSTALL_JSON" ]]; then
   echo "[wps-skill-chayuan] 缺少 $INSTALL_JSON" >&2; exit 1
 fi
-ADDON_FOLDER="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_JSON" | tail -1)"
-VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_JSON" | tail -1)"
+ADDON_FOLDER="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_JSON" | head -1)"
+HOST_FOLDERS="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_JSON" | tail -n +2)"
+VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$INSTALL_JSON" | head -1)"
 if [[ -z "$ADDON_FOLDER" ]]; then echo "[wps-skill-chayuan] install.json 读不到 addonFolder" >&2; exit 1; fi
+
+# 替换式安装：清除旧版本加载项目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>），
+# 只保留本次安装的目录。目录条目删不掉（父目录 root 属主）时退化为清空内容。
+cleanup_old_addons() {
+  local dest="$1"
+  local prefix="${ADDON_FOLDER%%_*}"
+  local entry base skip k
+  for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_*; do
+    [[ -d "$entry" ]] || continue
+    base="$(basename "$entry")"
+    skip=0
+    for k in "$ADDON_FOLDER" $HOST_FOLDERS; do
+      [[ "$base" == "$k" ]] && { skip=1; break; }
+    done
+    [[ "$skip" -eq 0 ]] || continue
+    if rm -rf "$entry" 2>/dev/null && [[ ! -d "$entry" ]]; then
+      echo "  · 已删除旧版本目录: $base"
+    else
+      find "$entry" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+      echo "  · 已清空旧版本目录（父目录不可写，空壳待 root 安装器删除）: $base"
+    fi
+  done
+}
 
 # MCP sidecar 来源：portable 包内 mcp-sidecar 优先，否则仓库 mcp-sidecar
 if [[ -d "$PAYLOAD/mcp-sidecar/bin" ]]; then SIDECAR="$PAYLOAD/mcp-sidecar"; else SIDECAR="$REPO/mcp-sidecar"; fi
@@ -236,12 +261,27 @@ copy_tree() {
 install_addon_one() {
   local dest="$1"; [[ -z "$dest" ]] && return 0
   mkdir -p "$dest"
-  local staging_dest="$dest/.${ADDON_FOLDER}.installing"
-  rm -rf "$staging_dest" 2>/dev/null || true
-  copy_tree "$PAYLOAD/$ADDON_FOLDER" "$staging_dest" || { rm -rf "$staging_dest" 2>/dev/null || true; return 1; }
-  rm -rf "$dest/$ADDON_FOLDER" 2>/dev/null || true
-  mv "$staging_dest" "$dest/$ADDON_FOLDER" 2>/dev/null || copy_tree "$PAYLOAD/$ADDON_FOLDER" "$dest/$ADDON_FOLDER" || { rm -rf "$staging_dest" 2>/dev/null || true; return 1; }
+  local folder ok=0
+  # 主宿主 + 表格/演示宿主目录
+  for folder in "$ADDON_FOLDER" $HOST_FOLDERS; do
+    [[ -d "$PAYLOAD/$folder" ]] || continue
+    local staging_dest="$dest/.${folder}.installing"
+    rm -rf "$staging_dest" 2>/dev/null || true
+    if ! copy_tree "$PAYLOAD/$folder" "$staging_dest"; then
+      rm -rf "$staging_dest" 2>/dev/null || true
+      continue
+    fi
+    rm -rf "$dest/$folder" 2>/dev/null || true
+    if mv "$staging_dest" "$dest/$folder" 2>/dev/null || copy_tree "$PAYLOAD/$folder" "$dest/$folder"; then
+      ok=1
+    else
+      rm -rf "$staging_dest" 2>/dev/null || true
+    fi
+  done
+  [[ "$ok" -eq 1 ]] || return 1
   cp -f "$PAYLOAD/publish.xml" "$dest/publish.xml" 2>/dev/null || true
+  # 替换式安装：清掉历史版本目录
+  cleanup_old_addons "$dest"
   echo "  ✓ 加载项 → $dest"
 }
 

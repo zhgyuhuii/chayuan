@@ -9,11 +9,46 @@ if ! test -f "$META"; then
 	exit 1
 fi
 # 用 sed 解析 addonFolder，避免依赖 python3
-ADDON_FOLDER="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -1)"
+# install.json 含多个 addonFolder：第一个=主宿主目录，其余=表格/演示宿主目录
+ADDON_FOLDER="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | head -1)"
 if test -z "$ADDON_FOLDER"; then
 	echo "chayuan-wps-addon: cannot read addonFolder from $META" >&2
 	exit 1
 fi
+HOST_FOLDERS="$(sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -n +2)"
+
+# 替换式安装：清除旧版本加载项目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>），
+# 只保留本次安装的目录。目录条目删不掉（父目录 root 属主）时退化为清空内容。
+cleanup_old_addons() {
+	DEST="$1"
+	PREFIX="$(printf '%s' "$ADDON_FOLDER" | sed 's/_.*//')"
+	KEEP="$(printf '%s %s' "$ADDON_FOLDER" "$HOST_FOLDERS")"
+	for ENTRY in "$DEST"/${PREFIX}_* "$DEST"/${PREFIX}-et_* "$DEST"/${PREFIX}-wpp_*; do
+		test -d "$ENTRY" || continue
+		BASE="$(basename "$ENTRY")"
+		SKIP=0
+		for K in $KEEP; do
+			if test "$BASE" = "$K"; then SKIP=1; break; fi
+		done
+		test "$SKIP" -eq 0 || continue
+		if rm -rf "$ENTRY" 2>/dev/null && ! test -d "$ENTRY"; then
+			echo "chayuan-wps-addon: removed old addon dir: $BASE"
+		else
+			find "$ENTRY" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+			echo "chayuan-wps-addon: emptied old addon dir (parent not writable): $BASE"
+		fi
+	done
+}
+
+# 主宿主 + 表格/演示宿主目录一起安装
+install_all() {
+	DEST="$1"
+	for FOLDER in "$ADDON_FOLDER" $HOST_FOLDERS; do
+		test -d "$INSTALL_ROOT/$FOLDER" || continue
+		rm -rf "$DEST/$FOLDER"
+		cp -R "$INSTALL_ROOT/$FOLDER" "$DEST/"
+	done
+}
 
 merge_publish_online() {
 	PUBLISH_XML="$1"
@@ -69,11 +104,11 @@ do
 	if test -d "$OFFICE6"; then
 		ALT="$OFFICE6/jsaddons"
 		mkdir -p "$ALT"
-		rm -rf "$ALT/$ADDON_FOLDER"
-		cp -R "$INSTALL_ROOT/$ADDON_FOLDER" "$ALT/" || true
+		install_all "$ALT" || true
 		cp -f "$INSTALL_ROOT/publish.xml" "$ALT/" || true
 		merge_publish_online "$ALT/publish.xml"
-		chmod -R a+rX "$ALT/$ADDON_FOLDER" "$ALT/publish.xml" 2>/dev/null || true
+		chmod -R a+rX "$ALT" 2>/dev/null || true
+		cleanup_old_addons "$ALT"
 		echo "chayuan-wps-addon: also copied to $ALT"
 	fi
 done
@@ -98,11 +133,14 @@ for DEST in \
 	"$USER_HOME/.local/share/kingsoft/wps/jsaddons"
 do
 	mkdir -p "$DEST"
-	rm -rf "$DEST/$ADDON_FOLDER"
-	cp -R "$INSTALL_ROOT/$ADDON_FOLDER" "$DEST/"
+	install_all "$DEST"
 	cp -f "$INSTALL_ROOT/publish.xml" "$DEST/"
 	merge_publish_online "$DEST/publish.xml"
-	chown -R "$TARGET_USER:$TARGET_USER" "$DEST/$ADDON_FOLDER" "$DEST/publish.xml" 2>/dev/null || true
+	for FOLDER in "$ADDON_FOLDER" $HOST_FOLDERS; do
+		test -d "$DEST/$FOLDER" && chown -R "$TARGET_USER:$TARGET_USER" "$DEST/$FOLDER" 2>/dev/null || true
+	done
+	chown "$TARGET_USER:$TARGET_USER" "$DEST/publish.xml" 2>/dev/null || true
+	cleanup_old_addons "$DEST"
 	echo "chayuan-wps-addon: installed to $DEST"
 done
 

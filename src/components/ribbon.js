@@ -32,6 +32,7 @@ function _loadAssistantTaskRunner() {
 }
 import { getDocumentText, getSelectedText } from '../utils/documentActions.js'
 import { getSelectionContextSnapshot } from '../utils/documentContext.js'
+import { detectAddonType } from '../utils/host/hostType.js'
 import {
   invalidateDeclassifyRibbonControls,
   isDocumentDeclassified
@@ -3224,6 +3225,12 @@ function OnAction(control) {
       openAIAssistant()
       break
     }
+    // 表格/演示宿主的单按钮入口：同一个聊天页，宿主差异由页内 hostAdapter 处理
+    case 'btnAIAssistantEt':
+    case 'btnAIAssistantWpp': {
+      openAIAssistant()
+      break
+    }
     case 'btnTaskOrchestration':
       try {
         if (focusExistingTaskOrchestrationWindow()) {
@@ -3866,6 +3873,16 @@ function OnGetVisible(control) {
   return true
 }
 
+// 多宿主共用一套加载项目录时按宿主显隐 tab（customUI tab 支持 getVisible）：
+// 文字宿主显示完整双 tab；表格/演示宿主只显示各自的"AI表格/演示助手"单按钮 tab
+function OnGetWriterTabVisible() {
+  return detectAddonType() === 'wps'
+}
+
+function OnGetHostTabVisible() {
+  return detectAddonType() !== 'wps'
+}
+
 function OnGetLabel(control) {
   const eleId = normalizeContextControlId(control.Id)
   switch (eleId) {
@@ -4350,6 +4367,8 @@ const ribbon = {
   GetImage,
   OnGetEnabled,
   OnGetVisible,
+  OnGetWriterTabVisible,
+  OnGetHostTabVisible,
   OnGetLabel,
   OnGetGroupLabel,
   OnGetContextMenuLabel,

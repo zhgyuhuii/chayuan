@@ -239,10 +239,38 @@ const DOCUMENT_LIFECYCLE_TOOLS = new Set([
   'wps_launch'
 ])
 
-export function isChayuanToolAllowed(toolName) {
+// 各宿主在页内智能体可见的聚合域工具：本宿主工具 + 宿主无关工具。
+// 其它宿主的工具必须屏蔽——它们的调用会被 sidecar 路由到对应宿主的 webview，
+// 页内智能体在 ET 宿主里调 document.replace 会去改文字宿主里的另一篇文档。
+const HOST_DOMAIN_TOOLS = {
+  wps: new Set([
+    'comment', 'revision', 'layout', 'nav', 'toc', 'bookmark', 'table', 'caption',
+    'field', 'image', 'hyperlink', 'headerfooter', 'watermark', 'style', 'export'
+  ]),
+  et: new Set(['spreadsheet']),
+  wpp: new Set(['presentation'])
+}
+
+// 宿主无关、任何宿主的页内智能体都可用
+const HOST_AGNOSTIC_TOOLS = new Set(['wps_status', 'kb_retrieve', 'assistants_list_domains', 'assistants_search', 'assistants_get'])
+
+/**
+ * 页内工具白名单（按当前宿主过滤）。
+ * @param {string} toolName
+ * @param {string} [host] 'wps'|'et'|'wpp'，缺省按 wps（旧调用方语义不变）
+ */
+export function isChayuanToolAllowed(toolName, host = 'wps') {
   const n = String(toolName || '')
   if (!n) return false
-  return !n.startsWith('declassify') && !DOCUMENT_LIFECYCLE_TOOLS.has(n)
+  if (n.startsWith('declassify')) return false
+  if (DOCUMENT_LIFECYCLE_TOOLS.has(n)) return false
+  if (HOST_AGNOSTIC_TOOLS.has(n)) return true
+  // proofread 系列为 Writer 专用（内部走文档分块/批注）
+  if (n.startsWith('proofread')) return host === 'wps'
+  if (n.startsWith('spreadsheet')) return host === 'et'
+  if (n.startsWith('presentation')) return host === 'wpp'
+  const domains = HOST_DOMAIN_TOOLS[host === 'et' || host === 'wpp' ? host : 'wps']
+  return domains.has(n)
 }
 
 export function getEnabledMcpServers() {

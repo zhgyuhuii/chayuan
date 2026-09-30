@@ -11,11 +11,37 @@ if [[ ! -f "$META" ]]; then
 	exit 1
 fi
 # 用 sed 解析 addonFolder，避免依赖 python3（未装 Command Line Tools 的 Mac 没有 /usr/bin/python3）
-ADDON_FOLDER="$(/usr/bin/sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -1)"
+# install.json 含多个 addonFolder：第一个=主宿主目录，其余=表格/演示宿主目录
+ADDON_FOLDER="$(/usr/bin/sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | head -1)"
 if [[ -z "$ADDON_FOLDER" ]]; then
 	echo "Chayuan WPS: cannot read addonFolder from $META" >&2
 	exit 1
 fi
+HOST_FOLDERS="$(/usr/bin/sed -n 's/.*"addonFolder"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$META" | tail -n +2)"
+
+# 替换式安装：清除旧版本加载项目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>），
+# 只保留本次安装的目录。目录条目删不掉（父目录 root 属主）时退化为清空内容。
+cleanup_old_addons() {
+	local dest="$1"
+	local prefix="${ADDON_FOLDER%%_*}"
+	local entry base skip
+	for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_*; do
+		[[ -d "$entry" ]] || continue
+		base="$(/usr/bin/basename "$entry")"
+		skip=0
+		local k
+		for k in "$ADDON_FOLDER" $HOST_FOLDERS; do
+			if [[ "$base" == "$k" ]]; then skip=1; break; fi
+		done
+		[[ "$skip" -eq 0 ]] || continue
+		if /bin/rm -rf "$entry" 2>/dev/null && [[ ! -d "$entry" ]]; then
+			echo "Chayuan WPS: removed old addon dir: $base"
+		else
+			/usr/bin/find "$entry" -mindepth 1 -maxdepth 1 -exec /bin/rm -rf {} + 2>/dev/null || true
+			echo "Chayuan WPS: emptied old addon dir (parent not writable): $base"
+		fi
+	done
+}
 
 CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
 if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then
@@ -59,37 +85,53 @@ copy_tree() {
 
 install_one() {
 	local dest="$1"
-	[[ -z "$dest" ]] && return 0
+	local folder="$2"
+	[[ -z "$dest" || -z "$folder" ]] && return 0
 	/bin/mkdir -p "$dest" || return 1
 	# Replace previous version directory atomically-ish: copy to temp then mv
-	local staging_dest="$dest/.${ADDON_FOLDER}.installing"
+	local staging_dest="$dest/.${folder}.installing"
 	/bin/rm -rf "$staging_dest" 2>/dev/null || true
-	if ! copy_tree "$INSTALL_ROOT/$ADDON_FOLDER" "$staging_dest"; then
+	if ! copy_tree "$INSTALL_ROOT/$folder" "$staging_dest"; then
 		/bin/rm -rf "$staging_dest" 2>/dev/null || true
 		return 1
 	fi
-	/bin/rm -rf "$dest/$ADDON_FOLDER" 2>/dev/null || true
-	if ! /bin/mv "$staging_dest" "$dest/$ADDON_FOLDER" 2>/tmp/chayuan-postinstall-mv.err; then
+	/bin/rm -rf "$dest/$folder" 2>/dev/null || true
+	if ! /bin/mv "$staging_dest" "$dest/$folder" 2>/tmp/chayuan-postinstall-mv.err; then
 		# Fallback: copy over existing tree if rename blocked
-		if ! copy_tree "$INSTALL_ROOT/$ADDON_FOLDER" "$dest/$ADDON_FOLDER"; then
+		if ! copy_tree "$INSTALL_ROOT/$folder" "$dest/$folder"; then
 			/bin/rm -rf "$staging_dest" 2>/dev/null || true
 			return 1
 		fi
 		/bin/rm -rf "$staging_dest" 2>/dev/null || true
 	fi
-	/bin/cp -f "$INSTALL_ROOT/publish.xml" "$dest/publish.xml" 2>/dev/null || true
-	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest/$ADDON_FOLDER" "$dest/publish.xml" 2>/dev/null || true
-	echo "Chayuan WPS: installed to $dest"
+	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest/$folder" 2>/dev/null || true
+	echo "Chayuan WPS: installed $folder -> $dest"
 	return 0
+}
+
+install_all_one() {
+	local dest="$1"
+	[[ -z "$dest" ]] && return 0
+	/bin/mkdir -p "$dest" || return 1
+	local folder ok=1
+	# 主宿主 + 表格/演示宿主目录
+	for folder in "$ADDON_FOLDER" $HOST_FOLDERS; do
+		install_one "$dest" "$folder" || ok=0
+	done
+	/bin/cp -f "$INSTALL_ROOT/publish.xml" "$dest/publish.xml" 2>/dev/null || true
+	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest/publish.xml" 2>/dev/null || true
+	# 替换式安装：清掉历史版本目录
+	cleanup_old_addons "$dest"
+	return $ok
 }
 
 INSTALLED=0
 # Sandboxed WPS for Mac (common)
-if install_one "$USER_HOME/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons"; then
+if install_all_one "$USER_HOME/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons"; then
 	INSTALLED=1
 fi
 # Non-sandbox / older layouts (best-effort)
-if install_one "$USER_HOME/Library/Application Support/Kingsoft/wps/jsaddons"; then
+if install_all_one "$USER_HOME/Library/Application Support/Kingsoft/wps/jsaddons"; then
 	INSTALLED=1
 fi
 

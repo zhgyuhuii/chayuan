@@ -21,9 +21,23 @@
 
 function getActiveDocId() {
   try {
-    const doc = window.Application?.ActiveDocument
-    if (!doc) return ''
-    return String(doc.FullName || doc.Name || '')
+    const app = window.Application
+    // 宿主感知：文字=ActiveDocument；表格=ActiveWorkbook；演示=ActivePresentation。
+    // 同一 webview 只会运行在一个宿主里，按存在性依次探测（官方 office_v19：
+    // window.Application 即当前宿主根对象）。非文字宿主此前返回 ''，会让身份
+    // 校验静默失效——ET/WPP 接入后必须能校验"写前活动对象没被切走"。
+    const probe = (get) => {
+      try {
+        const obj = get()
+        if (obj) return String(obj.FullName || obj.Name || '')
+      } catch { /* ignore */ }
+      return ''
+    }
+    return (
+      probe(() => app?.ActiveDocument) ||
+      probe(() => app?.ActiveWorkbook) ||
+      probe(() => app?.ActivePresentation)
+    )
   } catch {
     return ''
   }
@@ -37,15 +51,97 @@ function hashLite(text) {
   return (h >>> 0).toString(36)
 }
 
+// 表格 OCC 指纹上限：已用区域超过该格数后指纹退化为"维度+工作表名"（防止
+// 大表逐格采样拖垮写锁；超限表的脏写风险由两段确认+快照承担）
+const ET_FINGERPRINT_MAX_CELLS = 20_000
+
+function etFingerprint(wb) {
+  const sheet = wb.ActiveSheet
+  if (!sheet) return 'et:no-sheet'
+  const sheetName = String(sheet.Name || '')
+  const used = sheet.UsedRange
+  if (!used) return `et:${sheetName}:empty`
+  let rows = 0
+  let cols = 0
+  let address = ''
+  try { rows = Number(used.Rows?.Count || 0) } catch { /* ignore */ }
+  try { cols = Number(used.Columns?.Count || 0) } catch { /* ignore */ }
+  try { address = String(used.Address || '') } catch { /* ignore */ }
+  const dims = `${sheetName}:${address}:${rows}x${cols}`
+  if (rows * cols > ET_FINGERPRINT_MAX_CELLS) return `et:${dims}:dimsonly`
+  try {
+    // Value2 整块读取可能返回纯数组或 Item(r,c) 包装对象（官方未承诺形态），
+    // 统一摊平成文本再 hash
+    const v = used.Value2
+    let text = ''
+    if (Array.isArray(v) && Array.isArray(v[0])) {
+      for (const row of v) text += row.join('\u0001') + '\u0002'
+    } else if (Array.isArray(v)) {
+      text = v.join('\u0001')
+    } else if (v && typeof v.Item === 'function') {
+      outer: for (let r = 1; r <= rows; r++) {
+        for (let c = 1; c <= cols; c++) {
+          let cell = ''
+          try { cell = String(v.Item(r, c) ?? '') } catch { cell = '?' }
+          text += cell + '\u0001'
+          if (text.length > 1_000_000) break outer
+        }
+        text += '\u0002'
+      }
+    } else {
+      text = String(v ?? '')
+    }
+    return `et:${dims}:${text.length}:${hashLite(text)}`
+  } catch {
+    return `et:${dims}:bulkread-failed`
+  }
+}
+
+function wppFingerprint(pres) {
+  const slides = pres.Slides
+  let count = 0
+  try { count = Number(slides?.Count || 0) } catch { /* ignore */ }
+  let text = ''
+  for (let i = 1; i <= count; i++) {
+    try {
+      const shapes = slides.Item(i).Shapes
+      const shapeCount = Number(shapes.Count || 0)
+      for (let j = 1; j <= shapeCount; j++) {
+        const sh = shapes.Item(j)
+        if (Number(sh.HasTextFrame) !== 0) {
+          text += String(sh.TextFrame.TextRange.Text || '') + '\u0001'
+        }
+      }
+      text += '\u0002'
+    } catch { /* ignore */ }
+  }
+  return `wpp:${count}:${text.length}:${hashLite(text)}`
+}
+
 export function getDocumentFingerprint() {
   try {
-    const doc = window.Application?.ActiveDocument
-    if (!doc) return ''
-    let text = ''
-    try { text = String(doc.Content?.Text || '') } catch { text = '' }
-    let paraCount = 0
-    try { paraCount = Number(doc.Paragraphs?.Count || 0) } catch { paraCount = 0 }
-    return `${paraCount}:${text.length}:${hashLite(text)}`
+    const app = window.Application
+    const probe = (get) => {
+      try {
+        const obj = get()
+        return obj || null
+      } catch {
+        return null
+      }
+    }
+    const doc = probe(() => app?.ActiveDocument)
+    if (doc) {
+      let text = ''
+      try { text = String(doc.Content?.Text || '') } catch { text = '' }
+      let paraCount = 0
+      try { paraCount = Number(doc.Paragraphs?.Count || 0) } catch { paraCount = 0 }
+      return `wps:${paraCount}:${text.length}:${hashLite(text)}`
+    }
+    const wb = probe(() => app?.ActiveWorkbook)
+    if (wb) return etFingerprint(wb)
+    const pres = probe(() => app?.ActivePresentation)
+    if (pres) return wppFingerprint(pres)
+    return ''
   } catch {
     return ''
   }

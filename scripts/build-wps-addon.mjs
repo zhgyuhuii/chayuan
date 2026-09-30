@@ -22,6 +22,18 @@ const DISPLAY_NAME = '察元AI文档助手'
 const BUILD_DIR = 'wps-addon-build'
 const RELEASE_DIR = 'release'
 
+/**
+ * 多宿主加载项（2026-09-30 起）：同一套前端产物按宿主分目录装载。
+ * - 表格(et)/演示(wpp) 目录只带单按钮 ribbon（点击开聊天页，操作走聊天→MCP），
+ *   且不拷 mcp-sidecar——sidecar 全机只跑一份（62588 单端口），随主目录安装。
+ * - publish.xml 每宿主一条 <jsplugin>（type=wps|et|wpp），官方 jsplugins 机制
+ *   按 type 把各目录挂到对应宿主。
+ */
+const MULTI_HOST_ADDONS = [
+  { suffix: 'et', type: 'et', ribbonSource: 'ribbon-et.xml' },
+  { suffix: 'wpp', type: 'wpp', ribbonSource: 'ribbon-wpp.xml' }
+]
+
 function readPkg() {
 	const p = path.join(root, 'package.json')
 	return JSON.parse(fs.readFileSync(p, 'utf8'))
@@ -95,39 +107,54 @@ function publishEnableMode(options = {}) {
 }
 
 function publishXmlForPkg(pkg, options = {}) {
-	const type = pkg.addonType || 'wps'
-	// debug="code" 让 WPS 宿主显示自带调试按钮 / 启用远程调试。
-	// 只在 --debug build 里附带,默认发布包不带。
-	const debugAttr = options.debug ? ' debug="code"' : ''
-	const enable = publishEnableMode(options)
-	return (
-		`<?xml version="1.0" encoding="UTF-8"?>\n` +
-		`<jsplugins>\n` +
-		`    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>\n` +
-		`</jsplugins>\n`
-	)
+  const type = pkg.addonType || 'wps'
+  // debug="code" 让 WPS 宿主显示自带调试按钮 / 启用远程调试。
+  // 只在 --debug build 里附带,默认发布包不带。
+  const debugAttr = options.debug ? ' debug="code"' : ''
+  const enable = publishEnableMode(options)
+  // 主宿主 + 表格/演示宿主：每宿主一条，各指自己的目录
+  const entries = [
+    `    <jsplugin name="${pkg.name}" type="${type}" url="${pkg.name}_${pkg.version}" version="${pkg.version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>`
+  ]
+  for (const h of MULTI_HOST_ADDONS) {
+    entries.push(
+      `    <jsplugin name="${pkg.name}-${h.suffix}" type="${h.type}" url="${pkg.name}-${h.suffix}_${pkg.version}" version="${pkg.version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>`
+    )
+  }
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<jsplugins>\n` +
+    entries.join('\n') + '\n' +
+    `</jsplugins>\n`
+  )
 }
 
 /** Flat layout for offline / installers: publish.xml + name_version/ (same as wpsjs exe 7z). */
 function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
-	const { name, version } = pkg
-	const staging = path.join(releaseRoot, 'install-staging')
-	fsEx.emptyDirSync(staging)
-	const nested = path.join(staging, `${name}_${version}`)
-	fsEx.ensureDirSync(nested)
-	const skip = new Set([
-		BUILD_DIR,
-		'node_modules',
-		'.vscode',
-		'.git',
-		'package.json',
-		'package-lock.json',
-		RELEASE_DIR,
-	])
-	for (const file of fs.readdirSync(distDir)) {
-		if (skip.has(file)) continue
-		fsEx.copySync(path.join(distDir, file), path.join(nested, file))
-	}
+  const { name, version } = pkg
+  const staging = path.join(releaseRoot, 'install-staging')
+  fsEx.emptyDirSync(staging)
+  const skip = new Set([
+    BUILD_DIR,
+    'node_modules',
+    '.vscode',
+    '.git',
+    'package.json',
+    'package-lock.json',
+    RELEASE_DIR,
+    // 宿主专用 ribbon 源不进产物（各自目录按宿主改写 ribbon.xml）
+    'ribbon-et.xml',
+    'ribbon-wpp.xml'
+  ])
+  const copyDistInto = (targetDir) => {
+    fsEx.ensureDirSync(targetDir)
+    for (const file of fs.readdirSync(distDir)) {
+      if (skip.has(file)) continue
+      fsEx.copySync(path.join(distDir, file), path.join(targetDir, file))
+    }
+  }
+  const nested = path.join(staging, `${name}_${version}`)
+  copyDistInto(nested)
 	// Bundle MCP sidecar (HTTP server + start script) next to addon for settings/manual start.
 	// 排除 bin/（5 个平台二进制合计 ~400MB）与 build/（中间 bundle），仅单独拷当前平台二进制。
 	const mcpSidecarSrc = path.join(root, 'mcp-sidecar')
@@ -155,22 +182,61 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 			console.warn(`[staging] 当前平台 sidecar 二进制缺失：mcp-sidecar/bin/${binName}（先跑 npm run mcp:build-binary；缺失时安装后回落 node server.mjs）`)
 		}
 	}
-	fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
-	const meta = {
-		name,
-		version,
-		addonFolder: `${name}_${version}`,
-		addonType: pkg.addonType || 'wps',
-	}
-	fs.writeFileSync(path.join(staging, 'install.json'), JSON.stringify(meta, null, 2) + '\n', 'utf8')
-	return staging
+  fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
+  // 无 root 更新场景（用户级覆盖安装时 jsaddons 目录常为 root 属主，新建宿主目录
+  // 会被拒）：三宿主 type 条目共用主目录，配合主 ribbon.xml 的 getVisible 宿主
+  // 显隐（文字双 tab / 表格演示单按钮 tab）。安装器有 root 时优先用 publish.xml。
+  const sharedEntries = []
+  {
+    const type = pkg.addonType || 'wps'
+    const debugAttr = options.debug ? ' debug="code"' : ''
+    const enable = publishEnableMode(options)
+    sharedEntries.push(`    <jsplugin name="${pkg.name}" type="${type}" url="${name}_${version}" version="${version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>`)
+    for (const h of MULTI_HOST_ADDONS) {
+      sharedEntries.push(`    <jsplugin name="${pkg.name}-${h.suffix}" type="${h.type}" url="${name}_${version}" version="${version}" enable="${enable}" install="null" customDomain=""${debugAttr}/>`)
+    }
+    fs.writeFileSync(
+      path.join(staging, 'publish-shared-dir.xml'),
+      `<?xml version="1.0" encoding="UTF-8"?>\n<jsplugins>\n${sharedEntries.join('\n')}\n</jsplugins>\n`,
+      'utf8'
+    )
+  }
+  // 表格/演示宿主目录：同一套前端产物 + 各自单按钮 ribbon；不带 mcp-sidecar
+  // （sidecar 全机单实例，随主目录安装，避免三份 sidecar 抢 62588 端口）
+  const hostAddons = []
+  for (const h of MULTI_HOST_ADDONS) {
+    const hostName = `${name}-${h.suffix}`
+    const hostDir = path.join(staging, `${hostName}_${version}`)
+    copyDistInto(hostDir)
+    const ribbonSource = path.join(distDir, h.ribbonSource)
+    if (fs.existsSync(ribbonSource)) {
+      fsEx.copySync(ribbonSource, path.join(hostDir, 'ribbon.xml'))
+    } else {
+      console.warn(`[staging] 缺少 ${h.ribbonSource}（public/ 下），${h.type} 宿主将使用文字版 ribbon`)
+    }
+    hostAddons.push({ name: hostName, type: h.type, addonFolder: `${hostName}_${version}` })
+  }
+  const meta = {
+    name,
+    version,
+    addonFolder: `${name}_${version}`,
+    addonType: pkg.addonType || 'wps',
+    hostAddons
+  }
+  fs.writeFileSync(path.join(staging, 'install.json'), JSON.stringify(meta, null, 2) + '\n', 'utf8')
+  return staging
 }
 
-async function buildOffline7z({ name, version, staging, out7z }) {
-	fsEx.ensureDirSync(path.dirname(out7z))
-	const publishPath = path.join(staging, 'publish.xml')
-	const nested = path.join(staging, `${name}_${version}`)
-	await add7z(out7z, [publishPath, nested])
+async function buildOffline7z({ name, version, staging, out7z, hostAddons = [] }) {
+  fsEx.ensureDirSync(path.dirname(out7z))
+  const publishPath = path.join(staging, 'publish.xml')
+  const nested = path.join(staging, `${name}_${version}`)
+  const inputPaths = [publishPath, nested]
+  for (const h of hostAddons) {
+    const hostDir = path.join(staging, h.addonFolder)
+    if (fs.existsSync(hostDir)) inputPaths.push(hostDir)
+  }
+  await add7z(out7z, inputPaths)
 }
 
 function writeInstallReadme(pkg, releaseDir) {
@@ -253,8 +319,12 @@ async function main() {
 		const { platform, arch } = currentReleaseTriple()
 		const z7Name = releaseArtifactFilename(name, version, platform, arch, '.7z')
 		const release7z = path.join(releaseRoot, z7Name)
-		await buildOffline7z({ name, version, staging, out7z: release7z })
-		console.log(`Offline 7z: ${release7z}`)
+		let hostAddons = []
+		try {
+			hostAddons = JSON.parse(fs.readFileSync(path.join(staging, 'install.json'), 'utf8')).hostAddons || []
+		} catch { /* ignore */ }
+		await buildOffline7z({ name, version, staging, out7z: release7z, hostAddons })
+		console.log(`Offline 7z: ${release7z}（含 ${1 + hostAddons.length} 个宿主目录）`)
 		fsEx.ensureDirSync(buildRoot)
 		const build7z = path.join(buildRoot, z7Name)
 		fsEx.copySync(release7z, build7z)

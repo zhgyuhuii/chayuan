@@ -12,6 +12,7 @@ import {
 } from './config.js'
 import { dispatchMcpJob } from './dispatch.js'
 import { readSidecarToken } from './webviewFsProbe.js'
+import { detectAddonType } from '../../utils/host/hostType.js'
 
 const POLL_TIMEOUT_SEC = 25
 const HEARTBEAT_MS = 20_000
@@ -152,6 +153,9 @@ async function register() {
     agentId,
     protocolVersion: MCP_PROTOCOL_VERSION,
     addonVersion: getAddonVersion(),
+    // 宿主类型（wps|et|wpp）：sidecar 据此把 spreadsheet.*/presentation.* job
+    // 路由到对应宿主的 webview——三宿主并存时 writer job 不能落到 ET 执行者
+    addonType: detectAddonType(),
     // window.name 在多个 webview 里同名（都是 ribbon），拼上路由让 sidecar 审计
     // 能区分是谁接的 job（排查"某 webview 接 job 永久挂起"时一眼定位）
     windowId: [
@@ -303,6 +307,13 @@ const JOB_TIMEOUT_BY_METHOD = {
   'assistants.get': 180_000
 }
 function timeoutForJob(method) {
+  // 表格/演示宿主工具：导出/批量写放宽（批量逐格降级可达秒级 × 多批）
+  if (method.startsWith('spreadsheet.') || method.startsWith('presentation.')) {
+    if (method.endsWith('.export') || method.endsWith('.chart_export') || method.endsWith('.slide_export_image')) {
+      return 180_000
+    }
+    return 90_000
+  }
   return JOB_TIMEOUT_BY_METHOD[method] || JOB_HARD_TIMEOUT_MS
 }
 

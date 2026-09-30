@@ -1,10 +1,44 @@
 import { PROTOCOL_VERSION } from './config.mjs'
 
 /**
+ * 宿主类型归一：wps=文字 / et=表格 / wpp=演示。未知值一律回落 wps
+ * （与 publish.xml 主宿主一致，旧版 webview 不带 addonType 也按 wps 处理）。
+ */
+function normalizeHostType(raw) {
+  const s = String(raw || '').toLowerCase().trim()
+  return s === 'et' || s === 'wpp' ? s : 'wps'
+}
+
+/** job 目标解析：'any' 匹配任意宿主执行者 */
+function normalizeTarget(raw) {
+  const s = String(raw || '').toLowerCase().trim()
+  return s === 'et' || s === 'wpp' ? s : s === 'any' ? 'any' : 'wps'
+}
+
+/**
+ * 按 method 前缀推断目标宿主——三宿主共用一个 sidecar 时唯一的路由真源：
+ * spreadsheet.* 只能在表格宿主执行、presentation.* 只能在演示宿主执行；
+ * 宿主无关工具（状态/助手配方/知识库）投给任意在线执行者；其余（document.*、
+ * format.*、table.* 等全部 Writer 工具）只能回文字宿主。
+ */
+function targetForMethod(method) {
+  const m = String(method || '')
+  if (m.startsWith('spreadsheet.')) return 'et'
+  if (m.startsWith('presentation.')) return 'wpp'
+  if (m === 'wps.status' || m.startsWith('assistants.') || m.startsWith('kb.')) return 'any'
+  return 'wps'
+}
+
+function matchesTarget(agent, target) {
+  if (!target || target === 'any') return true
+  return normalizeHostType(agent.addonType) === target
+}
+
+/**
  * Agent long-poll hub: register / poll / result + MCP job bridging.
  */
 export function createAgentHub({ logger } = {}) {
-  /** @type {Map<string, { agentId: string, protocolVersion: number, addonVersion: string, windowId: string, lastSeen: number, waiters: Array<{ resolve: Function, timer: any }> }>} */
+  /** @type {Map<string, { agentId: string, protocolVersion: number, addonVersion: string, addonType: string, windowId: string, lastSeen: number, waiters: Array<{ resolve: Function, timer: any }> }>} */
   const agents = new Map()
   /** @type {Array<{ jobId: string, method: string, params: any, createdAt: number, resolve: Function, reject: Function, timer: any, assignedAgentId?: string }>} */
   const pendingJobs = []
@@ -34,15 +68,18 @@ export function createAgentHub({ logger } = {}) {
       agentId: a.agentId,
       protocolVersion: a.protocolVersion,
       addonVersion: a.addonVersion,
+      addonType: normalizeHostType(a.addonType),
       windowId: a.windowId,
       lastSeen: a.lastSeen,
       online: now() - a.lastSeen < 60_000
     }))
   }
 
-  function pickAgent() {
+  function pickAgent(target) {
     pruneStale()
-    const online = [...agents.values()].filter(a => now() - a.lastSeen < 60_000)
+    const online = [...agents.values()].filter(
+      a => now() - a.lastSeen < 60_000 && matchesTarget(a, target)
+    )
     if (!online.length) return null
     online.sort((a, b) => b.lastSeen - a.lastSeen)
     return online[0]
@@ -64,14 +101,16 @@ export function createAgentHub({ logger } = {}) {
     droppedAt.delete(agentId)
     const protocolVersion = Number(body.protocolVersion || PROTOCOL_VERSION)
     const addonVersion = String(body.addonVersion || '')
+    const addonType = normalizeHostType(body.addonType)
     const windowId = String(body.windowId || '')
     let agent = agents.get(agentId)
     if (!agent) {
-      agent = { agentId, protocolVersion, addonVersion, windowId, lastSeen: now(), waiters: [], timeoutStrikes: 0 }
+      agent = { agentId, protocolVersion, addonVersion, addonType, windowId, lastSeen: now(), waiters: [], timeoutStrikes: 0 }
       agents.set(agentId, agent)
     } else {
       agent.protocolVersion = protocolVersion
       agent.addonVersion = addonVersion
+      agent.addonType = addonType
       agent.windowId = windowId || agent.windowId
       agent.lastSeen = now()
       // 保留 timeoutStrikes：重注册不再洗白前科——双 webview 曾共用 agentId 轮流
@@ -111,18 +150,20 @@ export function createAgentHub({ logger } = {}) {
   }
 
   function tryDispatch() {
-    while (pendingJobs.length) {
-      const agent = pickAgent()
-      if (!agent) break
+    // 按宿主目标匹配：job 找自己宿主的执行者，互不抢占。某宿主离线时它的 job
+    // 留在队列（不阻塞其它宿主的 job 被派发）。
+    for (let i = 0; i < pendingJobs.length;) {
+      const job = pendingJobs[i]
+      const fresh = [...agents.values()].filter(
+        a => matchesTarget(a, job.target) && a.waiters.length && now() - a.lastSeen < 60_000
+      )
+      if (!fresh.length) { i++; continue }
       // Prefer agent with idle waiter；有超时前科的（strike>0，疑似半死 webview）排最后
-      const fresh = [...agents.values()].filter(a => a.waiters.length && now() - a.lastSeen < 60_000)
       const withWaiter = fresh.find(a => !a.timeoutStrikes) || fresh[0]
-      const target = withWaiter || agent
-      if (!target.waiters.length) break
-      const job = pendingJobs.shift()
-      if (!wakeWaiter(target, job)) {
-        pendingJobs.unshift(job)
-        break
+      const assigned = pendingJobs.splice(i, 1)[0]
+      if (!wakeWaiter(withWaiter, assigned)) {
+        pendingJobs.splice(i, 0, assigned)
+        i++
       }
     }
   }
@@ -139,14 +180,17 @@ export function createAgentHub({ logger } = {}) {
     // strike 只能由成功结果（submitResult）洗清。2026-09-17 实证：坏 agent 吃了
     // 6 次超时未被踢，最后在坏桥上执行 document.new → Documents.Add → WPS 崩溃。
 
-    // Immediate job?
+    // Immediate job?（只领目标宿主匹配自己的 job）
     if (pendingJobs.length) {
-      const job = pendingJobs.shift()
-      job.assignedAgentId = a.agentId
-      inflight.set(job.jobId, job)
-      return Promise.resolve({
-        job: { jobId: job.jobId, method: job.method, params: job.params }
-      })
+      const idx = pendingJobs.findIndex(j => matchesTarget(a, j.target))
+      if (idx >= 0) {
+        const job = pendingJobs.splice(idx, 1)[0]
+        job.assignedAgentId = a.agentId
+        inflight.set(job.jobId, job)
+        return Promise.resolve({
+          job: { jobId: job.jobId, method: job.method, params: job.params }
+        })
+      }
     }
 
     const waitMs = Math.min(Math.max(Number(timeoutMs) || 25_000, 1000), 55_000)
@@ -225,20 +269,27 @@ export function createAgentHub({ logger } = {}) {
     console.warn(`[agentHub] dropped agent ${id} (${reason})`)
   }
 
-  function callAgent(method, params = {}, { timeoutMs = 120_000 } = {}) {
+  /**
+   * Enqueue job for agent; returns Promise of result.
+   * 目标宿主按 method 前缀推断（targetForMethod），可用 options.target 显式覆盖。
+   */
+  function callAgent(method, params = {}, { timeoutMs = 120_000, target } = {}) {
     pruneStale()
-    if (![...agents.values()].some(a => now() - a.lastSeen < 60_000)) {
-      try { logger?.({ ev: 'job_reject_offline', method }) } catch { /* ignore */ }
-      return Promise.reject(Object.assign(new Error('WPS Agent offline'), { code: 'WPS_AGENT_OFFLINE' }))
+    const resolvedTarget = target !== undefined ? normalizeTarget(target) : targetForMethod(method)
+    if (![...agents.values()].some(a => now() - a.lastSeen < 60_000 && matchesTarget(a, resolvedTarget))) {
+      try { logger?.({ ev: 'job_reject_offline', method, target: resolvedTarget }) } catch { /* ignore */ }
+      const hostLabel = { wps: 'WPS 文字', et: 'WPS 表格', wpp: 'WPS 演示', any: 'WPS' }[resolvedTarget] || 'WPS'
+      return Promise.reject(Object.assign(new Error(`${hostLabel} Agent offline`), { code: 'WPS_AGENT_OFFLINE' }))
     }
     const jobId = `job-${Date.now().toString(36)}-${cryptoRandom()}`
     const dispatchedAt = Date.now()
-    try { logger?.({ ev: 'job_dispatch', jobId, method }) } catch { /* ignore */ }
+    try { logger?.({ ev: 'job_dispatch', jobId, method, target: resolvedTarget }) } catch { /* ignore */ }
     return new Promise((resolve, reject) => {
       const job = {
         jobId,
         method,
         params,
+        target: resolvedTarget,
         createdAt: now(),
         resolve,
         reject,
@@ -269,10 +320,16 @@ export function createAgentHub({ logger } = {}) {
 
   function status() {
     const list = listAgents()
+    const onlineAgents = list.filter(a => a.online)
     return {
-      agentOnline: list.some(a => a.online),
-      agentCount: list.filter(a => a.online).length,
+      agentOnline: onlineAgents.length > 0,
+      agentCount: onlineAgents.length,
       agents: list,
+      hosts: {
+        wps: onlineAgents.some(a => a.addonType === 'wps'),
+        et: onlineAgents.some(a => a.addonType === 'et'),
+        wpp: onlineAgents.some(a => a.addonType === 'wpp')
+      },
       pendingJobs: pendingJobs.length,
       inflightJobs: inflight.size,
       protocolVersion: PROTOCOL_VERSION
