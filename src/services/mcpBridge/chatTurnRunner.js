@@ -30,12 +30,33 @@ const TURN_KEY_PREFIX = 'ai_chat_turn:'
 const CANCEL_KEY_PREFIX = 'ai_chat_turn_cancel:'
 const PENDING_KEY_PREFIX = 'ai_chat_pending:'
 
-const HEARTBEAT_MS = 2000
-const FLUSH_INTERVAL_MS = 300
+const TICK_MS = 1000
+// 进展看门狗：超过该时长没有任何回调进展（流块/步骤/清单）→ abort 回合。
+// 覆盖 LLM 流挂起与任何卡死——面板会按终态显示中断+重试。
+const STALL_TIMEOUT_MS = 180_000
 // 状态体上限：streamText/loopMessages 之外的字段都很小；loopMessages 编排器侧
 // 已按 24KB 裁剪（trimLoopHistoryForStorage），这里只防 streamText 与 steps 失控
 const STREAM_TEXT_MAX_CHARS = 16_000
 const STEPS_MAX_ITEMS = 40
+
+/**
+ * 节流免疫 ticker：Web Worker 的定时器不受页面隐藏节流影响（面板打开后基座
+ * webview 被 CEF 判为后台，页面 setInterval/setTimeout 会被钳到 ≥1s 甚至冻结，
+ * 实测导致心跳停摆、LLM 空闲超时定时器永不触发、回合永久挂起）。Worker 创建
+ * 失败（极端环境）回退页面 setInterval——聊胜于无。
+ */
+function createTicker(ms, onTick) {
+  try {
+    const src = `let t=null;onmessage=(e)=>{if(e.data==='start'&&!t){t=setInterval(()=>postMessage(0),${Math.max(200, ms)})}if(e.data==='stop'&&t){clearInterval(t);t=null}}`
+    const worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'application/javascript' })))
+    worker.onmessage = onTick
+    worker.postMessage('start')
+    return { stop: () => { try { worker.postMessage('stop'); worker.terminate() } catch (_) { /* 已终止 */ } } }
+  } catch (_) {
+    const timer = setInterval(onTick, ms)
+    return { stop: () => clearInterval(timer) }
+  }
+}
 
 // 并发上限：ribbon 基座同时托管的回合数（多文档并行生成的保护阀；超限面板回落本地）
 const MAX_CONCURRENT_TURNS = 2
@@ -141,28 +162,33 @@ function runDetachedTurn(params = {}) {
   } catch (_) { /* ignore */ }
   writeTurnState(turnId, state)
 
-  // 进度节流写穿：回调只标脏，300ms flusher 统一落盘（PluginStorage 高频写保护）
-  const flusher = setInterval(() => {
-    if (!entry.dirty) return
-    entry.dirty = false
-    state.updatedAt = Date.now()
-    writeTurnState(turnId, state)
-  }, FLUSH_INTERVAL_MS)
-  // 心跳 + 取消消费：面板以 updatedAt 判活（>10s 视为执行侧死亡 → 显示中断）
-  const heartbeat = setInterval(() => {
+  // 节流免疫 ticker：心跳（2s/跳）+ 取消消费 + 看门狗，页面被 CEF 节流也照跳。
+  // 每 tick 都写心跳（state.updatedAt），每 2 tick 落一次脏状态（≈节流写穿）。
+  entry.lastProgressAt = Date.now()
+  const tickers = createTicker(TICK_MS, () => {
     try {
+      entry.tickCount = (entry.tickCount || 0) + 1
       if (storage()?.getItem(CANCEL_KEY_PREFIX + turnId) === '1') {
         storage()?.removeItem(CANCEL_KEY_PREFIX + turnId)
         ctrl?.abort?.()
       }
-    } catch (_) { /* ignore */ }
-    state.updatedAt = Date.now()
-    writeTurnState(turnId, state)
-  }, HEARTBEAT_MS)
-  entry.timers.push(flusher, heartbeat)
+      // 进展看门狗：orchestrator 任一回调（onProgress/onTurnText/onTodos）都会刷
+      // lastProgressAt；超时说明 LLM 流挂起或循环卡死——abort 让 AgentLoop 收尾，
+      // catch 分支写终态，面板立即显示中断而不是永远 40%。
+      if (state.phase === 'running' && Date.now() - entry.lastProgressAt > STALL_TIMEOUT_MS) {
+        ctrl?.abort?.()
+      }
+      state.updatedAt = Date.now()
+      if (entry.dirty || entry.tickCount % 2 === 0) {
+        entry.dirty = false
+        writeTurnState(turnId, state)
+      }
+    } catch (_) { /* ticker 异常不连累回合 */ }
+  })
+  entry.timers.push(tickers)
 
   const finish = (phase, extra = {}) => {
-    for (const t of entry.timers) clearInterval(t)
+    for (const t of entry.timers) { try { t.stop?.() } catch (_) { /* ignore */ } }
     state.phase = phase
     state.finishedAt = Date.now()
     state.updatedAt = Date.now()
@@ -193,12 +219,14 @@ function runDetachedTurn(params = {}) {
         loopHistory: Array.isArray(params.loopHistory) ? params.loopHistory : [],
         signal: ctrl?.signal,
         onProgress: (step, steps) => {
+          entry.lastProgressAt = Date.now()
           state.steps = (steps || []).slice(-STEPS_MAX_ITEMS)
           entry.dirty = true
         },
         onTurnText: (text) => {
           const t = String(text || '')
           if (!t) return
+          entry.lastProgressAt = Date.now()
           const now = Date.now()
           if (now - mcpStreamAt < 100) return
           mcpStreamAt = now
@@ -206,6 +234,7 @@ function runDetachedTurn(params = {}) {
           entry.dirty = true
         },
         onTodos: (todos) => {
+          entry.lastProgressAt = Date.now()
           state.todos = Array.isArray(todos) ? todos.slice() : []
           entry.dirty = true
         }

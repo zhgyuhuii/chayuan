@@ -11,13 +11,34 @@
  */
 import {
   CHAYUAN_SERVER_ID,
-  isChayuanToolAllowed,
+  chayuanToolTargetHost,
+  isToolAllowedCrossHost,
   parseNamespacedTool
 } from './mcpServerRegistry.js'
 import { callLocalTool, callUpstreamTool } from './mcpHttpClient.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
-import { detectAddonType } from '../../utils/host/hostType.js'
+import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
+
+/**
+ * 跨宿主首写前的目标身份探针：读目标宿主 status 取活动对象 FullName。
+ * et/wpp 走各自域 status；wps 走 wps_status（document.fullName 宿主感知）。
+ */
+async function probeHostDocumentId(host, signal) {
+  try {
+    let sc = null
+    if (host === 'et') sc = await callLocalTool('spreadsheet', { action: 'status' }, { signal })
+    else if (host === 'wpp') sc = await callLocalTool('presentation', { action: 'status' }, { signal })
+    else sc = await callLocalTool('wps_status', {}, { signal })
+    const data = sc?.structuredContent || sc || {}
+    if (host === 'et') return String(data?.workbook?.fullName || '') || null
+    if (host === 'wpp') return String(data?.presentation?.fullName || '') || null
+    const doc = data?.document || {}
+    return String(doc?.fullName || doc?.name || '') || null
+  } catch (_) {
+    return null
+  }
+}
 
 const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export|spreadsheet|presentation)$/
 
@@ -204,8 +225,16 @@ export function createMcpDocumentSkill({
   onProofreadCard,
   onTodoWrite,
   writeBaselineToken = '',
-  targetDocumentId
+  targetDocumentId,
+  initialHostPins
 } = {}) {
+  // 回合 pin 表（追问 5 定案）：{ 宿主 → 活动对象 FullName }。发起宿主由调用方
+  // 种子（targetDocumentId 兼容旧签名）；跨宿主首写时经 status 探针自动补齐。
+  const hostPins = { ...(initialHostPins || {}) }
+  if (targetDocumentId) {
+    const initHost = detectAddonType()
+    if (!hostPins[initHost]) hostPins[initHost] = String(targetDocumentId)
+  }
   // 本回合成功落笔的写操作数（按 ops 条目计），供 verifyResponse 与末轮声称核对
   let executedWriteOps = 0
   const countWriteOps = (toolName, args, result) => {
@@ -227,7 +256,7 @@ export function createMcpDocumentSkill({
       TODO_WRITE_TOOL,
       ...(mergedTools || []).filter(t => {
         const { serverId, toolName } = parseNamespacedTool(t.name)
-        return serverId !== CHAYUAN_SERVER_ID || isChayuanToolAllowed(toolName, detectAddonType())
+        return serverId !== CHAYUAN_SERVER_ID || isToolAllowedCrossHost(toolName)
       }).map(t => ({
         name: t.name,
         description: t.description,
@@ -302,19 +331,29 @@ export function createMcpDocumentSkill({
       try {
         let result
         if (serverId === CHAYUAN_SERVER_ID) {
-          if (!isChayuanToolAllowed(toolName, detectAddonType())) {
-            throw Object.assign(new Error(`工具 ${toolName} 已禁用。请仅在当前打开的${detectAddonType() === 'et' ? '工作簿' : detectAddonType() === 'wpp' ? '演示文稿' : '文档'}中操作，不要新建、打开或切换文件，也不要启动/重启应用；没有打开文件时请用户手动打开。`), { code: 'TOOL_NOT_ALLOWED' })
+          if (!isToolAllowedCrossHost(toolName)) {
+            throw Object.assign(new Error(`工具 ${toolName} 已禁用（文档生命周期工具不可用：跨宿主读写不包含新建/打开/切换文件）。`), { code: 'TOOL_NOT_ALLOWED' })
           }
-          if (targetDocumentId !== undefined && isWriteTool(serverId, toolName, args)) {
-            if (!targetDocumentId) {
-              throw Object.assign(new Error('本回合没有打开目标文档，请手动打开文档后重新发送指令。'), { code: 'NO_ACTIVE_DOCUMENT' })
+          if (isWriteTool(serverId, toolName, args)) {
+            // 回合 pin 表（追问 5 定案）：写工具按目标宿主自动校验活动对象身份。
+            // 发起宿主的 pin 在回合起点由调用方种子；跨宿主首写时这里自动向目标
+            // 宿主发 status 探针取 FullName 钉住整回合——不依赖模型自觉。
+            const targetHost = chayuanToolTargetHost(toolName)
+            if (targetHost) {
+              let pin = hostPins[targetHost]
+              if (!pin) {
+                pushProgress?.({ label: `校验 ${hostLabel(targetHost)} 写入目标`, detail: '跨宿主写入前自动探测活动对象身份' })
+                pin = await probeHostDocumentId(targetHost, signal)
+                if (!pin) {
+                  throw Object.assign(new Error(`目标${hostLabel(targetHost)}没有打开的文件，无法跨宿主写入。请先在${hostLabel(targetHost)}中打开目标文件后重试。`), { code: 'NO_ACTIVE_DOCUMENT' })
+                }
+                hostPins[targetHost] = pin
+              }
+              args.__expectedDocId = pin
             }
-            args.__expectedDocId = targetDocumentId
-          }
-          // 写工具带上回合 OCC 基线 token（__baselineToken 为保留字段，dispatch 层
-          // 弹出后用于 withDocumentWriteLock 校验，不会进入真实 WPS 调用参数）
-          if (writeBaselineToken && isWriteTool(serverId, toolName, args)) {
-            args.__baselineToken = writeBaselineToken
+            if (writeBaselineToken) {
+              args.__baselineToken = writeBaselineToken
+            }
           }
           if (toolName === 'proofread_run') {
             result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })

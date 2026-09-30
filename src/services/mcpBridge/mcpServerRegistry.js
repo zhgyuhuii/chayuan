@@ -273,6 +273,31 @@ export function isChayuanToolAllowed(toolName, host = 'wps') {
   return domains.has(n)
 }
 
+/**
+ * 跨宿主回合的工具放行（追问 5 定案）：放开宿主边界——其他宿主的工具可用于
+ * 读源（文档转 PPT 读 Writer、表格数据转战报页读 ET），写目标宿主由 skill 层
+ * 的回合 pin 表自动校验活动对象身份（expectDocId），不依赖模型自觉。
+ * 仍禁：declassify 全系、文档生命周期工具（新建/打开/激活/启动应用）——
+ * 跨宿主读写不包含"换文件"。
+ */
+export function isToolAllowedCrossHost(toolName) {
+  const n = String(toolName || '')
+  if (!n) return false
+  if (n.startsWith('declassify')) return false
+  if (DOCUMENT_LIFECYCLE_TOOLS.has(n)) return false
+  return true
+}
+
+/** chayuan 工具的目标宿主（回合 pin 表的键；宿主无关工具返回 null） */
+export function chayuanToolTargetHost(toolName) {
+  const n = String(toolName || '')
+  if (n.startsWith('spreadsheet')) return 'et'
+  if (n.startsWith('presentation')) return 'wpp'
+  if (n === 'wps_status' || n.startsWith('assistants') || n.startsWith('kb_')) return null
+  if (n.startsWith('wps_')) return null
+  return 'wps'
+}
+
 export function getEnabledMcpServers() {
   return loadMcpServersWithBuiltinFlag().filter(s => s.enabled !== false)
 }

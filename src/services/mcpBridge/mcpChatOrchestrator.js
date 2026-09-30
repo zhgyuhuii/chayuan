@@ -11,7 +11,7 @@ import { AgentLoop } from '../../agent-core/index'
 import {
   CHAYUAN_SERVER_ID,
   getEnabledMcpServers,
-  isChayuanToolAllowed,
+  isToolAllowedCrossHost,
   namespaceToolName
 } from './mcpServerRegistry.js'
 import {
@@ -102,6 +102,11 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
         ? '【改字落点】先用 presentation(action=slide_read) 定位页与形状，再 text_set/text_replace 修改；新增内容用 textbox_add/slide_add，不得清空已有页。'
         : '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
     `【没有${targetNoun}或桥接失败】当前没有打开${targetNoun}时停止操作，提示用户手动打开目标文件后重试；工具失败不得以新建、重新打开文件或重启宿主作为恢复手段。`,
+    isEt
+      ? '【跨宿主】可只读其它宿主作数据源，但只写当前工作簿（写其它宿主会被身份校验拦截）。需要演示稿/文档内容时用 presentation(action=slide_list|slide_read) / document_get_text 只读提取。'
+      : isWpp
+        ? '【跨宿主】可只读其它宿主作内容源，但只写当前演示文稿。需要 Word 内容用 document_get_text 只读提取（文档转 PPT），需要表格数据用 spreadsheet(action=range_read) 只读提取；首次写入前系统会自动校验目标身份，无需你处理。'
+        : '',
     '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
     host === 'wps'
       ? '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。'
@@ -311,9 +316,8 @@ export async function runMcpChatOrchestrator({
       pushStep(`跳过 ${server.name || server.id}`, r.error.message || String(r.error))
       continue
     }
-    const host = detectAddonType()
     for (const t of r.tools) {
-      if (server.id === CHAYUAN_SERVER_ID && !isChayuanToolAllowed(t.name, host)) continue
+      if (server.id === CHAYUAN_SERVER_ID && !isToolAllowedCrossHost(t.name)) continue
       mergedTools.push({
         name: namespaceToolName(server.id, t.name),
         description: `[${server.name}] ${t.description || t.name}`,
