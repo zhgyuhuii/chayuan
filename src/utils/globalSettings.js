@@ -5,6 +5,7 @@
  */
 
 import { getEffectiveDataDir, joinDataPath, ensureDir, getDefaultDataPath } from './dataPathSettings.js'
+import { MCP_URL as MCP_BASE_URL_FOR_SETTINGS } from '../services/mcpBridge/config.js'
 
 const FILE_NAME = 'settings.json'
 const PLUGIN_STORAGE_KEY = 'NdGlobalSettings'
@@ -59,8 +60,37 @@ function loadFromPluginStorage() {
   }
 }
 
+// 启动引导（一次性）：WPS 沙盒里 webview 直接读用户设置文件不可靠，且 CEF 缓存
+// 清理会带走 localStorage——从 sidecar 桥接一份宿主侧设置播种进 localStorage，
+// 之后 loadFromLocalStorage 稳定命中（2026-09-30 VM 实测模型配置丢失的根治）。
+let _sidecarSeeded = false
+function seedFromSidecar() {
+  if (_sidecarSeeded) return
+  _sidecarSeeded = true
+  const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+  if (raw && JSON.parse(raw || '{}')?.modelConfigs && Object.keys(JSON.parse(raw).modelConfigs || {}).length) return
+  try {
+    const base = String(MCP_BASE_URL_FOR_SETTINGS || '').replace(/\/+$/, '')
+    if (!base) return
+    fetch(`${base}/app-settings`, { headers: { Accept: 'application/json' } })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || !data.modelConfigs || !Object.keys(data.modelConfigs).length) return
+        const existing = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}')
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, ...existing, modelConfigs: { ...data.modelConfigs, ...(existing.modelConfigs || {}) } }))
+      })
+      .catch(() => {})
+  } catch (_) { /* ignore */ }
+}
+
 function loadRaw() {
-  return loadFromFile() || loadFromLocalStorage() || loadFromPluginStorage()
+  const fromFile = loadFromFile()
+  if (fromFile) return fromFile
+  const fromLocal = loadFromLocalStorage()
+  if (fromLocal) { seedFromSidecar(); return fromLocal }
+  seedFromSidecar()
+  const fromPlugin = loadFromPluginStorage()
+  return fromPlugin
 }
 
 function isAbsolutePath(p) {

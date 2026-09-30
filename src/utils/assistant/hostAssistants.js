@@ -316,7 +316,7 @@ export const HOST_ASSISTANT_PACKS = {
     {
       id: 'wpp-gen',
       label: 'AI 生成 PPT',
-      shortLabel: '生成 PPT',
+      shortLabel: '生成PPT',
       icon: '✨',
       group: '通用高频',
       mode: 'prefill',
@@ -326,7 +326,7 @@ export const HOST_ASSISTANT_PACKS = {
     {
       id: 'wpp-doctoppt',
       label: '文档转 PPT',
-      shortLabel: '文档转 PPT',
+      shortLabel: '文档转PPT',
       icon: '📄',
       group: '通用高频',
       mode: 'prefill',

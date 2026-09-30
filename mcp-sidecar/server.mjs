@@ -517,6 +517,19 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, saveTmpImage(dataDir, body))
       return
     }
+    // 配置桥：把宿主侧用户设置（~/.config/chayuan/settings.json）暴露给加载项
+    // webview 引导自身 localStorage——WPS 沙盒里 webview 直接读该文件不可靠，
+    // 且 CEF 缓存清理会带走 localStorage（2026-09-30 实测模型配置丢失根因）
+    if (pathname === '/app-settings' && req.method === 'GET') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      let body = {}
+      try {
+        const p = path.join(dataDir, '..', 'chayuan', 'settings.json')
+        body = JSON.parse(fs.readFileSync(p, 'utf8'))
+      } catch (_) { body = {} }
+      sendJson(res, 200, body)
+      return
+    }
     if (pathname === '/image/search' && req.method === 'POST') {
       if (!isTrusted(req)) { unauthorized(res); return }
       const body = (await readBody(req)) || {}
