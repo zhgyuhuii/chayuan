@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** 文档绑定守卫单测：对话↔文档一致性强制的核心判定 */
 import assert from 'node:assert/strict'
-import { checkDocBinding } from '../src/services/mcpBridge/chatTurnRunner.js'
+import { checkDocBinding } from '../src/utils/chat/docBinding.js'
 
 // 1) 一致 → 放行
 assert.deepEqual(checkDocBinding('/a.xlsx', '/a.xlsx').ok, true, '一致放行')
