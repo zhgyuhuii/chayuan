@@ -22,7 +22,8 @@ export const PRESENTATION_WRITE_ACTIONS = new Set([
   'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout',
   'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add',
   'slideshow_run', 'export', 'slide_export_image',
-  'notes_set', 'format_uniform'
+  'notes_set', 'format_uniform',
+  'security_encrypt_save', 'security_decrypt_save'
 ])
 
 /** ppLayout 枚举（官方值子集） */

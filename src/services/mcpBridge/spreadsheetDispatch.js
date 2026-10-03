@@ -32,7 +32,8 @@ export const SPREADSHEET_WRITE_ACTIONS = new Set([
   'row_insert', 'row_delete', 'column_insert', 'column_delete',
   'sort', 'autofilter', 'format',
   'chart_add', 'chart_export',
-  'export'
+  'export',
+  'security_encrypt_save', 'security_decrypt_save'
 ])
 
 /** XlChartType 常用子集（官方枚举值） */

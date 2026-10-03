@@ -1,0 +1,15 @@
+{"id":"E01","lane":"et","desc":"status+sheet_list 报告","attempt":1,"start":"2026-10-02T05:51:21.970Z","ack":true,"pass":true,"evidence":"S01!Z1=E01完成","secs":16}
+{"id":"E02","lane":"et","desc":"写 10 列表头 + 30 行模拟数据","attempt":1,"start":"2026-10-02T05:51:40.586Z","ack":true,"pass":true,"evidence":"headers=10 rows=31 A31=M030","secs":110}
+{"id":"E03","lane":"et","desc":"金额公式列","attempt":1,"start":"2026-10-02T05:53:33.150Z","ack":true,"pass":true,"evidence":"D2=16 E2=77000 G2=1232000 expect=1232000","secs":280}
+{"id":"E04","lane":"et","desc":"统计块 SUM/AVERAGE/MAX/MIN/COUNTA","attempt":1,"start":"2026-10-02T05:58:15.784Z","ack":true,"pass":true,"evidence":"K1=20279000 K5=20","secs":66}
+{"id":"E05","lane":"et","desc":"used_range 报告","attempt":1,"start":"2026-10-02T05:59:24.808Z","ack":true,"pass":true,"evidence":"S05!Z1=E05完成","secs":249}
+{"id":"E06","lane":"et","desc":"只读汇总报告","attempt":1,"start":"2026-10-02T06:03:36.640Z","ack":true,"pass":true,"evidence":"S06!Z1=E06完成","secs":38}
+{"id":"E07","lane":"et","desc":"find 查找订单号","attempt":1,"start":"2026-10-02T06:04:17.418Z","ack":true,"pass":true,"evidence":"S07!Z1=E07完成","secs":264}
+{"id":"E08","lane":"et","desc":"find_replace 批量替换","attempt":1,"start":"2026-10-02T06:08:44.226Z","ack":true,"pass":true,"evidence":"残留无人机=0 Z1=E08完成","secs":284}
+{"id":"E09","lane":"et","desc":"建对照表+跨表 VLOOKUP","attempt":1,"start":"2026-10-02T06:13:30.819Z","ack":true,"pass":true,"evidence":"对照表=true I2=8000 Z1=E09完成","secs":312}
+{"id":"E10","lane":"et","desc":"行插入","attempt":1,"start":"2026-10-02T06:18:46.121Z","ack":true,"pass":true,"evidence":"A2=PO10NEW rows=22 Z1=E10完成","secs":255}
+{"id":"E11","lane":"et","desc":"列插入","attempt":2,"start":"2026-10-02T06:32:54.770Z","ack":true,"pass":false,"evidence":"C1=undefined C21=undefined Z1=undefined","secs":360}
+{"id":"E12","lane":"et","desc":"行列删除","attempt":2,"start":"2026-10-02T06:47:00.306Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"E13","lane":"et","desc":"按金额降序排序","attempt":2,"start":"2026-10-02T06:48:08.348Z","ack":true,"pass":false,"evidence":"desc=true F2:F4= Z1=undefined","secs":324}
+{"id":"E35","lane":"et","desc":"柱状图","attempt":2,"start":"2026-10-02T07:29:32.884Z","ack":true,"pass":false,"evidence":"charts=0","secs":390}
+{"id":"E36","lane":"et","desc":"饼图","attempt":2,"start":"2026-10-02T07:49:37.145Z","ack":true,"pass":false,"evidence":"charts=0","secs":370}

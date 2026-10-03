@@ -1,0 +1,10 @@
+{"id":"FIN-01","lane":"et","desc":"表格·数据洞察（autoSend 高频）","attempt":2,"start":"2026-10-03T13:57:00.938Z","ack":true,"pass":false,"evidence":"Z6=","secs":361}
+{"id":"FIN-02","lane":"et","desc":"表格·一键图表","attempt":2,"start":"2026-10-03T14:11:18.099Z","ack":true,"pass":false,"evidence":"标记=false 图表=0","secs":481}
+{"id":"FIN-03","lane":"et","desc":"表格·报表结论（autoSend 高频）","attempt":2,"start":"2026-10-03T14:25:32.647Z","ack":true,"pass":false,"evidence":"Z5=","secs":363}
+{"id":"FIN-04","lane":"et","desc":"表格·数据清洗（autoSend 高频）","attempt":2,"start":"2026-10-03T14:38:49.830Z","ack":true,"pass":false,"evidence":"Z5=","secs":424}
+{"id":"FIN-05","lane":"et","desc":"表格·跨宿主数据战报页（读 et 写 wpp）","attempt":2,"start":"2026-10-03T14:46:33.300Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"FIN-01","lane":"et","desc":"表格·数据洞察（autoSend 高频）","attempt":2,"start":"2026-10-03T14:48:56.630Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"FIN-02","lane":"et","desc":"表格·一键图表","attempt":2,"start":"2026-10-03T14:50:09.456Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"FIN-03","lane":"et","desc":"表格·报表结论（autoSend 高频）","attempt":2,"start":"2026-10-03T14:51:29.564Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"FIN-04","lane":"et","desc":"表格·数据清洗（autoSend 高频）","attempt":2,"start":"2026-10-03T14:52:46.673Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"FIN-05","lane":"et","desc":"表格·跨宿主数据战报页（读 et 写 wpp）","attempt":2,"start":"2026-10-03T14:54:06.733Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}

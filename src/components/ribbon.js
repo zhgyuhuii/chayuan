@@ -130,8 +130,19 @@ function openAIAssistant(query = {}) {
   // 失焦不代表窗口失效；重建会丢失仍在执行的任务。
   if (focusExistingAIAssistantWindow(query)) return
   // 无实例：按记忆形态打开；停靠切换失败时 manager 静默回退浮窗
-  dock.openAs(dock.getMode(), query).catch((e) => {
+  dock.openAs(dock.getMode(), query).then((result) => {
+    if (result?.ok) return
+    // 全通道失败：给用户可见反馈（此前静默吞掉 = “点击没反应”的体验问题）
+    const reason = String(result?.reason || result?.error?.message || 'unknown')
+    console.warn('[ribbon] openAIAssistant 失败:', reason)
+    try {
+      window.alert(`AI 助手面板打开失败（${reason}）。\n当前 WPS 宿主可能不支持助手窗口 API，请升级 WPS 或在表格/文字宿主中使用。`)
+    } catch (_) { /* alert 不可用时保留 console 记录 */ }
+  }).catch((e) => {
     console.warn('[ribbon] openAIAssistant 按形态打开失败:', e)
+    try {
+      window.alert(`AI 助手面板打开失败：${String(e?.message || e).slice(0, 120)}`)
+    } catch (_) { /* ignore */ }
   })
 }
 
@@ -3237,21 +3248,90 @@ function OnAction(control) {
     case 'btnEtInsight':
     case 'btnEtChart':
     case 'btnEtClean':
+    case 'btnEtReport':
+    case 'btnEtBeautify':
+    case 'btnEtSecurityCheck':
+    case 'btnEtSecEncrypt':
+    case 'btnEtSecDecrypt':
+    case 'btnEtMoreSort':
+    case 'btnEtMoreMerge':
+    case 'btnEtMoreDiff':
+    case 'btnEtMoreTranslate':
+    case 'btnEtMoreMask':
+    case 'btnEtMoreSplitCols':
+    case 'btnEtMoreSplitSheets':
+    case 'btnEtMoreExtract':
+    case 'btnEtMoreBattle':
+    case 'btnEtSettings':
+    case 'btnEtSettingsTop':
     case 'btnWppGen':
     case 'btnWppSummary':
     case 'btnWppBeautify':
-    case 'btnWppNotes': {
+    case 'btnWppNotes':
+    case 'btnWppProof':
+    case 'btnWppStructure':
+    case 'btnWppSecurityCheck':
+    case 'btnWppSecEncrypt':
+    case 'btnWppSecDecrypt':
+    case 'btnWppMoreScaffold':
+    case 'btnWppMoreTranslate':
+    case 'btnWppMoreToDoc':
+    case 'btnWppMoreFooter':
+    case 'btnWppMoreBattle':
+    case 'btnWppMoreCourse':
+    case 'btnWppMoreQuiz':
+    case 'btnWppSettings':
+    case 'btnWppSettingsTop': {
       const RIBBON_ASSISTANT_PROMPTS = {
         btnEtFormula: { prompt: '请为当前表格生成公式并写入指定单元格（优先用 SUM/SUMIF/VLOOKUP 等标准函数，数字由表格自己计算）。我的需求：' },
         btnEtInsight: { prompt: '请分析当前工作表的已用数据区域（不要修改表格），输出：1) 数据概况（行列数与字段含义）；2) 关键趋势与结构占比；3) 异常值或缺失提醒；4) 最值得注意的 5 个要点。结论要带具体数字依据。', autoSend: true },
         btnEtChart: { prompt: '请根据当前工作表数据生成图表：先读取数据判断字段类型，推荐最合适的图型并说明理由，再用工具创建图表。我的补充要求：' },
         btnEtClean: { prompt: '请检查当前工作表已用区域的数据质量：重复行、空值单元格、日期/数字/文本格式混写、首尾多余空格。先输出问题清单（位置+类型+建议处理方式），不要直接修改，等我回复"确认清理"后再执行。', autoSend: true },
+        btnEtReport: { prompt: '请读取当前表格全部数据，输出一份简明结论报告：核心数字、结构/环比变化、值得注意的风险点。不超过 300 字，不要修改表格。', autoSend: true },
+        btnEtBeautify: { prompt: '请美化当前工作表排版（不要改动任何数值）：表头行加粗+深底白字+居中，数据区加细边框，数字列右对齐、文本列左对齐，列宽适当加宽（全部用 format 完成）。完成后报告触及区域。', autoSend: true },
+        btnEtSecurityCheck: { prompt: '请对当前工作表做保密检查（只读不改）：扫描已用区域，识别 手机号/身份证号/银行卡号/邮箱/工资薪酬列 等敏感数据，输出问题清单（位置+类型+样例脱敏展示，如 138****1234），不要修改任何单元格。', autoSend: true },
+        btnEtSecEncrypt: { prompt: '请给当前工作簿设置打开密码：先在对话里向我询问密码（不要自己编造），拿到密码后用 spreadsheet 工具 security_encrypt_save（password 参数，可选 savePath 另存副本）完成加密并报告保存路径。提醒我：密码遗忘无法找回。' },
+        btnEtSecDecrypt: { prompt: '请移除当前工作簿的打开密码：先提醒我备份，确认后用 spreadsheet 工具 security_decrypt_save 完成解密并报告保存路径。' },
+        btnEtMoreSort: { prompt: '请对当前数据表排序/汇总。我的要求：' },
+        btnEtMoreMerge: { prompt: '请把多个工作表的数据合并成一张汇总表：先 sheet_list 列出全部工作表，识别结构相同的明细表，逐表 range_read 后按统一表头合并，新建工作表「合并汇总」写入（加一列「来源表」标注出处），完成后报告各表并入行数。合并范围与补充规则：' },
+        btnEtMoreDiff: { prompt: '请对比两张表找差异：分别 range_read 两表数据，按关键列（如 编号/姓名）匹配，标出 ① 只在A表有的行 ② 只在B表有的行 ③ 同键但字段值不同的行，结果写入新工作表「差异报告」。两张表名与关键列：' },
+        btnEtMoreTranslate: { prompt: '请翻译当前表格：读取已用区域，仅翻译文本单元格（数字、公式、日期保持原样），新建工作表「翻译版」按相同行列结构写入译文。翻译方向与术语要求：' },
+        btnEtMoreMask: { prompt: '请对当前工作表做敏感信息脱敏：手机号中间 4 位打码、身份证号保留前 6 后 4、银行卡号保留后 4，用公式在原列右侧生成「脱敏」列（不覆盖原数据）。数据范围与例外说明：' },
+        btnEtMoreSplitCols: { prompt: '请把指定列拆分成多列：按分隔符或固定规则拆分，结果从原列右侧第一个空列开始写入（原列保留），并命名新列表头。目标列与拆分规则：' },
+        btnEtMoreSplitSheets: { prompt: '请按指定列的取值把当前表拆成多个工作表：每个取值一个新表（表名=取值），表头与原表一致，数据行按取值归类写入。拆分依据列：' },
+        btnEtMoreExtract: { prompt: '请从 Word 文档抽取信息生成台账表：先 document_get_text 读取文档内容，按字段清单抽取，在当前工作簿新建工作表「台账」写入（一行一文档，缺失字段标「未提及」）。文档名称与字段清单：' },
+        btnEtMoreBattle: { prompt: '请把当前表格关键数据做成演示稿战报页：读取数据提炼 3-5 个核心数字，在打开的演示稿末尾新增一页（presentation slide_add，text 版式：标题+要点，每条要点一行带数字）。数据侧重与战报要求：' },
         btnWppGen: { prompt: '请为我生成一套演示稿：先给出大纲（页码+每页标题+要点），等我确认后逐页生成。主题与要求：' },
         btnWppSummary: { prompt: '请通读当前演示稿全部页面（slide_list + slide_read），在第 1 页之后新增一页摘要页（layout 用 text），标题"核心要点"，列出整套内容的 3-5 条要点。', autoSend: true },
         btnWppBeautify: { prompt: '请统一当前演示稿排版：全部页面中文字体设为微软雅黑，标题字号 28、正文 18（format_uniform），表格形状跳过。完成后报告触及页数与形状数，并提醒我预览确认效果。', autoSend: true },
-        btnWppNotes: { prompt: '请为当前演示稿的每一页生成演讲者备注（口播稿）：先逐页读取内容，再为每页写口语化的演讲词（每页 3-5 句，衔接自然），用 notes_set 写入对应页的备注。', autoSend: true }
+        btnWppNotes: { prompt: '请为当前演示稿的每一页生成演讲者备注（口播稿）：先逐页读取内容，再为每页写口语化的演讲词（每页 3-5 句，衔接自然），用 notes_set 写入对应页的备注。', autoSend: true },
+        btnWppProof: { prompt: '请通读当前演示稿全部页面（slide_list + slide_read）做只读校对：错别字、重复词、占位符文本（Lorem/TODO/示例）、明显标点问题。输出问题清单（页码+原文+修改建议），不要修改任何文字。', autoSend: true },
+        btnWppStructure: { prompt: '请对当前演示稿做结构诊断（只读不改）：① 按顺序连读每页标题判断故事线是否连贯 ② 单页要点是否超 5 条 ③ 是否缺封面/目录/章节过渡页/结尾页 ④ 给出 3-5 条结构调整建议（注明页码）。', autoSend: true },
+        btnWppSecurityCheck: { prompt: '请对当前演示稿做保密检查（只读不改）：逐页 slide_read 检查 敏感词/密级表述/内部代号/客户名与金额 等敏感信息，输出问题清单（页码+内容摘要+风险级别），不要修改任何文字。', autoSend: true },
+        btnWppSecEncrypt: { prompt: '请给当前演示稿设置打开密码：先在对话里向我询问密码（不要自己编造），拿到密码后用 presentation 工具 security_encrypt_save（password 参数，可选 savePath 另存副本）完成加密并报告保存路径。提醒我：密码遗忘无法找回。' },
+        btnWppSecDecrypt: { prompt: '请移除当前演示稿的打开密码：先提醒我备份，确认后用 presentation 工具 security_decrypt_save 完成解密并报告保存路径。' },
+        btnWppMoreScaffold: { prompt: '请检查并补齐当前演示稿的结构件：缺封面则加封面页，缺目录则加目录页（列出各章节），章节间缺过渡页则补齐，缺结尾感谢页则加。新页风格与现有页面一致，完成后列出新增页码。', autoSend: true },
+        btnWppMoreTranslate: { prompt: '请把当前演示稿整套翻译：逐页 slide_read 后用 text_replace 将文本译为目标语言（数字、专有名词保持原样），版式不变。目标语言与术语表：' },
+        btnWppMoreToDoc: { prompt: '请把当前演示稿转成 Word 讲义：逐页读取内容（slide_list + slide_read），按「页码+标题+要点」结构整理，用 document_insert 写入打开的 Word 文档。目标文档与要求：' },
+        btnWppMoreFooter: { prompt: '请给当前演示稿统一加页脚：除封面外每页右下角加页码 textbox_add（字号 12、灰色），左下角可加单位名文字，位置各页一致。页脚文字要求：' },
+        btnWppMoreBattle: { prompt: '请跨宿主读取表格数据生成大促战报页：先 range_read 读取打开的工作簿核心数据，提炼 GMV/订单/新增用户等大数字，在当前演示稿末尾新增战报页组（核心战报+排行表格 table_add），喜庆红金配色。战报数据来源与口径：' },
+        btnWppMoreCourse: { prompt: '请生成一份教学课件：按知识点分页（每页一个知识点，含要点与示例），结尾加小结页与思考题。课程主题与受众：' },
+        btnWppMoreQuiz: { prompt: '请生成课堂习题页：题目页 2-3 页（每页 1-2 道题），每题后跟一页答案解析。科目与知识点：' },
+        btnEtSettings: { settings: true },
+        btnEtSettingsTop: { settings: true },
+        btnWppSettings: { settings: true },
+        btnWppSettingsTop: { settings: true }
       }
       const preset = RIBBON_ASSISTANT_PROMPTS[eleId]
+      if (preset?.settings) {
+        // 表格/演示宿主顶部「设置」：与文字宿主 btnSettings 同一设置窗口
+        try {
+          openSettingsWindow()
+        } catch (e) {
+          reportError('打开设置窗口失败', e)
+        }
+        return
+      }
       if (preset?.prompt) {
         try {
           window.Application.PluginStorage.setItem('ai_chat_prefill_prompt', JSON.stringify({ prompt: preset.prompt, autoSend: !!preset.autoSend, at: Date.now() }))
@@ -3783,6 +3863,41 @@ function getRibbonImageRelative(control) {
     'btnWppSummary': 'images/ai-assistant.svg',
     'btnWppBeautify': 'images/ai-assistant.svg',
     'btnWppNotes': 'images/ai-assistant.svg',
+    // 2026-10 顶部扩展（表格/演示：一键新增 + 文档安全 + 更多助手下拉）
+    'btnEtReport': 'images/ai-assistant.svg',
+    'btnEtBeautify': 'images/ai-assistant.svg',
+    'btnEtSecurityCheck': 'images/declassify-check.svg',
+    'menuEtSecurity': 'images/declassify-check.svg',
+    'btnEtSecEncrypt': 'images/declassify-check.svg',
+    'btnEtSecDecrypt': 'images/declassify-check.svg',
+    'btnEtSettings': 'images/settings.svg',
+    'btnEtSettingsTop': 'images/settings.svg',
+    'menuEtMore': 'images/menu-table-batch.svg',
+    'btnEtMoreSort': 'images/ai-assistant.svg',
+    'btnEtMoreMerge': 'images/ai-assistant.svg',
+    'btnEtMoreDiff': 'images/ai-assistant.svg',
+    'btnEtMoreTranslate': 'images/ai-assistant.svg',
+    'btnEtMoreMask': 'images/declassify-check.svg',
+    'btnEtMoreSplitCols': 'images/ai-assistant.svg',
+    'btnEtMoreSplitSheets': 'images/ai-assistant.svg',
+    'btnEtMoreExtract': 'images/ai-assistant.svg',
+    'btnEtMoreBattle': 'images/ai-assistant.svg',
+    'btnWppProof': 'images/ai-assistant.svg',
+    'btnWppStructure': 'images/ai-assistant.svg',
+    'btnWppSecurityCheck': 'images/declassify-check.svg',
+    'menuWppSecurity': 'images/declassify-check.svg',
+    'btnWppSecEncrypt': 'images/declassify-check.svg',
+    'btnWppSecDecrypt': 'images/declassify-check.svg',
+    'btnWppSettings': 'images/settings.svg',
+    'btnWppSettingsTop': 'images/settings.svg',
+    'menuWppMore': 'images/menu-table-batch.svg',
+    'btnWppMoreScaffold': 'images/ai-assistant.svg',
+    'btnWppMoreTranslate': 'images/ai-assistant.svg',
+    'btnWppMoreToDoc': 'images/ai-assistant.svg',
+    'btnWppMoreFooter': 'images/ai-assistant.svg',
+    'btnWppMoreBattle': 'images/ai-assistant.svg',
+    'btnWppMoreCourse': 'images/ai-assistant.svg',
+    'btnWppMoreQuiz': 'images/ai-assistant.svg',
     'btnAITraceCheck': 'images/ai-trace-check.svg',
     'btnTaskList': 'images/report.svg',
     'btnTaskOrchestration': 'images/task-orchestration.svg',

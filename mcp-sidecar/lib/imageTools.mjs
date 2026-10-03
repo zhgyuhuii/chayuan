@@ -13,6 +13,21 @@ import crypto from 'node:crypto'
 
 const OPENVERSE = 'https://api.openverse.org/v1/images/'
 const UA = 'Mozilla/5.0 (compatible; chayuan-wps-imagebot/1.0)'
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+/** 必应图片搜索（免 key、国内可达；解析 iusc 卡片里的 murl 原图直链） */
+async function bingImageSearch(query, maxResults = 8) {
+  const url = `https://cn.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2`
+  const resp = await fetchWithTimeout(url, { headers: { Accept: 'text/html', 'User-Agent': CHROME_UA } }, 15000)
+  if (!resp.ok) throw new Error(`bing HTTP ${resp.status}`)
+  const html = await resp.text()
+  const urls = []
+  const re = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/g
+  let m
+  while ((m = re.exec(html)) && urls.length < maxResults) urls.push({ url: m[1], source: 'bing' })
+  if (!urls.length) throw new Error('bing 无结果')
+  return urls
+}
 
 function tmpImageDir(dataDir) {
   const dir = path.join(dataDir, 'tmp-images')
@@ -58,22 +73,28 @@ async function downloadImage(url, dataDir) {
 export async function imageSearchTool(dataDir, { query, count = 3 } = {}) {
   const q = String(query || '').trim()
   if (!q) return { ok: false, error: '缺少搜索词 query' }
-  let results = []
-  try {
-    results = await openverseSearch(q, Number(count) || 3)
-  } catch (e) {
-    return { ok: false, error: `搜图失败：${e.message || e}` }
-  }
+  const want = Number(count) || 3
   const errors = []
-  for (const r of results.slice(0, 5)) {
+  // 必应优先（国内可达），Openverse 兜底（海外网络）
+  for (const search of [bingImageSearch, openverseSearch]) {
+    let results = []
     try {
-      const dl = await downloadImage(r.url, dataDir)
-      return { ok: true, source: 'web', query: q, path: dl.path, bytes: dl.bytes, origin: r.source, license: r.license }
+      results = await search(q, want * 3)
     } catch (e) {
-      errors.push(String(e.message || e))
+      errors.push(`${search.name}: ${String(e.message || e).slice(0, 80)}`)
+      continue
     }
+    for (const r of results.slice(0, want * 2)) {
+      try {
+        const dl = await downloadImage(r.url, dataDir)
+        return { ok: true, source: 'web', query: q, path: dl.path, bytes: dl.bytes, origin: r.source, license: r.license || '' }
+      } catch (e) {
+        errors.push(String(e.message || e))
+      }
+    }
+    errors.push(`${search.name}: 搜到 ${results.length} 张但下载全败`)
   }
-  return { ok: false, error: `搜到 ${results.length} 张但下载全部失败：${errors[0] || ''}` }
+  return { ok: false, error: `搜图失败（全部来源）：${errors[0] || ''}` }
 }
 
 /** 生图配置：dataDir/image-gen.json {apiUrl, apiKey, model, size} */
@@ -94,17 +115,39 @@ export async function generateImageTool(dataDir, { prompt, size = '512x512' } = 
     return { ok: false, error: '未配置生图模型（dataDir/image-gen.json），请改用 svg_add 矢量图形兜底', unavailable: true }
   }
   const base = String(cfg.apiUrl).replace(/\/+$/, '')
-  const body = { model: cfg.model, prompt: p, n: 1 }
-  if (size) body.size = size
+  // 阿里百炼（DashScope）qwen-image 系走原生多模态生成端点（同步、chat 风格、
+  // 输出 content[].image URL），与 OpenAI images/generations 不兼容——按 host 分流
+  const isDashScope = /dashscope\.aliyuncs\.com/i.test(base)
   let data
   try {
-    const resp = await fetchWithTimeout(`${base}/images/generations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
-      body: JSON.stringify(body)
-    }, 120000)
-    data = await resp.json()
-    if (data?.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 120))
+    if (isDashScope) {
+      const root = base.replace(/\/compatible-mode\/v1.*$/i, '')
+      const mmResp = await fetchWithTimeout(`${root}/api/v1/services/aigc/multimodal-generation/generation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({
+          model: cfg.model,
+          input: { messages: [{ role: 'user', content: [{ type: 'text', text: p }] }] },
+          parameters: size ? { size: String(size).replace('x', '*') } : {}
+        })
+      }, 180000)
+      const mm = await mmResp.json()
+      if (mm?.code) throw new Error(`${mm.code}: ${String(mm.message || '').slice(0, 140)}`)
+      const content = mm?.output?.choices?.[0]?.message?.content || []
+      const imageUrl = (Array.isArray(content) ? content : []).find(c => c?.image)?.image
+      if (!imageUrl) throw new Error('生图响应无 image URL')
+      data = { data: [{ url: imageUrl }] }
+    } else {
+      const body = { model: cfg.model, prompt: p, n: 1 }
+      if (size) body.size = size
+      const resp = await fetchWithTimeout(`${base}/images/generations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify(body)
+      }, 120000)
+      data = await resp.json()
+      if (data?.error) throw new Error(data.error.message || JSON.stringify(data.error).slice(0, 120))
+    }
   } catch (e) {
     return { ok: false, error: `生图失败：${String(e.message || e).slice(0, 160)}` }
   }

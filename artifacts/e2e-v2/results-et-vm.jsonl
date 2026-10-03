@@ -1,0 +1,82 @@
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T13:50:42.447Z","ack":true,"pass":false,"evidence":"账龄分析=false 内容命中=false","secs":602}
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":1,"start":"2026-10-02T14:18:11.500Z","ack":true,"pass":true,"evidence":"账龄分析=true 内容命中=true","secs":42}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T14:29:04.251Z","ack":true,"pass":false,"evidence":"退货分析=false 退货率命中=false","secs":604}
+{"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T14:49:16.302Z","ack":true,"pass":true,"evidence":"ROI复盘!D2=2.5（期望 2.5）","secs":20}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T15:13:31.200Z","ack":true,"pass":false,"evidence":"退货分析=true 退货率命中=false","secs":244}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T15:31:01.302Z","ack":true,"pass":false,"evidence":"退货分析=true 退货率命中=false","secs":363}
+{"id":"NE15","lane":"et","desc":"配方 et-ec-keywords 评价关键词提取","attempt":2,"start":"2026-10-02T15:43:15.399Z","ack":true,"pass":false,"evidence":"关键词=false 物流命中=false","secs":363}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T15:55:28.249Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined（技术部期望 20%）","secs":361}
+{"id":"NE17","lane":"et","desc":"配方 et-hr-social 社保公积金核算","attempt":2,"start":"2026-10-02T16:07:38.597Z","ack":true,"pass":false,"evidence":"社保核算!C2=社保核算!B2*0.105（张三期望 1050）","secs":361}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T16:27:08.550Z","ack":true,"pass":false,"evidence":"退货分析=true 退货率命中=false","secs":363}
+{"id":"NE15","lane":"et","desc":"配方 et-ec-keywords 评价关键词提取","attempt":2,"start":"2026-10-02T16:39:23.849Z","ack":true,"pass":true,"evidence":"关键词=true 物流命中=true","secs":12}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T16:45:45.605Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined","secs":361}
+{"id":"NE17","lane":"et","desc":"配方 et-hr-social 社保公积金核算","attempt":2,"start":"2026-10-02T16:57:55.850Z","ack":true,"pass":false,"evidence":"社保核算!C2=社保核算!B2*0.105（张三期望 1050）","secs":361}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-02T17:10:09.250Z","ack":true,"pass":false,"evidence":"绩效分布=false 矩阵命中=false","secs":363}
+{"id":"NE19","lane":"et","desc":"配方 et-sale-funnel-amt 商机金额漏斗","attempt":2,"start":"2026-10-02T17:22:24.200Z","ack":true,"pass":false,"evidence":"金额漏斗=false 成交80000命中=false","secs":364}
+{"id":"NE20","lane":"et","desc":"配方 et-sale-region 客户分布图","attempt":2,"start":"2026-10-02T17:34:41.052Z","ack":true,"pass":false,"evidence":"区域汇总=true 全簿图表数=0","secs":364}
+{"id":"NE21","lane":"et","desc":"配方 et-edu-exam 试卷质量分析","attempt":2,"start":"2026-10-02T17:46:57.347Z","ack":true,"pass":false,"evidence":"试卷分析=true rows=1（需≥6）","secs":364}
+{"id":"NE22","lane":"et","desc":"配方 et-edu-group 随机分组排座","attempt":2,"start":"2026-10-02T17:59:13.501Z","ack":true,"pass":true,"evidence":"分组表=true 三组名齐全=true","secs":13}
+{"id":"NE23","lane":"et","desc":"配方 et-edu-timetable 课程表生成","attempt":1,"start":"2026-10-02T17:59:29.502Z","ack":true,"pass":true,"evidence":"课程表=true 周一~周五表头=true","secs":8}
+{"id":"NE24","lane":"et","desc":"配方 et-med-schedule 排班表生成","attempt":2,"start":"2026-10-02T18:05:50.166Z","ack":true,"pass":true,"evidence":"排班表=true 班次命中=true","secs":13}
+{"id":"NE25","lane":"et","desc":"配方 et-med-followup 随访到期名单","attempt":2,"start":"2026-10-02T18:12:15.102Z","ack":true,"pass":false,"evidence":"随访名单=true 张三=false 王五=false","secs":364}
+{"id":"NE26","lane":"et","desc":"配方 et-mfg-bom BOM成本汇总","attempt":2,"start":"2026-10-02T18:24:28.108Z","ack":true,"pass":false,"evidence":"成本汇总!B2=null（整机A 期望 50）","secs":361}
+{"id":"NE27","lane":"et","desc":"配方 et-mfg-stocktake 盘点差异表","attempt":2,"start":"2026-10-02T18:36:38.545Z","ack":true,"pass":false,"evidence":"A2=undefined B2=undefined（S1 期望 -5）","secs":361}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T19:00:24.292Z","ack":true,"pass":false,"evidence":"退货分析=true 退货率命中=false","secs":364}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T19:12:37.094Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined","secs":361}
+{"id":"NE17","lane":"et","desc":"配方 et-hr-social 社保公积金核算","attempt":1,"start":"2026-10-02T19:18:41.786Z","ack":true,"pass":true,"evidence":"社保核算!C2=社保核算!B2*0.105（张三期望 1050）","secs":8}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-02T19:24:58.495Z","ack":true,"pass":false,"evidence":"绩效分布=true 矩阵命中=false","secs":364}
+{"id":"NE19","lane":"et","desc":"配方 et-sale-funnel-amt 商机金额漏斗","attempt":2,"start":"2026-10-02T19:37:15.035Z","ack":true,"pass":true,"evidence":"金额漏斗=true 成交80000命中=true","secs":13}
+{"id":"NE20","lane":"et","desc":"配方 et-sale-region 客户分布图","attempt":2,"start":"2026-10-02T19:43:41.738Z","ack":true,"pass":false,"evidence":"区域汇总=true 全簿图表数=0","secs":366}
+{"id":"NE21","lane":"et","desc":"配方 et-edu-exam 试卷质量分析","attempt":1,"start":"2026-10-02T19:49:51.220Z","ack":true,"pass":true,"evidence":"试卷分析=true rows=9（需≥6）","secs":12}
+{"id":"NE25","lane":"et","desc":"配方 et-med-followup 随访到期名单","attempt":2,"start":"2026-10-02T19:56:16.238Z","ack":true,"pass":false,"evidence":"随访名单=true 张三=false 王五=true","secs":364}
+{"id":"NE26","lane":"et","desc":"配方 et-mfg-bom BOM成本汇总","attempt":2,"start":"2026-10-02T20:08:29.892Z","ack":true,"pass":false,"evidence":"成本汇总!B2=null（整机A 期望 50）","secs":361}
+{"id":"NE27","lane":"et","desc":"配方 et-mfg-stocktake 盘点差异表","attempt":2,"start":"2026-10-02T20:20:40.540Z","ack":true,"pass":false,"evidence":"A2=undefined B2=undefined（S1 期望 -5）","secs":361}
+{"id":"NE28","lane":"et","desc":"配方 et-gov-statcheck 统计填报校验","attempt":2,"start":"2026-10-02T20:32:54.588Z","ack":true,"pass":false,"evidence":"校验报告=true 规则命中=false","secs":360}
+{"id":"NE29","lane":"et","desc":"配方 et-gov-rostercheck 名册核对","attempt":2,"start":"2026-10-02T20:45:04.685Z","ack":true,"pass":false,"evidence":"B2=NaN B3=NaN B4=NaN（期望 1/1/1）","secs":361}
+{"id":"NE30","lane":"et","desc":"配方 et-shop-diff 日销盘点差异","attempt":2,"start":"2026-10-02T20:57:15.393Z","ack":true,"pass":false,"evidence":"A2=null B2=null（S1 损耗期望 5）","secs":361}
+{"id":"NE31","lane":"et","desc":"配方 et-shop-supply 供应商对价","attempt":2,"start":"2026-10-02T21:09:29.291Z","ack":true,"pass":false,"evidence":"对价结果=false P1=false 乙=false","secs":360}
+{"id":"NE32","lane":"et","desc":"配方 et-life-travel 旅行预算表","attempt":1,"start":"2026-10-02T21:15:32.962Z","ack":true,"pass":true,"evidence":"旅行预算=true 表头命中=true","secs":17}
+{"id":"NE33","lane":"et","desc":"配方 et-life-loan 还贷计划表","attempt":2,"start":"2026-10-02T21:21:58.275Z","ack":true,"pass":true,"evidence":"还贷计划=true 月供5851/PMT命中=true","secs":8}
+{"id":"NE34","lane":"et","desc":"配方 et-life-fitness 体重健身追踪","attempt":2,"start":"2026-10-02T21:28:15.636Z","ack":true,"pass":true,"evidence":"健身追踪=true BMI=true","secs":12}
+{"id":"NE37","lane":"et","desc":"配方 et-translate 表格翻译","attempt":2,"start":"2026-10-02T21:34:40.543Z","ack":true,"pass":false,"evidence":"翻译版=false B2=","secs":361}
+{"id":"NE36","lane":"et","desc":"配方 et-x-ppt 数据战报页（跨宿主写 PPT）","attempt":2,"start":"2026-10-02T21:46:50.897Z","ack":true,"pass":false,"evidence":"战报页命中=0/5","secs":362}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T22:15:14.583Z","ack":true,"pass":false,"evidence":"退货分析=true 退货率命中=false","secs":364}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T22:27:27.516Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined","secs":361}
+{"id":"NE17","lane":"et","desc":"配方 et-hr-social 社保公积金核算","attempt":1,"start":"2026-10-02T22:33:31.805Z","ack":true,"pass":true,"evidence":"社保核算!C2=社保核算!B2*0.105（张三期望 1050）","secs":8}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-02T22:39:52.197Z","ack":true,"pass":false,"evidence":"绩效分布=true 矩阵命中=false","secs":360}
+{"id":"NE19","lane":"et","desc":"配方 et-sale-funnel-amt 商机金额漏斗","attempt":1,"start":"2026-10-02T22:45:55.651Z","ack":true,"pass":true,"evidence":"金额漏斗=true 成交80000命中=true","secs":8}
+{"id":"NE20","lane":"et","desc":"配方 et-sale-region 客户分布图","attempt":2,"start":"2026-10-02T22:52:19.289Z","ack":true,"pass":true,"evidence":"区域汇总=true 全簿图表数=1","secs":14}
+{"id":"NE21","lane":"et","desc":"配方 et-edu-exam 试卷质量分析","attempt":1,"start":"2026-10-02T22:52:37.022Z","ack":true,"pass":true,"evidence":"试卷分析=true rows=9（需≥6）","secs":8}
+{"id":"NE25","lane":"et","desc":"配方 et-med-followup 随访到期名单","attempt":2,"start":"2026-10-02T22:58:57.479Z","ack":true,"pass":true,"evidence":"随访名单=true 张三=true 王五=true","secs":13}
+{"id":"NE26","lane":"et","desc":"配方 et-mfg-bom BOM成本汇总","attempt":2,"start":"2026-10-02T23:05:19.281Z","ack":true,"pass":false,"evidence":"成本汇总!B2=65（整机A 期望 50）","secs":361}
+{"id":"NE27","lane":"et","desc":"配方 et-mfg-stocktake 盘点差异表","attempt":1,"start":"2026-10-02T23:11:23.488Z","ack":true,"pass":true,"evidence":"A2=S1 B2=-5（S1 期望 -5）","secs":17}
+{"id":"NE28","lane":"et","desc":"配方 et-gov-statcheck 统计填报校验","attempt":2,"start":"2026-10-02T23:17:48.575Z","ack":true,"pass":false,"evidence":"校验报告=true 规则命中=false","secs":364}
+{"id":"NE29","lane":"et","desc":"配方 et-gov-rostercheck 名册核对","attempt":2,"start":"2026-10-02T23:30:01.941Z","ack":true,"pass":true,"evidence":"B2=1 B3=1 B4=1（期望 1/1/1）","secs":17}
+{"id":"NE30","lane":"et","desc":"配方 et-shop-diff 日销盘点差异","attempt":2,"start":"2026-10-02T23:36:28.269Z","ack":true,"pass":true,"evidence":"A2=S1 B2=5（S1 损耗期望 5）","secs":13}
+{"id":"NE31","lane":"et","desc":"配方 et-shop-supply 供应商对价","attempt":2,"start":"2026-10-02T23:42:53.241Z","ack":true,"pass":true,"evidence":"对价结果=true P1=true 乙=true","secs":13}
+{"id":"NE33","lane":"et","desc":"配方 et-life-loan 还贷计划表","attempt":1,"start":"2026-10-02T23:43:09.249Z","ack":true,"pass":true,"evidence":"还贷计划=true 月供5851/PMT命中=true","secs":8}
+{"id":"NE37","lane":"et","desc":"配方 et-translate 表格翻译","attempt":2,"start":"2026-10-02T23:49:26.285Z","ack":true,"pass":true,"evidence":"翻译版=true B2=Smart Document Desk Lamp","secs":13}
+{"id":"NE36","lane":"et","desc":"配方 et-x-ppt 数据战报页（跨宿主写 PPT）","attempt":2,"start":"2026-10-02T23:55:48.979Z","ack":true,"pass":true,"evidence":"战报页命中=1/6","secs":8}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":1,"start":"2026-10-03T00:44:41.065Z","ack":true,"pass":true,"evidence":"退货分析=true 退货率命中=true","secs":17}
+{"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":1,"start":"2026-10-03T00:49:57.912Z","ack":true,"pass":true,"evidence":"公式演示!L1=91（A 列最大值期望 91）","secs":8}
+{"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":1,"start":"2026-10-03T00:50:09.395Z","ack":true,"pass":true,"evidence":"销售明细!Z5=BT-E2OK","secs":12}
+{"id":"BT-E3","lane":"et","desc":"顶部·一键图表","attempt":2,"start":"2026-10-03T00:57:31.088Z","ack":true,"pass":false,"evidence":"全簿图表数=0（原 1 + 新增 ≥1）","secs":427}
+{"id":"BT-E4","lane":"et","desc":"顶部·数据清洗（autoSend）","attempt":1,"start":"2026-10-03T01:04:41.445Z","ack":true,"pass":true,"evidence":"应收账款!Z5=BT-E4OK","secs":20}
+{"id":"BT-E5","lane":"et","desc":"顶部·报表结论（autoSend）","attempt":2,"start":"2026-10-03T01:12:12.245Z","ack":true,"pass":true,"evidence":"退货明细!Z5=BT-E5OK","secs":12}
+{"id":"BT-E6","lane":"et","desc":"顶部·一键美化（autoSend）","attempt":2,"start":"2026-10-03T01:19:34.319Z","ack":true,"pass":true,"evidence":"分组名单!Z5=BT-E6OK","secs":16}
+{"id":"BT-E7","lane":"et","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-03T01:28:00.294Z","ack":true,"pass":true,"evidence":"保密检查=true 敏感项命中=true","secs":12}
+{"id":"BT-E8","lane":"et","desc":"顶部·排序汇总（下拉）","attempt":2,"start":"2026-10-03T01:35:24.629Z","ack":true,"pass":true,"evidence":"K1=10（期望 10） K2=460000（期望 460000）","secs":12}
+{"id":"BT-E9","lane":"et","desc":"顶部·文档抽取成表（下拉·跨宿主）","attempt":2,"start":"2026-10-03T01:36:16.889Z","pass":false,"evidence":"无法置活动文档 e2e-contract2（跨宿主读目标）","secs":32}
+{"id":"BT-E10","lane":"et","desc":"顶部·加密工作簿（对话流·放最后）","attempt":1,"start":"2026-10-03T01:36:51.770Z","ack":true,"pass":true,"evidence":"回合完成，外部验证文件加密状态","secs":8}
+{"id":"BT-E11","lane":"et","desc":"顶部·解密工作簿（对话流·最后）","attempt":1,"start":"2026-10-03T01:37:03.277Z","ack":true,"pass":true,"evidence":"回合完成，外部验证文件解密状态","secs":8}
+{"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-03T07:46:48.795Z","ack":true,"pass":false,"evidence":"公式演示!L1=0（A 列最大值期望 91）","secs":361}
+{"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":2,"start":"2026-10-03T08:00:00.543Z","ack":true,"pass":false,"evidence":"销售明细!Z5=null","secs":422}
+{"id":"BT-E3","lane":"et","desc":"顶部·一键图表","attempt":2,"start":"2026-10-03T08:14:12.363Z","ack":true,"pass":false,"evidence":"全簿图表数=0（原 1 + 新增 ≥1）","secs":421}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-03T08:49:46.643Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined","secs":361}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-03T09:02:00.279Z","ack":true,"pass":false,"evidence":"绩效分布=false 矩阵命中=false","secs":364}
+{"id":"NE26","lane":"et","desc":"配方 et-mfg-bom BOM成本汇总","attempt":2,"start":"2026-10-03T09:14:13.994Z","ack":true,"pass":false,"evidence":"成本汇总!B2=undefined（整机A 期望 50）","secs":362}
+{"id":"NE28","lane":"et","desc":"配方 et-gov-statcheck 统计填报校验","attempt":2,"start":"2026-10-03T09:26:27.597Z","ack":true,"pass":false,"evidence":"校验报告=false 规则命中=false","secs":364}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-03T13:12:56.949Z","ack":true,"pass":false,"evidence":"离职分析!B2=undefined","secs":364}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-03T13:25:12.140Z","ack":true,"pass":false,"evidence":"绩效分布=false 矩阵命中=false","secs":361}
+{"id":"NE26","lane":"et","desc":"配方 et-mfg-bom BOM成本汇总","attempt":2,"start":"2026-10-03T13:37:24.612Z","ack":true,"pass":false,"evidence":"成本汇总!B2=undefined（整机A 期望 50）","secs":859}
+{"id":"NE28","lane":"et","desc":"配方 et-gov-statcheck 统计填报校验","attempt":2,"start":"2026-10-03T13:57:53.889Z","ack":true,"pass":false,"evidence":"校验报告=false 规则命中=false","secs":361}

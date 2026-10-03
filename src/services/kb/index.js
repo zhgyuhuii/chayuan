@@ -10,6 +10,7 @@
  *   - connectionCipher  凭据 AES-GCM + 设备绑定 key
  *   - authClient        双模 fetch 包装(JWT / HMAC)
  *   - healthProbe       三步连通性聚合
+ *   - kbDiscovery       本机 chayuan-harness(chatop) 知识库自动发现 + 动态接入
  *   - kbCatalog         知识库列表(树形)
  *   - kbCatalogCache    ETag + TTL LRU
  *   - splitters         T1 结构切分 + T2 自适应归并
@@ -39,6 +40,7 @@ import * as pathRouter from './pathRouter.js'
 import * as healthProbe from './healthProbe.js'
 import * as kbCatalog from './kbCatalog.js'
 import * as kbCatalogCache from './kbCatalogCache.js'
+import * as kbDiscovery from './kbDiscovery.js'
 import * as splitters from './splitters.js'
 import * as clusterer from './clusterer.js'
 import * as localDistiller from './localDistiller.js'
@@ -91,6 +93,16 @@ const health = {
   run: healthProbe.run
 }
 
+const discovery = {
+  discover: kbDiscovery.discoverHarnessKb,
+  ensureConnection: kbDiscovery.ensureHarnessConnection,
+  probeStatus: kbDiscovery.probeStatus,
+  isChatop: kbDiscovery.isChatop,
+  apiUrl: kbDiscovery.apiUrl,
+  forget: kbDiscovery.forget,
+  HARNESS_CONNECTION_ID: kbDiscovery.HARNESS_CONNECTION_ID
+}
+
 const middleware = {
   applyKbRetrievalIfBound: retrievalMiddleware.applyKbRetrievalIfBound
 }
@@ -101,14 +113,15 @@ const kb = {
   search,
   attachment,
   health,
+  discovery,
   middleware
 }
 
 export default kb
 export {
-  connection, catalog, search, attachment, health, middleware,
+  connection, catalog, search, attachment, health, discovery, middleware,
   connectionStore, connectionCipher, authClient, pathRouter, healthProbe,
-  kbCatalog, kbCatalogCache, splitters, clusterer, localDistiller,
+  kbCatalog, kbCatalogCache, kbDiscovery, splitters, clusterer, localDistiller,
   queryPlanner, searchClient, searchOrchestrator, deduper,
   credibilityScorer, promptBuilder, attachmentClient, retrievalMiddleware
 }

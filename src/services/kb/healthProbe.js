@@ -13,8 +13,101 @@
 
 import { createAuthClient } from './authClient.js'
 import { resolve as _resolvePath } from './pathRouter.js'
+import { isChatop, isChatopStatus, apiUrl } from './kbDiscovery.js'
 
 function _ms() { return Date.now() }
+
+/**
+ * chatop(察元 Harness 本机)分支:回环免鉴权,三步退化为
+ * /health(可达) → /status(指纹+身份) → /kbs(库清单),步骤名与通用分支对齐,
+ * UI 三段式渲染零改动。
+ */
+async function _runChatop(connection, options = {}) {
+  const signal = options.signal
+  const steps = []
+
+  const start1 = _ms()
+  let s1 = { ok: false, status: 0, latencyMs: 0 }
+  try {
+    const resp = await fetch(apiUrl(connection, '/health'), { signal, credentials: 'omit' })
+    s1 = { ok: resp.ok, status: resp.status, latencyMs: _ms() - start1 }
+  } catch (e) {
+    s1 = { ok: false, status: 0, latencyMs: _ms() - start1, error: e.message || String(e) }
+  }
+  steps.push({ name: 'service', label: '服务地址', ...s1 })
+  if (!s1.ok) {
+    return {
+      ok: false,
+      steps,
+      hint: '本机 Harness 服务不可达:请确认 chayuan-harness(chatop)已启动(默认端口 52582)'
+    }
+  }
+
+  // /status 即指纹(ok+Array kbs),回环信任无需凭据 — 该步等价于通用分支的"凭据"
+  const start2 = _ms()
+  let status = null
+  let statusError = ''
+  try {
+    const resp = await fetch(apiUrl(connection, '/status'), { signal, credentials: 'omit' })
+    if (resp.ok) status = await resp.json().catch(() => null)
+    else statusError = `HTTP ${resp.status}`
+  } catch (e) {
+    statusError = e.message || String(e)
+  }
+  const s2ok = isChatopStatus(status)
+  steps.push({
+    name: 'cred',
+    label: '本机服务',
+    ok: s2ok,
+    status: s2ok ? 200 : 0,
+    latencyMs: _ms() - start2,
+    error: s2ok ? '' : (statusError || '响应不是 chatop-kb /status 形状')
+  })
+  if (!s2ok) {
+    return { ok: false, steps, hint: '端口有响应但不是 chatop-kb 服务,请重新自动发现' }
+  }
+
+  const start3 = _ms()
+  let kbs = []
+  let kbError = ''
+  try {
+    const resp = await fetch(apiUrl(connection, '/kbs'), { signal, credentials: 'omit' })
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}))
+      kbs = Array.isArray(data?.kbs) ? data.kbs : []
+    } else {
+      kbError = `HTTP ${resp.status}`
+    }
+  } catch (e) {
+    kbError = e.message || String(e)
+  }
+  const s3ok = !kbError
+  steps.push({
+    name: 'kb',
+    label: '知识库通路',
+    ok: s3ok,
+    status: s3ok ? 200 : 0,
+    latencyMs: _ms() - start3,
+    kbCount: kbs.length,
+    error: kbError
+  })
+  if (!s3ok) {
+    return { ok: false, steps, hint: '服务在线但拿不到库列表,请检查 harness 侧 chatop-kb 插件状态' }
+  }
+
+  return {
+    ok: true,
+    steps,
+    summary: {
+      latencyMs: steps.reduce((acc, s) => acc + (s.latencyMs || 0), 0),
+      kbCount: kbs.length,
+      kbNames: kbs.map(k => k?.kbId || k?.name || '').filter(Boolean).slice(0, 100),
+      subjectKind: 'local',
+      identity: { username: '察元 Harness (本机)', role: 'owner' },
+      aclHint: ''
+    }
+  }
+}
 
 async function _rawHealthz(baseUrl, signal) {
   const start = _ms()
@@ -167,6 +260,12 @@ function _humanize(status, body) {
 }
 
 export async function run(connection, options = {}) {
+  if (isChatop(connection)) {
+    if (!connection.baseUrl) {
+      return { ok: false, steps: [{ name: 'baseUrl', ok: false, error: '未填写服务地址' }] }
+    }
+    return _runChatop(connection, options)
+  }
   if (!connection || !connection.baseUrl) {
     return {
       ok: false,

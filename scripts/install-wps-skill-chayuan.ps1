@@ -1,5 +1,5 @@
 ﻿# install-wps-skill-chayuan.ps1 —— wps-skill-chayuan 直装脚本（Windows）
-# 不跑 .exe 安装器外壳，直接：① 加载项+publish.xml(enable_dev) 写 jsaddons ② 注册 HKCU Run 并启动 MCP
+# 不跑 .exe 安装器外壳，直接：① 安装前清掉 jsaddons 里全部历史版本目录，再写当前版加载项+publish.xml(enable_dev) ② 注册 HKCU Run 并启动 MCP
 #   ③ 四级 healthz  ④ 自动检测已装 agent（Claude Code/Cursor/Codex）→ 注册 MCP + 按各自格式投放技能文件
 #   OpenClaw/Hermes 为 GUI 打印指引；GitHub 被墙时 -Fetch 多源回退（Gitee/aidooo）+ sha256 强校验
 #   STEP 2 内联实现（不再依赖 autostart\*.ps1——部分 Defender 会隔离该目录下的 ps1）
@@ -238,6 +238,29 @@ function Copy-AddonTree([string]$Src, [string]$Dst) {
   if ($LASTEXITCODE -ge 8) { throw "robocopy 复制加载项失败 (exit=$LASTEXITCODE)：$Src → $Dst" }
 }
 
+# ───────── 安装前清理：删掉 jsaddons 里所有历史版本目录，装完只剩本次最新版 ─────────
+# 目录家族：chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>；上次安装中断遗留的
+# .<目录>.installing 暂存壳一并清掉。本次要装的同名目录不在这里删，由替换逻辑原子覆盖。
+# 注意 ${prefix} 必须带花括号：PS 双引号里 $prefix_* 会把变量名贪婪解析成 prefix_。
+function Clear-OldAddons([string]$JsAddons) {
+  $prefix = $AddonFolder -replace '_.*$', ''
+  $patterns = @("${prefix}_*", "${prefix}-et_*", "${prefix}-wpp_*", ".${prefix}*.installing")
+  Get-ChildItem -LiteralPath $JsAddons -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    $n = $_.Name
+    $hit = $false
+    foreach ($p in $patterns) { if ($n -like $p) { $hit = $true; break } }
+    if (-not $hit) { return }
+    if ($n -eq $AddonFolder) { return }
+    foreach ($h in @($Meta.hostAddons)) { if ($h -and $n -eq $h.addonFolder) { return } }
+    Remove-TreeForce $_.FullName
+    if (Test-Path -LiteralPath $_.FullName) {
+      Write-Host "  ⚠ 旧版本目录删除失败（可能被 WPS 占用）: $n" -ForegroundColor Yellow
+    } else {
+      Write-Host "  · 已删除旧版本目录: $n"
+    }
+  }
+}
+
 # ───────── STEP 1: 加载项 → jsaddons ─────────
 function Install-Addon {
   Write-Host '[wps-skill-chayuan] STEP 1 加载项 → jsaddons'
@@ -245,6 +268,8 @@ function Install-Addon {
   if (-not (Test-Path -LiteralPath $srcAddon)) { Write-Error "缺加载项目录 $srcAddon" }
   $jsaddons = Join-Path $env:APPDATA 'kingsoft\wps\jsaddons'
   New-Item -ItemType Directory -Force -Path $jsaddons | Out-Null
+  # 安装前先清掉所有历史版本目录（每版一个 chayuan_<ver> 目录的堆积问题），装完只剩最新版
+  Clear-OldAddons $jsaddons
   $destAddon = Join-Path $jsaddons $AddonFolder
   # 原子替换：先装到 .installing 再覆盖
   $staging = Join-Path $jsaddons ".$AddonFolder.installing"

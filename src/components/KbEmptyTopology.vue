@@ -19,7 +19,7 @@
     <header class="kb-empty-topology-head">
       <div class="kb-empty-topology-title">
         <h3>知识库连接</h3>
-        <p class="kb-empty-topology-sub">还没配置任何连接。点击右上角「新建连接」开始 — 拓扑图展示察元如何把多类能力串成统一路径。</p>
+        <p class="kb-empty-topology-sub">还没配置任何连接。点「自动发现本机 Harness」一键接入本机知识库,或「新建连接」手动配置 — 拓扑图展示察元如何把多类能力串成统一路径。</p>
         <!-- 特色徽章:让用户一眼看见察元的差异化定位 -->
         <div class="kb-empty-topology-badges">
           <span class="kb-empty-badge kb-empty-badge-blue">WPS 原生加载项</span>
@@ -29,7 +29,12 @@
           <span class="kb-empty-badge kb-empty-badge-slate">开源核心 BSL</span>
         </div>
       </div>
-      <button class="btn-primary kb-empty-topology-new" @click="$emit('create')">＋ 新建连接</button>
+      <div class="kb-empty-topology-actions">
+        <button class="btn-secondary kb-empty-topology-discover" @click="$emit('discover')">
+          ⌖ 自动发现本机 Harness
+        </button>
+        <button class="btn-primary kb-empty-topology-new" @click="$emit('create')">＋ 新建连接</button>
+      </div>
     </header>
 
     <!-- 能力支持清单:展示察元接通的全部模型 / 多模态能力,
@@ -746,7 +751,7 @@ const MODULES = {
 
 export default {
   name: 'KbEmptyTopology',
-  emits: ['create'],
+  emits: ['create', 'discover'],
   props: {
     // 公众号二维码图片 src;调用方可传任意可访问 URL。
     // 默认指向项目 public/ 下的 wechat-qrcode.png — 把图片放到那里即可显示。
@@ -1050,6 +1055,24 @@ export default {
   line-height: 1.55;
   color: #5b6783;
 }
+.kb-empty-topology-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.kb-empty-topology-discover {
+  border: 1px solid #c4cfe2;
+  background: #fff;
+  color: #2a6ddf;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.kb-empty-topology-discover:hover { background: #eff6ff; transform: translateY(-1px); }
 .kb-empty-topology-new {
   flex-shrink: 0;
   border: 1px solid #2a6ddf;

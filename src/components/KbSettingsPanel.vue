@@ -11,6 +11,7 @@
     <KbEmptyTopology
       v-if="!connections.length"
       @create="onCreate"
+      @discover="onDiscover(true)"
     />
 
     <div v-else class="kb-two-cols">
@@ -18,7 +19,16 @@
       <aside class="kb-col-conn">
         <div class="kb-col-header">
           <span>知识库连接</span>
-          <button class="btn-icon" title="新增连接" @click="onCreate">＋</button>
+          <span class="kb-header-actions">
+            <button
+              class="btn-icon"
+              :class="{ 'is-discovering': discovering }"
+              :title="discovering ? '正在扫描本机服务…' : '自动发现本机察元 Harness 知识库'"
+              :disabled="discovering"
+              @click="onDiscover(true)"
+            >⌖</button>
+            <button class="btn-icon" title="新增连接" @click="onCreate">＋</button>
+          </span>
         </div>
 
         <ul class="kb-conn-items">
@@ -34,7 +44,7 @@
                 <span v-if="currentId === c.id" class="kb-conn-current-badge">当前</span>
               </div>
               <div class="kb-conn-meta">
-                <span class="kb-conn-mode">{{ c.authMode === 'hmac' ? 'APPID' : '账号' }}</span>
+                <span class="kb-conn-mode">{{ connModeLabel(c) }}</span>
                 <span class="kb-conn-host" :title="c.baseUrl">{{ shortHost(c.baseUrl) }}</span>
               </div>
             </div>
@@ -212,7 +222,7 @@ import { isEnabled as isFlagEnabled, setFlag as setFeatureFlag, subscribe as sub
 import KbConnectionFormDialog from './KbConnectionFormDialog.vue'
 import KbEmptyTopology from './KbEmptyTopology.vue'
 
-const { connectionStore, healthProbe, kbCatalog, kbCatalogCache } = services.kb
+const { connectionStore, healthProbe, kbCatalog, kbCatalogCache, kbDiscovery } = services.kb
 
 export default {
   name: 'KbSettingsPanel',
@@ -234,6 +244,7 @@ export default {
       unsubStore: null,
       unsubFlag: null,
       kbFlagEnabled: true,
+      discovering: false,
       formDialog: { visible: false, connection: null },
       deleteConfirm: { open: false, id: '', name: '' },
     }
@@ -250,6 +261,8 @@ export default {
     })
     await this.refreshConnections()
     this.unsubStore = connectionStore.subscribe(() => { this.refreshConnections() })
+    // 静默自动发现:面板打开即扫一次本机 harness,发现新实例才提示(不打扰)
+    this.silentDiscover()
   },
   beforeUnmount() {
     if (this.unsubStore) try { this.unsubStore() } catch (e) { /* noop */ }
@@ -286,6 +299,57 @@ export default {
     onCreate() {
       this.formDialog.connection = null
       this.formDialog.visible = true
+    },
+
+    /**
+     * 自动发现本机察元 Harness(chatop) 知识库并动态接入。
+     * manual=true(用户点按钮):任何结果都给 toast;manual=false(挂载静默扫):
+     * 只在"新接入/地址更新"时提示,找不到保持安静。
+     */
+    async onDiscover(manual = false) {
+      if (this.discovering) return
+      this.discovering = true
+      try {
+        const res = await kbDiscovery.ensureHarnessConnection({ force: manual })
+        if (res.ok) {
+          const n = res.discovery?.kbCount ?? 0
+          const host = this.shortHost(res.connection?.baseUrl || '')
+          if (res.action === 'added') {
+            this.showToast('success', `已自动接入本机察元 Harness 知识库(${host},发现 ${n} 个)`)
+          } else if (res.action === 'updated') {
+            this.showToast('success', `本机 Harness 地址已更新(${host},${n} 个知识库)`)
+          } else if (manual) {
+            this.showToast('success', `本机 Harness 已连接(${host},${n} 个知识库)`)
+          }
+          // ensure 每次都会 upsert 健康快照 → store 订阅会 silent 选中并清空目录,
+          // 这里统一失效缓存 + 强刷目录,保证右栏树始终跟得上
+          kbCatalogCache.invalidate(`list:${kbDiscovery.HARNESS_CONNECTION_ID}`)
+          kbCatalogCache.invalidate(`tree:${kbDiscovery.HARNESS_CONNECTION_ID}`)
+          await this.refreshConnections()
+          if (res.connection?.id) {
+            await this.selectConnection(res.connection.id, true)
+            this.loadCatalog(true).catch(() => {})
+          }
+        } else if (manual) {
+          this.showToast('error', '未发现本机察元 Harness 知识库服务(默认端口 52582),请确认 chatop 已启动')
+        }
+      } catch (e) {
+        if (manual) this.showToast('error', `自动发现失败:${e.message || e}`)
+      } finally {
+        this.discovering = false
+      }
+    },
+
+    async silentDiscover() {
+      if (!this.kbFlagEnabled) return
+      try { await this.onDiscover(false) } catch (e) { /* 静默:失败不打扰 */ }
+    },
+
+    connModeLabel(c) {
+      if (kbDiscovery.isChatop(c)) return 'Harness 本机'
+      if (c.authMode === 'hmac') return 'APPID'
+      if (c.authMode === 'none') return '本机直连'
+      return '账号'
     },
 
     onEdit() {
@@ -490,6 +554,15 @@ export default {
   color: #2a6ddf;
 }
 .btn-icon:hover { color: #1452c4; }
+.btn-icon:disabled { opacity: 0.5; cursor: wait; }
+.kb-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.btn-icon.is-discovering {
+  animation: kbIconSpin 1.1s linear infinite;
+}
 
 /* ---- 左 4 :连接列表 + 选中后 actions + 测试结果 ---- */
 .kb-col-conn {

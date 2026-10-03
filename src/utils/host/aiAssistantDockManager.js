@@ -571,6 +571,14 @@ export function createAIAssistantDockManager(deps = {}) {
       try {
         openFloat(query)
       } catch (e) {
+        // 双通道互备：float（ShowDialog）不可用（部分宿主/平台缺失该 API）时
+        // 自动尝试停靠通道（CreateTaskPane）；再失败才向外抛，由调用方给可见反馈
+        try {
+          if (canDockAtRuntime('bottom')) {
+            const docked = await dockTo('bottom', query)
+            if (docked?.ok) return { ok: true, mode: 'bottom', viaFallback: true }
+          }
+        } catch (_) { /* 用原始 float 错误对外 */ }
         return { ok: false, reason: 'float-open-failed', error: e }
       }
       setMode('float')

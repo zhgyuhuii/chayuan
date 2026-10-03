@@ -103,6 +103,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
         ? '【改字落点】先用 presentation(action=slide_read) 定位页与形状，再 text_set/text_replace 修改；新增内容用 textbox_add/slide_add，不得清空已有页。'
         : '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
     `【没有${targetNoun}或桥接失败】当前没有打开${targetNoun}时停止操作，提示用户手动打开目标文件后重试；工具失败不得以新建、重新打开文件或重启宿主作为恢复手段。`,
+    `【对话↔文档绑定】本对话只服务于发起它的${targetNoun}。若执行层校验发现活动文档与本对话不一致（错误含 DOC_MISMATCH/文档不一致字样），如实告知用户"对话与当前文档不匹配，已停止"，请用户切回对应文档或开启新对话；绝不要尝试改写、移动或另存文件来"绕过"校验。`,
     isEt
       ? '【跨宿主】可只读其它宿主作数据源，但只写当前工作簿（写其它宿主会被身份校验拦截）。需要演示稿/文档内容时用 presentation(action=slide_list|slide_read) / document_get_text 只读提取。'
       : isWpp

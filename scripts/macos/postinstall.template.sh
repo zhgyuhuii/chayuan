@@ -25,7 +25,8 @@ cleanup_old_addons() {
 	local dest="$1"
 	local prefix="${ADDON_FOLDER%%_*}"
 	local entry base skip
-	for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_*; do
+	# 最后一组：历史安装中断遗留的 .<目录>.installing 暂存壳（点前缀，同名新壳由安装流程重建）
+	for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_* "$dest"/.${prefix}*.installing; do
 		[[ -d "$entry" ]] || continue
 		base="$(/usr/bin/basename "$entry")"
 		skip=0
@@ -113,6 +114,9 @@ install_all_one() {
 	local dest="$1"
 	[[ -z "$dest" ]] && return 0
 	/bin/mkdir -p "$dest" || return 1
+	# 安装前先清理历史版本目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>），
+	# 只保留本次要装的版本；本次同名目录由 install_one 替换逻辑原子覆盖。
+	cleanup_old_addons "$dest"
 	local folder ok=1
 	# 主宿主 + 表格/演示宿主目录
 	for folder in "$ADDON_FOLDER" $HOST_FOLDERS; do
@@ -120,7 +124,7 @@ install_all_one() {
 	done
 	/bin/cp -f "$INSTALL_ROOT/publish.xml" "$dest/publish.xml" 2>/dev/null || true
 	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest/publish.xml" 2>/dev/null || true
-	# 替换式安装：清掉历史版本目录
+	# 装完兜底再扫一遍（正常情况下安装前清理已清光）
 	cleanup_old_addons "$dest"
 	return $ok
 }

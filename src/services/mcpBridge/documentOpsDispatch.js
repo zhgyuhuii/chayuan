@@ -12,7 +12,7 @@ import {
   getSelectionChunksWithPositionsAsync
 } from '../../utils/documentChunker.js'
 import { getChunkSettings } from '../../utils/chunkSettings.js'
-import { saveActiveDocument, saveActiveDocumentAs } from '../../utils/documentFileActions.js'
+import { saveActiveDocument, saveActiveDocumentAs, saveActiveObjectWithPassword, saveActiveObjectWithoutPassword } from '../../utils/documentFileActions.js'
 import {
   getCurrentDeclassifyStatus,
   buildDeclassifyPreview,
@@ -987,6 +987,38 @@ export async function handleDeclassifyRestore(params = {}) {
     summary: result && typeof result === 'object'
       ? { taskId: result.taskId || result.lifecycleTaskId }
       : { raw: true }
+  }
+}
+
+export async function handleSecurityEncryptSave(params = {}) {
+  requireConfirmed(params)
+  const password = String(params.password || '')
+  if (!password) {
+    const err = new Error('password required')
+    err.code = 'INVALID_PARAMS'
+    throw err
+  }
+  const result = saveActiveObjectWithPassword(password, String(params.savePath || ''))
+  return {
+    ok: true,
+    encrypted: true,
+    // 永不回显密码
+    path: result.path,
+    fileName: result.fileName,
+    document: docInfo()
+  }
+}
+
+export async function handleSecurityDecryptSave(params = {}) {
+  requireConfirmed(params)
+  const result = saveActiveObjectWithoutPassword(String(params.savePath || ''), Number(params.attempt) || 0)
+  return {
+    ok: true,
+    decrypted: true,
+    api: result.api,
+    path: result.path,
+    fileName: result.fileName,
+    document: docInfo()
   }
 }
 

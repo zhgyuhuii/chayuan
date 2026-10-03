@@ -1,7 +1,13 @@
 import { activateDialogWindow } from './windowActivation.js'
+import { detectAddonType } from './host/hostType.js'
 
-const LOCK_KEY = 'nd_ai_assistant_window_lock'
-const REQUEST_KEY = 'nd_ai_assistant_window_request'
+// 单实例锁按宿主分域（_wps/_et/_wpp）：三个宿主加载项的 webview 同源共享
+// localStorage，若共用一把锁，A 宿主开面板后 B 宿主的点击会被 fresh+busy 锁
+// 静默吞掉（真机实证：「换个类型就无法展开」）。分域后每宿主各持一把锁，
+// 面板可跨宿主并存互不干扰。
+const hostSuffix = () => `_${detectAddonType()}`
+const lockKey = () => `nd_ai_assistant_window_lock${hostSuffix()}`
+const requestKey = () => `nd_ai_assistant_window_request${hostSuffix()}`
 const STALE_MS = 15000
 const HEARTBEAT_MS = 5000
 
@@ -30,7 +36,9 @@ function writeStorageJson(key, value) {
 function removeStorageKey(key) {
   try {
     window.localStorage.removeItem(key)
-  } catch (_) {}
+  } catch (_) {
+    // 键不存在等清除失败可忽略
+  }
 }
 
 function isFreshLock(lock) {
@@ -81,7 +89,7 @@ function normalizeAction(action) {
 }
 
 function sendWindowRequest(ownerInstanceId, action = 'focus', query = {}) {
-  return writeStorageJson(REQUEST_KEY, {
+  return writeStorageJson(requestKey(), {
     targetInstanceId: String(ownerInstanceId || ''),
     action: normalizeAction(action),
     query: normalizeQuery(query),
@@ -90,14 +98,14 @@ function sendWindowRequest(ownerInstanceId, action = 'focus', query = {}) {
 }
 
 export function focusExistingAIAssistantWindow(query = {}) {
-  const current = readStorageJson(LOCK_KEY)
+  const current = readStorageJson(lockKey())
   if (!isFreshLock(current)) return false
   sendWindowRequest(current.instanceId, 'focus', query)
   return true
 }
 
 export function isAIAssistantWindowBusy() {
-  const current = readStorageJson(LOCK_KEY)
+  const current = readStorageJson(lockKey())
   return isFreshLock(current) && current.busy === true
 }
 
@@ -113,7 +121,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
 
   // 认领/接管时无条件上写（调用方已通过重复检查）
   function writeLockForce() {
-    return writeStorageJson(LOCK_KEY, {
+    return writeStorageJson(lockKey(), {
       instanceId,
       updatedAt: Date.now(),
       mode: lockMode,
@@ -124,7 +132,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
   // 心跳上写：交接期间让位保留标记；被真实接管则彻底退场，避免旧窗口反复覆盖新实例
   function heartbeatWriteLock() {
     if (!active) return
-    const current = readStorageJson(LOCK_KEY)
+    const current = readStorageJson(lockKey())
     if (current && current.instanceId !== instanceId && isFreshLock(current)) {
       if (isHandoverLock(current)) return
       releaseOwnership()
@@ -145,8 +153,8 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
   }
 
   function onStorage(event) {
-    if (!active || event.key !== REQUEST_KEY) return
-    const payload = readStorageJson(REQUEST_KEY)
+    if (!active || event.key !== requestKey()) return
+    const payload = readStorageJson(requestKey())
     if (!payload) return
     if (String(payload.targetInstanceId || '') !== instanceId) return
     const action = normalizeAction(payload.action)
@@ -163,7 +171,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
   function claimOwnership(initialQuery = {}, claimOptions = {}) {
     lockMode = normalizeLockMode(claimOptions.mode)
     const allowReopen = String(initialQuery?.reopen || '').trim() === '1'
-    const current = readStorageJson(LOCK_KEY)
+    const current = readStorageJson(lockKey())
     const foreign = current && current.instanceId !== instanceId ? current : null
     // 停靠面板由 dockManager 在交接事务内创建，凭 handover 标记接管锁
     const handoverTakeover = !!(foreign && isHandoverLock(foreign) && claimOptions.takeOverHandover === true)
@@ -174,7 +182,7 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
     if (!writeLockForce()) {
       return { ok: false, reason: 'storage_unavailable' }
     }
-    const confirmed = readStorageJson(LOCK_KEY)
+    const confirmed = readStorageJson(lockKey())
     if (!confirmed || confirmed.instanceId !== instanceId) {
       if (confirmed?.instanceId) {
         sendWindowRequest(confirmed.instanceId, 'focus', initialQuery)
@@ -201,9 +209,9 @@ export function createAIAssistantWindowSession(onRequest, options = {}) {
       window.removeEventListener('beforeunload', unloadHandler)
       unloadHandler = null
     }
-    const current = readStorageJson(LOCK_KEY)
+    const current = readStorageJson(lockKey())
     if (current?.instanceId === instanceId) {
-      removeStorageKey(LOCK_KEY)
+      removeStorageKey(lockKey())
     }
   }
 
@@ -220,7 +228,7 @@ export { HANDOVER_INSTANCE_ID }
  * 读取当前 AI 助手单实例锁（无锁/损坏返回 null）。
  */
 export function readAIAssistantLock() {
-  return readStorageJson(LOCK_KEY)
+  return readStorageJson(lockKey())
 }
 
 /**
@@ -230,9 +238,9 @@ export function readAIAssistantLock() {
  * @returns {{ ok: boolean, previous: object|null }} previous 为交接前的锁记录，失败回滚用
  */
 export function markAIAssistantHandover(mode = 'taskpane') {
-  const previous = readStorageJson(LOCK_KEY)
+  const previous = readStorageJson(lockKey())
   if (isFreshLock(previous) && previous.busy) return { ok: false, previous }
-  const ok = writeStorageJson(LOCK_KEY, {
+  const ok = writeStorageJson(lockKey(), {
     instanceId: HANDOVER_INSTANCE_ID,
     handover: true,
     mode: normalizeLockMode(mode),
@@ -247,12 +255,12 @@ export function markAIAssistantHandover(mode = 'taskpane') {
  */
 export function restoreAIAssistantLock(previous) {
   if (previous && previous.instanceId && !isHandoverLock(previous)) {
-    return writeStorageJson(LOCK_KEY, {
+    return writeStorageJson(lockKey(), {
       ...previous,
       updatedAt: Date.now()
     })
   }
-  removeStorageKey(LOCK_KEY)
+  removeStorageKey(lockKey())
   return false
 }
 
@@ -261,7 +269,7 @@ export function restoreAIAssistantLock(previous) {
  */
 export function sendAIAssistantCloseRequest(ownerInstanceId) {
   if (!ownerInstanceId || ownerInstanceId === HANDOVER_INSTANCE_ID) return false
-  return writeStorageJson(REQUEST_KEY, {
+  return writeStorageJson(requestKey(), {
     targetInstanceId: String(ownerInstanceId),
     action: 'close',
     query: {},

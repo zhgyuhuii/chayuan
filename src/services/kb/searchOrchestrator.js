@@ -23,6 +23,7 @@
 
 import { plan as planQueries } from './queryPlanner.js'
 import * as searchClient from './searchClient.js'
+import { isChatop } from './kbDiscovery.js'
 import * as deduper from './deduper.js'
 import * as scorer from './credibilityScorer.js'
 // p3-8:可用时优先把 T1+T2+T3 推到 worker;不可用时透明回落到主线程 plan
@@ -295,6 +296,61 @@ function _unifiedToMerged(resp, queries) {
   return { merged }
 }
 
+/**
+ * chatop(察元 Harness 本机)检索:GET /search 按 query×kbId 逐发(受限并发),
+ * 命中形状 { chunkId, docId, docName, seq, headingPath, text } 归一成通用
+ * merged chunk;chatop 不回分数,用名次折算(0~1)供下游 RRF/信任度排序。
+ */
+async function _chatopSearchToMerged(connection, queries, kuIds, body, signal) {
+  const kbIds = Array.from(new Set(
+    kuIds.map(id => String(id || '').replace(/^doc:/, '').trim()).filter(Boolean)
+  ))
+  if (!kbIds.length) return { merged: [] }
+  const tasks = []
+  for (const q of queries) {
+    for (const kbId of kbIds) tasks.push({ q, kbId })
+  }
+  const topK = Math.max(1, Number(body.top_k_per_query) || 6)
+  const out = []
+  let cursor = 0
+  async function worker() {
+    while (cursor < tasks.length) {
+      const t = tasks[cursor++]
+      try {
+        const data = await searchClient.chatopSearch(connection, { kbId: t.kbId, q: t.q.text, topK }, { signal })
+        const hits = Array.isArray(data?.hits) ? data.hits : []
+        for (let i = 0; i < hits.length; i++) {
+          const hit = hits[i] || {}
+          const text = String(hit?.text || '')
+          if (!text.trim()) continue
+          out.push({
+            chunk_id: hit.chunkId != null ? `${t.kbId}::${hit.chunkId}` : `${t.kbId}::${t.q.tag}::${i}`,
+            text,
+            metadata: {
+              docId: hit.docId ?? '',
+              docName: hit.docName ?? '',
+              headingPath: hit.headingPath ?? '',
+              seq: hit.seq ?? i,
+              kbId: t.kbId,
+              serviceType: 'chatop'
+            },
+            kb_name: t.kbId,
+            file_name: hit.docName || '',
+            score: Number(((topK - i) / topK).toFixed(4)),
+            from_query_tags: [t.q.tag].filter(Boolean),
+            from_section_ids: t.q.sectionIds || []
+          })
+        }
+      } catch (e) {
+        // 单查询失败不致命:本机服务偶发库锁/重建,跳过继续
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(4, Math.max(1, tasks.length)) }, worker)
+  await Promise.all(workers)
+  return { merged: out }
+}
+
 export async function run(options = {}) {
   const {
     connection,
@@ -378,7 +434,11 @@ export async function run(options = {}) {
       const fetchStart = Date.now()
       let resp
       try {
-        if (_shouldUseUnified(kbBindings)) {
+        if (isChatop(connection)) {
+          // 察元 Harness 本机库:协议不同(REST /search),不走 batch/universe 兜底链
+          if (typeof onPhase === 'function') await onPhase('chatop_local_search', { kuIds })
+          resp = await _chatopSearchToMerged(connection, queries, kuIds, body, ctrl.signal)
+        } else if (_shouldUseUnified(kbBindings)) {
           if (typeof onPhase === 'function') await onPhase('unified_kb_query', { kuIds })
           const out = await searchClient.queryUnified(connection, {
             ku_ids: kuIds,

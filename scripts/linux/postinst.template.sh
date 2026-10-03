@@ -23,7 +23,7 @@ cleanup_old_addons() {
 	DEST="$1"
 	PREFIX="$(printf '%s' "$ADDON_FOLDER" | sed 's/_.*//')"
 	KEEP="$(printf '%s %s' "$ADDON_FOLDER" "$HOST_FOLDERS")"
-	for ENTRY in "$DEST"/${PREFIX}_* "$DEST"/${PREFIX}-et_* "$DEST"/${PREFIX}-wpp_*; do
+	for ENTRY in "$DEST"/${PREFIX}_* "$DEST"/${PREFIX}-et_* "$DEST"/${PREFIX}-wpp_* "$DEST"/.${PREFIX}*.installing; do
 		test -d "$ENTRY" || continue
 		BASE="$(basename "$ENTRY")"
 		SKIP=0
@@ -104,6 +104,8 @@ do
 	if test -d "$OFFICE6"; then
 		ALT="$OFFICE6/jsaddons"
 		mkdir -p "$ALT"
+		# 安装前先清理历史版本目录，装完只剩最新版本（装后兜底再扫一遍）
+		cleanup_old_addons "$ALT"
 		install_all "$ALT" || true
 		cp -f "$INSTALL_ROOT/publish.xml" "$ALT/" || true
 		merge_publish_online "$ALT/publish.xml"
@@ -133,6 +135,8 @@ for DEST in \
 	"$USER_HOME/.local/share/kingsoft/wps/jsaddons"
 do
 	mkdir -p "$DEST"
+	# 安装前先清理历史版本目录，装完只剩最新版本
+	cleanup_old_addons "$DEST"
 	install_all "$DEST"
 	cp -f "$INSTALL_ROOT/publish.xml" "$DEST/"
 	merge_publish_online "$DEST/publish.xml"

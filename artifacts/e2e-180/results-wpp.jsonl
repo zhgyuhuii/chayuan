@@ -1,0 +1,15 @@
+{"id":"P01","lane":"wpp","desc":"状态与全册清单报告","attempt":1,"start":"2026-10-02T05:51:35.638Z","ack":true,"pass":true,"evidence":"marker=true slides=6  ","secs":21}
+{"id":"P02","lane":"wpp","desc":"新增标题页","attempt":1,"start":"2026-10-02T05:51:59.316Z","ack":true,"pass":true,"evidence":"marker=true slides=7 标题页存在 ","secs":112}
+{"id":"P03","lane":"wpp","desc":"新增要点内容页","attempt":1,"start":"2026-10-02T05:53:54.242Z","ack":true,"pass":true,"evidence":"marker=true slides=8  ","secs":316}
+{"id":"P04","lane":"wpp","desc":"新增两栏文本页","attempt":2,"start":"2026-10-02T06:08:27.019Z","ack":true,"pass":true,"evidence":"marker=true slides=9  ","secs":43}
+{"id":"P05","lane":"wpp","desc":"复制页面","attempt":1,"start":"2026-10-02T06:09:13.105Z","ack":true,"pass":true,"evidence":"marker=true count=10（前=9）","secs":274}
+{"id":"P06","lane":"wpp","desc":"移动页面","attempt":1,"start":"2026-10-02T06:13:49.710Z","ack":true,"pass":true,"evidence":"marker=true 原末页「P04 双栏对比」已非末页=true count=10","secs":259}
+{"id":"P07","lane":"wpp","desc":"删除页面","attempt":2,"start":"2026-10-02T06:22:50.129Z","ack":true,"pass":false,"evidence":"marker=false count=9（前=10，应-1）","secs":264}
+{"id":"P08","lane":"wpp","desc":"版式变更","attempt":1,"start":"2026-10-02T06:27:17.169Z","ack":true,"pass":true,"evidence":"marker=true slides=9  ","secs":27}
+{"id":"P09","lane":"wpp","desc":"读取页面详情","attempt":1,"start":"2026-10-02T06:27:47.537Z","ack":true,"pass":true,"evidence":"marker=true slides=9  ","secs":317}
+{"id":"P10","lane":"wpp","desc":"形状清单报告","attempt":2,"start":"2026-10-02T06:41:39.962Z","ack":true,"pass":true,"evidence":"marker=true slides=5  ","secs":124}
+{"id":"P11","lane":"wpp","desc":"新增空白页","attempt":1,"start":"2026-10-02T06:43:46.807Z","ack":true,"pass":true,"evidence":"marker=true count=6（前=5）","secs":28}
+{"id":"P12","lane":"wpp","desc":"全册文本替换","attempt":2,"start":"2026-10-02T06:48:44.417Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":24}
+{"id":"P33","lane":"wpp","desc":"AI 生图插入封面页","attempt":2,"start":"2026-10-02T07:26:25.104Z","ack":true,"pass":false,"evidence":"marker=false slides=5  ","secs":506}
+{"id":"P34","lane":"wpp","desc":"网络搜图插入","attempt":2,"start":"2026-10-02T07:43:34.996Z","ack":true,"pass":true,"evidence":"marker=true slides=7  ","secs":220}
+{"id":"P35","lane":"wpp","desc":"SVG 柱状图","attempt":1,"start":"2026-10-02T07:47:18.190Z","ack":true,"pass":true,"evidence":"marker=true slides=8  ","secs":144}

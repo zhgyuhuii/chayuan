@@ -13,6 +13,32 @@
 
 import { createAuthClient } from './authClient.js'
 import { resolve as _resolvePath } from './pathRouter.js'
+import { apiUrl } from './kbDiscovery.js'
+
+/**
+ * chatop(察元 Harness 本机)检索:GET /search?kbId=&q=&topK=
+ * 返回 { ok, hits: [{ chunkId, docId, docName, seq, headingPath, text }], mismatch }。
+ * chatop 的 kbId 与 chayuan-server 的 kb_name 不是一个体系,调用方负责剥离
+ * kuId 前缀(见 searchOrchestrator._chatopSearchToMerged)。
+ */
+export async function chatopSearch(connection, { kbId, q, topK = 5 }, options = {}) {
+  const auth = createAuthClient(connection)
+  const params = new URLSearchParams({
+    kbId: String(kbId ?? ''),
+    q: String(q ?? ''),
+    topK: String(Number(topK) || 5)
+  })
+  const resp = await auth.fetch(`${apiUrl(connection, '/search')}?${params.toString()}`, {
+    method: 'GET',
+    signal: options.signal,
+    timeoutMs: options.timeoutMs || 20_000
+  })
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(`chatop /search HTTP ${resp.status}: ${text.slice(0, 200)}`)
+  }
+  return resp.json()
+}
 
 export async function queryUnified(connection, body, options = {}) {
   const auth = createAuthClient(connection)
@@ -185,4 +211,4 @@ export async function searchDocs(connection, body, options = {}) {
   return resp.json()
 }
 
-export default { queryUnified, searchBatch, searchBatchStream, askUniverse, searchDocs }
+export default { queryUnified, searchBatch, searchBatchStream, askUniverse, searchDocs, chatopSearch }

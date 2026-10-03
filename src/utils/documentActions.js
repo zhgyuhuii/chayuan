@@ -1759,23 +1759,30 @@ export function tryAddInlinePicture(source, range) {
   if (!inlineShapes?.AddPicture) {
     throw new Error('当前环境不支持插入图片')
   }
-  const pos = {
-    start: Number(range?.Start || 0),
-    end: Number(range?.End || 0)
+  // 真机实证（2026-10-02，WPS mac 12.1）：对象实参形态 AddPicture({FileName,...,Range:{start,end}})
+  // 会静默 no-op（不抛错也不插入），必须以 InlineShapes.Count 增量为准逐形态回退。
+  const countBefore = Number(inlineShapes.Count || 0)
+  const attempts = [
+    () => inlineShapes.AddPicture(source, false, true, range),
+    () => inlineShapes.AddPicture({ FileName: source, LinkToFile: false, SaveWithDocument: true, Range: range }),
+    () => inlineShapes.AddPicture(source, false, true),
+    () => inlineShapes.AddPicture(source)
+  ]
+  let lastErr = null
+  for (const attempt of attempts) {
+    let shape = null
+    try {
+      shape = attempt()
+    } catch (e) {
+      lastErr = e
+      continue
+    }
+    let countAfter = countBefore
+    try { countAfter = Number(inlineShapes.Count || 0) } catch { /* 读不到计数时以返回形状为准 */ }
+    if (shape || countAfter > countBefore) return shape
+    lastErr = lastErr || new Error('AddPicture 未产生新形状（静默 no-op）')
   }
-  try {
-    return inlineShapes.AddPicture({
-      FileName: source,
-      LinkToFile: false,
-      SaveWithDocument: true,
-      Range: pos
-    })
-  } catch (_) {}
-  try {
-    return inlineShapes.AddPicture(source, false, true, range)
-  } catch (e) {
-    throw new Error(e?.message || '插入图片失败')
-  }
+  throw new Error(lastErr?.message || '插入图片失败')
 }
 
 function insertGeneratedImage(asset, action) {

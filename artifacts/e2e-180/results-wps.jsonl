@@ -1,0 +1,14 @@
+{"id":"W01","lane":"wps","desc":"文档元信息与段落清单","attempt":1,"start":"2026-10-02T05:51:41.135Z","ack":true,"pass":true,"evidence":"marker=true  len=376","secs":120}
+{"id":"W02","lane":"wps","desc":"文末追加生成段落","attempt":2,"start":"2026-10-02T05:58:00.287Z","ack":true,"pass":true,"evidence":"marker=true extra(结论与展望)=true len=584","secs":58}
+{"id":"W03","lane":"wps","desc":"锚点段后插入注释","attempt":2,"start":"2026-10-02T06:03:28.460Z","ack":true,"pass":true,"evidence":"marker=true extra(本段目标用户描述需与市场)=true len=615","secs":19}
+{"id":"W04","lane":"wps","desc":"定点替换年份","attempt":1,"start":"2026-10-02T06:03:50.371Z","ack":true,"pass":true,"evidence":"marker=true extra(2026年)=true len=623","secs":282}
+{"id":"W05","lane":"wps","desc":"通读全文生成摘要并置于文首","attempt":2,"start":"2026-10-02T06:13:18.583Z","ack":true,"pass":false,"evidence":"marker=false extra(摘要：)=false len=623","secs":272}
+{"id":"W06","lane":"wps","desc":"新章节生成三段内容","attempt":1,"start":"2026-10-02T06:17:53.975Z","ack":true,"pass":true,"evidence":"marker=true extra(第四章)=true len=1002","secs":318}
+{"id":"W07","lane":"wps","desc":"要点化改写首段","attempt":1,"start":"2026-10-02T06:23:14.778Z","ack":true,"pass":true,"evidence":"marker=true  len=1013","secs":257}
+{"id":"W08","lane":"wps","desc":"段落翻译并对照插入","attempt":1,"start":"2026-10-02T06:27:35.035Z","ack":true,"pass":true,"evidence":"marker=true extra([EN])=true len=1234","secs":325}
+{"id":"W09","lane":"wps","desc":"文末新建表格","attempt":2,"start":"2026-10-02T06:37:14.126Z","ack":true,"pass":false,"evidence":"tables={\"code\":\"AGENT_JOB_TIMEOUT\",\"message\":\"Agent job timeout 60000ms\"} marker=false","secs":379}
+{"id":"W10","lane":"wps","desc":"全文统计报告（只读）","attempt":2,"start":"2026-10-02T06:44:07.714Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":27}
+{"id":"W11","lane":"wps","desc":"全文校对并落批注","attempt":1,"start":"2026-10-02T06:47:16.291Z","ack":true,"pass":true,"evidence":"comments=8 marker=true","secs":29}
+{"id":"W12","lane":"wps","desc":"定点添加批注","attempt":1,"start":"2026-10-02T06:47:48.009Z","ack":true,"pass":true,"evidence":"marker=true  len=235","secs":27}
+{"id":"W13","lane":"wps","desc":"批注清单报告","attempt":1,"start":"2026-10-02T06:48:17.664Z","ack":true,"pass":true,"evidence":"marker=true  len=340","secs":33}
+{"id":"W14","lane":"wps","desc":"删除一条批注","attempt":2,"start":"2026-10-02T06:53:17.153Z","ack":true,"pass":false,"evidence":"批注已删=true marker=false 剩余=0","secs":261}

@@ -1,0 +1,24 @@
+{"id":"NP01","lane":"wpp","desc":"配方 wpp-proof 整套校对","attempt":1,"start":"2026-10-02T06:53:11.412Z","ack":true,"pass":true,"evidence":"末页 marker=true shapes=3","secs":303}
+{"id":"NP02","lane":"wpp","desc":"配方 wpp-structure 结构诊断","attempt":1,"start":"2026-10-02T06:58:19.929Z","ack":true,"pass":true,"evidence":"末页 marker=true shapes=4","secs":142}
+{"id":"NP03","lane":"wpp","desc":"配方 wpp-translate 整套翻译（英）","attempt":2,"start":"2026-10-02T07:10:52.272Z","ack":true,"pass":true,"evidence":"标题英文命中=true 旧中文标题残留=false | 察元AI 2026 Autumn Business Report / Product Introduction / 销售业绩 / 客户案例 / 团队介绍","secs":440}
+{"id":"NP04","lane":"wpp","desc":"配方 wpp-notes-timed 口播稿（8 分钟版）","attempt":2,"start":"2026-10-02T07:25:46.175Z","ack":true,"pass":false,"evidence":"末页 marker=false shapes=4","secs":441}
+{"id":"NP05","lane":"wpp","desc":"配方 wpp-footer 页码页脚统一","attempt":2,"start":"2026-10-02T07:41:59.670Z","ack":true,"pass":false,"evidence":"末页 marker=false shapes=4","secs":423}
+{"id":"NP06","lane":"wpp","desc":"配方 wpp-scaffold 结构件补齐","attempt":2,"start":"2026-10-02T07:56:41.951Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":210}
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-02T08:00:46.669Z","pass":false,"evidence":"无法把 e2e-讲义3 置为活动文档（跨宿主写目标）","secs":24}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-02T08:01:39.208Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP04","lane":"wpp","desc":"配方 wpp-notes-timed 口播稿（8 分钟版）","attempt":2,"start":"2026-10-02T08:21:44.168Z","ack":true,"pass":false,"evidence":"末页 marker=false shapes=0","secs":545}
+{"id":"NP05","lane":"wpp","desc":"配方 wpp-footer 页码页脚统一","attempt":2,"start":"2026-10-02T08:40:05.388Z","ack":true,"pass":false,"evidence":"末页 marker=false shapes=0","secs":541}
+{"id":"NP06","lane":"wpp","desc":"配方 wpp-scaffold 结构件补齐","attempt":1,"start":"2026-10-02T08:49:11.947Z","ack":true,"pass":true,"evidence":"目录=true 感谢/谢谢=true slides=12","secs":17}
+{"id":"NP04","lane":"wpp","desc":"配方 wpp-notes-timed 口播稿（8 分钟版）","attempt":1,"start":"2026-10-02T09:17:05.172Z","ack":true,"pass":true,"evidence":"第1页 marker=true shapes=3","secs":10}
+{"id":"NP05","lane":"wpp","desc":"配方 wpp-footer 页码页脚统一","attempt":1,"start":"2026-10-02T09:17:20.753Z","ack":true,"pass":true,"evidence":"P1 marker=true P2 页脚=true","secs":312}
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-02T09:30:51.829Z","ack":true,"pass":false,"evidence":"doc 含标记=false len=61","secs":488}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-02T09:39:27.935Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-02T09:40:14.211Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP10","lane":"wpp","desc":"配方 wpp-gov-safetyedu 安全警示教育课件","attempt":2,"start":"2026-10-02T09:41:00.504Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP11","lane":"wpp","desc":"配方 wpp-med-mdt 病例讨论课件","attempt":2,"start":"2026-10-02T09:41:46.773Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP12","lane":"wpp","desc":"配方 wpp-med-edu 患者宣教课件","attempt":2,"start":"2026-10-02T09:42:33.050Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP13","lane":"wpp","desc":"配方 wpp-med-dept 科室年度汇报","attempt":2,"start":"2026-10-02T09:43:19.311Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP14","lane":"wpp","desc":"配方 wpp-mfg-safety 安全生产培训课件","attempt":2,"start":"2026-10-02T09:44:05.583Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP15","lane":"wpp","desc":"配方 wpp-mfg-sop 设备操作SOP页","attempt":2,"start":"2026-10-02T09:44:51.832Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP16","lane":"wpp","desc":"配方 wpp-fin-roadshow 投资者路演","attempt":2,"start":"2026-10-02T09:45:38.103Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP17","lane":"wpp","desc":"配方 wpp-fin-compliance 合规内训课件","attempt":2,"start":"2026-10-02T09:46:24.332Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}

@@ -1,0 +1,6 @@
+{"id":"FIN-06","lane":"wpp","desc":"演示·整套校对（autoSend 高频）","attempt":2,"start":"2026-10-03T14:47:53.371Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"FIN-06","lane":"wpp","desc":"演示·整套校对（autoSend 高频）","attempt":2,"start":"2026-10-03T14:55:25.577Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"FIN-07","lane":"wpp","desc":"演示·口播稿（autoSend 高频）","attempt":2,"start":"2026-10-03T14:56:45.629Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"FIN-08","lane":"wpp","desc":"演示·生图配图（qwen-image-3.0）","attempt":2,"start":"2026-10-03T14:58:02.693Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"FIN-09","lane":"wpp","desc":"演示·搜图配图（必应源）","attempt":2,"start":"2026-10-03T14:59:19.764Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"FIN-10","lane":"wpp","desc":"演示·AI生成PPT（3页 qwen3-max）","attempt":2,"start":"2026-10-03T15:00:36.831Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}

@@ -23,14 +23,22 @@
               </label>
 
               <label class="kb-form-row span-2">
-                <span class="kb-form-label">服务地址<em>*</em></span>
+                <span class="kb-form-label kb-form-label-row">
+                  <span>服务地址<em>*</em></span>
+                  <button
+                    type="button"
+                    class="btn-link"
+                    :disabled="discovering"
+                    @click="onDiscover"
+                  >{{ discovering ? '扫描本机中…' : '⌖ 自动发现本机 Harness' }}</button>
+                </span>
                 <input
                   v-model="form.baseUrl"
                   class="kb-input"
                   placeholder="https://kb.example.com 或 localhost / 127.0.0.1"
                   @blur="onBaseUrlBlur"
                 />
-                <small class="kb-form-tip">chayuan-server 的根地址(不含具体路径)。未填写协议时默认 http;本地地址未填写端口时默认 62581。</small>
+                <small class="kb-form-tip">chayuan-server 的根地址(不含具体路径)。未填写协议时默认 http;本地地址未填写端口时默认 62581。本机跑着 chayuan-harness(chatop) 时可直接自动发现。</small>
               </label>
 
               <label class="kb-form-row span-2">
@@ -44,8 +52,13 @@
 
               <template v-if="form.authMode === 'none'">
                 <div class="kb-form-row span-2 kb-form-tip">
-                  连本机察元单机版后端(127.0.0.1:62581)使用,不需要任何账号或密钥;
-                  后端 ``AUTH_REQUIRED=false`` 自动放行游客,知识库与文档透明可见。
+                  <template v-if="form.serviceType === 'chatop'">
+                    察元 Harness 本机知识库(chatop-kb,回环免鉴权)。库列表实时来自本机服务 — harness 侧新增/删除知识库会自动同步,无需在 WPS 侧重配。
+                  </template>
+                  <template v-else>
+                    连本机察元单机版后端(127.0.0.1:62581)使用,不需要任何账号或密钥;
+                    后端 ``AUTH_REQUIRED=false`` 自动放行游客,知识库与文档透明可见。
+                  </template>
                 </div>
               </template>
 
@@ -122,7 +135,7 @@
 
 <script>
 import services from '../services/index.js'
-const { connectionStore, connectionCipher, healthProbe } = services.kb
+const { connectionStore, connectionCipher, healthProbe, kbDiscovery } = services.kb
 
 const DEFAULT_LOCAL_PORT = '62581'
 
@@ -160,6 +173,9 @@ function blank() {
     // 默认「单机本机直连」 — 与桌面单机版形态对齐,用户大多数场景就是这个;
     // 切到 jwt / hmac 只是下拉选一下的事。
     authMode: 'none',
+    // serviceType='chatop' 走察元 Harness 本机协议(自动发现回填);留空 = chayuan-server 体系
+    serviceType: '',
+    apiPrefix: '',
     jwt: { username: '', ciphertext_password: '' },
     hmac: { appId: '', ciphertext_appSecret: '' },
   }
@@ -181,6 +197,7 @@ export default {
       testing: false,
       testResult: null,
       saving: false,
+      discovering: false,
     }
   },
   computed: {
@@ -230,6 +247,11 @@ export default {
     },
     onAuthModeChange() {
       this.testResult = null
+      // chatop 本机协议只在「无认证」下成立;切走时清掉,防止串协议
+      if (this.form.authMode !== 'none') {
+        this.form.serviceType = ''
+        this.form.apiPrefix = ''
+      }
       // 切换鉴权方式时清掉对面字段密文,防止误用
       if (this.form.authMode === 'none') {
         this.form.jwt = { username: '', ciphertext_password: '' }
@@ -245,6 +267,39 @@ export default {
       }
     },
     onCancel() { this.$emit('close') },
+    /** 扫本机 chatop-kb,命中则一键回填(免手填地址) */
+    async onDiscover() {
+      if (this.discovering) return
+      this.discovering = true
+      this.testResult = null
+      try {
+        const found = await kbDiscovery.discoverHarnessKb({ force: true })
+        if (!found) {
+          this.testResult = {
+            ok: false,
+            steps: [{ name: 'discover', label: '自动发现', ok: false, error: '本机未发现 chatop-kb 服务(默认端口 52582)' }],
+            hint: '请确认 chayuan-harness(chatop) 已在本机启动,或手动填写服务地址'
+          }
+          return
+        }
+        this.form.baseUrl = found.baseUrl
+        this.form.authMode = 'none'
+        this.form.serviceType = 'chatop'
+        this.form.apiPrefix = found.apiPrefix
+        if (!this.form.name?.trim()) this.form.name = kbDiscovery.HARNESS_CONNECTION_NAME
+        this.testResult = {
+          ok: true,
+          steps: [
+            { name: 'discover', label: '自动发现', ok: true, latencyMs: 0 },
+            { name: 'kb', label: '知识库通路', ok: true, kbCount: found.kbCount }
+          ]
+        }
+      } catch (e) {
+        this.testResult = { ok: false, steps: [], hint: `自动发现失败:${e.message || e}` }
+      } finally {
+        this.discovering = false
+      }
+    },
     onBaseUrlBlur() {
       const next = normalizeBaseUrl(this.form.baseUrl)
       if (next !== this.form.baseUrl) this.form.baseUrl = next
@@ -359,6 +414,13 @@ export default {
 }
 .kb-form-row.span-2 { grid-column: span 2; }
 .kb-form-label { font-size: 12px; color: #555; }
+.kb-form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kb-form-label-row .btn-link { font-size: 11px; }
 .kb-form-label em { color: #d25; font-style: normal; margin-left: 2px; }
 .kb-form-tip { color: #999; font-size: 11px; margin-top: 2px; }
 

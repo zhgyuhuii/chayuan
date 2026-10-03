@@ -1,0 +1,41 @@
+{"id":"NE01","lane":"et","desc":"配方 et-merge-sheets 多表合并汇总","attempt":2,"start":"2026-10-02T06:58:18.279Z","ack":true,"pass":false,"evidence":"缺「合并汇总」表","secs":445}
+{"id":"NE02","lane":"et","desc":"配方 et-diff-two 两表对比差异","attempt":2,"start":"2026-10-02T07:18:28.579Z","pass":false,"evidence":"获取 LLM 全局锁超时（600s）","secs":600}
+{"id":"NE04","lane":"et","desc":"配方 et-mask 敏感信息脱敏","attempt":1,"start":"2026-10-02T07:28:34.233Z","ack":true,"pass":true,"evidence":"脱敏标记 **** 命中=true","secs":85}
+{"id":"NE05","lane":"et","desc":"配方 et-split-cols 智能分列","attempt":1,"start":"2026-10-02T07:30:04.869Z","ack":true,"pass":true,"evidence":"B2=张三 C2=13800001234","secs":374}
+{"id":"NE06","lane":"et","desc":"配方 et-split-sheets 工作表拆分","attempt":1,"start":"2026-10-02T07:36:23.750Z","ack":true,"pass":true,"evidence":"拆分表=华东,华北,华南（需3个）","secs":91}
+{"id":"NE07","lane":"et","desc":"配方 et-formula-explain 公式解释","attempt":2,"start":"2026-10-02T07:46:03.187Z","ack":true,"pass":false,"evidence":"公式演示!Z1=null","secs":316}
+{"id":"NE08","lane":"et","desc":"配方 et-beautify 一键美化","attempt":2,"start":"2026-10-02T07:56:39.267Z","ack":true,"pass":false,"evidence":"销售明细!Z1=undefined","secs":304}
+{"id":"NE09","lane":"et","desc":"配方 et-mark 异常标色","attempt":2,"start":"2026-10-02T08:02:11.002Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE01","lane":"et","desc":"配方 et-merge-sheets 多表合并汇总","attempt":1,"start":"2026-10-02T08:09:39.722Z","ack":true,"pass":true,"evidence":"合并汇总 rows=13（需≥13）","secs":300}
+{"id":"NE02","lane":"et","desc":"配方 et-diff-two 两表对比差异","attempt":1,"start":"2026-10-02T08:29:51.668Z","ack":true,"pass":true,"evidence":"差异报告=true 内容命中=true","secs":10}
+{"id":"NE07","lane":"et","desc":"配方 et-formula-explain 公式解释","attempt":2,"start":"2026-10-02T08:37:17.296Z","ack":true,"pass":false,"evidence":"公式演示!Z1=null","secs":421}
+{"id":"NE08","lane":"et","desc":"配方 et-beautify 一键美化","attempt":2,"start":"2026-10-02T08:51:30.263Z","ack":true,"pass":true,"evidence":"销售明细!Z1=NE08完成","secs":9}
+{"id":"NE07","lane":"et","desc":"配方 et-formula-explain 公式解释","attempt":2,"start":"2026-10-02T09:24:25.524Z","ack":true,"pass":false,"evidence":"公式演示!D1=","secs":423}
+{"id":"NE09","lane":"et","desc":"配方 et-mark 异常标色","attempt":1,"start":"2026-10-02T09:31:33.667Z","ack":true,"pass":true,"evidence":"E列异常原因数=2（需≥2）","secs":17}
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T09:38:51.986Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE11","lane":"et","desc":"配方 et-fin-bankrec 银行余额调节表","attempt":2,"start":"2026-10-02T09:39:38.234Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE12","lane":"et","desc":"配方 et-fin-closecheck 月末结账自查","attempt":2,"start":"2026-10-02T09:40:24.500Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T09:41:10.735Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T09:41:57.000Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE15","lane":"et","desc":"配方 et-ec-keywords 评价关键词提取","attempt":2,"start":"2026-10-02T09:42:43.257Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T09:43:29.520Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE17","lane":"et","desc":"配方 et-hr-social 社保公积金核算","attempt":2,"start":"2026-10-02T09:44:15.776Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE18","lane":"et","desc":"配方 et-hr-perfbox 绩效分布对照","attempt":2,"start":"2026-10-02T09:45:02.029Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE19","lane":"et","desc":"配方 et-sale-funnel-amt 商机金额漏斗","attempt":2,"start":"2026-10-02T09:45:48.296Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE20","lane":"et","desc":"配方 et-sale-region 客户分布图","attempt":2,"start":"2026-10-02T09:46:34.562Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NE07","lane":"et","desc":"配方 et-formula-explain 公式解释","attempt":2,"start":"2026-10-02T09:59:42.986Z","ack":true,"pass":false,"evidence":"公式演示!D1=","secs":423}
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T10:13:00.464Z","ack":true,"pass":false,"evidence":"账龄分析=true 180分段=false","secs":363}
+{"id":"NE11","lane":"et","desc":"配方 et-fin-bankrec 银行余额调节表","attempt":2,"start":"2026-10-02T10:26:16.040Z","ack":true,"pass":false,"evidence":"余额调节表=true 内容命中=false","secs":422}
+{"id":"NE12","lane":"et","desc":"配方 et-fin-closecheck 月末结账自查","attempt":2,"start":"2026-10-02T10:39:29.734Z","ack":true,"pass":true,"evidence":"自查结果=true 问题命中=true","secs":28}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T10:46:12.132Z","ack":true,"pass":false,"evidence":"退货分析!B2=undefined（期望 0.2 或 20%）","secs":364}
+{"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T10:57:26.774Z","ack":true,"pass":false,"evidence":"ROI复盘!D2=null（期望 2.5）","secs":304}
+{"id":"NE15","lane":"et","desc":"配方 et-ec-keywords 评价关键词提取","attempt":2,"start":"2026-10-02T11:07:45.382Z","ack":true,"pass":false,"evidence":"关键词=false 物流命中=false","secs":303}
+{"id":"NE16","lane":"et","desc":"配方 et-hr-turnover 离职率分析","attempt":2,"start":"2026-10-02T11:18:59.899Z","ack":true,"pass":false,"evidence":"离职分析!B2=null（技术部期望 20%）","secs":363}
+{"id":"NE07","lane":"et","desc":"配方 et-formula-explain 公式解释","attempt":2,"start":"2026-10-02T11:37:46.640Z","ack":true,"pass":true,"evidence":"公式演示!D1=公式把A列里大于50的数加起来（55+91=146）。","secs":22}
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T11:48:22.374Z","ack":true,"pass":false,"evidence":"账龄分析=true 内容命中=false","secs":605}
+{"id":"NE11","lane":"et","desc":"配方 et-fin-bankrec 银行余额调节表","attempt":1,"start":"2026-10-02T11:58:32.803Z","ack":true,"pass":true,"evidence":"余额调节表=true 内容命中=true","secs":23}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T12:09:10.251Z","ack":true,"pass":false,"evidence":"退货分析=false 退货率命中=false","secs":602}
+{"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T12:29:27.008Z","ack":true,"pass":false,"evidence":"ROI复盘!D2=undefined（期望 2.5）","secs":604}
+{"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T13:00:44.863Z","ack":true,"pass":false,"evidence":"账龄分析=false 内容命中=false","secs":603}
+{"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T13:21:02.135Z","ack":true,"pass":false,"evidence":"退货分析=false 退货率命中=false","secs":601}
+{"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T13:41:14.123Z","ack":true,"pass":false,"evidence":"ROI复盘!D2=undefined（期望 2.5）","secs":601}

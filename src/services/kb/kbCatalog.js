@@ -24,6 +24,7 @@
 import { createAuthClient } from './authClient.js'
 import * as cache from './kbCatalogCache.js'
 import { resolve as _resolvePath } from './pathRouter.js'
+import { isChatop, apiUrl } from './kbDiscovery.js'
 
 function _normalizeKb(raw) {
   if (typeof raw === 'string') {
@@ -66,8 +67,51 @@ function _normalizeKb(raw) {
   }
 }
 
+/**
+ * chatop(察元 Harness 本机)分支:GET /kbs 返回
+ * { ok, kbs: [{ kbId, docs, ready, pending, vecBackend }] }。
+ * 归一成通用 KB item:kbId 即 id/kuId(绑定时由 _normalizeKuId 统一补 doc: 前缀,
+ * 检索分支再剥掉),本机回环信任 → role 恒为 owner。
+ */
+async function _fetchChatopList(connection, options = {}) {
+  const cacheKey = `list:${connection.id}`
+  if (!options.force) {
+    const hit = cache.get(cacheKey)
+    if (hit) return hit
+  }
+  const auth = createAuthClient(connection)
+  const resp = await auth.fetch(apiUrl(connection, '/kbs'), {
+    method: 'GET',
+    signal: options.signal,
+    timeoutMs: options.timeoutMs || 10_000
+  })
+  if (!resp.ok) throw new Error(`/kbs HTTP ${resp.status}`)
+  const data = await resp.json().catch(() => ({}))
+  const list = (Array.isArray(data?.kbs) ? data.kbs : []).map(k => ({
+    id: k.kbId,
+    name: k.kbId,
+    vectorStore: k.vecBackend || '',
+    fileCount: Number(k.docs || 0),
+    readyCount: Number(k.ready || 0),
+    pendingCount: Number(k.pending || 0),
+    visibility: 'private',
+    ownerId: null,
+    kind: k.vecBackend || '',
+    kuId: k.kbId,
+    universe: null,
+    role: 'owner',
+    grantSource: 'owner',
+    grantExpiresAt: null,
+    serviceType: 'chatop',
+    raw: k
+  }))
+  cache.set(cacheKey, list, 30_000)
+  return list
+}
+
 export async function fetchList(connection, options = {}) {
   if (!connection) throw new Error('connection is required')
+  if (isChatop(connection)) return _fetchChatopList(connection, options)
   const cacheKey = `list:${connection.id}`
   if (!options.force) {
     const hit = cache.get(cacheKey)
@@ -109,6 +153,19 @@ export async function fetchList(connection, options = {}) {
 }
 
 export async function fetchTree(connection, options = {}) {
+  // chatop 本机库没有 universe 分层:单组平铺,组名标明来源
+  if (isChatop(connection)) {
+    const cacheKey = `tree:${connection.id}`
+    if (!options.force) {
+      const hit = cache.get(cacheKey)
+      if (hit) return hit
+    }
+    const flat = await fetchList(connection, options)
+    const tree = _buildFlatTree(flat, '察元 Harness(本机)')
+    cache.set(cacheKey, tree, 30_000)
+    return tree
+  }
+
   // 优先尝试 universe 接口;失败回退到 list 单层
   const cacheKey = `tree:${connection.id}`
   if (!options.force) {
@@ -140,10 +197,10 @@ export async function fetchTree(connection, options = {}) {
   return tree
 }
 
-function _buildFlatTree(list) {
+function _buildFlatTree(list, groupName = '全部知识库') {
   return [{
     id: '__all__',
-    name: '全部知识库',
+    name: groupName,
     type: 'group',
     children: list.map(kb => ({
       id: kb.id, name: kb.name, type: 'kb', kb,

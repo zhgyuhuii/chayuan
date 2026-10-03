@@ -1,0 +1,40 @@
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-03T00:06:11.491Z","ack":true,"pass":false,"evidence":"doc 含标记=false len=220","secs":610}
+{"id":"BT-P1","lane":"wpp","desc":"顶部·生成PPT（对话流）","attempt":1,"start":"2026-10-03T01:37:14.741Z","ack":true,"pass":true,"evidence":"slides 7→10（需+3） marker=true","secs":21}
+{"id":"BT-P2","lane":"wpp","desc":"顶部·整套摘要（autoSend）","attempt":2,"start":"2026-10-03T01:45:46.538Z","ack":true,"pass":true,"evidence":"核心要点页=true","secs":16}
+{"id":"BT-P3","lane":"wpp","desc":"顶部·美化统一（autoSend）","attempt":1,"start":"2026-10-03T01:46:06.144Z","ack":true,"pass":true,"evidence":"回合完成（末页形状 3，format_uniform 无读回通道，以回合成功为准）","secs":8}
+{"id":"BT-P4","lane":"wpp","desc":"顶部·口播稿（autoSend）","attempt":1,"start":"2026-10-03T01:46:17.745Z","ack":true,"pass":true,"evidence":"回合完成（notes_set 无读回通道，以回合成功为准；末页形状 3）","secs":8}
+{"id":"BT-P5","lane":"wpp","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-03T01:56:35.629Z","ack":true,"pass":false,"evidence":"末页清单命中=false","secs":603}
+{"id":"BT-P6","lane":"wpp","desc":"顶部·结构诊断（autoSend）——已过 NP02，此处复核按钮提示词","attempt":2,"start":"2026-10-03T02:14:48.687Z","ack":true,"pass":true,"evidence":"末页摘要命中=true","secs":12}
+{"id":"BT-P7","lane":"wpp","desc":"顶部·整套翻译（下拉）——已过 NP03，复核按钮提示词","attempt":2,"start":"2026-10-03T02:23:10.957Z","ack":true,"pass":false,"evidence":"TRANSLATED 标记=false","secs":482}
+{"id":"BT-P8","lane":"wpp","desc":"顶部·课件生成（下拉）","attempt":2,"start":"2026-10-03T02:41:25.493Z","ack":true,"pass":false,"evidence":"slides 11→16（需+4） marker=false","secs":601}
+{"id":"BT-P9","lane":"wpp","desc":"顶部·习题互动页（下拉）","attempt":2,"start":"2026-10-03T03:01:36.130Z","ack":true,"pass":false,"evidence":"slides 16→16（需+2） marker=false","secs":601}
+{"id":"BT-P10","lane":"wpp","desc":"顶部·数据战报页（下拉·跨宿主读表）","attempt":2,"start":"2026-10-03T03:21:47.297Z","ack":true,"pass":false,"evidence":"slides 16→17（需+2） marker=false","secs":602}
+{"id":"BT-P11","lane":"wpp","desc":"顶部·加密演示稿（对话流·放最后）","attempt":2,"start":"2026-10-03T03:32:09.452Z","pass":false,"evidence":"无法确认 e2e-wpp2 为活动演示稿","secs":12}
+{"id":"BT-P12","lane":"wpp","desc":"顶部·解密演示稿（对话流·最后）","attempt":1,"start":"2026-10-03T03:32:24.807Z","ack":true,"pass":true,"evidence":"回合完成，外部验证文件解密状态","secs":8}
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-03T09:33:11.412Z","pass":false,"evidence":"无法把 e2e-讲义3 置为活动文档（跨宿主写目标）","secs":32}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-03T09:43:54.698Z","ack":true,"pass":false,"evidence":"slides 5→5（需+4） marker=false","secs":602}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-03T10:04:07.747Z","ack":true,"pass":false,"evidence":"slides 5→5（需+3） marker=false","secs":603}
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-03T14:04:35.355Z","pass":false,"evidence":"无法把 e2e-讲义3 置为活动文档（跨宿主写目标）","secs":31}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-03T14:15:19.255Z","ack":true,"pass":false,"evidence":"slides 8→8（需+4） marker=false","secs":601}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-03T14:35:32.605Z","ack":true,"pass":false,"evidence":"slides 8→0（需+3） marker=false","secs":601}
+{"id":"NP10","lane":"wpp","desc":"配方 wpp-gov-safetyedu 安全警示教育课件","attempt":2,"start":"2026-10-03T14:46:13.003Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"NP11","lane":"wpp","desc":"配方 wpp-med-mdt 病例讨论课件","attempt":2,"start":"2026-10-03T14:47:34.840Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP12","lane":"wpp","desc":"配方 wpp-med-edu 患者宣教课件","attempt":2,"start":"2026-10-03T14:48:50.645Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP13","lane":"wpp","desc":"配方 wpp-med-dept 科室年度汇报","attempt":2,"start":"2026-10-03T14:49:48.455Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"NP14","lane":"wpp","desc":"配方 wpp-mfg-safety 安全生产培训课件","attempt":2,"start":"2026-10-03T14:51:10.287Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP15","lane":"wpp","desc":"配方 wpp-mfg-sop 设备操作SOP页","attempt":2,"start":"2026-10-03T14:52:26.119Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"NP16","lane":"wpp","desc":"配方 wpp-fin-roadshow 投资者路演","attempt":2,"start":"2026-10-03T14:53:47.900Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP17","lane":"wpp","desc":"配方 wpp-fin-compliance 合规内训课件","attempt":2,"start":"2026-10-03T14:55:04.998Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":36}
+{"id":"NP18","lane":"wpp","desc":"配方 wpp-fin-product 产品说明会","attempt":2,"start":"2026-10-03T14:56:26.852Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP19","lane":"wpp","desc":"配方 wpp-ec-battle 大促战报页","attempt":2,"start":"2026-10-03T14:57:42.679Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP20","lane":"wpp","desc":"配方 wpp-ec-live-script 直播脚本分镜","attempt":2,"start":"2026-10-03T14:59:01.504Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP21","lane":"wpp","desc":"配方 wpp-edu-parents 家长会课件","attempt":2,"start":"2026-10-03T15:00:17.325Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":33}
+{"id":"NP22","lane":"wpp","desc":"配方 wpp-edu-recruit 招生宣讲","attempt":2,"start":"2026-10-03T15:01:33.132Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP23","lane":"wpp","desc":"配方 wpp-edu-class 主题班会课件","attempt":2,"start":"2026-10-03T15:02:30.969Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP24","lane":"wpp","desc":"配方 wpp-realestate 楼盘推介","attempt":2,"start":"2026-10-03T15:03:28.799Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP25","lane":"wpp","desc":"配方 wpp-wed-flow 婚礼流程页","attempt":2,"start":"2026-10-03T15:04:26.587Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP26","lane":"wpp","desc":"配方 wpp-event-plan 活动执行方案","attempt":2,"start":"2026-10-03T15:05:13.127Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP27","lane":"wpp","desc":"配方 wpp-food-new 新品推介页","attempt":2,"start":"2026-10-03T15:05:57.630Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP28","lane":"wpp","desc":"配方 wpp-img-web 搜图配图","attempt":2,"start":"2026-10-03T15:06:42.071Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP29","lane":"wpp","desc":"配方 wpp-img-model AI生图配图","attempt":2,"start":"2026-10-03T15:07:26.495Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}
+{"id":"NP30","lane":"wpp","desc":"配方 wpp-img-svg 矢量图标装饰","attempt":2,"start":"2026-10-03T15:08:10.780Z","pass":false,"evidence":"chat_turn 未接单: {\"ok\":false,\"error\":\"fetch failed\"}","secs":18}

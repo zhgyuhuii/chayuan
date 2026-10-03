@@ -2,7 +2,7 @@
 # install-wps-skill-chayuan.sh —— wps-skill-chayuan 直装脚本（macOS + Linux）
 #
 # 不跑 .pkg/.deb 安装器外壳，直接做四件事：
-#   1) 加载项目录 + publish.xml 写入 WPS jsaddons（WPS 启动即加载察元）
+#   1) 加载项目录 + publish.xml 写入 WPS jsaddons（安装前先清掉所有历史版本目录，装完只剩最新版）
 #   2) 调用 mcp-sidecar/autostart/* 注册 MCP 自启并立即启动（启动副作用：写 mcp-server.json）
 #   3) 四级 healthz 自检
 #   4) 自动检测已装的 agent（Claude Code / Cursor / Codex）→ 注册 MCP + 按各自格式投放技能文件
@@ -202,7 +202,8 @@ cleanup_old_addons() {
   local dest="$1"
   local prefix="${ADDON_FOLDER%%_*}"
   local entry base skip k
-  for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_*; do
+  # 最后一组：历史安装中断遗留的 .<目录>.installing 暂存壳（点前缀，同名新壳由安装流程重建）
+  for entry in "$dest"/${prefix}_* "$dest"/${prefix}-et_* "$dest"/${prefix}-wpp_* "$dest"/.${prefix}*.installing; do
     [[ -d "$entry" ]] || continue
     base="$(basename "$entry")"
     skip=0
@@ -261,6 +262,9 @@ copy_tree() {
 install_addon_one() {
   local dest="$1"; [[ -z "$dest" ]] && return 0
   mkdir -p "$dest"
+  # 安装前先清理历史版本目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver> 及残留 .installing 壳），
+  # 只保留本次要装的版本；本次同名目录不在这里删，由下方替换逻辑原子覆盖。
+  cleanup_old_addons "$dest"
   local folder ok=0
   # 主宿主 + 表格/演示宿主目录
   for folder in "$ADDON_FOLDER" $HOST_FOLDERS; do
@@ -280,7 +284,7 @@ install_addon_one() {
   done
   [[ "$ok" -eq 1 ]] || return 1
   cp -f "$PAYLOAD/publish.xml" "$dest/publish.xml" 2>/dev/null || true
-  # 替换式安装：清掉历史版本目录
+  # 装完兜底再扫一遍（正常情况下安装前清理已清光，这里只处理极端残留）
   cleanup_old_addons "$dest"
   echo "  ✓ 加载项 → $dest"
 }

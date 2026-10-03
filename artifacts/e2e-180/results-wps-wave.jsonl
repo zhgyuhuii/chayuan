@@ -1,0 +1,5 @@
+{"id":"W42","lane":"wps","desc":"AI 生图并插入","attempt":1,"start":"2026-10-02T07:12:32.106Z","ack":true,"pass":true,"evidence":"marker=true  len=97","secs":811}
+{"id":"W41","lane":"wps","desc":"网络搜图并插入","attempt":1,"start":"2026-10-02T07:26:06.292Z","ack":true,"pass":true,"evidence":"marker=true  len=109","secs":43}
+{"id":"W43","lane":"wps","desc":"图片清单","attempt":2,"start":"2026-10-02T07:37:15.909Z","ack":true,"pass":false,"evidence":"images=1 marker=true","secs":284}
+{"id":"W44","lane":"wps","desc":"导出图片","attempt":1,"start":"2026-10-02T07:42:02.478Z","ack":true,"pass":true,"evidence":"file=false marker=true","secs":567}
+{"id":"W45","lane":"wps","desc":"删除图片","attempt":1,"start":"2026-10-02T07:51:32.465Z","ack":true,"pass":true,"evidence":"marker=true  len=129","secs":264}

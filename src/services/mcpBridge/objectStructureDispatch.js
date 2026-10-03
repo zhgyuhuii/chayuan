@@ -1019,10 +1019,12 @@ export async function handleImageExport(params = {}) {
   const exported = []
   const inlines = doc.InlineShapes
   const count = Number(inlines?.Count || 0)
+  // 真机实证（2026-10-02）：路径分隔符不能写死反斜杠——mac/linux 上会生成文件名字面含 "\" 的怪文件
+  const sep = navigator.platform?.toLowerCase?.().includes('win') || /win/i.test(String(navigator.userAgent || '')) ? '\\' : '/'
   for (let i = 1; i <= count; i++) {
     try {
       const shape = inlines.Item(i)
-      const out = `${folder.replace(/[/\\]$/, '')}\\image_${i}.png`
+      const out = `${folder.replace(/[/\\]$/, '')}${sep}image_${i}.png`
       if (typeof shape.SaveAsPicture === 'function') {
         shape.SaveAsPicture(out)
         exported.push(out)

@@ -6047,6 +6047,7 @@ export default {
         const result = await callLocalTool('chat_turn', {
           turnId,
           scopeKey: this.historyStorageScopeKey || 'no_active_document',
+          docId: this.historyStorageDocId || '',
           host: detectAddonType(),
           userText: String(text || ''),
           model: {
@@ -8229,10 +8230,13 @@ export default {
       const docLinkId = ensureDocumentChatLinkId(doc)
       const fullName = String(doc?.FullName || '').trim()
       const name = String(doc?.Name || '').trim()
+      // docId = 对话所属文档身份（远程回合执行侧校验"对话↔文档"绑定用）
+      const docId = fullName || name
       if (docLinkId) {
         return {
           scopeKey: `doc_${createScopedStorageSuffix(docLinkId)}`,
           documentLinkId: docLinkId,
+          docId: docId || `docvar:${docLinkId}`,
           source: 'document-variable'
         }
       }
@@ -8240,6 +8244,7 @@ export default {
         return {
           scopeKey: `path_${createScopedStorageSuffix(fullName)}`,
           documentLinkId: '',
+          docId,
           source: 'document-path'
         }
       }
@@ -8247,12 +8252,14 @@ export default {
         return {
           scopeKey: `name_${createScopedStorageSuffix(name)}`,
           documentLinkId: '',
+          docId,
           source: 'document-name'
         }
       }
       return {
         scopeKey: 'no_active_document',
         documentLinkId: '',
+        docId: '',
         source: 'fallback'
       }
     },
@@ -8260,6 +8267,7 @@ export default {
       const scopeKey = String(scopeInfo.scopeKey || 'no_active_document').trim() || 'no_active_document'
       this.historyStorageScopeKey = scopeKey
       this.historyStorageDocumentLinkId = String(scopeInfo.documentLinkId || '').trim()
+      this.historyStorageDocId = String(scopeInfo.docId || '').trim()
       this.historyStorageSource = String(scopeInfo.source || '').trim()
       // 全局 LRU touch：记录本 scope 活跃时间，超 30 键时驱逐最久未用的会话
       this.touchScopeLru(scopeKey)

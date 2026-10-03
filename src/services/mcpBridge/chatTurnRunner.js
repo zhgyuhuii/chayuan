@@ -64,6 +64,20 @@ const MAX_CONCURRENT_TURNS = 2
 /** turnId → { ctrl, timers:[], state } */
 const activeTurns = new Map()
 
+/**
+ * 文档绑定守卫（纯函数，可单测）：对话声明的文档与执行侧活动文档必须一致。
+ * 空缺省（未声明/探测不到）放行——由 expectDocId 身份校验兜底。
+ */
+export function checkDocBinding(requestedDocId, activeDocId) {
+  const req = String(requestedDocId || '').trim()
+  const act = String(activeDocId || '').trim()
+  if (!req || !act || req === act) return { ok: true }
+  return {
+    ok: false,
+    message: `本对话属于「${req}」，但当前活动文档是「${act}」。为避免写错文件，本回合未执行。\n请切换回「${req}」后继续，或在当前文档中发送新指令开启它自己的对话。`
+  }
+}
+
 function storage() {
   try {
     return window.Application?.PluginStorage || null
@@ -130,6 +144,27 @@ function runDetachedTurn(params = {}) {
   const writeBaselineToken = `mcp-remote-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   setWriteBaseline(undefined, undefined, writeBaselineToken)
   const targetDocumentId = getWriteBaseline(writeBaselineToken).docId
+
+  // 文档绑定守卫（设计总纲：每个对话只管一个文档，对当前文件负责）：
+  // 面板声明本对话属于 docId；执行侧实际活动文档若与之不一致——说明面板与
+  // 执行侧错位（跨窗口共享面板/用户切了文件）——拒绝执行并指路，绝不静默
+  // 操作错误文件。宁可不动手，不可写错档。
+  const binding = checkDocBinding(params.docId, targetDocumentId)
+  if (!binding.ok) {
+    const state0 = {
+      turnId, scopeKey, phase: 'error',
+      steps: [], streamText: '', todos: [], content: binding.message, loopMessages: [],
+      proofreadCard: null, usedServers: [],
+      startedAt: Date.now(), updatedAt: Date.now(), finishedAt: Date.now(),
+      reason: 'DOC_MISMATCH'
+    }
+    try {
+      if (scopeKey) storage()?.setItem(PENDING_KEY_PREFIX + scopeKey, turnId)
+      writeTurnState(turnId, state0)
+    } catch (_) { /* ignore */ }
+    logEvent('chat_turn_doc_mismatch', { turnId, requested: params.docId, active: targetDocumentId })
+    return
+  }
 
   // 远程回合的模型 API 配置由面板随参数带来（面板已按用户选择解析好）——
   // ribbon webview 的 localStorage 不保证与面板一致，不能在本侧再解析一次

@@ -181,7 +181,9 @@ export function resolveAggregateCall(toolName, args = {}) {
       chart_add: { method: 'spreadsheet.chart_add', args: rest, requireConfirmed: true },
       chart_list: { method: 'spreadsheet.chart_list', args: rest },
       chart_export: { method: 'spreadsheet.chart_export', args: rest, requireConfirmed: true },
-      export: { method: 'spreadsheet.export', args: rest, requireConfirmed: true }
+      export: { method: 'spreadsheet.export', args: rest, requireConfirmed: true },
+      security_encrypt_save: { method: 'spreadsheet.security_encrypt_save', args: rest, requireConfirmed: true },
+      security_decrypt_save: { method: 'spreadsheet.security_decrypt_save', args: rest, requireConfirmed: true }
     },
     presentation: {
       status: { method: 'presentation.status', args: rest },
@@ -203,7 +205,9 @@ export function resolveAggregateCall(toolName, args = {}) {
       slide_export_image: { method: 'presentation.slide_export_image', args: rest, requireConfirmed: true },
       notes_set: { method: 'presentation.notes_set', args: rest, requireConfirmed: true },
       format_uniform: { method: 'presentation.format_uniform', args: rest, requireConfirmed: true },
-      svg_add: { method: 'presentation.svg_add', args: rest, requireConfirmed: true }
+      svg_add: { method: 'presentation.svg_add', args: rest, requireConfirmed: true },
+      security_encrypt_save: { method: 'presentation.security_encrypt_save', args: rest, requireConfirmed: true },
+      security_decrypt_save: { method: 'presentation.security_decrypt_save', args: rest, requireConfirmed: true }
     }
   }
 
@@ -664,7 +668,7 @@ export const AGGREGATE_TOOLS = [
       'WHAT: WPS 表格(ET/Spreadsheet) domain — operates the ACTIVE WORKBOOK in the WPS Spreadsheets host. status / sheet management (sheet_list|sheet_add|sheet_rename|sheet_delete) / cell IO (used_range|range_read|range_write) / search (find|find_replace) / structure (row_insert|row_delete|column_insert|column_delete) / sort|autofilter / format / charts (chart_add|chart_list|chart_export) / export (pdf|csv).',
       'WHEN: user asks anything about 表格/Excel/工作簿/单元格/sheet/公式/图表 while WPS 表格 is the host, e.g. 「把A1写入姓名」「读取A1:C10」「按B列降序排序」「给表头加底色」「做个柱状图」「导出PDF/CSV」.',
       'NOT: Not for tables inside a Writer document (use table). Not for reading files without WPS. range_write replaces cell values — it does not append; read first, then write.',
-      'HOW: Ranges are A1 notation ("A1:C10"). range_write takes values as 2-D array + startCell (default A1); strings starting with "=" are written as formulas. format takes style {bold,italic,fontSize,fontName,fontColor,bgColor,numberFormat,align,wrapText,border,merge,columnWidth,rowHeight} with hex colors ("#FF0000"). Writes need confirmed=true (preview returned first without it). Large sheets: read in batches (≤50000 cells/call), write in batches (≤5000 cells/call fallback).',
+      'HOW: Ranges are A1 notation ("A1:C10"). range_write takes values as 2-D array + startCell (default A1); strings starting with "=" are written as formulas. security_encrypt_save/security_decrypt_save: 给当前工作簿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存为副本；密码遗忘无法找回，建议先另存副本）。 format takes style {bold,italic,fontSize,fontName,fontColor,bgColor,numberFormat,align,wrapText,border,merge,columnWidth,rowHeight} with hex colors ("#FF0000"). Writes need confirmed=true (preview returned first without it). Large sheets: read in batches (≤50000 cells/call), write in batches (≤5000 cells/call fallback).',
       'EXAMPLE: {"action":"status"} ; {"action":"range_read","range":"A1:C10"} ; {"action":"range_write","startCell":"A1","values":[["姓名","分数"],["张三",90]],"confirmed":true} ; {"action":"sort","range":"A1:C20","keyColumn":2,"order":"desc","header":true,"confirmed":true} ; {"action":"format","range":"A1:C1","style":{"bold":true,"bgColor":"#DDEBF7"},"confirmed":true} ; {"action":"chart_add","dataRange":"A1:B10","type":"column","title":"月度销量","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -673,7 +677,7 @@ export const AGGREGATE_TOOLS = [
       additionalProperties: false,
       required: ['action'],
       properties: {
-        action: { type: 'string', enum: ['status', 'sheet_list', 'sheet_add', 'sheet_rename', 'sheet_delete', 'used_range', 'range_read', 'range_write', 'find', 'find_replace', 'row_insert', 'row_delete', 'column_insert', 'column_delete', 'sort', 'autofilter', 'format', 'chart_add', 'chart_list', 'chart_export', 'export'] },
+        action: { type: 'string', enum: ['status', 'sheet_list', 'sheet_add', 'sheet_rename', 'sheet_delete', 'used_range', 'range_read', 'range_write', 'find', 'find_replace', 'row_insert', 'row_delete', 'column_insert', 'column_delete', 'sort', 'autofilter', 'format', 'chart_add', 'chart_list', 'chart_export', 'export', 'security_encrypt_save', 'security_decrypt_save'] },
         confirmed: { type: 'boolean' },
         sheet: { type: ['string', 'number'], description: '工作表名称或 1-based 序号；缺省=活动表' },
         range: { type: 'string', description: 'A1 记法区域，如 A1:C10；缺省=UsedRange' },
@@ -710,7 +714,8 @@ export const AGGREGATE_TOOLS = [
         title: { type: 'string' },
         left: { type: 'number' }, top: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' },
         format: { type: 'string', enum: ['pdf', 'csv'], description: 'export 格式；csv 走已用区域序列化' },
-        path: { type: 'string', description: '导出绝对路径' }
+        path: { type: 'string', description: '导出/另存绝对路径' },
+        password: { type: 'string', description: 'security_encrypt_save 的打开密码（不回显）' }
       }
     }
   }),
@@ -721,7 +726,7 @@ export const AGGREGATE_TOOLS = [
       'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add|svg_add vector graphics) / notes_set (speaker notes per slide) / format_uniform (unify fonts/sizes/colors across all slides) / slideshow_run / export (pdf|images) / slide_export_image.',
       'WHEN: user asks anything about PPT/幻灯片/演示文稿/slides while WPS 演示 is the host, e.g. 「加一页标题页」「把第2页的错别字改掉」「插入图片」「给每页写演讲备注」「统一字体」「导出PDF」「开始放映」.',
       'NOT: Not for Word documents. Text edits need shapeIndex (slide_read/shape_list first).',
-      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). notes_set: notes=[{slide,text}] or slide+text. format_uniform: fontName/titleSize/bodySize/color — table shapes are skipped.',
+      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). notes_set: notes=[{slide,text}] or slide+text. format_uniform: fontName/titleSize/bodySize/color — table shapes are skipped. security_encrypt_save/security_decrypt_save: 给当前演示稿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存副本；密码遗忘无法找回）。',
       'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"notes_set","notes":[{"slide":1,"text":"开场白：各位领导好"},{"slide":2,"text":"本页强调三个数字"}],"confirmed":true} ; {"action":"format_uniform","fontName":"微软雅黑","titleSize":28,"bodySize":18,"confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -730,7 +735,7 @@ export const AGGREGATE_TOOLS = [
       additionalProperties: false,
       required: ['action'],
       properties: {
-        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'notes_set', 'format_uniform', 'svg_add', 'slideshow_run', 'export', 'slide_export_image'] },
+        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'notes_set', 'format_uniform', 'svg_add', 'slideshow_run', 'export', 'slide_export_image', 'security_encrypt_save', 'security_decrypt_save'] },
         confirmed: { type: 'boolean' },
         index: { type: 'number', description: '幻灯片序号（1-based；缺省=最后一页或活动页视 action 而定）' },
         from: { type: 'number' }, to: { type: 'number' },
@@ -738,6 +743,8 @@ export const AGGREGATE_TOOLS = [
         title: { type: 'string' }, content: { type: 'string' },
         find: { type: 'string' }, replace: { type: 'string' },
         shapeIndex: { type: 'number' }, text: { type: 'string' }, append: { type: 'boolean' },
+        password: { type: 'string', description: 'security_encrypt_save 的打开密码（不回显）' },
+        savePath: { type: 'string', description: 'security_* 另存路径（缺省=当前文件）' },
         notes: { type: 'array', items: { type: 'object', properties: { slide: { type: 'number' }, text: { type: 'string' } } }, description: 'notes_set 每页备注 [{slide, text}]' },
         svg: { type: 'string', description: 'svg_add 的 SVG 源文本（矢量图形，禁止 script/外链）' },
         fontName: { type: 'string', description: 'format_uniform 统一字体名' },

@@ -34,6 +34,8 @@ import {
   handleDeclassifyPreview,
   handleDeclassifyApply,
   handleDeclassifyRestore,
+  handleSecurityEncryptSave,
+  handleSecurityDecryptSave,
   handleKbRetrieve
 } from './documentOpsDispatch.js'
 import {
@@ -467,6 +469,8 @@ const DOC_WRITE_METHODS = new Set([
   'watermark.clear',
   'declassify.apply',
   'declassify.restore',
+  'document.security_encrypt_save',
+  'document.security_decrypt_save',
   'proofread.apply_comments'
 ])
 
@@ -578,6 +582,16 @@ async function dispatchMcpJobInner(method, params) {
       : mod.cancelChatTurn(params)
   }
   // 表格/演示宿主工具：前缀路由（agentHub 已按宿主投递，这里双保险再按 action 分发）
+  // 安全加密（跨宿主）：必须放在 spreadsheet./presentation. 前缀分支之前，
+  // 否则会被前缀路由截获进 requireHost 的域处理器。agentHub 已按前缀把
+  // spreadsheet.*/presentation.* 投给对应宿主，document.* 投给文字宿主；
+  // 三者共用宿主感知的保存核心（ActiveDocument/Workbook/Presentation 择一存在者）
+  if (method === 'spreadsheet.security_encrypt_save' || method === 'presentation.security_encrypt_save' || method === 'document.security_encrypt_save') {
+    return handleSecurityEncryptSave(params)
+  }
+  if (method === 'spreadsheet.security_decrypt_save' || method === 'presentation.security_decrypt_save' || method === 'document.security_decrypt_save') {
+    return handleSecurityDecryptSave(params)
+  }
   if (method.startsWith('spreadsheet.')) {
     return handleSpreadsheetAction(method.slice('spreadsheet.'.length), params)
   }
