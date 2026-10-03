@@ -1,0 +1,2 @@
+{"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-03T23:01:39.374Z","ack":true,"pass":false,"evidence":"公式演示!L1=0（A 列最大值期望 91）","secs":363}
+{"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":1,"start":"2026-10-03T23:07:47.919Z","ack":true,"pass":true,"evidence":"销售明细!Z5=BT-E2OK","secs":13}

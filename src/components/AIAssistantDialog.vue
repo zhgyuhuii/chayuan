@@ -6036,7 +6036,7 @@ export default {
     // 必须跑在 ribbon 基座 webview（跨切换存活）。派发成功返回 turnId，面板
     // 轮询 PluginStorage 共享键观察；派发失败（基座离线/忙/配置缺失）返回
     // null，调用方落回本地循环——行为与旧版完全一致。
-    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, historyMessages, previousTodos, previousLoopHistory }) {
+    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, turnChatId, historyMessages, previousTodos, previousLoopHistory }) {
       try {
         const providerId = String(model?.providerId || '').trim()
         const modelId = String(model?.modelId || model?.id || '').trim()
@@ -6070,6 +6070,8 @@ export default {
           // mcpRemoteTurnId 找回本消息并恢复观察
           assistantMsg.mcpRemoteTurnId = turnId
           assistantMsg.mcpRemoteSettled = false
+          assistantMsg.mcpRemoteScopeKey = this.historyStorageScopeKey || 'no_active_document'
+          assistantMsg.mcpRemoteChatId = turnChatId || this.currentChatId || ''
           this.saveHistory()
           return turnId
         }
@@ -6112,6 +6114,37 @@ export default {
       }
     },
     mergeRemoteTurnOutcome(assistantMsg, state, turnChatId) {
+      const originChatId = assistantMsg.mcpRemoteChatId || ''
+      // 跨 scope 回写：回合期间用户切了文档 → sync 已把内存列表换成新文档的，
+      // assistantMsg 成了孤儿——直接对原 scope 的存储做读写合并，答案回到所属文档
+      const originScope = String(assistantMsg.mcpRemoteScopeKey || state.scopeKey || this.historyStorageScopeKey || '')
+      void originChatId
+      if (originScope && originScope !== this.historyStorageScopeKey) {
+        try {
+          const storage = window.Application?.PluginStorage
+          const keys = this.getHistoryStorageKeys(originScope)
+          const list = JSON.parse(storage?.getItem(keys.history) || '[]')
+          for (const chat of list) {
+            const idx = (chat.messages || []).findIndex(m => m?.id === assistantMsg.id)
+            if (idx < 0) continue
+            const settled = { ...assistantMsg, mcpRemoteSettled: true, mcpStreamingText: '', isLoading: false }
+            settled.messages = undefined
+            chat.messages[idx] = {
+              ...chat.messages[idx],
+              content: settled.content,
+              mcpSteps: settled.mcpSteps || [],
+              mcpTodos: settled.mcpTodos || [],
+              mcpLoopHistory: settled.mcpLoopHistory || [],
+              mcpProofreadCard: settled.mcpProofreadCard || null,
+              mcpRemoteSettled: true,
+              mcpInterrupted: !!settled.mcpInterrupted
+            }
+            chat.updatedAt = Date.now()
+            storage.setItem(keys.history, JSON.stringify(list))
+            break
+          }
+        } catch (_) { /* 存储级合并失败不阻断 UI 合并 */ }
+      }
       assistantMsg.mcpRemoteSettled = true
       assistantMsg.mcpStreamingText = ''
       if (state.phase === 'done') {
@@ -6163,8 +6196,23 @@ export default {
       }
       // 无限轮询由终态/陈旧判定收敛：phase 终态合并退出；running 且心跳
       // 超过 REMOTE_TURN_STALE_MS 视为执行侧（基座 webview）死亡 → 中断收尾
+      const waitStart = Date.now()
       for (;;) {
         await new Promise(r => setTimeout(r, REMOTE_TURN_POLL_MS))
+        // 硬上限：任何回合不超过 10 分钟（防执行侧永挂把 UI 钉死）
+        if (Date.now() - waitStart > 600_000) {
+          assistantMsg.mcpRemoteSettled = true
+          assistantMsg.mcpStreamingText = ''
+          const partial = String(assistantMsg.mcpStreamingText || '').trim()
+          assistantMsg.content = partial || '回合超时（超过 10 分钟未完成）。请重试或拆小任务。'
+          this.stopAssistantLoadingProgress(assistantMsg)
+          assistantMsg.isLoading = false
+          assistantMsg.mcpStepsExpanded = false
+          this.clearMcpTurnCtx(turnChatId)
+          this.settleGlobalStreamingFlag()
+          this.saveHistory()
+          return
+        }
         const state = this.readRemoteTurnState(turnId)
         if (!state) continue
         if (state.phase === 'running') {
@@ -6346,6 +6394,7 @@ export default {
         text,
         model,
         assistantMsg,
+        turnChatId,
         historyMessages,
         previousTodos,
         previousLoopHistory
@@ -8284,7 +8333,13 @@ export default {
       return this.applyHistoryStorageScope(this.resolveHistoryStorageScope())
     },
     syncHistoryScopeWithActiveDocument() {
-      if (this.isWindowBusy) return false
+      // 只挡"本地执行"：本地回合在本 webview 内改文档，切会话确实危险；
+      // 远程回合跑在基座 webview 且带 docId 绑定守卫，切会话安全——若也挡住，
+      // 一次回合异常/卡顿就把会话隔离焊死（所有文档标签共用同一对话，实测缺陷）。
+      const localBusy = this.isStreaming ||
+        !!(this.docWriteLockState?.locked || this.docWriteLockState?.queue?.length) ||
+        Object.values(this.sendRoutingLocks || {}).some(Boolean)
+      if (localBusy) return false
       const nextScope = this.resolveHistoryStorageScope()
       const nextScopeKey = String(nextScope.scopeKey || '').trim()
       if (!nextScopeKey) return false
