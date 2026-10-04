@@ -469,9 +469,12 @@
                       placeholder="请输入 API 密钥"
                       class="config-input"
                       :disabled="isFormSaved"
+                      autocomplete="off"
+                      spellcheck="false"
                       @blur="updateModelConfig"
                       @input="onFormChange"
                       @focus="onApiKeyInputFocus"
+                      @keydown="onApiKeyKeydown"
                     />
                     <span
                       v-if="currentModelConfig.apiKey && !isFormSaved"
@@ -515,9 +518,12 @@
                       placeholder="请输入 API 地址"
                       class="config-input"
                       :disabled="isFormSaved"
+                      autocomplete="off"
+                      spellcheck="false"
                       @blur="updateModelConfig"
                       @input="onFormChange"
                       @focus="onApiKeyInputFocus"
+                      @keydown="onApiKeyKeydown"
                     />
                     <span
                       v-if="currentModelConfig.apiUrl && !isFormSaved"
@@ -5967,31 +5973,38 @@ export default {
       this.notifyRibbonRefreshModelMenu()
     },
     // 切换 API 密钥显示
-    async pasteApiKey() {
-      try {
-        if (navigator.clipboard && navigator.clipboard.readText) {
-          const text = await navigator.clipboard.readText()
-          if (text) {
-            this.currentModelConfig.apiKey = text.trim()
-            this.onFormChange()
-          }
-          return
-        }
-      } catch (_) { /* 权限拒绝或 API 不可用，回退 execCommand */ }
-      const el = this.$refs.apiKeyInputRef
-      if (el) {
-        el.focus()
-        const ok = document.execCommand('paste')
-        if (!ok) {
-          window.alert('无法读取剪贴板，请在输入框中按 Cmd+V 粘贴')
-        }
-      }
-    },
     toggleApiKeyVisibility() {
       this.showApiKey = !this.showApiKey
     },
     // 粘贴 API 密钥（WPS ShowDialog 中 Ctrl+V 可能被主文档捕获，用此按钮粘贴）
+    onApiKeyKeydown(e) {
+      // WPS CEF webview 里 Cmd/Ctrl+V 的原生粘贴路径可能被主进程拦截（真机实证
+      // 手动粘贴也失败）；在 keydown 阶段捕获快捷键，走 sidecar 系统剪贴板填充
+      const key = String(e.key || '').toLowerCase()
+      if (key !== 'v' || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.pasteApiKey()
+    },
     async pasteApiKey() {
+      // 首选 sidecar 系统级剪贴板（CEF 里 navigator.clipboard 被权限拒绝，真机实证）
+      try {
+        const token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
+        const base = 'http://127.0.0.1:62588'
+        const resp = await fetch(`${base}/clipboard`, { headers: { 'X-Chayuan-Token': token } })
+        if (resp.ok) {
+          const data = await resp.json()
+          const text = String(data.text || '').trim()
+          if (text) {
+            const cur = (this.currentModelConfig.apiKey || '').trim()
+            this.currentModelConfig.apiKey = cur ? cur + ',' + text : text
+            this.updateModelConfig()
+            this.onFormChange()
+            this.showMessage('已粘贴')
+            return
+          }
+        }
+      } catch (_) { /* sidecar 不在线走浏览器 API */ }
       try {
         if (navigator.clipboard?.readText) {
           const text = (await navigator.clipboard.readText()).trim()
@@ -9029,6 +9042,7 @@ input:checked + .slider:before {
   display: flex;
   gap: 4px;
   align-items: center;
+  width: 100%;
 }
 
 .input-with-clear {
@@ -9070,18 +9084,6 @@ input:checked + .slider:before {
   background: #f0f0f0;
 }
 
-.btn-icon {
-  background: none;
-  border: none;
-  padding: 4px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  flex-shrink: 0;
-  transition: all 0.3s ease;
-}
-
 .btn-icon:hover:not(:disabled) {
   border-color: #1890ff;
 }
@@ -9117,11 +9119,51 @@ input:checked + .slider:before {
   display: block;
 }
 
-.btn-detect-icon {
-  padding: 6px 8px;
+/* 密钥粘贴按钮：紧凑图标按钮（无框），SVG 剪贴板图标 */
+.btn-paste-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  color: #666;
+}
+
+.btn-icon.btn-paste:hover:not(:disabled) .btn-paste-icon {
+  color: #1890ff;
+}
+
+.btn-icon.btn-paste {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.btn-icon.btn-paste:disabled .btn-paste-icon {
+  opacity: 0.4;
+}
+
+/* 图标按钮统一：紧凑尺寸 + 无框 */ 
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 2px;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.btn-icon:hover:not(:disabled) {
+  border-color: #1890ff;
 }
 
 .btn-detect-icon-img {

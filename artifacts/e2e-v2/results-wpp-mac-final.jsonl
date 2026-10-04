@@ -5,3 +5,5 @@
 {"id":"BT-P5","lane":"wpp","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-04T03:07:59.323Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":605}
 {"id":"BT-P6","lane":"wpp","desc":"顶部·结构诊断（autoSend）——已过 NP02，此处复核按钮提示词","attempt":2,"start":"2026-10-04T03:26:19.361Z","ack":true,"pass":false,"evidence":"末页摘要命中=false","secs":482}
 {"id":"BT-P7","lane":"wpp","desc":"顶部·整套翻译（下拉）——已过 NP03，复核按钮提示词","attempt":2,"start":"2026-10-04T03:47:08.880Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":746}
+{"id":"BT-P8","lane":"wpp","desc":"顶部·课件生成（下拉）","attempt":2,"start":"2026-10-04T04:12:35.943Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":745}
+{"id":"BT-P9","lane":"wpp","desc":"顶部·习题互动页（下拉）","attempt":2,"start":"2026-10-04T04:37:33.062Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":743}

@@ -511,6 +511,28 @@ const server = http.createServer(async (req, res) => {
 
     // 图像工具（三级生图）：image_search / generate_image 为侧车原生（无需 webview），
     // /tmp-image 承接 svg_add 光栅化产物的落盘（token 门禁与 /agent/* 同级）
+    // 剪贴板读取（设置窗口粘贴按钮用）：webview 的 navigator.clipboard 在 CEF 里被
+    // 权限拒绝（真机实证 NotAllowedError 且 catch 静默 = "点了没反应"），由 sidecar
+    // 用系统命令读剪贴板（mac: pbpaste / win: clip / linux: xclip）
+    if (pathname === '/clipboard' && req.method === 'GET') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const { execFile } = await import('node:child_process')
+      const plat = process.platform
+      const read = () => new Promise((resolve) => {
+        try {
+          if (plat === 'darwin') execFile('pbpaste', [], { maxBuffer: 2 * 1024 * 1024, timeout: 3000 }, (e, out) => resolve(e ? '' : String(out)))
+          else if (plat === 'win32') execFile('cmd', ['/c', 'clip'], { maxBuffer: 2 * 1024 * 1024, timeout: 3000 }, (e) => {
+            // clip.exe 只能写；读用 powershell Get-Clipboard
+            if (e) return resolve('')
+            execFile('powershell', ['-NoProfile', '-Command', 'Get-Clipboard -Raw'], { maxBuffer: 2 * 1024 * 1024, timeout: 5000 }, (e2, out2) => resolve(e2 ? '' : String(out2)))
+          })
+          else execFile('xclip', ['-selection', 'clipboard', '-o'], { maxBuffer: 2 * 1024 * 1024, timeout: 3000 }, (e, out) => resolve(e ? '' : String(out)))
+        } catch (_) { resolve('') }
+      })
+      const text = (await read()).slice(0, 64 * 1024)
+      sendJson(res, 200, { text })
+      return
+    }
     if (pathname === '/tmp-image' && req.method === 'POST') {
       if (!isTrusted(req)) { unauthorized(res); return }
       const body = (await readBody(req)) || {}
