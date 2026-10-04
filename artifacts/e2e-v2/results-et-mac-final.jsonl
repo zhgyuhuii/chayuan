@@ -6,3 +6,6 @@
 {"id":"BT-E6","lane":"et","desc":"顶部·一键美化（autoSend）","attempt":2,"start":"2026-10-03T23:44:15.099Z","ack":true,"pass":false,"evidence":"分组名单!Z5=null","secs":423}
 {"id":"BT-E7","lane":"et","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-03T23:59:31.325Z","ack":true,"pass":false,"evidence":"保密检查=false 敏感项命中=false","secs":483}
 {"id":"BT-E8","lane":"et","desc":"顶部·排序汇总（下拉）","attempt":1,"start":"2026-10-04T00:07:39.505Z","ack":true,"pass":true,"evidence":"K1=10（期望 10） K2=460000（期望 460000）","secs":14}
+{"id":"BT-E9","lane":"et","desc":"顶部·文档抽取成表（下拉·跨宿主）","attempt":2,"start":"2026-10-04T00:16:09.469Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":747}
+{"id":"BT-E10","lane":"et","desc":"顶部·加密工作簿（对话流·放最后）","attempt":2,"start":"2026-10-04T00:41:13.880Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":749}
+{"id":"BT-E11","lane":"et","desc":"顶部·解密工作簿（对话流·最后）","attempt":2,"start":"2026-10-04T01:06:22.185Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":749}

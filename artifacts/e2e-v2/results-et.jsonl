@@ -39,3 +39,5 @@
 {"id":"NE10","lane":"et","desc":"配方 et-fin-aging 应收账龄分析","attempt":2,"start":"2026-10-02T13:00:44.863Z","ack":true,"pass":false,"evidence":"账龄分析=false 内容命中=false","secs":603}
 {"id":"NE13","lane":"et","desc":"配方 et-ec-refund 退货退款分析","attempt":2,"start":"2026-10-02T13:21:02.135Z","ack":true,"pass":false,"evidence":"退货分析=false 退货率命中=false","secs":601}
 {"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T13:41:14.123Z","ack":true,"pass":false,"evidence":"ROI复盘!D2=undefined（期望 2.5）","secs":601}
+{"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-04T03:25:35.256Z","ack":true,"pass":false,"evidence":"公式演示!L1=NaN（A 列最大值期望 91）","secs":364}
+{"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":2,"start":"2026-10-04T03:44:16.784Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":746}

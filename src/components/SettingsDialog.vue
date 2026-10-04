@@ -483,8 +483,12 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </span>
                   </div>
-                  <button class="btn-icon" :disabled="isFormSaved" @click="toggleApiKeyVisibility">
-                    {{ showApiKey ? '👁️' : '👁️‍🗨️' }}
+                  <button class="btn-icon btn-paste" :disabled="isFormSaved" @click="pasteApiKey" title="粘贴剪贴板内容">
+                    <img :src="getImageSrc('images/refresh.svg')" v-if="false" alt="" />
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="btn-paste-icon"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+                  </button>
+                  <button class="btn-icon" :disabled="isFormSaved" @click="toggleApiKeyVisibility" :title="showApiKey ? '隐藏密钥' : '显示密钥'">
+                    {{ showApiKey ? '👁' : '👁' }}
                   </button>
                   <button class="btn-detect btn-detect-icon" :disabled="isFormSaved" @click="detectApiKey" title="检测 API 密钥和地址是否可用">
                     <img :src="getImageSrc('images/refresh.svg')" class="btn-detect-icon-img" alt="检测" />
@@ -3756,6 +3760,17 @@ export default {
     }
   },
   mounted() {
+    // 修复：WPS CEF webview 全局禁用了右键菜单，导致 input 无法右键粘贴。
+    // 在 document 级别拦截 contextmenu 事件，对 input/textarea 恢复原生右键菜单。
+    document.addEventListener('contextmenu', (e) => {
+      const tag = (e.target && e.target.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) {
+        e.stopPropagation()
+        // 不 preventDefault —— 让原生右键菜单（复制/粘贴）正常弹出
+      } else {
+        e.preventDefault()
+      }
+    }, true)
     this.settingsWindowSession = createSettingsWindowSession((query) => {
       this.handleSettingsWindowRequest(query)
     })
@@ -5952,6 +5967,26 @@ export default {
       this.notifyRibbonRefreshModelMenu()
     },
     // 切换 API 密钥显示
+    async pasteApiKey() {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText()
+          if (text) {
+            this.currentModelConfig.apiKey = text.trim()
+            this.onFormChange()
+          }
+          return
+        }
+      } catch (_) { /* 权限拒绝或 API 不可用，回退 execCommand */ }
+      const el = this.$refs.apiKeyInputRef
+      if (el) {
+        el.focus()
+        const ok = document.execCommand('paste')
+        if (!ok) {
+          window.alert('无法读取剪贴板，请在输入框中按 Cmd+V 粘贴')
+        }
+      }
+    },
     toggleApiKeyVisibility() {
       this.showApiKey = !this.showApiKey
     },
@@ -7411,7 +7446,7 @@ export default {
 }
 
 .column-1 {
-  width: 22%;
+  width: 170px;
   flex-shrink: 0;
   min-height: 0;
   overflow: hidden;
@@ -7421,7 +7456,7 @@ export default {
 
 /* 第二列：模型清单，加宽避免拥挤 */
 .column-2 {
-  width: 32%;
+  width: 200px;
   flex-shrink: 0;
   min-height: 0;
   overflow-y: auto;
@@ -7435,8 +7470,8 @@ export default {
 }
 
 .column-3 {
-  width: 46%;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -8992,12 +9027,13 @@ input:checked + .slider:before {
 
 .input-group {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
 }
 
 .input-with-clear {
   flex: 1;
+  min-width: 0;
   position: relative;
   display: flex;
   align-items: center;
@@ -9036,11 +9072,13 @@ input:checked + .slider:before {
 
 .btn-icon {
   background: none;
-  border: 1px solid #d9d9d9;
-  padding: 6px 10px;
+  border: none;
+  padding: 4px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
   transition: all 0.3s ease;
 }
 
@@ -9056,10 +9094,10 @@ input:checked + .slider:before {
 .btn-detect {
   background: #fff;
   border: 1px solid #d9d9d9;
-  padding: 6px 12px;
+  padding: 4px 5px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
+  flex-shrink: 0;
   transition: all 0.3s ease;
 }
 
@@ -9071,6 +9109,12 @@ input:checked + .slider:before {
 .btn-detect:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-detect-icon-img {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .btn-detect-icon {

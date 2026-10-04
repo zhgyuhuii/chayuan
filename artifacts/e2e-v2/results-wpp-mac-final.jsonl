@@ -1,0 +1,7 @@
+{"id":"BT-P1","lane":"wpp","desc":"顶部·生成PPT（对话流）","attempt":2,"start":"2026-10-04T01:31:30.198Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":748}
+{"id":"BT-P2","lane":"wpp","desc":"顶部·整套摘要（autoSend）","attempt":2,"start":"2026-10-04T01:56:36.838Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":748}
+{"id":"BT-P3","lane":"wpp","desc":"顶部·美化统一（autoSend）","attempt":2,"start":"2026-10-04T02:21:43.453Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":744}
+{"id":"BT-P4","lane":"wpp","desc":"顶部·口播稿（autoSend）","attempt":2,"start":"2026-10-04T02:46:41.371Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":664}
+{"id":"BT-P5","lane":"wpp","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-04T03:07:59.323Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":605}
+{"id":"BT-P6","lane":"wpp","desc":"顶部·结构诊断（autoSend）——已过 NP02，此处复核按钮提示词","attempt":2,"start":"2026-10-04T03:26:19.361Z","ack":true,"pass":false,"evidence":"末页摘要命中=false","secs":482}
+{"id":"BT-P7","lane":"wpp","desc":"顶部·整套翻译（下拉）——已过 NP03，复核按钮提示词","attempt":2,"start":"2026-10-04T03:47:08.880Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":746}
