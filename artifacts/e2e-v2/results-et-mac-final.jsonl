@@ -1,2 +1,8 @@
 {"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-03T23:01:39.374Z","ack":true,"pass":false,"evidence":"公式演示!L1=0（A 列最大值期望 91）","secs":363}
 {"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":1,"start":"2026-10-03T23:07:47.919Z","ack":true,"pass":true,"evidence":"销售明细!Z5=BT-E2OK","secs":13}
+{"id":"BT-E3","lane":"et","desc":"顶部·一键图表","attempt":2,"start":"2026-10-03T23:15:21.256Z","ack":true,"pass":false,"evidence":"全簿图表数=0（原 1 + 新增 ≥1）","secs":430}
+{"id":"BT-E4","lane":"et","desc":"顶部·数据清洗（autoSend）","attempt":2,"start":"2026-10-03T23:29:44.749Z","ack":true,"pass":false,"evidence":"应收账款!Z5=null","secs":424}
+{"id":"BT-E5","lane":"et","desc":"顶部·报表结论（autoSend）","attempt":1,"start":"2026-10-03T23:36:53.442Z","ack":true,"pass":true,"evidence":"退货明细!Z5=BT-E5OK","secs":9}
+{"id":"BT-E6","lane":"et","desc":"顶部·一键美化（autoSend）","attempt":2,"start":"2026-10-03T23:44:15.099Z","ack":true,"pass":false,"evidence":"分组名单!Z5=null","secs":423}
+{"id":"BT-E7","lane":"et","desc":"顶部·保密检查（autoSend）","attempt":2,"start":"2026-10-03T23:59:31.325Z","ack":true,"pass":false,"evidence":"保密检查=false 敏感项命中=false","secs":483}
+{"id":"BT-E8","lane":"et","desc":"顶部·排序汇总（下拉）","attempt":1,"start":"2026-10-04T00:07:39.505Z","ack":true,"pass":true,"evidence":"K1=10（期望 10） K2=460000（期望 460000）","secs":14}

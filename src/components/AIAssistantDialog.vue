@@ -2127,6 +2127,7 @@
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
         <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen }">
+          <div class="composer-doc-binding" :title="docBindingLabel">{{ docBindingLabel }}</div>
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -4523,6 +4524,17 @@ export default {
       const host = detectAddonType()
       return host === 'et' || host === 'wpp'
     },
+    /** 对话绑定文档指示：肉眼可见"本对话管哪个文件"（也是隔离问题的决定性诊断） */
+    docBindingLabel() {
+      const host = detectAddonType()
+      const noun = host === 'et' ? '当前工作簿' : host === 'wpp' ? '当前演示稿' : '当前文档'
+      const docId = String(this.historyStorageDocId || '').trim()
+      if (!docId || this.historyStorageScopeKey === 'no_active_document') {
+        return `${noun}：未绑定（当前没有打开的文件）`
+      }
+      const base = docId.split('/').pop().split('\\').pop() || docId
+      return `${noun}：${base}`
+    },
     selectedModelName() {
       return this.selectedModel?.name || this.selectedModel?.modelId || (this.hasConfiguredChatModels ? '选择模型' : '配置模型')
     },
@@ -5010,6 +5022,16 @@ export default {
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
       // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
       try { this.tryConsumeRibbonPrefillPrompt() } catch (_) { /* 忽略单次异常 */ }
+      // 诊断探针：scope 键 + 探测结果写 PluginStorage，wps_status 可带出（wps_status.scopeDebug）
+      try {
+        window.Application?.PluginStorage?.setItem('ai_chat_scope_debug', JSON.stringify({
+          t: Date.now(),
+          current: this.historyStorageScopeKey,
+          docId: this.historyStorageDocId,
+          busy: !!this.isWindowBusy,
+          source: this.historyStorageSource
+        }))
+      } catch (_) { /* ignore */ }
     }, 1500)
     window.addEventListener('mousemove', this.handleSidebarResize)
     window.addEventListener('mouseup', this.stopSidebarResize)
@@ -23691,6 +23713,17 @@ export default {
   z-index: 20;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+
+.composer-doc-binding {
+  font-size: 11px;
+  line-height: 1.2;
+  color: #8a8f99;
+  padding: 0 4px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .composer-shell {
