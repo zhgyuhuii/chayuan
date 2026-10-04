@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-env node */
 /**
  * chayuan-mcp sidecar
  * - Streamable HTTP MCP at /mcp
@@ -531,6 +532,61 @@ const server = http.createServer(async (req, res) => {
       })
       const text = (await read()).slice(0, 64 * 1024)
       sendJson(res, 200, { text })
+      return
+    }
+    // 会话历史持久层（I1 session-store）：PluginStorage 不持久化（真机实证），
+    // webview 写穿此端点、缓存 miss 时回填（懒迁移）。scopeKey base64url 化
+    // 落盘防路径穿越；单 scope ≤300KB 硬顶。
+    if (pathname.startsWith('/session-store/') && (req.method === 'GET' || req.method === 'PUT')) {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const rawKey = decodeURIComponent(pathname.slice('/session-store/'.length))
+      if (!rawKey || rawKey.length > 200) { sendJson(res, 400, { error: 'bad scopeKey' }); return }
+      // 传输层硬顶（审查 P2-1）：content-length 预检，超限在进内存前拒绝
+      if (req.method === 'PUT') {
+        const declared = Number(req.headers['content-length'] || 0)
+        if (declared > 400 * 1024) { sendJson(res, 413, { error: 'payload too large' }); return }
+      }
+      const { mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } = await import('node:fs')
+      const dir = path.join(dataDir, 'session-store')
+      const file = path.join(dir, Buffer.from(rawKey, 'utf8').toString('base64url') + '.json')
+      if (req.method === 'GET') {
+        try {
+          const payload = JSON.parse(readFileSync(file, 'utf8'))
+          sendJson(res, 200, { exists: true, ...payload })
+        } catch (_) {
+          sendJson(res, 200, { exists: false })
+        }
+        return
+      }
+      const body = (await readBody(req)) || {}
+      const historyJson = typeof body.historyJson === 'string' ? body.historyJson : '[]'
+      if (historyJson.length > 300 * 1024) { sendJson(res, 413, { error: 'payload too large' }); return }
+      const currentChatId = String(body.currentChatId || '').slice(0, 120)
+      const savedAt = Number(body.savedAt) > 0 ? Number(body.savedAt) : Date.now()
+      try {
+        mkdirSync(dir, { recursive: true })
+        // 写序保护（审查 P2-3）：拒绝旧于已存 savedAt 的写入——fire-and-forget
+        // 并发到达顺序不定，旧数据不得覆盖新数据
+        let existingSavedAt = 0
+        try {
+          existingSavedAt = Number(JSON.parse(readFileSync(file, 'utf8')).savedAt || 0)
+        } catch (_) { /* 无既存文件 */ }
+        if (existingSavedAt > savedAt) { sendJson(res, 200, { ok: false, skipped: 'stale' }); return }
+        writeFileSync(file, JSON.stringify({ historyJson, currentChatId, savedAt }), 'utf8')
+        // 数量上限（审查 P2-2）：与面板 30 键 LRU 对齐的服务端兜底，超 200 个
+        // 按 mtime 驱逐最旧
+        try {
+          const files = readdirSync(dir).filter(x => x.endsWith('.json'))
+          if (files.length > 200) {
+            const withTime = files.map(x => ({ x, t: statSync(path.join(dir, x)).mtimeMs }))
+            withTime.sort((p, q) => p.t - q.t)
+            for (const { x } of withTime.slice(0, files.length - 200)) unlinkSync(path.join(dir, x))
+          }
+        } catch (_) { /* 清理失败不影响主流程 */ }
+        sendJson(res, 200, { ok: true })
+      } catch (e) {
+        sendJson(res, 500, { error: String(e?.message || e) })
+      }
       return
     }
     if (pathname === '/tmp-image' && req.method === 'POST') {

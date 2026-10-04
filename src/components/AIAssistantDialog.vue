@@ -2687,6 +2687,8 @@ node mcp-sidecar/server.mjs</pre>
 <script>
 // jszip(~96KB)首屏用不到,仅在导出 zip 时才需要 → 改为按需动态 import,见 createGeneratedZipFile
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
+import { ensureDocumentChatLinkId as ensureDocumentIdentity } from '../utils/documentIdentity.js'
+import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
 import {
   setWriteBaseline,
   getWriteBaseline,
@@ -2882,7 +2884,6 @@ import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan, evalLicense }
 import { getFingerprint as getPurchaseFingerprint } from '../utils/license/fingerprint.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
 const STORAGE_KEY_CURRENT = 'ai_assistant_current_chat_id'
-const STORAGE_KEY_DOC_CHAT_LINK_ID = 'chayuan_ai_chat_link_id'
 // ── 远程回合观察（AI助手对话跟随文档）───────────────────────────────
 // runner（ribbon 基座 webview）把回合状态写穿到这些键，面板任意次重挂载后
 // 按 turnId 恢复观察——生成不再随面板重挂载而中断
@@ -3257,46 +3258,12 @@ function createScopedStorageSuffix(value) {
   return text.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'default'
 }
 
-function buildRandomDocumentChatLinkId() {
-  return `docchat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-}
-
-function readDocumentVariable(doc, variableName) {
-  if (!doc?.Variables || !variableName) return ''
-  try {
-    const variable = doc.Variables.Item(variableName)
-    return String(variable?.Value || '').trim()
-  } catch (_) {
-    return ''
-  }
-}
-
-function writeDocumentVariable(doc, variableName, value) {
-  if (!doc?.Variables || !variableName) return false
-  const normalizedValue = String(value || '').trim()
-  if (!normalizedValue) return false
-  try {
-    const variable = doc.Variables.Item(variableName)
-    if (variable) {
-      variable.Value = normalizedValue
-      return true
-    }
-  } catch (_) {
-    // Fall through to create the variable when it does not exist.
-  }
-  try {
-    doc.Variables.Add(variableName, normalizedValue)
-    return true
-  } catch (_) {
-    return false
-  }
-}
-
 function ensureDocumentChatLinkId(doc) {
-  const existing = readDocumentVariable(doc, STORAGE_KEY_DOC_CHAT_LINK_ID)
-  if (existing) return existing
-  const created = buildRandomDocumentChatLinkId()
-  return writeDocumentVariable(doc, STORAGE_KEY_DOC_CHAT_LINK_ID, created) ? created : ''
+  // 三宿主文件内身份（T1b 实证：Writer=Variables / WPP=Tags / ET=Names 公式字面量）。
+  // 失败/无活动文档必须返回 ''（审查 P0-1）：随机回退会让轮询的 scopeKey 每拍
+  // 漂移——历史反复清空重挂 + sidecar 被随机键文件灌爆。'' 落到
+  // path_/no_active_document 稳定兜底（v5.1.5 语义）
+  return ensureDocumentIdentity(doc) || ''
 }
 
 function resolveTranslationTargetLanguage(text, fallback = '英文') {
@@ -8370,7 +8337,15 @@ export default {
         this.loadHistory({ skipScopeResolve: true })
         return true
       }
-      if (nextScopeKey === this.historyStorageScopeKey) return false
+      if (nextScopeKey === this.historyStorageScopeKey) {
+        // 身份未变但 FullName/Name 可能已变（另存为/改名）：docId 是执行侧
+        // DOC_SWITCHED 守卫的绑定凭据，必须跟着刷新，否则另存后所有回合误触
+        // "活动对象已切换"拒绝执行
+        if (nextScope.docId && nextScope.docId !== this.historyStorageDocId) {
+          this.historyStorageDocId = nextScope.docId
+        }
+        return false
+      }
       this.saveHistory({ skipScopeResolve: true, immediate: true })
       this.applyHistoryStorageScope(nextScope)
       this.loadHistory({ skipScopeResolve: true })
@@ -8409,6 +8384,11 @@ export default {
             storage?.removeItem(STORAGE_KEY_HISTORY)
             storage?.removeItem(STORAGE_KEY_CURRENT)
           }
+          // I1 懒迁移：内存 miss（重启/换机）→ sidecar 持久层回填 PluginStorage。
+          // 异步执行，回填后重挂载视图；sidecar 不可用保持原状（空历史）
+          if (!Array.isArray(parsed) || parsed.length === 0) {
+            this.backfillHistoryFromSessionStore()
+          }
         }
 
         this.chatHistory = Array.isArray(parsed)
@@ -8445,6 +8425,7 @@ export default {
       this.enforceScopeBudgetOnPayload(cleanHistory)
       return {
         storageKeys,
+        scopeKey: String(options.scopeKey || this.historyStorageScopeKey || '').trim(),
         historyJson: JSON.stringify(cleanHistory),
         currentChatId: this.currentChatId || ''
       }
@@ -8457,6 +8438,42 @@ export default {
         storage?.setItem(payload.storageKeys.current, payload.currentChatId)
       } else {
         storage?.removeItem(payload.storageKeys.current)
+      }
+      // I1 写穿：PluginStorage 落盘后同步 sidecar 持久层（fire-and-forget，
+      // sidecar 不可用静默降级）。scopeKey 一律取 payload 自带值（构建时刻的
+      // 键）——取"写时刻"的当前 scope 会在节流器跨 scope 重放陈旧 payload 时
+      // 把 A 文档历史写进 B 文档的键（审查 P1-2）
+      if (!payload.scopeKey) return
+      putSessionStore(payload.scopeKey, {
+        historyJson: payload.historyJson || '[]',
+        currentChatId: payload.currentChatId || ''
+      })
+    },
+    async backfillHistoryFromSessionStore() {
+      try {
+        const scopeKey = this.historyStorageScopeKey || ''
+        if (!scopeKey || scopeKey === 'no_active_document') return
+        const remote = await fetchSessionStore(scopeKey)
+        if (!remote) return
+        const storage = window.Application?.PluginStorage
+        const storageKeys = this.getHistoryStorageKeys(scopeKey)
+        const localRaw = storage?.getItem(storageKeys.history)
+        const localParsed = safeParsePluginJson(localRaw)
+        // 本地已有非空历史时不覆盖（本地是更新副本——写穿顺序保证）
+        if (Array.isArray(localParsed) && localParsed.length > 0) return
+        // 竞态守卫（审查 P1-3）：await 窗口内 scope 已切/回合进行中/本地已有
+        // 未落盘消息（节流器未写 PluginStorage）时放弃回填——避免旧远端数据
+        // 擦掉内存中的新回合
+        if (this.historyStorageScopeKey !== scopeKey) return
+        if (this.isStreaming || (this.chatHistory || []).length > 0) return
+        const remoteParsed = safeParsePluginJson(remote.historyJson)
+        if (!Array.isArray(remoteParsed) || remoteParsed.length === 0) return
+        storage?.setItem(storageKeys.history, remote.historyJson)
+        if (remote.currentChatId) storage?.setItem(storageKeys.current, remote.currentChatId)
+        // 重挂载视图（复用既有加载路径，跳过 scope 解析避免递归回填）
+        this.loadHistory({ skipScopeResolve: true })
+      } catch (e) {
+        console.debug('session-store 回填失败:', e)
       }
     },
     ensureHistorySavePersister() {

@@ -78,11 +78,31 @@ function OnAddinLoad(ribbonUI) {
   window.Application.PluginStorage.setItem('ApiEventFlag', false) //往PluginStorage中设置一个标记，用于控制ApiEvent的按钮label
 
   // 文档打开或切换时刷新表单模式按钮状态（从文档变量/保护类型读取）
+  // I3 事件健康自检：逐事件记录注册结果到 PluginStorage（wps.status.eventHealth
+  // 带出）——事件静默失败曾是宿主零注册的真凶之一，健康可观测后无需盲猜
   try {
     if (window.Application.ApiEvent) {
-      window.Application.ApiEvent.AddApiEventListener('DocumentOpen', 'ribbon.OnDocumentOpenForFormMode')
-      window.Application.ApiEvent.AddApiEventListener('WindowActivate', 'ribbon.OnWindowActivateForFormMode')
-      window.Application.ApiEvent.AddApiEventListener('DocumentBeforeSave', 'ribbon.OnDocumentBeforeSave')
+      const eventTargets = [
+        ['DocumentOpen', 'ribbon.OnDocumentOpenForFormMode'],
+        ['WindowActivate', 'ribbon.OnWindowActivateForFormMode'],
+        ['DocumentBeforeSave', 'ribbon.OnDocumentBeforeSave']
+      ]
+      const health = { at: Date.now(), events: [] }
+      for (const [evt, handler] of eventTargets) {
+        try {
+          window.Application.ApiEvent.AddApiEventListener(evt, handler)
+          health.events.push({ event: evt, ok: true })
+        } catch (e) {
+          health.events.push({ event: evt, ok: false, error: String(e?.message || e).slice(0, 120) })
+        }
+      }
+      try {
+        window.Application.PluginStorage.setItem('ai_event_health', JSON.stringify(health))
+      } catch (_) { /* 记录失败不影响注册 */ }
+    } else {
+      try {
+        window.Application.PluginStorage.setItem('ai_event_health', JSON.stringify({ at: Date.now(), events: [], note: 'ApiEvent 不可用（轮询底座兜底）' }))
+      } catch (_) { /* ignore */ }
     }
   } catch (e) {
     console.warn('注册文档事件失败:', e)

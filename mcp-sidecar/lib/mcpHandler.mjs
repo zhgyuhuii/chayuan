@@ -673,6 +673,33 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
           return jsonError(e.code || 'ERROR', e.message, e.details)
         }
       }
+      // I2 文档身份载体诊断/补写（identity_probe_{et,wpp,wps}）
+      case 'identity_probe_et':
+      case 'identity_probe_wpp':
+      case 'identity_probe_wps': {
+        const m = name === 'identity_probe_et'
+          ? 'spreadsheet.identity_probe'
+          : name === 'identity_probe_wpp' ? 'presentation.identity_probe' : 'document.identity_probe'
+        try {
+          const result = await agentHub.callAgent(m, args, { timeoutMs: 30_000 })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
+      case 'vars_probe_et':
+      case 'vars_probe_wpp':
+      case 'vars_probe_wps': {
+        const method = name === 'vars_probe_et'
+          ? 'spreadsheet.vars_probe'
+          : name === 'vars_probe_wpp' ? 'presentation.vars_probe' : 'document.vars_probe'
+        try {
+          const result = await agentHub.callAgent(method, args, { timeoutMs: 120_000 })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
       case 'document_meta': {
         try {
           const result = await agentHub.callAgent('document.meta', args, { timeoutMs: 60_000 })

@@ -24,6 +24,8 @@ import {
   hostError,
   MAX_READ_CELLS
 } from './hostDispatch.js'
+import { runVarsProbe } from './varsProbe.js'
+import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 
 /** 写 action 集合（dispatch.js 写锁判定用；其余为只读） */
 export const SPREADSHEET_WRITE_ACTIONS = new Set([
@@ -694,7 +696,16 @@ const READ_HANDLERS = {
   used_range: handleUsedRange,
   range_read: handleRangeRead,
   find: handleFind,
-  chart_list: handleChartList
+  chart_list: handleChartList,
+  // T1 三维探针（临时排查：ET Variables 存在/可写/持久），结论已回填第十节，保留供复测
+  vars_probe: (params) => runVarsProbe('et', params),
+  // 文档身份载体诊断/补写（I2 测试通道，诊断专用故意不进写锁：写的是文档
+  // 身份名而非内容，且由串行再入队列保证不与回合交错）：ensure=true 补写 Names
+  identity_probe: (params) => {
+    const wb = getActiveWorkbook()
+    const r = describeDocumentIdentity(wb, { ensure: params?.ensure === true })
+    return { host: 'et', ...r }
+  }
 }
 
 const WRITE_HANDLERS = {

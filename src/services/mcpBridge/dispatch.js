@@ -98,6 +98,8 @@ import { logEvent } from '../../utils/globalErrorLogger.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
 import { handleSpreadsheetAction, SPREADSHEET_WRITE_ACTIONS } from './spreadsheetDispatch.js'
 import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presentationDispatch.js'
+import { runVarsProbe } from './varsProbe.js'
+import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 import { getHostActiveObjectId } from './hostDispatch.js'
 
 // 聊天回合托管（AI助手对话跟随文档）：懒加载——只有 ribbon 基座真正接到 chat.*
@@ -613,6 +615,12 @@ async function dispatchMcpJobInner(method, params) {
             return raw ? JSON.parse(raw) : null
           } catch (_) { return null }
         })(),
+        eventHealth: (() => {
+          try {
+            const raw = window.Application?.PluginStorage?.getItem('ai_event_health')
+            return raw ? JSON.parse(raw) : null
+          } catch (_) { return null }
+        })(),
         probe: (() => {
           const app = window.Application
           const out = {}
@@ -626,6 +634,14 @@ async function dispatchMcpJobInner(method, params) {
       return handleDocumentGetTextGuarded(params)
     case 'document.meta':
       return handleDocumentMeta(params)
+    // T1 三维探针（临时排查：Writer Variables 对照组），结论回填后移除
+    case 'document.vars_probe':
+      return runVarsProbe('wps', params)
+    // 文档身份载体诊断/补写（I2 测试通道，Writer 组）
+    case 'document.identity_probe': {
+      const doc = (() => { try { return window.Application?.ActiveDocument || null } catch (_) { return null } })()
+      return { host: 'wps', ...describeDocumentIdentity(doc, { ensure: params.ensure === true }) }
+    }
     case 'document.list_paragraphs':
       return handleDocumentListParagraphs(params)
     case 'document.chunks':

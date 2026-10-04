@@ -16,6 +16,8 @@ import {
   hostError
 } from './hostDispatch.js'
 import { uploadTmpImage } from './mcpHttpClient.js'
+import { runVarsProbe } from './varsProbe.js'
+import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 
 /** 写 action 集合（dispatch.js 写锁判定用） */
 export const PRESENTATION_WRITE_ACTIONS = new Set([
@@ -611,7 +613,15 @@ const READ_HANDLERS = {
   status: handleStatus,
   slide_list: handleSlideList,
   slide_read: handleSlideRead,
-  shape_list: handleShapeList
+  shape_list: handleShapeList,
+  // T1 三维探针（临时排查：WPP Variables 存在/可写/持久），结论回填后移除
+  vars_probe: (params) => runVarsProbe('wpp', params),
+  // 文档身份载体诊断/补写（I2 测试通道，诊断专用故意不进写锁）：ensure=true 补写 Tags
+  identity_probe: (params) => {
+    const pres = getActivePresentation()
+    const r = describeDocumentIdentity(pres, { ensure: params?.ensure === true })
+    return { host: 'wpp', ...r }
+  }
 }
 
 const WRITE_HANDLERS = {

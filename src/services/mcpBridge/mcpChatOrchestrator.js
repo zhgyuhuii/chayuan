@@ -76,7 +76,65 @@ function isToolsUnsupportedError(message) {
   return TOOLS_UNSUPPORTED_RE.test(s)
 }
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps' }) {
+/**
+ * 活动文档上下文采集（I4 上下文注入，治"文档1/文档2 对话输出一样"）：
+ * 三宿主各采 名称+结构性摘要，随 system 注入——模型每回合都知道自己在为
+ * 哪个文档服务。全部 try 包裹（采集失败不阻塞回合），采样小、可截断。
+ */
+function collectActiveDocumentContext(host) {
+  const app = window.Application
+  if (!app) return null
+  const clip = (v, n = 120) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n)
+  try {
+    if (host === 'et') {
+      const wb = (() => { try { return app.ActiveWorkbook || null } catch (_) { return null } })()
+      if (!wb) return null
+      const name = String(wb.Name || '')
+      let sample = ''
+      try {
+        const ws = app.ActiveSheet
+        const ur = ws?.UsedRange
+        const addrRaw = ur?.Address
+        const addr = String(typeof addrRaw === 'function' ? addrRaw.call(ur) : (addrRaw || ''))
+        const cells = []
+        for (let r = 1; r <= 3 && cells.length < 8; r++) {
+          for (let c = 1; c <= 4 && cells.length < 8; c++) {
+            // Cells.Item 是方法，必须调用取值（I4 终验实证：漏括号会把
+            // "function Value() { [native code] }" 当采样值注入）
+            const cell = ws?.Cells?.Item(r, c)
+            const v = typeof cell?.Value === 'function' ? cell.Value() : cell?.Value
+            if (v !== undefined && v !== null && String(v).trim() !== '') cells.push(String(v))
+          }
+        }
+        sample = [addr, cells.join(' | ')].filter(Boolean).join('；头几格：')
+      } catch (_) { /* 采样失败仅降级 */ }
+      return { kind: '工作簿', name, sample }
+    }
+    if (host === 'wpp') {
+      const pres = (() => { try { return app.ActivePresentation || null } catch (_) { return null } })()
+      if (!pres) return null
+      const name = String(pres.Name || '')
+      let sample = ''
+      try {
+        const n = Number(pres.Slides?.Count || 0)
+        let firstTitle = ''
+        try { firstTitle = clip(pres.Slides.Item(1).Shapes.Title.TextFrame.TextRange.Text, 60) } catch (_) { /* 无标题页 */ }
+        sample = `${n} 页${firstTitle ? '；首页标题：' + firstTitle : ''}`
+      } catch (_) { /* 采样失败仅降级 */ }
+      return { kind: '演示文稿', name, sample }
+    }
+    const doc = (() => { try { return app.ActiveDocument || null } catch (_) { return null } })()
+    if (!doc) return null
+    const name = String(doc.Name || '')
+    let sample = ''
+    try { sample = clip(doc.Range(0, 240).Text) } catch (_) { /* Range 不可用仅降级 */ }
+    return { kind: '文档', name, sample }
+  } catch (_) {
+    return null
+  }
+}
+
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
@@ -89,8 +147,12 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     : isWpp
       ? '【演示工具】一律用 presentation(action=…) 操作当前演示文稿：读 slide_list|slide_read|shape_list，改字 text_replace（全页查替）| text_set（需 shapeIndex），加页 slide_add（layout: title|text|titleOnly|blank），插对象 textbox_add|picture_add|table_add（单位磅），删/复制/移页 slide_delete|slide_duplicate|slide_move，导出 export(format=pdf|images)，放映 slideshow_run。'
       : '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。'
+  const docCtxLine = docCtx
+    ? `【当前${targetNoun}实况】名称「${docCtx.name}」${docCtx.sample ? '；' + docCtx.sample : ''}。本对话服务于且仅服务于这个${targetNoun}：回答与生成必须以此${targetNoun}的实际内容为准，用户未指明时不要臆造其它同名/模板${targetNoun}的内容。`
+    : ''
   const lines = [
     `你是察元助手页内的${hostLabel(host)}宿主文档智能体。通过 MCP 工具操作当前${targetNoun}与其它已配置的 HTTP MCP 服务。`,
+    docCtxLine,
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
     isEt || isWpp
       ? `优先使用 chayuan__${isEt ? 'spreadsheet' : 'presentation'} 工具完成任务；可用 assistants_search / assistants_get 获取助手配方。`
@@ -357,7 +419,8 @@ export async function runMcpChatOrchestrator({
 
   const proofreadIntent = inferProofreadIntent(userText)
   const host = detectAddonType()
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host })
+  const docCtx = collectActiveDocumentContext(host)
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx })
   const seed = seedHistoryFrom(historyMessages)
   let proofreadCard = null
 
