@@ -4989,6 +4989,23 @@ export default {
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
       // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
       try { this.tryConsumeRibbonPrefillPrompt() } catch (_) { /* 忽略单次异常 */ }
+      // 孤儿回合上下文回收：远程回合终态合并后 ctx 应已清；但若面板在回合
+      // 运行中被切走/重挂载，watch 循环可能随旧视图一起丢失——ctx 残留会把
+      // isWindowBusy 永久钉在 true（真机实证：d2 回合完成后 40s busy 不解，
+      // 挡住 d1 的历史加载）。此处对每个残留 ctx 读执行侧回合状态，终态即回收。
+      try {
+        const orphanIds = Object.keys(this.activeMcpTurnContexts || {})
+        for (const orphanChatId of orphanIds) {
+          // 10 分钟 = waitForRemoteMcpTurn 硬上限（其超时路径会自清）；超过上限
+          // 仍残留的 ctx 必然是 watch 循环随旧视图丢失的孤儿——就地回收，
+          // 解除 isWindowBusy 的永久钉死（真机实证 busy 40s+ 不自愈）
+          const startedAt = Number(this.activeMcpTurnContexts[orphanChatId]?.startedAt || 0)
+          if (startedAt && Date.now() - startedAt > 600_000) {
+            this.clearMcpTurnCtx(orphanChatId)
+          }
+        }
+        if (orphanIds.length) this.settleGlobalStreamingFlag()
+      } catch (_) { /* 回收失败不影响主流程 */ }
       // 诊断探针：scope 键 + 探测结果写 PluginStorage，wps_status 可带出（wps_status.scopeDebug）
       try {
         window.Application?.PluginStorage?.setItem('ai_chat_scope_debug', JSON.stringify({
@@ -6332,7 +6349,8 @@ export default {
         messageId: assistantMsg?.id || '',
         abortController: ctrl,
         cancelled: false,
-        chatId: turnChatId
+        chatId: turnChatId,
+        startedAt: Date.now()
       }
       // OCC 基线（PR5 按回合 token 隔离）:回合起点记录本回合视角的文档指纹;
       // 写锁校验只认本 token 的基线——其它会话再开新回合也「洗白」不了本校验,
@@ -8331,10 +8349,23 @@ export default {
       const localBusy = this.isStreaming ||
         !!(this.docWriteLockState?.locked || this.docWriteLockState?.queue?.length) ||
         Object.values(this.sendRoutingLocks || {}).some(Boolean)
-      if (localBusy) return false
       const nextScope = this.resolveHistoryStorageScope()
       const nextScopeKey = String(nextScope.scopeKey || '').trim()
       if (!nextScopeKey) return false
+      // busy 期间文档已切换（用户报告的隔离失效根场景）：**绝不继续显示旧
+      // 文档的会话**——立即把 scope 元数据切到新文档并清空消息视图；新文档
+      // 的历史加载推迟到 busy 解除后的下一次 sync。此处不做 saveHistory：
+      // 旧会话属于旧 scope（发送硬校准已保证），乱 save 会把它写进新键。
+      if (localBusy) {
+        if (this.historyStorageScopeKey && nextScopeKey !== this.historyStorageScopeKey) {
+          this.applyHistoryStorageScope(nextScope)
+          this.chatHistory = []
+          this.currentChatId = null
+          this.initOpenChatTabsAfterLoad()
+          return true
+        }
+        return false
+      }
       if (!this.historyStorageScopeKey) {
         this.applyHistoryStorageScope(nextScope)
         this.loadHistory({ skipScopeResolve: true })
@@ -18208,6 +18239,18 @@ export default {
           if (switched) {
             // sync 内部已 saveHistory+loadHistory；等待 Vue 渲染出新会话消息
             await this.$nextTick()
+          }
+        } else {
+          // 本地执行中：活动文档与面板 scope 可能已错位——**拒绝跨文档发送**
+          // （宁可不动手，不可把 A 会话的消息写进 B 的历史/把回复算到 B 头上）
+          const probe = this.resolveHistoryStorageScope()
+          const probeKey = String(probe.scopeKey || '').trim()
+          if (probeKey && probeKey !== this.historyStorageScopeKey) {
+            await inAppAlert(
+              '当前文档已切换，本会话仍绑定原文档。请回到原文档继续，或等当前任务结束后在新文档中开启新对话。',
+              { title: '对话与文档不匹配' }
+            )
+            return
           }
         }
       } catch (_) { /* 校准失败按原 scope 发送 */ }
