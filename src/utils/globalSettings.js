@@ -5,7 +5,7 @@
  */
 
 import { getEffectiveDataDir, joinDataPath, ensureDir, getDefaultDataPath } from './dataPathSettings.js'
-import { MCP_URL as MCP_BASE_URL_FOR_SETTINGS } from '../services/mcpBridge/config.js'
+import { MCP_BASE_URL as MCP_BASE_URL_FOR_SETTINGS } from '../services/mcpBridge/config.js'
 
 const FILE_NAME = 'settings.json'
 const PLUGIN_STORAGE_KEY = 'NdGlobalSettings'
