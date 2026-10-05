@@ -44,15 +44,35 @@ function headers() {
 }
 
 /** 写穿：失败静默（降级——面板继续用 PluginStorage） */
+/** 诊断日志：写穿链路可观测（fetch 尝试/结果落 PluginStorage，vars_probe
+ *  phase=log key=ss_debug 可带出）——真机排障用 */
+function ssDebug(entry) {
+  try {
+    const ps = window.Application?.PluginStorage
+    if (!ps) return
+    const raw = ps.getItem('ss_debug')
+    const arr = raw ? (JSON.parse(raw) || []) : []
+    arr.push({ t: Date.now(), ...entry })
+    ps.setItem('ss_debug', JSON.stringify(arr.slice(-20)))
+  } catch (_) { /* ignore */ }
+}
+
 export function putSessionStore(scopeKey, { historyJson, currentChatId }) {
   try {
+    const tk = token()
+    ssDebug({ op: 'put', scope: String(scopeKey).slice(0, 30), token: tk ? 'yes' : 'NO', bytes: (historyJson || '').length })
     fetch(url(scopeKey), {
       method: 'PUT',
       headers: headers(),
       // savedAt 单调写序：服务端拒旧（fire-and-forget 乱序到达时旧不盖新）
       body: JSON.stringify({ historyJson: historyJson || '[]', currentChatId: currentChatId || '', savedAt: Date.now() })
-    }).catch(() => { /* sidecar 不可用：静默降级 */ })
-  } catch (_) { /* fetch 本身不可用：静默降级 */ }
+    }).then(
+      (res) => ssDebug({ op: 'put-resp', status: res.status, ok: res.ok }),
+      (err) => ssDebug({ op: 'put-err', error: String(err?.message || err).slice(0, 80) })
+    ).catch(() => { /* sidecar 不可用：静默降级 */ })
+  } catch (e) {
+    ssDebug({ op: 'put-throw', error: String(e?.message || e).slice(0, 80) })
+  }
 }
 
 /**
