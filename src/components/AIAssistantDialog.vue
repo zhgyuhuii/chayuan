@@ -8325,6 +8325,9 @@ export default {
       // 只挡"本地执行"：本地回合在本 webview 内改文档，切会话确实危险；
       // 远程回合跑在基座 webview 且带 docId 绑定守卫，切会话安全——若也挡住，
       // 一次回合异常/卡顿就把会话隔离焊死（所有文档标签共用同一对话，实测缺陷）。
+      // 真机复测补充（用户报告 A/B 面板同显一份对话）：anyChatTurnRunning 含
+      // 其它 tab 会话的远程回合，也曾把 sync 全禁——远程回合有执行侧 docId 守卫，
+      // 不构成切会话风险，故不列入 localBusy。本地危险面只剩：当前流式、写锁、路由闩锁。
       const localBusy = this.isStreaming ||
         !!(this.docWriteLockState?.locked || this.docWriteLockState?.queue?.length) ||
         Object.values(this.sendRoutingLocks || {}).some(Boolean)
@@ -18195,6 +18198,19 @@ export default {
     },
     async sendMessage() {
       if (this.dockSwitching) return
+      // 发送前 scope 硬校准（治"多文档共用一份对话"）：轮询 sync 可能被 busy
+      // 或焦点缺失延迟，用户此刻面对的是**当前活动文档**——发送必须绑定它。
+      // 若发送时发现 scope 与活动文档不一致：先落盘滞留会话，再切换加载活动
+      // 文档的会话，本条消息进入正确的 scope（面板 UI 也随之切换，所见即所对）。
+      try {
+        if (!this.isStreaming && !this.docWriteLockState?.locked) {
+          const switched = this.syncHistoryScopeWithActiveDocument()
+          if (switched) {
+            // sync 内部已 saveHistory+loadHistory；等待 Vue 渲染出新会话消息
+            await this.$nextTick()
+          }
+        }
+      } catch (_) { /* 校准失败按原 scope 发送 */ }
       // 发消息即收起支持提示(兜底:placeholder 场景外的残余气泡)
       if (this.tipJarBubble.visible) this.hideTipJarBubble()
       const sendStartedAt = Date.now()

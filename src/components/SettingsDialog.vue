@@ -5989,7 +5989,15 @@ export default {
     async pasteApiKey() {
       // 首选 sidecar 系统级剪贴板（CEF 里 navigator.clipboard 被权限拒绝，真机实证）
       try {
-        const token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
+        // token 双通道：PluginStorage（ribbon 基座播种）缺键时（独立设置窗
+        // webview 常缺，真机实证）回落 token 文件同源读取（webviewFsProbe）
+        let token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
+        if (!token) {
+          try {
+            const { readSidecarToken } = await import('../services/mcpBridge/webviewFsProbe.js')
+            token = readSidecarToken() || ''
+          } catch (_) { /* 探针不可用保持空 */ }
+        }
         const base = 'http://127.0.0.1:62588'
         const resp = await fetch(`${base}/clipboard`, { headers: { 'X-Chayuan-Token': token } })
         if (resp.ok) {
