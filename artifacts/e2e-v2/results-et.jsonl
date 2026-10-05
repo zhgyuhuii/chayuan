@@ -41,3 +41,5 @@
 {"id":"NE14","lane":"et","desc":"配方 et-ec-roi 大促ROI复盘","attempt":2,"start":"2026-10-02T13:41:14.123Z","ack":true,"pass":false,"evidence":"ROI复盘!D2=undefined（期望 2.5）","secs":601}
 {"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-04T03:25:35.256Z","ack":true,"pass":false,"evidence":"公式演示!L1=NaN（A 列最大值期望 91）","secs":364}
 {"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":2,"start":"2026-10-04T03:44:16.784Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":746}
+{"id":"BT-E1","lane":"et","desc":"顶部·公式助手（生成方向）","attempt":2,"start":"2026-10-04T09:27:24.993Z","ack":true,"pass":false,"evidence":"公式演示!L1=0（A 列最大值期望 91）","secs":363}
+{"id":"BT-E2","lane":"et","desc":"顶部·数据洞察（autoSend）","attempt":2,"start":"2026-10-04T09:40:40.978Z","ack":true,"pass":false,"evidence":"销售明细!Z5=null","secs":423}

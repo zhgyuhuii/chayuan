@@ -507,10 +507,16 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
       }
       case 'wps_status': {
         const agent = agentHub.status()
+        // U3 宿主定向：args.host=wps|et|wpp 时打到对应 ribbon 基座（采集各宿主
+        // 的 eventHealth/scopeDebug；默认不指定时保持旧行为——任意在线基座）
+        const wantHost = ['et', 'wpp', 'wps'].includes(String(args?.host)) ? String(args.host) : ''
         let doc = null
         if (agent.agentOnline) {
           try {
-            doc = await agentHub.callAgent('wps.status', {}, { timeoutMs: 15_000 })
+            doc = await agentHub.callAgent('wps.status', {}, {
+              timeoutMs: 15_000,
+              ...(wantHost ? { target: `ribbon:${wantHost}` } : {})
+            })
           } catch (e) {
             doc = { error: e.code || 'AGENT_ERROR', message: e.message }
           }

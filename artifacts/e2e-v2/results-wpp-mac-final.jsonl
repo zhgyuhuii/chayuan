@@ -7,3 +7,6 @@
 {"id":"BT-P7","lane":"wpp","desc":"顶部·整套翻译（下拉）——已过 NP03，复核按钮提示词","attempt":2,"start":"2026-10-04T03:47:08.880Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":746}
 {"id":"BT-P8","lane":"wpp","desc":"顶部·课件生成（下拉）","attempt":2,"start":"2026-10-04T04:12:35.943Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":745}
 {"id":"BT-P9","lane":"wpp","desc":"顶部·习题互动页（下拉）","attempt":2,"start":"2026-10-04T04:37:33.062Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":743}
+{"id":"BT-P10","lane":"wpp","desc":"顶部·数据战报页（下拉·跨宿主读表）","attempt":2,"start":"2026-10-04T05:02:29.307Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":739}
+{"id":"BT-P11","lane":"wpp","desc":"顶部·加密演示稿（对话流·放最后）","attempt":2,"start":"2026-10-04T05:15:10.677Z","pass":false,"evidence":"无法确认 e2e-wpp2 为活动演示稿","secs":12}
+{"id":"BT-P12","lane":"wpp","desc":"顶部·解密演示稿（对话流·最后）","attempt":2,"start":"2026-10-04T05:27:52.084Z","ack":true,"pass":true,"evidence":"回合完成，外部验证文件解密状态","secs":129}

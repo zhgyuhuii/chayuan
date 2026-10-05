@@ -291,7 +291,9 @@ function checkAuth(_req) {
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Mcp-Session-Id, X-Chayuan-Token')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+  // PUT 必须在列（session-store 写穿走 PUT；真机实证缺 PUT 时 CEF preflight
+  // 直接拦截、面板 fire-and-forget 静默失败——写穿从未生效）
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id')
 }
 
@@ -539,7 +541,8 @@ const server = http.createServer(async (req, res) => {
     // 落盘防路径穿越；单 scope ≤300KB 硬顶。
     if (pathname.startsWith('/session-store/') && (req.method === 'GET' || req.method === 'PUT')) {
       if (!isTrusted(req)) { unauthorized(res); return }
-      const rawKey = decodeURIComponent(pathname.slice('/session-store/'.length))
+      const rawKey = decodeURIComponent(pathname.slice('/session-store/'.length'))
+      console.log(`[session-store] ${req.method} key=${rawKey.slice(0, 40)} token=${req.headers['x-chayuan-token'] ? 'yes' : 'NO'} origin=${req.headers.origin || '-'}`)
       if (!rawKey || rawKey.length > 200) { sendJson(res, 400, { error: 'bad scopeKey' }); return }
       // 传输层硬顶（审查 P2-1）：content-length 预检，超限在进内存前拒绝
       if (req.method === 'PUT') {

@@ -140,6 +140,11 @@ export async function syncTokenFromSidecar() {
     const data = await fetchJson(`${MCP_BASE_URL}/token?bootstrap=1`)
     if (data?.token) {
       setStoredToken(data.token)
+      // 播种到 PluginStorage：独立设置窗 webview 的 FS 探针常读不到 token 文件
+      // （真机实证），设置窗"粘贴"按钮的双通道第一条靠这个键（此前只有读无写）
+      try {
+        window.Application?.PluginStorage?.setItem('mcp_sidecar_token', data.token)
+      } catch (_) { /* ignore */ }
       return data.token
     }
   } catch { /* ignore */ }

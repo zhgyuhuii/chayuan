@@ -78,17 +78,39 @@ function OnAddinLoad(ribbonUI) {
   window.Application.PluginStorage.setItem('ApiEventFlag', false) //往PluginStorage中设置一个标记，用于控制ApiEvent的按钮label
 
   // 文档打开或切换时刷新表单模式按钮状态（从文档变量/保护类型读取）
-  // I3 事件健康自检：逐事件记录注册结果到 PluginStorage（wps.status.eventHealth
-  // 带出）——事件静默失败曾是宿主零注册的真凶之一，健康可观测后无需盲猜
+  // I3+U4 事件矩阵按宿主分级：ET 实证（eventHealth）DocumentOpen/
+  // DocumentBeforeSave 为非法事件名（"not a valid event name"），统一尝试
+  // 只会刷错误记录。按宿主只注册支持的事件，跳过项记 skipped 便于排查。
+  // 健康记录写 PluginStorage（wps.status.eventHealth 带出）。轮询底座不受影响。
+  const HOST_EVENT_MATRIX = {
+    // Writer：三事件历史可用（ribbon 生产代码长期注册）
+    wps: ['DocumentOpen', 'WindowActivate', 'DocumentBeforeSave'],
+    // ET：仅 WindowActivate（2026-10-05 真机 eventHealth 实证）
+    et: ['WindowActivate'],
+    // WPP：仅 WindowActivate（T4 真机实证 2026-10-05：DocumentOpen/
+    // DocumentBeforeSave 均报 "not a valid event name"，与 ET 一致）
+    wpp: ['WindowActivate']
+  }
   try {
     if (window.Application.ApiEvent) {
-      const eventTargets = [
+      let hostType = 'wps'
+      try {
+        const app = window.Application
+        if (app?.Presentations) hostType = 'wpp'
+        else if (app?.Workbooks) hostType = 'et'
+      } catch (_) { /* 探测失败按 Writer 处理 */ }
+      const allTargets = [
         ['DocumentOpen', 'ribbon.OnDocumentOpenForFormMode'],
         ['WindowActivate', 'ribbon.OnWindowActivateForFormMode'],
         ['DocumentBeforeSave', 'ribbon.OnDocumentBeforeSave']
       ]
-      const health = { at: Date.now(), events: [] }
-      for (const [evt, handler] of eventTargets) {
+      const allowed = HOST_EVENT_MATRIX[hostType] || HOST_EVENT_MATRIX.wps
+      const health = { at: Date.now(), host: hostType, events: [] }
+      for (const [evt, handler] of allTargets) {
+        if (!allowed.includes(evt)) {
+          health.events.push({ event: evt, ok: true, skipped: 'host-matrix' })
+          continue
+        }
         try {
           window.Application.ApiEvent.AddApiEventListener(evt, handler)
           health.events.push({ event: evt, ok: true })

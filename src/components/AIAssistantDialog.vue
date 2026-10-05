@@ -6188,6 +6188,7 @@ export default {
         }
       } catch (_) { /* ignore */ }
       this.saveHistory()
+      this.maybeNotifyDocUnsavedForIdentity()
       this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
     },
     async waitForRemoteMcpTurn({ turnId, assistantMsg, ctrl, turnChatId }) {
@@ -6634,6 +6635,35 @@ export default {
         await inAppAlert(e?.message || '应用校对结果失败', { title: '校对写回失败' })
         this.saveHistory()
       }
+    },
+    // U6 身份落盘兜底提示：远程回合成功落章后，若当前文档未保存（身份仅在
+    // 内存 Names/Tags/Variables，重启即失），提示一次"保存以固化对话绑定"。
+    // 每个文档身份只提示一次（scope 维度去重），不阻塞任何流程。
+    maybeNotifyDocUnsavedForIdentity() {
+      try {
+        const scopeKey = String(this.historyStorageScopeKey || '')
+        if (!scopeKey || scopeKey === 'no_active_document') return
+        if (this._docUnsavedNoticeScope === scopeKey) return
+        const app = window.Application
+        const doc = (() => {
+          try { return app?.ActiveDocument || null } catch (_) { return null }
+        })()
+        if (!doc) {
+          try {
+            const wb = app?.ActiveWorkbook
+            const saved = wb ? wb.Saved : (() => { try { return app?.ActivePresentation?.Saved } catch (_) { return true } })()
+            if (wb && saved === false) {
+              this._docUnsavedNoticeScope = scopeKey
+              this.showMessage('对话已绑定本文档。建议保存文档，使绑定与历史跨重启生效。')
+            }
+            return
+          } catch (_) { return }
+        }
+        if (doc.Saved === false) {
+          this._docUnsavedNoticeScope = scopeKey
+          this.showMessage('对话已绑定本文档。建议保存文档，使绑定与历史跨重启生效。')
+        }
+      } catch (_) { /* 提示失败不影响主流程 */ }
     },
     // 全局 isStreaming 复位守卫：仅当没有任何会话回合与文档长任务运行时才清零。
     // 各车道收尾统一走这里，避免 A 车道结束把 B 车道/文档长任务的流式态误清。
