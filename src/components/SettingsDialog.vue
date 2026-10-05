@@ -523,7 +523,7 @@
                       @blur="updateModelConfig"
                       @input="onFormChange"
                       @focus="onApiKeyInputFocus"
-                      @keydown="onApiKeyKeydown"
+                      @keydown="onApiUrlKeydown"
                     />
                     <span
                       v-if="currentModelConfig.apiUrl && !isFormSaved"
@@ -534,6 +534,9 @@
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </span>
+                    <button class="btn-icon btn-paste" :disabled="isFormSaved" @click="pasteApiUrl" title="粘贴剪贴板内容">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2h2a2 2 0 0 0 2-2v-4"></path><rect x="8" y="3" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
                   </div>
                 </div>
                 <p v-if="currentModelConfig.apiUrl" class="config-preview">
@@ -5977,6 +5980,65 @@ export default {
       this.showApiKey = !this.showApiKey
     },
     // 粘贴 API 密钥（WPS ShowDialog 中 Ctrl+V 可能被主文档捕获，用此按钮粘贴）
+    /** 系统剪贴板读取（三通道）：sidecar /clipboard → navigator.clipboard → execCommand */
+    async readClipboardTextSafe() {
+      // token 三通道：PluginStorage 播种 → FS 探针 → bootstrap 直取（独立设置窗常缺前两者）
+      let token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
+      if (!token) {
+        try {
+          const { readSidecarToken } = await import('../services/mcpBridge/webviewFsProbe.js')
+          token = readSidecarToken() || ''
+        } catch (_) { /* 探针不可用保持空 */ }
+      }
+      if (!token) {
+        try {
+          const resp = await fetch('http://127.0.0.1:62588/token?bootstrap=1')
+          if (resp.ok) token = (await resp.json())?.token || ''
+        } catch (_) { /* ignore */ }
+      }
+      try {
+        const resp = await fetch('http://127.0.0.1:62588/clipboard', { headers: { 'X-Chayuan-Token': token } })
+        if (resp.ok) {
+          const text = String((await resp.json()).text || '').trim()
+          if (text) return text
+        }
+      } catch (_) { /* sidecar 不在线走浏览器 API */ }
+      try {
+        if (navigator.clipboard?.readText) {
+          const text = (await navigator.clipboard.readText()).trim()
+          if (text) return text
+        }
+      } catch (_) { /* ignore */ }
+      const el = this.$refs.apiKeyInputRef
+      if (el) {
+        el.focus()
+        if (document.execCommand('paste')) {
+          const v = String(el.value || '').trim()
+          if (v) return v
+        }
+      }
+      return ''
+    },
+    pasteApiUrl() {
+      // API 地址粘贴：整体替换（URL 语义与密钥的追加不同）
+      this.readClipboardTextSafe().then((text) => {
+        if (!text) {
+          this.showMessage('剪贴板为空或不可读，请手动输入', 'info')
+          return
+        }
+        this.currentModelConfig.apiUrl = text
+        this.updateModelConfig()
+        this.onFormChange()
+        this.showMessage('已粘贴')
+      })
+    },
+    onApiUrlKeydown(e) {
+      const key = String(e.key || '').toLowerCase()
+      if (key !== 'v' || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.pasteApiUrl()
+    },
     onApiKeyKeydown(e) {
       // WPS CEF webview 里 Cmd/Ctrl+V 的原生粘贴路径可能被主进程拦截（真机实证
       // 手动粘贴也失败）；在 keydown 阶段捕获快捷键，走 sidecar 系统剪贴板填充
@@ -5987,70 +6049,16 @@ export default {
       this.pasteApiKey()
     },
     async pasteApiKey() {
-      // 首选 sidecar 系统级剪贴板（CEF 里 navigator.clipboard 被权限拒绝，真机实证）
-      try {
-        // token 双通道：PluginStorage（ribbon 基座播种）缺键时（独立设置窗
-        // webview 常缺，真机实证）回落 token 文件同源读取（webviewFsProbe）
-        const base = 'http://127.0.0.1:62588'
-        let token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
-        if (!token) {
-          try {
-            const { readSidecarToken } = await import('../services/mcpBridge/webviewFsProbe.js')
-            token = readSidecarToken() || ''
-          } catch (_) { /* 探针不可用保持空 */ }
-        }
-        if (!token) {
-          // 独立设置窗 webview：PluginStorage 播种（基座注册时写）可能尚未发生、
-          // FS 探针也常读不到 token 文件（真机实证）——第三通道：bootstrap 直接
-          // 向 sidecar 要 token（HTTP 通道不依赖文件/存储，设置窗独立打开即用）
-          try {
-            const resp = await fetch(`${base}/token?bootstrap=1`)
-            if (resp.ok) token = (await resp.json())?.token || ''
-          } catch (_) { /* ignore */ }
-        }
-        const resp = await fetch(`${base}/clipboard`, { headers: { 'X-Chayuan-Token': token } })
-        if (resp.ok) {
-          const data = await resp.json()
-          const text = String(data.text || '').trim()
-          if (text) {
-            const cur = (this.currentModelConfig.apiKey || '').trim()
-            this.currentModelConfig.apiKey = cur ? cur + ',' + text : text
-            this.updateModelConfig()
-            this.onFormChange()
-            this.showMessage('已粘贴')
-            return
-          }
-        }
-      } catch (_) { /* sidecar 不在线走浏览器 API */ }
-      try {
-        if (navigator.clipboard?.readText) {
-          const text = (await navigator.clipboard.readText()).trim()
-          const cur = (this.currentModelConfig.apiKey || '').trim()
-          this.currentModelConfig.apiKey = cur ? cur + ',' + text : text
-          this.updateModelConfig()
-          this.onFormChange()
-          this.showMessage('已粘贴')
-          return
-        }
-        // 备用：聚焦输入框后执行 paste 命令（部分环境如 file:// 可能不支持 Clipboard API）
-        const el = this.$refs.apiKeyInputRef
-        if (el) {
-          el.focus()
-          const ok = document.execCommand('paste')
-          if (ok) {
-            this.updateModelConfig()
-            this.onFormChange()
-            this.showMessage('已粘贴')
-          } else {
-            this.showMessage('请手动输入 API 密钥', 'info')
-          }
-        } else {
-          this.showMessage('请手动输入 API 密钥', 'info')
-        }
-      } catch (e) {
-        console.warn('粘贴失败:', e)
-        this.showMessage('粘贴失败，请手动输入', 'error')
+      const text = (await this.readClipboardTextSafe()).trim()
+      if (!text) {
+        this.showMessage('剪贴板为空或不可读，请手动输入 API 密钥', 'info')
+        return
       }
+      const cur = (this.currentModelConfig.apiKey || '').trim()
+      this.currentModelConfig.apiKey = cur ? cur + ',' + text : text
+      this.updateModelConfig()
+      this.onFormChange()
+      this.showMessage('已粘贴')
     },
     // API 密钥/地址输入框获得焦点时，尝试让对话框窗口获得焦点（改善 Ctrl+V 等快捷键）
     onApiKeyInputFocus() {
@@ -6061,8 +6069,8 @@ export default {
     // 粘贴 API 地址
     async pasteApiUrl() {
       try {
-        if (navigator.clipboard && navigator.clipboard.readText) {
-          const text = (await navigator.clipboard.readText()).trim()
+        const text = (await this.readClipboardTextSafe()).trim()
+        if (text) {
           this.currentModelConfig.apiUrl = text
           this.updateModelConfig()
           this.onFormChange()
