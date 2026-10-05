@@ -5991,6 +5991,7 @@ export default {
       try {
         // token 双通道：PluginStorage（ribbon 基座播种）缺键时（独立设置窗
         // webview 常缺，真机实证）回落 token 文件同源读取（webviewFsProbe）
+        const base = 'http://127.0.0.1:62588'
         let token = window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || ''
         if (!token) {
           try {
@@ -5998,7 +5999,15 @@ export default {
             token = readSidecarToken() || ''
           } catch (_) { /* 探针不可用保持空 */ }
         }
-        const base = 'http://127.0.0.1:62588'
+        if (!token) {
+          // 独立设置窗 webview：PluginStorage 播种（基座注册时写）可能尚未发生、
+          // FS 探针也常读不到 token 文件（真机实证）——第三通道：bootstrap 直接
+          // 向 sidecar 要 token（HTTP 通道不依赖文件/存储，设置窗独立打开即用）
+          try {
+            const resp = await fetch(`${base}/token?bootstrap=1`)
+            if (resp.ok) token = (await resp.json())?.token || ''
+          } catch (_) { /* ignore */ }
+        }
         const resp = await fetch(`${base}/clipboard`, { headers: { 'X-Chayuan-Token': token } })
         if (resp.ok) {
           const data = await resp.json()

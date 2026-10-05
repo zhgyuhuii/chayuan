@@ -15,10 +15,19 @@ let _cachedToken = null
 
 function token() {
   if (_cachedToken !== null) return _cachedToken
+  // 双通道（真机实证面板 webview 的 FS 探针常读不到 token 文件）：
+  // ①agentClient register 成功时播种的 PluginStorage 键 ②token 文件兜底
   try {
-    _cachedToken = readSidecarToken() || ''
+    _cachedToken = String(window.Application?.PluginStorage?.getItem('mcp_sidecar_token') || '').trim() || ''
   } catch (_) {
     _cachedToken = ''
+  }
+  if (!_cachedToken) {
+    try {
+      _cachedToken = readSidecarToken() || ''
+    } catch (_) {
+      _cachedToken = ''
+    }
   }
   return _cachedToken
 }

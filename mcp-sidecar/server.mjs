@@ -541,8 +541,7 @@ const server = http.createServer(async (req, res) => {
     // 落盘防路径穿越；单 scope ≤300KB 硬顶。
     if (pathname.startsWith('/session-store/') && (req.method === 'GET' || req.method === 'PUT')) {
       if (!isTrusted(req)) { unauthorized(res); return }
-      const rawKey = decodeURIComponent(pathname.slice('/session-store/'.length'))
-      console.log(`[session-store] ${req.method} key=${rawKey.slice(0, 40)} token=${req.headers['x-chayuan-token'] ? 'yes' : 'NO'} origin=${req.headers.origin || '-'}`)
+      const rawKey = decodeURIComponent(pathname.slice('/session-store/'.length))
       if (!rawKey || rawKey.length > 200) { sendJson(res, 400, { error: 'bad scopeKey' }); return }
       // 传输层硬顶（审查 P2-1）：content-length 预检，超限在进内存前拒绝
       if (req.method === 'PUT') {
