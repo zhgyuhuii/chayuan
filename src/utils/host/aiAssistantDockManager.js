@@ -24,7 +24,6 @@
 
 import Util from '../../components/js/util.js'
 import { getApp } from './hostBridge.js'
-import { detectAddonType } from './hostType.js'
 import {
   HANDOVER_INSTANCE_ID,
   isAIAssistantWindowBusy,
@@ -409,11 +408,10 @@ export function createAIAssistantDockManager(deps = {}) {
     return typeof fromApp === 'number' ? fromApp : CANONICAL_POSITION_VALUES[mode]
   }
   function canDockAtRuntime(mode) {
-    // 宿主限制：ET/WPP 宿主上 CreateTaskPane 会连带顶掉 ShowDialog 浮窗且面板
-    // 不渲染（2026-10-06 Mac WPP 真机实证：浮窗点「停靠左侧」→ 浮窗消失、无面板、
-    // 无提示——ready 超时后 keptPrevious 分支又假设浮窗还活着，两头落空）。
-    // 停靠仅文字宿主开放；WPS 后续版本修复后从此处放开。
-    if (detectAddonType() !== 'wps') return false
+    // 编排位置说明：CreateTaskPane/ShowDialog/Delete 一律由 ribbon 基座 webview 执行
+    // （见 aiAssistantDockRequest.js）——浮窗上下文里创建面板在部分宿主会顶掉浮窗
+    // （2026-10-06 WPP 真机实证）。三宿主停靠能力一致开放，运行时探测缓存负责
+    // 记录个别 WPS 版本的真实坏方向。
     const app = getApplication()
     if (!app || typeof app.CreateTaskPane !== 'function' || typeof app.GetTaskPane !== 'function') {
       return false
@@ -567,26 +565,36 @@ export function createAIAssistantDockManager(deps = {}) {
     }
   }
 
-  /** 停靠 → 浮窗：先开浮窗（reopen 认领交接锁），宽限后删旧面板。 */
+  /** 停靠 → 浮窗：先删旧面板，等宿主窗口清理完再开浮窗。 */
   async function undockToFloat(query = {}) {
     if (isAIAssistantWindowBusy()) return { ok: false, reason: 'assistant-busy' }
     const mark = markAIAssistantHandover('float')
     if (!mark.ok) {
       return { ok: false, reason: 'handover-write-failed' }
     }
-    try {
-      openFloat({ ...(query || {}), reopen: '1' })
-    } catch (e) {
-      restoreAIAssistantLock(mark.previous)
-      return { ok: false, reason: 'float-open-failed', error: e }
-    }
-    await delay(timing.closeGraceMs)
+    // 顺序实证（2026-10-06 WPP 真机）：先 ShowDialog 后 Delete 时，面板 Delete 会
+    // 级联清理 60ms 前刚建的浮窗（两头全无）；反转为先删面板、错开清理窗口、
+    // 再开浮窗。浮窗打开失败的兜底是调用方保持提示 + 用户重开（openAIAssistant
+    // 按钮路径已验证可恢复浮窗）。
     const pane = getOpenPane()
-    // 先落库再删面板：面板页自身发起 undock 时，Delete 可能连带销毁本 webview，
-    // 删除之后的语句不保证执行
+    // 先落库再删面板（面板页自身发起 undock 时，Delete 可能连带销毁本 webview，
+    // 删除之后的语句不保证执行——由基座编排后此保护仍保留）
     clearPaneState()
     setMode('float')
     if (pane) safeDeletePane(pane)
+    await delay(400)
+    try {
+      openFloat({ ...(query || {}), reopen: '1' })
+    } catch (e) {
+      // 清理后浮窗开不起来：立刻再试一次（部分宿主清理窗口略长于 400ms）
+      try {
+        await delay(500)
+        openFloat({ ...(query || {}), reopen: '1' })
+      } catch (e2) {
+        restoreAIAssistantLock(mark.previous)
+        return { ok: false, reason: 'float-open-failed', error: e2 }
+      }
+    }
     return { ok: true, mode: 'float' }
   }
 

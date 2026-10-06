@@ -39,6 +39,7 @@ import {
 } from '../utils/documentDeclassifyStore.js'
 import { focusExistingAIAssistantWindow } from '../utils/aiAssistantWindowManager.js'
 import { getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
+import { registerDockSwitchRunner } from '../utils/aiAssistantDockRequest.js'
 import { MODEL_GROUPS, getDefaultModelsFlat } from '../utils/defaultModelGroups.js'
 import { focusExistingSettingsWindow, openSettingsWindow } from '../utils/settingsWindowManager.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
@@ -162,6 +163,20 @@ function OnAddinLoad(ribbonUI) {
       .catch(err => console.warn('[ribbon] MCP Agent start failed:', err))
   } catch (e) {
     console.warn('[ribbon] MCP Agent import failed:', e)
+  }
+
+  // 停靠形态切换编排：浮窗/面板页经 localStorage 请求，基座 webview 统一执行
+  // （CreateTaskPane 在浮窗上下文会顶掉浮窗——2026-10-06 WPP 真机实证；
+  // 面板页自调 Delete 可能连带销毁自身。基座三宿主常驻，是唯一安全执行点）
+  try {
+    registerDockSwitchRunner(async (action, query) => {
+      const dock = getAIAssistantDockManager()
+      if (action === 'float') return dock.undockToFloat(query)
+      return dock.dockTo(action, query)
+    })
+    console.info('[ribbon] dock switch runner registered')
+  } catch (e) {
+    console.warn('[ribbon] dock switch runner register failed:', e)
   }
 
   return true

@@ -2807,6 +2807,7 @@ import { initSync as initTaskListSync, subscribe as subscribeTaskList, getTaskBy
 import { exportDocumentImagesAsAssets } from '../utils/documentImageExportService.js'
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
+import { sendDockSwitchRequest, awaitDockSwitchResult } from '../utils/aiAssistantDockRequest.js'
 import { PANE_PROTOCOL_KEYS, getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
 import {
   GITHUB_REPO_URL,
@@ -4470,12 +4471,6 @@ export default {
       ]
       return items
         .filter((item) => !this.dockUnsupportedMap[item.action])
-        .filter((item) => {
-          // 宿主限制即时生效（不等探测学习）：ET/WPP 的 CreateTaskPane 会顶掉浮窗
-          // 且面板不渲染（2026-10-06 真机实证），停靠项直接不显示
-          if (this.hostAssistantMode && ['left', 'right', 'bottom'].includes(item.action)) return false
-          return true
-        })
         .map((item) => {
           const active = item.action === this.currentDockMode
           return {
@@ -4973,6 +4968,10 @@ export default {
     }
     // 对话页打开即计入 Star 提示的价值门槛；达标且未解决时展示提示卡
     this.tryOpenStarPrompt()
+    // 浮窗磁吸：拖到屏幕左/右/底边自动停靠（任务执行中/切换中不触发）
+    if (!this.aiAssistantTaskPaneMode) {
+      this.startFloatSnapWatch()
+    }
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
     // dev 源码模式（vite）下 window.Application 注入可能晚于 mounted——挂载瞬间
     // detectAddonType() 落到 wps/空，助手列表走错分支。延迟重试宿主判定，
@@ -5131,6 +5130,7 @@ export default {
   },
   beforeUnmount() {
     this.stopActiveMcpTurn()
+    this.stopFloatSnapWatch()
     if (this._scopeSyncTimer) {
       clearInterval(this._scopeSyncTimer)
       this._scopeSyncTimer = null
@@ -5297,6 +5297,47 @@ export default {
         this.dockUnsupportedMap = {}
       }
     },
+    // ── 浮窗磁吸：拖到屏幕边缘自动停靠（左/右/底） ──
+    // 原生标题栏拖动没有页面事件，用 screenX/Y 轮询侦测；连续 2 次命中才触发，
+    // 避免 WPS 打开浮窗的初始位置误吸。方向判定优先左右，底边仅在未贴侧时生效。
+    startFloatSnapWatch() {
+      if (this._floatSnapTimer) return
+      const THRESHOLD_PX = 14
+      const POLL_MS = 250
+      const detect = () => {
+        if (this.dockSwitching || this.isWindowBusy || this.aiAssistantTaskPaneMode) return
+        let x, y, w, h, sw, sh
+        try {
+          x = Number(window.screenX); y = Number(window.screenY)
+          w = Number(window.outerWidth); h = Number(window.outerHeight)
+          sw = Number(window.screen?.availWidth || window.screen?.width || 0)
+          sh = Number(window.screen?.availHeight || window.screen?.height || 0)
+        } catch { return }
+        if (![x, y, w, h, sw, sh].every(Number.isFinite) || w <= 0 || sw <= 0) return
+        const near = (a, b) => Math.abs(a - b) <= THRESHOLD_PX
+        if (near(x, 0)) return 'left'
+        if (near(x + w, sw)) return 'right'
+        if (near(y + h, sh)) return 'bottom'
+        return null
+      }
+      this._floatSnapTimer = window.setInterval(() => {
+        const dir = detect()
+        // 连续 2 轮同向命中才磁吸（每轮 250ms，容忍一次采样抖动；停靠/忙碌时不触发）
+        if (dir && this._floatSnapDir === dir) {
+          this.stopFloatSnapWatch()
+          this.handleDockAction(dir)
+          return
+        }
+        this._floatSnapDir = dir || null
+      }, POLL_MS)
+    },
+    stopFloatSnapWatch() {
+      if (this._floatSnapTimer) {
+        window.clearInterval(this._floatSnapTimer)
+        this._floatSnapTimer = null
+      }
+      this._floatSnapDir = null
+    },
     async handleDockAction(action) {
       if (this.dockSwitching || this.isWindowBusy) {
         // 置灰项被点不再无声吞掉：busy 可 40s+ 不自愈（真机实证），静默 return 会被
@@ -5331,10 +5372,13 @@ export default {
       }
       this.dockSwitching = true
       try {
-        const dock = getAIAssistantDockManager()
-        const result = action === 'float' ? await dock.undockToFloat() : await dock.dockTo(action)
-        if (result.ok) {
-          // 成功后本 webview 通常即将消失：停靠态由 manager 删面板；浮窗态切停靠
+        // 编排统一由 ribbon 基座 webview 执行（本页上下文里 CreateTaskPane 在部分
+        // 宿主会顶掉自身、面板页自调 Delete 会连带销毁自身——2026-10-06 真机实证）
+        const sent = sendDockSwitchRequest(action)
+        if (!sent) throw new Error('dock-request-write-failed')
+        const result = await awaitDockSwitchResult(sent.requestId)
+        if (result && result.ok) {
+          // 成功后本 webview 通常即将消失：停靠态由基座删面板；浮窗态切停靠
           // 需自行关窗（close 请求的 storage 事件不会在本窗口触发）
           if (!this.aiAssistantTaskPaneMode && action !== 'float') {
             this.closeWindow()
@@ -5343,11 +5387,12 @@ export default {
         }
         // eslint-disable-next-line no-console
         console.warn('[dock] 切换失败:', JSON.stringify(result))
-        const message =
-          result.fallback === 'float'
+        const message = !result
+          ? '窗口位置切换超时（基座无响应），当前窗口已保持。'
+          : result.fallback === 'float'
             ? '当前环境不支持该停靠方式，已切换为悬浮窗口。'
             : result.fallback === 'kept-float'
-              ? '当前环境（表格/演示宿主）暂不支持停靠，已保持悬浮窗口。'
+              ? '当前环境暂不支持该停靠方式，已保持悬浮窗口。'
               : `窗口位置切换未完成（${result.reason || '未知原因'}），请重试。`
         await inAppAlert(message, { title: '窗口位置' })
       } catch (e) {
@@ -5355,6 +5400,8 @@ export default {
         await inAppAlert('窗口位置切换失败，请重试。', { title: '窗口位置' })
       } finally {
         this.dockSwitching = false
+        // 切换失败/超时浮窗保留时，恢复磁吸侦测（成功路径本窗口即将关闭，无碍）
+        if (!this.aiAssistantTaskPaneMode) this.startFloatSnapWatch()
       }
     },
     showEarlierMessages() {
