@@ -101,6 +101,10 @@ const glyphs = {
   bankSmall: () => `<path d="M5 9.5 L12 5.5 L19 9.5 Z" ${sw(1.4)}/><path d="M6.8 11 V16.5 M12 11 V16.5 M17.2 11 V16.5" ${sw(1.6)}/><text x="12" y="15.8" font-size="6" fill="${ACC}" text-anchor="middle" font-weight="bold">¥</text><path d="M4.5 18.5 H19.5" ${sw(1.7)}/>`,
   sitemapStetho: () => `<circle cx="12" cy="6" r="2.4" ${sw(1.4)}/><circle cx="5.5" cy="17.5" r="2.4" ${sw(1.4)}/><circle cx="18.5" cy="17.5" r="2.4" fill="${ACC}"/><path d="M12 8.4 V12 M5.5 15.1 V12 H18.5 V15.1" ${sw(1.3)}/>`,
   frameSpark: () => `<rect x="4" y="5" width="16" height="13" rx="1.5" ${S}/><circle cx="9" cy="9.5" r="1.4" fill="${ACC}"/><path d="M5.5 16.5 L9.5 12.5 L12.5 15 L15 13 L18.5 16" ${sw(1.3)}/><path d="M18.2 2.6 L18.9 4.4 L20.7 5.1 L18.9 5.8 L18.2 7.6 L17.5 5.8 L15.7 5.1 L17.5 4.4 Z" fill="white"/>`,
+  screenCheck: () => `<rect x="4" y="5" width="16" height="11" rx="1.5" ${S}/><path d="M9 19.5 H15 M12 16 V19.5" ${sw(1.5)}/><path d="M8.5 9.8 L10.7 12 L15 7.8" stroke="white" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  stageStar: () => `<rect x="4" y="5" width="16" height="11" rx="1.5" ${S}/><path d="M9 19.5 H15 M12 16 V19.5" ${sw(1.5)}/><path d="M12 7 L12.9 8.9 L15 9.2 L13.5 10.7 L13.8 12.8 L12 11.9 L10.2 12.8 L10.5 10.7 L9 9.2 L11.1 8.9 Z" fill="${ACC}"/>`,
+  annualRise: () => `<path d="M6.5 4.5 H14 L17.5 8 V19.5 H6.5 Z" ${sw(1.4)}/><path d="M14 4.5 V8 H17.5" ${sw(1.3)}/><path d="M9 16.5 V14 M11.7 16.5 V12 M14.4 16.5 V9.5" ${sw(1.6)}/><circle cx="14.4" cy="8.6" r="1.1" fill="${ACC}"/>`,
+  wrenchCheck: () => `<path d="M14.7 6.3 a1 1 0 0 0 0 1.4 l1.6 1.6 a1 1 0 0 0 1.4 0 l3.77-3.77 a6 6 0 0 1-7.94 7.94 l-6.91 6.91 a2.12 2.12 0 0 1-3-3 l6.91-6.91 a6 6 0 0 1 7.94-7.94 l-3.76 3.76 z" ${sw(1.4)}/><path d="M3.5 17.5 L4.9 19 L7.6 15.9" stroke="${ACC}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   stethoscope: () => `<path d="M7 4.5 V10 A3.5 3.5 0 0 0 14 10 V4.5" ${sw(1.5)}/><path d="M10.5 13.5 V15 A4 4 0 0 0 18.5 15 V12.8" ${sw(1.5)}/><circle cx="18.5" cy="11" r="2" fill="${ACC}"/><path d="M5.2 4.5 H8.8 M12.2 4.5 H15.8" ${sw(1.5)}/>`,
 }
 
@@ -167,11 +171,11 @@ const SPECS = {
   'et-life-fitness': ['#EF4444', 'dumbbell'],
   'wpp-img-model': ['#A855F7', 'frameSpark'],
   // WPP · 政企汇报
-  'wpp-gov-annual': ['#B91C1C', 'bankColumns'],
+  'wpp-gov-annual': ['#B91C1C', 'annualRise'],
   'wpp-gov-shuzhi': ['#C2410C', 'scrollDoc'],
   'wpp-gov-party': ['#DC2626', 'flagWave'],
   'wpp-gov-meeting': ['#0D9488', 'clipboardList'],
-  'wpp-gov-rectify': ['#B45309', 'receipt'],
+  'wpp-gov-rectify': ['#B45309', 'wrenchCheck'],
   'wpp-gov-livelihood': ['#EA580C', 'housesRow'],
   'wpp-gov-safetyedu': ['#D97706', 'warningTriangle'],
   // WPP · 销售提案
@@ -209,8 +213,8 @@ const SPECS = {
   'wpp-mfg-sop': ['#64748B', 'gearCog'],
   // WPP · 财经
   'wpp-fin-roadshow': ['#C026D3', 'circusTent'],
-  'wpp-fin-compliance': ['#059669', 'megaphone'],
-  'wpp-fin-product': ['#7C3AED', 'bankSmall'],
+  'wpp-fin-compliance': ['#059669', 'screenCheck'],
+  'wpp-fin-product': ['#7C3AED', 'stageStar'],
   // WPP · 电商
   'wpp-ec-battle': ['#F97316', 'fireworkBurst'],
   'wpp-ec-live-script': ['#EC4899', 'clapperBoard'],
