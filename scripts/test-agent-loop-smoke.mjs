@@ -73,7 +73,7 @@ const STUBS = {
   `,
   // src/services/mcpBridge/mcpServerRegistry.js
   [join(REPO, 'src/services/mcpBridge/mcpServerRegistry.js')]: `
-    export { CHAYUAN_SERVER_ID, isChayuanToolAllowed, namespaceToolName, parseNamespacedTool }
+    export { CHAYUAN_SERVER_ID, chayuanToolTargetHost, isChayuanToolAllowed, isToolAllowedCrossHost, namespaceToolName, parseNamespacedTool }
       from ${JSON.stringify(join(REPO, 'src/services/mcpBridge/mcpServerRegistry.js').replace(/\\/g, '/'))}
     export function getEnabledMcpServers() {
       const m = globalThis.__MOCK__
@@ -96,6 +96,13 @@ const STUBS = {
     export async function syncUpstreamAllowlist() {}
     export async function callLocalTool(name, args, { signal } = {}) {
       const m = globalThis.__MOCK__
+      // 跨宿主写入守卫的 status 探针属基础设施调用：不计入 localCalls（那是模型
+      // 工具调用统计），按 m.activeDoc 应答活动对象身份（null = 无打开文档）。
+      if (name === 'wps_status' || ((name === 'spreadsheet' || name === 'presentation') && args && args.action === 'status')) {
+        const doc = m.activeDoc == null ? '' : String(m.activeDoc)
+        if (!doc) return { structuredContent: {} }
+        return { structuredContent: { document: { fullName: doc, name: doc }, workbook: { fullName: doc }, presentation: { fullName: doc } } }
+      }
       m.localCalls.push({ name, args })
       await new Promise((resolve, reject) => {
         const t = setTimeout(resolve, m.toolDelay || 0)
@@ -142,12 +149,16 @@ function hash(s) {
 /* ────────── 场景（在 bundle 里执行） ────────── */
 
 const runnerSource = `
+// WPS 宿主桩：编排器/宿主探测在回合内读 window.Application（Node 下无宿主 → null 走「无文档」分支）
+globalThis.window = { Application: undefined }
 const A = (cond, msg) => { if (!cond) throw new Error('断言失败: ' + msg) }
 const lifecycleTools = ['document_new', 'document_open', 'document_ensure_open', 'document_activate', 'wps_launch']
 const baseMock = (extra = {}) => {
   globalThis.__MOCK__ = {
     requests: [], chatScript: [], chatIdx: 0,
     localCalls: [],
+    // 跨宿主写入守卫的 status 探针应答：默认已打开文档（S21 无文档场景显式置 null）
+    activeDoc: 'Smoke.docx',
     localTools: [
       { name: 'document_locate', description: '定位文本', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },
       { name: 'document_replace', description: '替换文本', inputSchema: { type: 'object', properties: { originalText: { type: 'string' }, newText: { type: 'string' } } } },
@@ -298,7 +309,7 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(r.ok === false && r.fallback === true, 'S8 ok=false fallback')
   A(r.reason === 'agent_offline', 'S8 reason agent_offline, got ' + r.reason)
   A(m.requests.length === 0, 'S8 no model request fired')
-  A(String(r.content || '').includes('Agent'), 'S8 actionable message')
+  A(String(r.content || '').includes('察元AI'), 'S8 actionable message')
   console.log('✓ S8 Agent 离线快速失败')
 }
 
@@ -472,7 +483,7 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
       const r = await skill.executeTool({ name: nsName, input: { confirmed: true, templatePath: '/tmp/template.dotx', __baselineToken: 'old-turn' } })
       A(r.isError === true && !r.mutated, 'S18 blocked ' + nsName)
       A(JSON.parse(r.output).error === 'TOOL_NOT_ALLOWED', 'S18 error code ' + nsName)
-      A(r.output.includes('当前打开的文档'), 'S18 corrective guidance')
+      A(r.output.includes('跨宿主读写不包含新建'), 'S18 corrective guidance')
     }
   }
   A(m.localCalls.length === 0, 'S18 blocked calls never reach sidecar')
@@ -513,6 +524,7 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
 {
   const { createMcpDocumentSkill } = await import('./SKILL_IMPORT')
   const m = baseMock()
+  m.activeDoc = null // 无打开文档：写入守卫的 status 探针取不到身份 → NO_ACTIVE_DOCUMENT
   const skill = createMcpDocumentSkill({ targetDocumentId: '/tmp/original.docx' })
   await skill.executeTool({ name: 'chayuan__document_insert', input: { text: '正文', __expectedDocId: '/tmp/other.docx' } })
   A(m.localCalls[0].args.__expectedDocId === '/tmp/original.docx', 'S21 model cannot override original document')

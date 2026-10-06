@@ -14,6 +14,8 @@ export interface AgentToolCall {
   inputError?: string | undefined
   /** The argument stream was cut off by the token limit (stop_reason max_tokens); the loop asks the model to split the call instead of "fixing JSON" */
   truncated?: boolean | undefined
+  /** Opaque provider token that must travel back with the call in history (Gemini 3 thoughtSignature; a 400 otherwise) */
+  signature?: string | undefined
 }
 
 export interface AgentToolResult {
@@ -32,38 +34,8 @@ export interface AgentImage {
   mime: string
 }
 
-/**
- * Audio/video attachments on a user turn. Gemini takes both inline (base64);
- * OpenAI-compat takes audio via the standard input_audio part; video on
- * OpenAI routes is vendor-specific AND URL-only (dashscope/zhipu reject
- * base64 video), so base64 video rides only on gemini — the capability
- * matrix (audioInput/videoInput) is the gate; protocol converters error out
- * if parts reach a route that cannot carry them.
- */
-export interface AgentAudio {
-  /** raw base64 (no data: URL prefix) */
-  base64: string
-  /** e.g. "audio/mp3" */
-  mime: string
-}
-
-/** video attachment: base64 inline (gemini) or a public URL (vendor adapters) */
-export interface AgentVideo {
-  /** raw base64 when inline; empty when url is set */
-  base64?: string
-  mime: string
-  /** public http(s) URL for URL-only vendor adapters */
-  url?: string
-}
-
 export type AgentMessage =
-  | {
-      role: 'user'
-      text: string
-      images?: AgentImage[] | undefined
-      audio?: AgentAudio[] | undefined
-      video?: AgentVideo[] | undefined
-    }
+  | { role: 'user'; text: string; images?: AgentImage[] | undefined }
   /** reasoning: opaque vendor thinking captured during the turn; interleaved-thinking
    * models (MiniMax M3, DeepSeek V4) degrade in tool loops unless it is echoed back */
   | {

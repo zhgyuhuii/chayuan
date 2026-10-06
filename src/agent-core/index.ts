@@ -1,7 +1,5 @@
 export type {
   AgentImage,
-  AgentAudio,
-  AgentVideo,
   AgentMessage,
   AgentStreamCallbacks,
   AgentStreamHandle,
@@ -19,6 +17,9 @@ export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   DEFAULT_MAX_TURNS,
+  TOOL_ABORTED_OUTPUT,
+  invalidArgumentFields,
+  missingRequiredFields,
   parseDegradedToolCalls,
   runtimePreamble,
   sanitizeAgentPayload,

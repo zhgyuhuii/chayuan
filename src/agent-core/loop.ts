@@ -1,11 +1,10 @@
 import type { AgentSkill, ExecutedToolCall } from './skill'
 import type {
-  AgentAudio,
   AgentImage,
   AgentMessage,
-  AgentVideo,
   AgentStreamHandle,
   AgentToolCall,
+  AgentToolDef,
   AgentToolResult,
   AgentTransport,
   ToolExecution,
@@ -85,8 +84,182 @@ const STALE_TOOL_OUTPUT_MAX = 1_000
 /** Unified turn budget across the suite's chat panels (apps may still override per loop) */
 export const DEFAULT_MAX_TURNS = 100
 
-/** Cap on consecutive tool-input parse failures (a successful parse resets it); abort beyond it (keeps the model from burning turns on bad JSON) */
+/** Cap on consecutive turns whose tool input was all unusable (a turn that executes a call resets it); abort beyond it (keeps the model from burning turns on bad JSON) */
 const MAX_INPUT_PARSE_RETRIES = 3
+
+/**
+ * Whether a property's own JSON Schema declares null as an acceptable value.
+ * A tool that genuinely takes null (e.g. clearing a style value) says so in
+ * the schema, so the required-field check must not reject it. Covers the
+ * spellings in use: `type: ['string','null']`, OpenAPI/Gemini `nullable: true`,
+ * an enum listing null, and an anyOf/oneOf branch typed null.
+ */
+function schemaAcceptsNull(schema: unknown): boolean {
+  if (!schema || typeof schema !== 'object') return false
+  const s = schema as {
+    type?: unknown
+    nullable?: unknown
+    enum?: unknown
+    anyOf?: unknown
+    oneOf?: unknown
+  }
+  if (s.nullable === true) return true
+  // `type` is a bare "null" in an anyOf/oneOf branch, a list in `type: ['string','null']`
+  if (s.type === 'null') return true
+  if (Array.isArray(s.type) && s.type.includes('null')) return true
+  if (Array.isArray(s.enum) && s.enum.includes(null)) return true
+  for (const branch of [s.anyOf, s.oneOf]) {
+    if (Array.isArray(branch) && branch.some((b) => schemaAcceptsNull(b))) return true
+  }
+  return false
+}
+
+/**
+ * Required fields the model left out of a tool call, per the tool's JSON
+ * Schema. Providers turn an empty argument stream into `{}` without an
+ * inputError (the model wrote prose instead of arguments, or a gateway dropped
+ * the argument stream), so without this check the empty object reaches the
+ * skill and fails with a tool-specific message instead of a targeted retry.
+ * `null` counts as missing too: a garbled field arrives as `"ops": null`, and
+ * downstream coercion (Number(null) === 0) would pass a silently wrong value
+ * to the tool. A field whose schema declares null as valid is exempt.
+ */
+export function missingRequiredFields(
+  tool: AgentToolDef | undefined,
+  input: Record<string, unknown>,
+): string[] {
+  const required = tool?.inputSchema.required
+  if (!Array.isArray(required)) return []
+  const properties = tool?.inputSchema.properties
+  const propSchema = (field: string): unknown =>
+    properties && typeof properties === 'object' && !Array.isArray(properties)
+      ? (properties as Record<string, unknown>)[field]
+      : undefined
+  return required.filter((field): field is string => {
+    if (typeof field !== 'string') return false
+    const value = input[field]
+    if (value === undefined) return true
+    return value === null && !schemaAcceptsNull(propSchema(field))
+  })
+}
+
+/** Plain object (not null, not an array) — the only schema/value shape we walk into */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Nesting cap for `items`; a value deeper than this is passed through unvalidated */
+const MAX_SCHEMA_DEPTH = 4
+
+/**
+ * Why one value contradicts one property schema, or undefined when it is fine.
+ * Deliberately not a JSON Schema implementation: only the keywords this repo's
+ * tools actually declare are honoured, and a schema that declares none of them
+ * always returns undefined so a permissive or schema-less tool keeps working.
+ */
+function schemaViolation(
+  value: unknown,
+  schema: Record<string, unknown>,
+  depth: number,
+): string | undefined {
+  if (depth > MAX_SCHEMA_DEPTH) return undefined
+  // enum: only trusted when every member is a primitive, otherwise comparing
+  // would need a deep-equality walk this does not do
+  const allowed = schema.enum
+  if (
+    Array.isArray(allowed) &&
+    allowed.every((v) => v === null || (!isPlainRecord(v) && typeof v !== 'function'))
+  ) {
+    if (!allowed.some((v) => Object.is(v, value))) {
+      return `expected one of ${allowed.map((v) => JSON.stringify(v)).join(', ')}`
+    }
+  }
+  // type: a string, or an array of strings. Keywords we do not model are dropped
+  // from the list; an all-unknown list means "unconstrained", not "invalid".
+  const declared = (Array.isArray(schema.type) ? schema.type : [schema.type]).filter(
+    (t): t is string => typeof t === 'string',
+  )
+  const typeNames = declared.filter((t) => TYPE_CHECKS[t])
+  if (typeNames.length > 0 && !typeNames.some((t) => TYPE_CHECKS[t]!(value))) {
+    return `expected ${typeNames.join(' or ')}`
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // draft-04 spells exclusivity as a boolean sibling; honour it so the
+    // boundary value is not rejected by an inclusive check
+    if (
+      typeof schema.minimum === 'number' &&
+      schema.exclusiveMinimum !== true &&
+      value < schema.minimum
+    ) {
+      return `must be >= ${schema.minimum}`
+    }
+    if (
+      typeof schema.maximum === 'number' &&
+      schema.exclusiveMaximum !== true &&
+      value > schema.maximum
+    ) {
+      return `must be <= ${schema.maximum}`
+    }
+  }
+  if (typeof value === 'string') {
+    if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
+      return `must be at least ${schema.minLength} characters`
+    }
+    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
+      return `must be at most ${schema.maxLength} characters`
+    }
+  }
+  // items: only the single-schema form; a tuple (array of schemas) is out of scope
+  if (Array.isArray(value) && isPlainRecord(schema.items)) {
+    for (let i = 0; i < value.length; i++) {
+      const bad = schemaViolation(value[i], schema.items, depth + 1)
+      if (bad) return `item ${i} ${bad}`
+    }
+  }
+  return undefined
+}
+
+/** JSON Schema primitive types this repo's tools declare; NaN is not a valid number */
+const TYPE_CHECKS: Record<string, (value: unknown) => boolean> = {
+  string: (v) => typeof v === 'string',
+  number: (v) => typeof v === 'number' && Number.isFinite(v),
+  integer: (v) => typeof v === 'number' && Number.isInteger(v),
+  boolean: (v) => typeof v === 'boolean',
+  array: (v) => Array.isArray(v),
+  object: (v) => isPlainRecord(v),
+  null: (v) => v === null,
+}
+
+/**
+ * Fields the model *sent* but whose value contradicts the tool's own JSON
+ * Schema ({"count": "twelve"}, {"rows": 999999999999} against a bounded
+ * integer). Such a value otherwise reaches the tool, which coerces it
+ * (Number("twelve") -> NaN, a capped range silently clamped) and returns a
+ * confident wrong answer — where missingRequiredFields would have produced a
+ * targeted retry instead.
+ *
+ * Only `properties` are inspected, and a field with no declared constraints is
+ * never reported: a tool with an empty, missing, or non-JSON-Schema inputSchema
+ * (this repo has `{}` and `{ type: 'object' }` tools) validates nothing, exactly
+ * as before. Absent fields are skipped — they belong to missingRequiredFields.
+ */
+export function invalidArgumentFields(
+  tool: AgentToolDef | undefined,
+  input: Record<string, unknown>,
+): string[] {
+  // `?.` on inputSchema as well: a tool can arrive over IPC without one
+  const properties = tool?.inputSchema?.properties
+  if (!isPlainRecord(properties)) return []
+  const violations: string[] = []
+  for (const [field, fieldSchema] of Object.entries(properties)) {
+    if (!isPlainRecord(fieldSchema)) continue
+    const value = input[field]
+    if (value === undefined) continue
+    const violation = schemaViolation(value, fieldSchema, 0)
+    if (violation) violations.push(`"${field}" ${violation}`)
+  }
+  return violations
+}
 
 /**
  * Degenerate-loop guards. Weak models (BYOK/local endpoints especially) can
@@ -116,6 +289,37 @@ const TOOL_ARGS_DROP_RETRIES = 1
 const TURN_LIMIT_NOTE =
   '[System] The tool-call turn limit for this request has been reached; no more tools may be called this turn. ' +
   'Answer directly from the information already gathered; if the task is unfinished, briefly state what is done and what remains.'
+
+export const TOOL_ABORTED_OUTPUT =
+  '(the user stopped the run while this tool was still executing; its result was discarded)'
+
+const TOOL_ABORTED = Symbol('tool-aborted')
+
+async function awaitToolOrAbort(
+  tool: ToolExecution | Promise<ToolExecution>,
+  signal: AbortSignal | undefined,
+): Promise<ToolExecution | typeof TOOL_ABORTED> {
+  if (!signal) return tool
+  if (signal.aborted) return TOOL_ABORTED
+  const running = Promise.resolve(tool)
+  return new Promise<ToolExecution | typeof TOOL_ABORTED>((resolve, reject) => {
+    const onAbort = (): void => {
+      resolve(TOOL_ABORTED)
+      running.catch(() => undefined)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    running.then(
+      (execution) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(execution)
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
 
 /**
  * Terminal assistant text when tools mutated the artifact (or an edits-only
@@ -227,12 +431,6 @@ function messageSize(m: AgentMessage): number {
   if (m.role === 'user' && m.images) {
     n += m.images.reduce((s, img) => s + img.base64.length, 0)
   }
-  if (m.role === 'user' && m.audio) {
-    n += m.audio.reduce((s, a) => s + a.base64.length, 0)
-  }
-  if (m.role === 'user' && m.video) {
-    n += m.video.reduce((s, v) => s + (v.base64?.length ?? 0), 0)
-  }
   if (m.role === 'assistant' && m.toolCalls) {
     for (const c of m.toolCalls) {
       try {
@@ -282,6 +480,19 @@ export class AgentLoop<TSnapshot = unknown> {
   private lastTurnSig = ''
   private identicalTurns = 0
   private allErrorTurns = 0
+  /**
+   * Degraded mode ("compatibility mode"): the operator model cannot issue
+   * protocol tool_calls, so turns run without wire tools and the model acts by
+   * emitting JSON text (parseDegradedToolCalls). Set statically via degrade()
+   * (capability matrix) or dynamically by the silent-turn probe below.
+   */
+  private degraded = false
+  /** a probe turn is in flight: tools are withheld and the reply is parsed for JSON tool calls */
+  private degradedProbe = false
+  /** the probe ran once for this loop instance; a failed probe is never retried (model just talks) */
+  private probeUsed = false
+  /** consecutive zero-tool turns within the current run */
+  private silentTurns = 0
   private turnStopReason: string | null = null
   private turnText = ''
   private turnReasoning = ''
@@ -296,19 +507,6 @@ export class AgentLoop<TSnapshot = unknown> {
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
   private abortController: AbortController | null = null
-  /**
-   * Degraded mode ("compatibility mode"): the operator model cannot issue
-   * protocol tool_calls, so turns run without wire tools and the model acts by
-   * emitting JSON text (parseDegradedToolCalls). Set statically via degrade()
-   * (capability matrix) or dynamically by the silent-turn probe below.
-   */
-  private degraded = false
-  /** a probe turn is in flight: tools are withheld and the reply is parsed for JSON tool calls */
-  private degradedProbe = false
-  /** the probe ran once for this loop instance; a failed probe is never retried (model just talks) */
-  private probeUsed = false
-  /** consecutive zero-tool turns within the current run */
-  private silentTurns = 0
 
   constructor(options: AgentLoopOptions<TSnapshot>) {
     this.options = options
@@ -316,6 +514,10 @@ export class AgentLoop<TSnapshot = unknown> {
 
   get busy(): boolean {
     return this.running
+  }
+
+  get messages(): readonly AgentMessage[] {
+    return this.history
   }
 
   /** true while this loop runs in degraded (JSON-text protocol) mode */
@@ -332,10 +534,6 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.options.skill.degradedFallback?.() == null) return false
     this.degraded = true
     return true
-  }
-
-  get messages(): readonly AgentMessage[] {
-    return this.history
   }
 
   /**
@@ -359,9 +557,31 @@ export class AgentLoop<TSnapshot = unknown> {
     // Unanswered user messages (a failed or interrupted run persisted them without a
     // reply) must not re-enter the model context: trailing ones would pair with the
     // next instruction as one turn, adjacent ones read as a combined instruction
-    this.history = normalized.filter(
+    const answered = normalized.filter(
       (m, i) => m.role !== 'user' || (normalized[i + 1] && normalized[i + 1]!.role !== 'user'),
     )
+    // An assistant message whose tool calls never received results (a run interrupted
+    // between the model's tool call and its execution) would reach the provider as
+    // unpaired tool_calls and 400 the next turn. Pair each orphan call with an
+    // isError result — the same signal the cancel path synthesizes — so the
+    // transcript stays valid and the model can retry the call.
+    const paired: AgentMessage[] = []
+    for (let i = 0; i < answered.length; i++) {
+      const m = answered[i]!
+      paired.push(m)
+      if (m.role === 'assistant' && m.toolCalls?.length && answered[i + 1]?.role !== 'tool') {
+        paired.push({
+          role: 'tool',
+          results: m.toolCalls.map((call) => ({
+            id: call.id,
+            name: call.name,
+            output: TOOL_ABORTED_OUTPUT,
+            isError: true,
+          })),
+        })
+      }
+    }
+    this.history = paired
     if (this.history.length === 0) return
     if (this.compactionEnabled()) {
       const { maxBytes, keepRecentBytes } = this.compactBudget()
@@ -380,17 +600,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.trimHistory()
   }
 
-  /**
-   * images/audio/video: inline attachments for this user turn (multimodal
-   * input; see AgentImage/AgentAudio/AgentVideo). Protocol converters reject
-   * parts their wire format cannot carry — gate with the capability matrix
-   * (resolveModelCapabilities().audioInput/videoInput) before calling.
-   */
-  run(
-    instruction: string,
-    images?: AgentImage[],
-    media?: { audio?: AgentAudio[]; video?: AgentVideo[] },
-  ): void {
+  /** images: inline attachments for this user turn (vision input; see AgentImage) */
+  run(instruction: string, images?: AgentImage[]): void {
     if (this.running || !instruction) return
     this.running = true
     this.cancelled = false
@@ -409,18 +620,27 @@ export class AgentLoop<TSnapshot = unknown> {
     this.executedCalls = []
     this.verifyRetryUsed = false
     this.abortController = new AbortController()
-    const context = this.options.skill.buildContext?.() ?? ''
-    const format =
-      this.options.formatUserMessage ??
-      ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
-    const userMsg: AgentMessage = {
-      role: 'user',
-      text: format(instruction, context),
-      ...(images?.length ? { images } : {}),
-      ...(media?.audio?.length ? { audio: media.audio } : {}),
-      ...(media?.video?.length ? { video: media.video } : {}),
+    // buildContext and formatUserMessage are consumer-supplied and run before any
+    // turn exists, so a throw here would escape run() with `running` still true:
+    // the guard at the top then drops every later message silently, cancel()
+    // no-ops, and only reset() frees the loop. composeSkills fans buildContext out
+    // to every sub-skill, each of which reads the live document, so a document
+    // mid-transition is enough to wedge the panel. The user message was never
+    // pushed, so the rollback in failRun() is a no-op and only the report matters.
+    try {
+      const context = this.options.skill.buildContext?.() ?? ''
+      const format =
+        this.options.formatUserMessage ??
+        ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+      const userMsg: AgentMessage = {
+        role: 'user',
+        text: format(instruction, context),
+        ...(images?.length ? { images } : {}),
+      }
+      void this.beginRun(userMsg)
+    } catch (err) {
+      this.failRun(err instanceof Error ? err.message : String(err))
     }
-    void this.beginRun(userMsg)
   }
 
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
@@ -542,16 +762,20 @@ export class AgentLoop<TSnapshot = unknown> {
     return new Promise((resolve) => {
       let text = ''
       let settled = false
+      let handle: AgentStreamHandle | null = null
       const finish = (v: string | null) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
         resolve(v)
       }
-      const timer = setTimeout(() => finish(null), SUMMARIZE_TIMEOUT_MS)
+      const timer = setTimeout(() => {
+        finish(null)
+        handle?.cancel()
+      }, SUMMARIZE_TIMEOUT_MS)
       try {
         // Attach to this.handle so cancel() can abort the summary request when the user clicks stop
-        this.handle = this.options.transport.stream(
+        handle = this.options.transport.stream(
           {
             system: SUMMARIZE_SYSTEM,
             messages: [
@@ -562,6 +786,7 @@ export class AgentLoop<TSnapshot = unknown> {
           },
           {
             onDelta: (t) => {
+              if (settled) return
               text += t
             },
             onToolCall: () => {
@@ -571,6 +796,7 @@ export class AgentLoop<TSnapshot = unknown> {
             onError: () => finish(null),
           },
         )
+        this.handle = handle
       } catch {
         finish(null)
       }
@@ -624,6 +850,36 @@ export class AgentLoop<TSnapshot = unknown> {
     this.runUserMsg = null
   }
 
+  /**
+   * Terminal failure path for the callback guard sites: clear `running` (or
+   * every later message is silently dropped, and even cancel() no-ops), roll
+   * the failed instruction back out of history so no orphaned tool_use is left
+   * behind, then report. onError is the consumer's last callback, so a throw
+   * from it must not escape and wedge the loop a second time.
+   */
+  private failRun(message: string): void {
+    this.running = false
+    this.rollbackFailedRun()
+    try {
+      this.options.events?.onError?.(message)
+    } catch {
+      // nothing left to notify
+    }
+  }
+
+  /**
+   * finishTurn() runs consumer-supplied callbacks (onToolStart, onToolExecuted
+   * with its snapshotBefore, onTurnEnd, onDone) and the captureSnapshot hook.
+   * Its promise is discarded, so a throw from any of them would escape as an
+   * unhandled rejection and leave `running` true forever. Same terminal-state
+   * guarantee as the tools-getter guard in startTurn().
+   */
+  private settleTurn(): void {
+    void this.finishTurn().catch((err: unknown) => {
+      this.failRun(err instanceof Error ? err.message : String(err))
+    })
+  }
+
   /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
   private trimHistory(): void {
     const max = this.options.maxHistory ?? 40
@@ -643,81 +899,97 @@ export class AgentLoop<TSnapshot = unknown> {
     this.turnReasoning = ''
     this.toolCalls = []
     this.turnStopReason = null
+    // Some transports emit an extra onDone after cancel — this turn may finalize only once
+    let settled = false
     // Degraded turns withhold wire tools entirely (a no-FC model would ignore
     // them anyway) and append the skill's JSON-text protocol to the system prompt.
     const degradedTurn = this.degraded || this.degradedProbe
     const degradedFallback = degradedTurn ? this.options.skill.degradedFallback?.() : null
-    // Some transports emit an extra onDone after cancel — this turn may finalize only once
-    let settled = false
-    this.handle = this.options.transport.stream(
-      {
-        system:
-          runtimePreamble() +
-          this.options.skill.systemPrompt +
-          (this.options.systemSuffix?.() ?? '') +
-          (degradedFallback ? `\n\n${degradedFallback.systemSuffix}` : ''),
-        messages: [...this.history],
-        tools: this.finalizing || degradedTurn ? [] : this.options.skill.tools,
-      },
-      {
-        onDelta: (text) => {
-          if (generation !== this.generation || settled) return
-          this.turnText += text
-          this.options.events?.onText?.(this.turnText)
+    try {
+      this.handle = this.options.transport.stream(
+        {
+          system:
+            runtimePreamble() +
+            this.options.skill.systemPrompt +
+            (this.options.systemSuffix?.() ?? '') +
+            (degradedFallback ? `\n\n${degradedFallback.systemSuffix}` : ''),
+          messages: [...this.history],
+          tools: this.finalizing || degradedTurn ? [] : this.options.skill.tools,
         },
-        onReasoning: (text) => {
-          if (generation !== this.generation || settled) return
-          this.turnReasoning += text
+        {
+          onDelta: (text) => {
+            if (generation !== this.generation || settled) return
+            this.turnText += text
+            try {
+              this.options.events?.onText?.(this.turnText)
+            } catch (err) {
+              // A transport drives onDelta from its own async event handler
+              // (see the Electron IPC transport), so this throw never reaches
+              // the try/catch around stream() below.
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
+            }
+          },
+          onReasoning: (text) => {
+            if (generation !== this.generation || settled) return
+            this.turnReasoning += text
+          },
+          onToolCall: (call) => {
+            if (generation !== this.generation || settled) return
+            this.toolCalls.push(call)
+          },
+          onStopReason: (reason) => {
+            if (generation !== this.generation || settled) return
+            this.turnStopReason = reason
+          },
+          onDone: () => {
+            if (generation !== this.generation || settled) return
+            settled = true
+            this.settleTurn()
+          },
+          onError: (error) => {
+            if (generation !== this.generation || settled) return
+            settled = true
+            // The no-partial-output guard keeps the empty-stream retry idempotent (an
+            // empty stream never emits deltas, but a mislabeled error must not replay
+            // a turn whose text/tool calls the UI already saw). A dropped tool-argument
+            // stream may have shown text first; that text is simply re-rendered.
+            const emptyDelay = EMPTY_STREAM_RETRY_DELAYS_MS[retriesUsed]
+            const retryEmpty =
+              emptyDelay !== undefined &&
+              error.includes('(empty stream)') &&
+              !this.turnText &&
+              this.toolCalls.length === 0
+            const retryDrop =
+              retriesUsed < TOOL_ARGS_DROP_RETRIES &&
+              error.includes(TOOL_ARGS_DROP_MARK) &&
+              this.toolCalls.length === 0
+            const delay = retryEmpty ? emptyDelay : EMPTY_STREAM_RETRY_DELAYS_MS[0]
+            if ((retryEmpty || retryDrop) && !this.cancelled) {
+              setTimeout(() => {
+                if (generation !== this.generation) return
+                // Stopped during the backoff window: finalize like a normal cancel
+                if (this.cancelled) {
+                  this.settleTurn()
+                  return
+                }
+                this.startTurn(retriesUsed + 1)
+              }, delay)
+              return
+            }
+            this.running = false
+            this.rollbackFailedRun()
+            this.options.events?.onError?.(error)
+          },
         },
-        onToolCall: (call) => {
-          if (generation !== this.generation || settled) return
-          this.toolCalls.push(call)
-        },
-        onStopReason: (reason) => {
-          if (generation !== this.generation || settled) return
-          this.turnStopReason = reason
-        },
-        onDone: () => {
-          if (generation !== this.generation || settled) return
-          settled = true
-          void this.finishTurn()
-        },
-        onError: (error) => {
-          if (generation !== this.generation || settled) return
-          settled = true
-          // The no-partial-output guard keeps the empty-stream retry idempotent (an
-          // empty stream never emits deltas, but a mislabeled error must not replay
-          // a turn whose text/tool calls the UI already saw). A dropped tool-argument
-          // stream may have shown text first; that text is simply re-rendered.
-          const emptyDelay = EMPTY_STREAM_RETRY_DELAYS_MS[retriesUsed]
-          const retryEmpty =
-            emptyDelay !== undefined &&
-            error.includes('(empty stream)') &&
-            !this.turnText &&
-            this.toolCalls.length === 0
-          const retryDrop =
-            retriesUsed < TOOL_ARGS_DROP_RETRIES &&
-            error.includes(TOOL_ARGS_DROP_MARK) &&
-            this.toolCalls.length === 0
-          const delay = retryEmpty ? emptyDelay : EMPTY_STREAM_RETRY_DELAYS_MS[0]
-          if ((retryEmpty || retryDrop) && !this.cancelled) {
-            setTimeout(() => {
-              if (generation !== this.generation) return
-              // Stopped during the backoff window: finalize like a normal cancel
-              if (this.cancelled) {
-                void this.finishTurn()
-                return
-              }
-              this.startTurn(retriesUsed + 1)
-            }, delay)
-            return
-          }
-          this.running = false
-          this.rollbackFailedRun()
-          this.options.events?.onError?.(error)
-        },
-      },
-    )
+      )
+    } catch (err) {
+      // A skill's tools getter (a duplicate name in a composed skill) can throw
+      // before any callback runs: this keeps the run from staying busy forever.
+      this.running = false
+      this.rollbackFailedRun()
+      this.options.events?.onError?.(err instanceof Error ? err.message : String(err))
+    }
   }
 
   private silentFallbackAvailable(): boolean {
@@ -822,7 +1094,7 @@ export class AgentLoop<TSnapshot = unknown> {
       // prompt: Anthropic rejects empty content arrays, Gemini rejects empty
       // parts, and OpenAI-compatible routes send content:null with no tool_calls —
       // all of which make follow-up turns fail or return empty again (see
-      // chatoffice#12 / #22: first prompt works, second shows "no summary").
+      // genoffice#12 / #22: first prompt works, second shows "no summary").
       // Same normalization as restore(), applied unconditionally: cancelled and
       // read-only empty turns poison follow-ups just the same. onDone still
       // reports the raw turn text so app UIs keep their localized fallbacks
@@ -858,7 +1130,12 @@ export class AgentLoop<TSnapshot = unknown> {
       ...(this.degraded || this.degradedProbe
         ? {}
         : {
-            toolCalls: toolCalls.map(({ id, name, input }) => ({ id, name, input })),
+            toolCalls: toolCalls.map(({ id, name, input, signature }) => ({
+              id,
+              name,
+              input,
+              ...(signature ? { signature } : {}),
+            })),
           }),
       // interleaved-thinking models degrade in tool loops unless their reasoning is echoed back
       ...(this.turnReasoning ? { reasoning: this.turnReasoning } : {}),
@@ -866,6 +1143,10 @@ export class AgentLoop<TSnapshot = unknown> {
     const generation = this.generation
     const results: AgentToolResult[] = []
     let turnMutated = false
+    // unusable-input streak is counted per turn: a batch of empty calls in one
+    // turn is one failed attempt, and any executed call in the turn resets it
+    let unusableInTurn = false
+    let executedInTurn = false
     for (const call of toolCalls) {
       // The user hit stop while an earlier tool was running: skip remaining tools,
       // but fill in paired error results to keep tool_use/tool_result pairs valid for the next request
@@ -880,11 +1161,22 @@ export class AgentLoop<TSnapshot = unknown> {
       }
       // Unusable input (truncated by the token limit, or JSON that failed to parse):
       // don't execute; feed a targeted error back so the model retries correctly
-      if (call.truncated || call.inputError) {
-        this.inputParseFails++
+      const tool = skill.tools.find((t) => t.name === call.name)
+      const unreadable = call.truncated || call.inputError
+      const missing = unreadable ? [] : missingRequiredFields(tool, call.input)
+      // A value that contradicts the schema is as unusable as a missing one, and
+      // is reported last: telling the model which field is absent is what it needs first.
+      const invalid =
+        unreadable || missing.length > 0 ? [] : invalidArgumentFields(tool, call.input)
+      if (unreadable || missing.length > 0 || invalid.length > 0) {
+        unusableInTurn = true
         const output = call.truncated
-          ? 'Tool arguments were cut off by the output length limit; the tool was not executed. Split this operation into several smaller tool calls (less content per call) and try again — e.g. hand over page briefs in batches of at most 4.'
-          : `Tool input JSON failed to parse; the tool was not executed: ${call.inputError}\nFix the arguments (make sure quotes inside strings are escaped) and call again.`
+          ? 'Tool arguments were cut off by the output length limit; the tool was not executed. Split this operation into several smaller tool calls (less content per call) and try again.'
+          : call.inputError
+            ? `Tool input JSON failed to parse; the tool was not executed: ${call.inputError}\nFix the arguments (make sure quotes inside strings are escaped) and call again.`
+            : missing.length > 0
+              ? `Tool call ${call.name} is missing the required argument(s) ${missing.map((f) => `"${f}"`).join(', ')}; the tool was not executed. Put the arguments in the tool call itself (not in your reply text) and call again with every required field.`
+              : `Tool call ${call.name} got ${invalid.length === 1 ? 'an argument' : 'arguments'} that do not match the tool's input schema — ${invalid.join('; ')}; the tool was not executed. Call again with every value of the declared type and within the declared limits (a number must be a bare JSON number, not a quoted string).`
         results.push({ id: call.id, name: call.name, output, isError: true })
         events?.onToolExecuted?.({
           call,
@@ -892,20 +1184,35 @@ export class AgentLoop<TSnapshot = unknown> {
         })
         continue
       }
-      this.inputParseFails = 0
+      executedInTurn = true
       events?.onToolStart?.(call)
       const snapshot = !this.mutationSeen ? captureSnapshot?.() : undefined
-      let execution: ToolExecution
+      let raced: ToolExecution | typeof TOOL_ABORTED
       try {
-        execution = await skill.executeTool(call, this.abortController?.signal)
+        raced = await awaitToolOrAbort(
+          skill.executeTool(call, this.abortController?.signal),
+          this.abortController?.signal,
+        )
       } catch (e) {
-        execution = {
+        raced = {
           output: e instanceof Error ? e.message : String(e),
           isError: true,
           summary: call.name,
         }
       }
       if (generation !== this.generation) return // reset while a tool was running
+      if (raced === TOOL_ABORTED) {
+        const aborted: ToolExecution = {
+          output: TOOL_ABORTED_OUTPUT,
+          isError: true,
+          summary: call.name,
+        }
+        this.executedCalls.push({ name: call.name, ok: false })
+        results.push({ id: call.id, name: call.name, output: aborted.output, isError: true })
+        events?.onToolExecuted?.({ call, execution: aborted })
+        continue
+      }
+      const execution = raced
       this.executedCalls.push({ name: call.name, ok: !execution.isError })
       const firstMutation = !!execution.mutated && !this.mutationSeen
       if (execution.mutated) {
@@ -937,6 +1244,8 @@ export class AgentLoop<TSnapshot = unknown> {
     } else {
       this.history.push({ role: 'tool', results })
     }
+    if (executedInTurn) this.inputParseFails = 0
+    else if (unusableInTurn) this.inputParseFails++
 
     // Cancelled while tools were executing: finish immediately, no further model request
     if (this.cancelled) {
@@ -951,7 +1260,7 @@ export class AgentLoop<TSnapshot = unknown> {
       this.running = false
       this.rollbackFailedRun()
       events?.onError?.(
-        `Tool input was unusable (unparseable or truncated) ${MAX_INPUT_PARSE_RETRIES} times in a row; retries stopped, please send the request again`,
+        `Tool input was unusable (unparseable, truncated or missing required arguments) ${MAX_INPUT_PARSE_RETRIES} times in a row; retries stopped, please send the request again`,
       )
       return
     }
@@ -1016,11 +1325,44 @@ export class AgentLoop<TSnapshot = unknown> {
  * prose is never rewritten.
  */
 export function sanitizeAgentPayload(payload: string): string {
-  return payload
-    .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
-    .replace(
-      /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
-      '$1$2"[REDACTED_SECURE_TOKEN]"',
-    )
+  return (
+    payload
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+        '[REDACTED_PRIVATE_KEY]',
+      )
+      // Truncated paste: header plus base64 body lines, no END marker.
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:\r?\n[A-Za-z0-9+/=]+(?=\r?\n|$))*/g,
+        '[REDACTED_PRIVATE_KEY]',
+      )
+      .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
+      .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[REDACTED_API_KEY]')
+      .replace(/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, '[REDACTED_API_KEY]')
+      // The scheme run is bounded for the same reason as the identifier prefix below:
+      // an unbounded `[a-z0-9+.-]*` in front of a literal `://` is ambiguous, so every
+      // start offset consumed the whole run and backtracked looking for the `://`
+      // (measured: 96 KB of hex took ~12s in this regex alone, ~70s for the call).
+      // A 30-char scheme covers every registered one; past it the match simply starts
+      // mid-scheme, which still redacts the password — only the captured scheme
+      // prefix is shorter.
+      .replace(/([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
+      .replace(
+        /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
+        '$1$2"[REDACTED_SECURE_TOKEN]"',
+      )
+      // Unquoted `password=abc123`: the value must be 6+ chars with a non-letter,
+      // so "password: is in the vault" prose stays untouched.
+      // The identifier prefix is bounded: an unbounded `\w*` in front of the
+      // alternation overlaps it, so at every start offset the engine consumed the
+      // whole word run and backtracked one character at a time to place the
+      // keyword — quadratic in the length of an unbroken [A-Za-z0-9_] run. A user
+      // pasting a hex dump or a base64url token froze the renderer for ~70s
+      // (measured: 100 KB of hex, this function, one call). 64 chars is far more
+      // than any real `my_password`-style prefix and keeps the match set identical.
+      .replace(
+        /(?<!\/)(\w{0,64}(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
+        '$1$2[REDACTED_SECURE_TOKEN]',
+      )
+  )
 }
