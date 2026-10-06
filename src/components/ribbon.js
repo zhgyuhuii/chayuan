@@ -568,6 +568,10 @@ function getAssistantForControl(controlId) {
 function getAssistantIconPath(assistantId, entryOverride) {
   const entry = entryOverride ?? (assistantId ? getAssistantDisplayEntry(assistantId) : null)
   const ribbonIcon = entry?.config?.ribbonIcon ?? entry?.ribbonIcon ?? ''
+  // 表格/演示宿主助手（et-*/wpp-*）：无自定义图标时按约定直取语义图标（scripts/gen-assistant-icons.mjs 产出）
+  if (!ribbonIcon && /^(et|wpp)-[a-z0-9-]+$/.test(String(assistantId || ''))) {
+    return `images/assistants/${assistantId}.svg`
+  }
   const iconSource = ribbonIcon || getAssistantResolvedIcon(assistantId, entry?.icon)
   return getRibbonCompatibleAssistantIcon(iconSource, entry?.id || assistantId || 'assistant')
 }
@@ -3914,9 +3918,9 @@ function getRibbonImageRelative(control) {
     'btnWppSummary': 'images/assistants/wpp-summary.svg',
     'btnWppBeautify': 'images/assistants/wpp-beautify.svg',
     'btnWppNotes': 'images/assistants/wpp-notes.svg',
-    // 2026-10 顶部扩展（表格/演示：一键新增 + 文档安全 + 更多助手下拉）
-    'btnEtReport': 'images/ai-assistant.svg',
-    'btnEtBeautify': 'images/ai-assistant.svg',
+    // 2026-10 顶部扩展（表格/演示：一键新增 + 文档安全 + 更多助手下拉）——全部语义化图标
+    'btnEtReport': 'images/assistants/et-report.svg',
+    'btnEtBeautify': 'images/assistants/et-beautify.svg',
     'btnEtSecurityCheck': 'images/declassify-check.svg',
     'menuEtSecurity': 'images/declassify-check.svg',
     'btnEtSecEncrypt': 'images/declassify-check.svg',
@@ -3924,17 +3928,17 @@ function getRibbonImageRelative(control) {
     'btnEtSettings': 'images/settings.svg',
     'btnEtSettingsTop': 'images/settings.svg',
     'menuEtMore': 'images/menu-table-batch.svg',
-    'btnEtMoreSort': 'images/ai-assistant.svg',
-    'btnEtMoreMerge': 'images/ai-assistant.svg',
-    'btnEtMoreDiff': 'images/ai-assistant.svg',
-    'btnEtMoreTranslate': 'images/ai-assistant.svg',
-    'btnEtMoreMask': 'images/declassify-check.svg',
-    'btnEtMoreSplitCols': 'images/ai-assistant.svg',
-    'btnEtMoreSplitSheets': 'images/ai-assistant.svg',
-    'btnEtMoreExtract': 'images/ai-assistant.svg',
-    'btnEtMoreBattle': 'images/ai-assistant.svg',
-    'btnWppProof': 'images/ai-assistant.svg',
-    'btnWppStructure': 'images/ai-assistant.svg',
+    'btnEtMoreSort': 'images/assistants/et-sort.svg',
+    'btnEtMoreMerge': 'images/assistants/et-merge-sheets.svg',
+    'btnEtMoreDiff': 'images/assistants/et-diff-two.svg',
+    'btnEtMoreTranslate': 'images/assistants/et-translate.svg',
+    'btnEtMoreMask': 'images/assistants/et-mask.svg',
+    'btnEtMoreSplitCols': 'images/assistants/et-split-cols.svg',
+    'btnEtMoreSplitSheets': 'images/assistants/et-split-sheets.svg',
+    'btnEtMoreExtract': 'images/assistants/et-x-extract.svg',
+    'btnEtMoreBattle': 'images/assistants/et-x-ppt.svg',
+    'btnWppProof': 'images/assistants/wpp-proof.svg',
+    'btnWppStructure': 'images/assistants/wpp-structure.svg',
     'btnWppSecurityCheck': 'images/declassify-check.svg',
     'menuWppSecurity': 'images/declassify-check.svg',
     'btnWppSecEncrypt': 'images/declassify-check.svg',
@@ -3942,13 +3946,13 @@ function getRibbonImageRelative(control) {
     'btnWppSettings': 'images/settings.svg',
     'btnWppSettingsTop': 'images/settings.svg',
     'menuWppMore': 'images/menu-table-batch.svg',
-    'btnWppMoreScaffold': 'images/ai-assistant.svg',
-    'btnWppMoreTranslate': 'images/ai-assistant.svg',
-    'btnWppMoreToDoc': 'images/ai-assistant.svg',
-    'btnWppMoreFooter': 'images/ai-assistant.svg',
-    'btnWppMoreBattle': 'images/ai-assistant.svg',
-    'btnWppMoreCourse': 'images/ai-assistant.svg',
-    'btnWppMoreQuiz': 'images/ai-assistant.svg',
+    'btnWppMoreScaffold': 'images/assistants/wpp-scaffold.svg',
+    'btnWppMoreTranslate': 'images/assistants/wpp-translate.svg',
+    'btnWppMoreToDoc': 'images/assistants/wpp-to-doc.svg',
+    'btnWppMoreFooter': 'images/assistants/wpp-footer.svg',
+    'btnWppMoreBattle': 'images/assistants/wpp-datapage.svg',
+    'btnWppMoreCourse': 'images/assistants/wpp-edu-course.svg',
+    'btnWppMoreQuiz': 'images/assistants/wpp-edu-quiz.svg',
     'btnAITraceCheck': 'images/ai-trace-check.svg',
     'btnTaskList': 'images/report.svg',
     'btnTaskOrchestration': 'images/task-orchestration.svg',
@@ -4024,7 +4028,21 @@ function getRibbonImageRelative(control) {
     // 右键菜单 - 添加到察元AI助手
     'btnAddToChayuanAssistant': 'images/add-to-assistant.svg',
     'btnAddToChayuanAssistantTable': 'images/add-to-assistant-table.svg',
-    'btnAddToChayuanAssistantPicture': 'images/add-to-assistant-picture.svg'
+    'btnAddToChayuanAssistantPicture': 'images/add-to-assistant-picture.svg',
+    // 知识库本段分组（顶部 + 右键 + 表格内右键）
+    'btnKbVerifySelection': 'images/check.svg',
+    'btnKbSummarizeSelection': 'images/report.svg',
+    'btnKbQASelection': 'images/chat-selection.svg',
+    'menuKnowledgeBaseSelection': 'images/review.svg',
+    'btnContextKbVerifySelection': 'images/check.svg',
+    'btnContextKbSummarizeSelection': 'images/report.svg',
+    'btnContextKbQASelection': 'images/chat-selection.svg',
+    'menuContextKnowledgeBase': 'images/review.svg',
+    'btnAddToChayuanAssistantTableCell': 'images/add-to-assistant.svg',
+    'btnContextKbVerifySelectionTableCell': 'images/check.svg',
+    'btnContextKbSummarizeSelectionTableCell': 'images/report.svg',
+    'btnContextKbQASelectionTableCell': 'images/chat-selection.svg',
+    'menuContextKnowledgeBaseTableCell': 'images/review.svg'
   }
   return iconMap[eleId] || 'images/newFromTemp.svg'
 }
