@@ -23,23 +23,37 @@ const pkgVersion = (() => {
 // 此中间件按查询参数伺服对应宿主的 ribbon XML：注册 URL 带 ?ribbon=et 时 WPS 拉到的
 // 就是 ribbon-et.xml。
 function ribbonByHostDevPlugin() {
+  const lastByIp = new Map() // ip → host（WPS 无参拉 /ribbon.xml 时按最近一次 ?ribbon= 记忆伺服）
+  const serve = (res, host) => {
+    const file = host === 'wps' ? 'ribbon.xml' : `ribbon-${host}.xml`
+    try {
+      const xml = readFileSync(new URL(`./public/${file}`, import.meta.url), 'utf8')
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'text/xml; charset=utf-8')
+      res.end(xml)
+    } catch {
+      res.statusCode = 404
+      res.end('ribbon xml not found')
+    }
+  }
   return {
     name: 'chayuan-ribbon-by-host',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || '/', 'http://localhost')
         const host = url.searchParams.get('ribbon')
-        if (!host || !['wps', 'et', 'wpp'].includes(host)) return next()
-        const file = host === 'wps' ? 'ribbon.xml' : `ribbon-${host}.xml`
-        try {
-          const xml = readFileSync(new URL(`./public/${file}`, import.meta.url), 'utf8')
-          res.statusCode = 200
-          res.setHeader('Content-Type', 'text/xml; charset=utf-8')
-          res.end(xml)
-        } catch {
-          res.statusCode = 404
-          res.end('ribbon xml not found')
+        if (host && ['wps', 'et', 'wpp'].includes(host)) {
+          const ip = req.socket?.remoteAddress || 'local'
+          lastByIp.set(ip, host)
+          if (url.pathname !== '/') return serve(res, host) // 命中 ribbon 请求
+          return next() // 入口页：不拦截，只记忆
         }
+        if (url.pathname === '/ribbon.xml') {
+          const ip = req.socket?.remoteAddress || 'local'
+          const remembered = lastByIp.get(ip)
+          if (remembered) return serve(res, remembered)
+        }
+        next()
       })
     }
   }
