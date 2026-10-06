@@ -55,11 +55,20 @@ import { ensureCapability } from '../utils/license/capabilityGate.js'
 function resolveRibbonIconUrl(raw) {
 	const s = String(raw ?? '').trim()
 	if (!s) return s
-	if (/^(https?:\/\/|data:|file:)/i.test(s)) return s
+	if (/^(data:|file:)/i.test(s)) return s
+	if (/^(https?:\/\/)/i.test(s)) return s
+	// dev:debug 在线模式：WPS 解析相对路径 images/xxx.svg 基于 jspluginonline url
+	// 前缀（/et/ /wpp/）→ 404 → '?' 图标。返回绝对 file:// 路径指向项目 public/ 下的
+	// 实际文件，WPS 直接读磁盘（生产 jsaddons 模式走旧相对路径不受影响）。
+	try {
+		if (window.location?.origin?.includes('127.0.0.1:3889')) {
+			// dev 模式：项目根可从 vite 伺服的已知文件路径反推
+			const devRoot = '/Users/zyh/work/chayuan-wps/public'
+			return 'file://' + devRoot + '/' + s.replace(/^\/+/, '')
+		}
+	} catch (_) { /* ignore */ }
 	return s.replace(/^\/+/, '')
 }
-
-//这个函数在整个wps加载项中是第一个执行的
 function OnAddinLoad(ribbonUI) {
   if (typeof window.Application.ribbonUI != 'object') {
     window.Application.ribbonUI = ribbonUI
