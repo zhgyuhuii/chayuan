@@ -4470,6 +4470,12 @@ export default {
       ]
       return items
         .filter((item) => !this.dockUnsupportedMap[item.action])
+        .filter((item) => {
+          // 宿主限制即时生效（不等探测学习）：ET/WPP 的 CreateTaskPane 会顶掉浮窗
+          // 且面板不渲染（2026-10-06 真机实证），停靠项直接不显示
+          if (this.hostAssistantMode && ['left', 'right', 'bottom'].includes(item.action)) return false
+          return true
+        })
         .map((item) => {
           const active = item.action === this.currentDockMode
           return {
@@ -5340,7 +5346,9 @@ export default {
         const message =
           result.fallback === 'float'
             ? '当前环境不支持该停靠方式，已切换为悬浮窗口。'
-            : `窗口位置切换未完成（${result.reason || '未知原因'}），请重试。`
+            : result.fallback === 'kept-float'
+              ? '当前环境（表格/演示宿主）暂不支持停靠，已保持悬浮窗口。'
+              : `窗口位置切换未完成（${result.reason || '未知原因'}），请重试。`
         await inAppAlert(message, { title: '窗口位置' })
       } catch (e) {
         console.warn('[dock] 切换窗口位置失败:', e)

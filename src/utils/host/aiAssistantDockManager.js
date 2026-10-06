@@ -24,6 +24,7 @@
 
 import Util from '../../components/js/util.js'
 import { getApp } from './hostBridge.js'
+import { detectAddonType } from './hostType.js'
 import {
   HANDOVER_INSTANCE_ID,
   isAIAssistantWindowBusy,
@@ -408,6 +409,11 @@ export function createAIAssistantDockManager(deps = {}) {
     return typeof fromApp === 'number' ? fromApp : CANONICAL_POSITION_VALUES[mode]
   }
   function canDockAtRuntime(mode) {
+    // 宿主限制：ET/WPP 宿主上 CreateTaskPane 会连带顶掉 ShowDialog 浮窗且面板
+    // 不渲染（2026-10-06 Mac WPP 真机实证：浮窗点「停靠左侧」→ 浮窗消失、无面板、
+    // 无提示——ready 超时后 keptPrevious 分支又假设浮窗还活着，两头落空）。
+    // 停靠仅文字宿主开放；WPS 后续版本修复后从此处放开。
+    if (detectAddonType() !== 'wps') return false
     const app = getApplication()
     if (!app || typeof app.CreateTaskPane !== 'function' || typeof app.GetTaskPane !== 'function') {
       return false
@@ -434,13 +440,24 @@ export function createAIAssistantDockManager(deps = {}) {
   }
 
   function fallbackToFloat(query, reason) {
-    try {
-      openFloat(query)
-    } catch (e) {
-      return { ok: false, reason: `${reason};float-fallback-failed`, error: e }
+    // 本回合常由浮窗自身发起（宿主不支持停靠等前置失败）：浮窗仍持有新鲜单实例锁
+    // 时不能再 ShowDialog（会双开），保持现有浮窗即可；无主时才开新浮窗。
+    // 锁新鲜窗口与 aiAssistantWindowManager 的 STALE_MS(15s) 对齐。
+    const lock = readAIAssistantLock()
+    const floatAlive =
+      !!lock &&
+      lock.instanceId !== HANDOVER_INSTANCE_ID &&
+      !lock.handover &&
+      Date.now() - Number(lock.updatedAt || 0) < 15000
+    if (!floatAlive) {
+      try {
+        openFloat({ ...(query || {}), reopen: '1' })
+      } catch (e) {
+        return { ok: false, reason: `${reason};float-fallback-failed`, error: e }
+      }
     }
     setMode('float')
-    return { ok: false, reason, fallback: 'float' }
+    return { ok: false, reason, fallback: floatAlive ? 'kept-float' : 'float' }
   }
 
   /**
@@ -530,8 +547,21 @@ export function createAIAssistantDockManager(deps = {}) {
       // 面板 id 记忆恢复为旧面板（dock→dock 失败时旧面板仍是活实例）
       if (previousPaneId && previousPane) writeRaw(KEYS.paneId, previousPaneId)
       restoreAIAssistantLock(mark.previous)
-      if (previousOwnerId || previousPane) {
+      if (previousPane) {
+        // 停靠面板是 manager 可验证的活实例，原样保留
         return { ok: false, reason: String(e?.message || e), keptPrevious: true }
+      }
+      if (previousOwnerId) {
+        // 浮窗无法从 manager 侧验证存活——部分宿主上 CreateTaskPane 会连带顶掉
+        // ShowDialog 浮窗（2026-10-06 WPP 真机实证）。统一以 reopen 语义重开：
+        // 原浮窗若仍活着，凭单实例锁认领会聚焦收敛；死了则这里就是重建。
+        const reopenReason = String(e?.message || e)
+        try {
+          openFloat({ ...(query || {}), reopen: '1' })
+          return { ok: false, reason: reopenReason, reopenedFloat: true }
+        } catch (e2) {
+          return { ok: false, reason: `${reopenReason};float-reopen-failed`, error: e2, keptPrevious: true }
+        }
       }
       return fallbackToFloat(query, String(e?.message || e))
     }
