@@ -8391,10 +8391,21 @@ export default {
           this.applyHistoryStorageScope(nextScope)
           this.chatHistory = []
           this.currentChatId = null
+          // 记录待回填：busy 解除后的下一次 sync 必须补 loadHistory——
+          // 否则若 scope 不再变化，sync 走"相同键 return false"，被清空的
+          // 视图永远不回填、进行中任务也不显示（用户实测缺陷）
+          this._pendingScopeReload = nextScopeKey
           this.initOpenChatTabsAfterLoad()
           return true
         }
         return false
+      }
+      // busy 已解除：补上 busy 期间推迟的历史加载（回填 + 进行中回合恢复）
+      if (this._pendingScopeReload && this._pendingScopeReload === nextScopeKey) {
+        this._pendingScopeReload = ''
+        this.applyHistoryStorageScope(nextScope)
+        this.loadHistory({ skipScopeResolve: true })
+        return true
       }
       if (!this.historyStorageScopeKey) {
         this.applyHistoryStorageScope(nextScope)
