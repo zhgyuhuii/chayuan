@@ -4030,9 +4030,18 @@ function getRibbonImageRelative(control) {
 }
 
 function GetImage(control) {
-  return resolveRibbonIconUrl(getRibbonImageRelative(control))
+	const rel = getRibbonImageRelative(control)
+	// dev:debug 在线模式：WPS 不加载 HTTP/相对路径的 ribbon 图标（全 404 → '?'）
+	// → 读本地 SVG 文件内容，返回 base64 data URI（WPS 原生支持）
+	try {
+		if (window.location?.origin?.includes('127.0.0.1:3889')) {
+			const devRoot = '/Users/zyh/work/chayuan-wps/public'
+			const raw = window.Application?.FileSystem?.readFileString?.(devRoot + '/' + rel)
+			if (raw) return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(raw)))
+		}
+	} catch (_) { /* ignore */ }
+	return resolveRibbonIconUrl(rel)
 }
-
 function OnGetEnabled(control) {
   const eleId = control.Id
   switch (eleId) {
