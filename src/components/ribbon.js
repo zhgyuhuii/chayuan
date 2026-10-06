@@ -4080,6 +4080,16 @@ function OnGetHostTabVisible() {
   return detectAddonType() !== 'wps'
 }
 
+// dev:debug 三宿主合一 ribbon：表格/演示 tab 分别只在对应宿主显示
+// （合并 ribbon.xml 由 vite 中间件伺服，见 vite.config.js ribbonByHostDevPlugin）
+function OnGetEtTabVisible() {
+  return detectAddonType() === 'et'
+}
+
+function OnGetWppTabVisible() {
+  return detectAddonType() === 'wpp'
+}
+
 function OnGetLabel(control) {
   const eleId = normalizeContextControlId(control.Id)
   switch (eleId) {
@@ -4566,6 +4576,8 @@ const ribbon = {
   OnGetVisible,
   OnGetWriterTabVisible,
   OnGetHostTabVisible,
+  OnGetEtTabVisible,
+  OnGetWppTabVisible,
   OnGetLabel,
   OnGetGroupLabel,
   OnGetContextMenuLabel,

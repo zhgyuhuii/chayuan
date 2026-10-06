@@ -90,12 +90,12 @@ function writeDebugPublish(dir, origin) {
     fs.copyFileSync(publishPath, backupPath)
     console.log(`已备份原 publish.xml → ${BACKUP_NAME}`)
   }
-  // 每宿主带 ?ribbon=<host>：vite 中间件按参数伺服对应宿主的 ribbon XML——
-  // 三宿主共用一个 vite 根时，ET/WPP 否则拿到的是文字版 ribbon.xml，
-  // 顶部 tab 因 getVisible 只认文字宿主而全部消失（2026-10 实测）
+  // 每宿主 url 路径分段（/et/ /wpp/ /）：WPS 拉 <url>/ribbon.xml 自然命中
+  // 各宿主 ribbon 文件（vite 中间件伺服）。不能放查询串——会破坏 WPS 的
+  // ribbon.xml 相对路径拼接（2026-10 实测）
   const entries = HOST_ENTRIES.map(
     (h) =>
-      `    <jspluginonline name="${h.name}" type="${h.type}" url="${origin}/?ribbon=${h.type}" debug="code" customDomain=""/>`
+      `    <jspluginonline name="${h.name}" type="${h.type}" url="${origin}/${h.type === 'wps' ? '' : h.type + '/'}" debug="code" customDomain=""/>`
   ).join('\n')
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<jsplugins>\n${entries}\n</jsplugins>\n`
   fs.writeFileSync(publishPath, xml, 'utf8')

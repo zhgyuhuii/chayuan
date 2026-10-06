@@ -1,4 +1,5 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="ribbon.OnAddinLoad">
+<!-- 注：本文件用于安装版 chayuan-wpp 目录。其 <tab> 分组已完整并入 public/ribbon.xml 的共用宿主 tab（getVisible=OnGetHostTabVisible），两处需同步修改——调试(dev:debug 共用 URL)与 shared-dir 安装只加载 ribbon.xml。 -->
     <ribbon startFromScratch="false">
         <tabs>
             <!-- 演示宿主：单开入口 + 跨行业高频常驻（设计定稿：ribbon=一键直达，面板=全集）

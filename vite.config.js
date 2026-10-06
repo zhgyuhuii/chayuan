@@ -23,35 +23,45 @@ const pkgVersion = (() => {
 // 此中间件按查询参数伺服对应宿主的 ribbon XML：注册 URL 带 ?ribbon=et 时 WPS 拉到的
 // 就是 ribbon-et.xml。
 function ribbonByHostDevPlugin() {
-  const lastByIp = new Map() // ip → host（WPS 无参拉 /ribbon.xml 时按最近一次 ?ribbon= 记忆伺服）
-  const serve = (res, host) => {
-    const file = host === 'wps' ? 'ribbon.xml' : `ribbon-${host}.xml`
+  // dev:debug 三宿主在线模式：jspluginonline 的 url 按宿主分段（/et/ /wpp/ /），
+  // WPS 拉 <url>/ribbon.xml 时自然命中各宿主 ribbon 文件。
+  // 注意不能在 url 里放查询串（?ribbon=et）——WPS 拼 /ribbon.xml 时查询串会破坏路径。
+  const read = (f) => readFileSync(new URL(`./public/${f}`, import.meta.url), 'utf8')
+  const stripTabGetVisible = (xml) =>
+    xml.replace(/(<tab[^>]*?)\s+getVisible="ribbon\.OnGet[^"]*"/g, '$1')
+
+  const serve = (res, file) => {
     try {
-      const xml = readFileSync(new URL(`./public/${file}`, import.meta.url), 'utf8')
+      const raw = read(file)
+      // dev 下 et/wpp ribbon 的 tab 不带 getVisible（原生始终显示），writer 版保留
+      const xml = file === 'ribbon.xml' ? raw : stripTabGetVisible(raw)
       res.statusCode = 200
       res.setHeader('Content-Type', 'text/xml; charset=utf-8')
       res.end(xml)
-    } catch {
+    } catch (e) {
       res.statusCode = 404
-      res.end('ribbon xml not found')
+      res.end(`ribbon error: ${e.message}`)
     }
   }
+
   return {
     name: 'chayuan-ribbon-by-host',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || '/', 'http://localhost')
-        const host = url.searchParams.get('ribbon')
-        if (host && ['wps', 'et', 'wpp'].includes(host)) {
-          const ip = req.socket?.remoteAddress || 'local'
-          lastByIp.set(ip, host)
-          if (url.pathname !== '/') return serve(res, host) // 命中 ribbon 请求
-          return next() // 入口页：不拦截，只记忆
-        }
-        if (url.pathname === '/ribbon.xml') {
-          const ip = req.socket?.remoteAddress || 'local'
-          const remembered = lastByIp.get(ip)
-          if (remembered) return serve(res, remembered)
+        const p = url.pathname
+        if (p === '/et/ribbon.xml') return serve(res, 'ribbon-et.xml')
+        if (p === '/wpp/ribbon.xml') return serve(res, 'ribbon-wpp.xml')
+        if (p === '/wps/ribbon.xml') return serve(res, 'ribbon.xml')
+        if (p === '/et/' || p === '/wpp/' || p === '/wps/') {
+          // 宿主入口 → 伺服 index.html（webview 面板/基座加载用）
+          try {
+            const html = readFileSync(new URL('./dist/index.html', import.meta.url), 'utf8')
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(html)
+          } catch { res.statusCode = 500; res.end('index load failed') }
+          return
         }
         next()
       })

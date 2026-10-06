@@ -125,16 +125,70 @@
                 </group>
             </tab>
              
-            <!-- 表格/演示宿主：单按钮入口（聊天→MCP 完成一切操作）；
-                 宿主 tab 与文字 tab 通过 getVisible 互斥显隐 -->
+            <!-- 表格/演示宿主：跨行业高频常驻组（与 ribbon-et.xml / ribbon-wpp.xml 的
+                 安装版分组保持一致；设计定稿：ribbon=一键直达，面板=全集）。
+                 共用 URL 场景（dev:debug 调试、publish-shared-dir 安装）只有本文件会被
+                 三宿主加载，因此完整并入并用 getVisible 按宿主显隐——此前这里只放
+                 单按钮占位，导致调试模式下表格/演示宿主"高频助手组"消失。
+                 文字宿主通过 OnGetWriterTabVisible 隐藏这两个 tab。 -->
             <tab id="tabAssistantEt" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
                 <group id="groupAIAssistantEt" label="AI助手" autoScale="true">
                     <button id="btnAIAssistantEt" label="AI表格助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtFormula" label="公式助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtInsight" label="数据洞察" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtChart" label="一键图表" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtClean" label="数据清洗" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtReport" label="报表结论" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnEtBeautify" label="一键美化" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <menu id="menuEtSecurity" label="文档安全" getImage="ribbon.GetImage" size="large">
+                        <button id="btnEtSecurityCheck" label="保密检查" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtSecEncrypt" label="加密工作簿" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtSecDecrypt" label="解密工作簿" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                    </menu>
+                    <menu id="menuEtMore" label="更多表格助手" getImage="ribbon.GetImage" size="large">
+                        <button id="btnEtMoreSort" label="排序汇总" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreMerge" label="多表合并汇总" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreDiff" label="两表对比差异" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreTranslate" label="表格翻译" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreMask" label="敏感信息脱敏" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreSplitCols" label="智能分列" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreSplitSheets" label="按列拆表" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreExtract" label="文档抽取成表" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnEtMoreBattle" label="数据战报页" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <separator id="SepEtMore"/>
+                        <button id="btnEtSettings" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                    </menu>
+                    <separator id="SepEtSettings"/>
+                    <button id="btnEtSettingsTop" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                 </group>
             </tab>
             <tab id="tabAssistantWpp" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
                 <group id="groupAIAssistantWpp" label="AI助手" autoScale="true">
                     <button id="btnAIAssistantWpp" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppGen" label="生成PPT" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppSummary" label="整套摘要" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppBeautify" label="美化统一" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppNotes" label="口播稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppProof" label="整套校对" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppStructure" label="结构诊断" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <menu id="menuWppSecurity" label="文档安全" getImage="ribbon.GetImage" size="large">
+                        <button id="btnWppSecurityCheck" label="保密检查" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppSecEncrypt" label="加密演示稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppSecDecrypt" label="解密演示稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                    </menu>
+                    <menu id="menuWppMore" label="更多演示助手" getImage="ribbon.GetImage" size="large">
+                        <button id="btnWppMoreScaffold" label="结构件补齐" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreTranslate" label="整套翻译" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreToDoc" label="转讲义文档" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreFooter" label="页码页脚" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreBattle" label="数据战报页" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreCourse" label="课件生成" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <button id="btnWppMoreQuiz" label="习题互动页" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                        <separator id="SepWppMore"/>
+                        <button id="btnWppSettings" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
+                    </menu>
+                    <separator id="SepWppSettings"/>
+                    <button id="btnWppSettingsTop" label="设置" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                 </group>
             </tab>
         </tabs>
