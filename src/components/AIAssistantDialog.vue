@@ -26,6 +26,17 @@
         </svg>
       </button>
       <div v-if="dockMenuOpen" class="dock-menu-panel">
+        <!-- 置灰原因内嵌可见：busy 钉死（真机实证可 40s+ 不自愈）时列出具体卡点，
+             不用靠悬停猜 -->
+        <div v-if="dockSwitching || isWindowBusy" class="dock-menu-busy-note">
+          <template v-if="dockSwitching">正在切换窗口位置，请稍候…</template>
+          <template v-else>
+            任务执行中，完成后才能切换窗口位置
+            <span v-if="windowBusyReasons.length" class="dock-menu-busy-detail">
+              （{{ windowBusyReasons.join(' · ') }}）
+            </span>
+          </template>
+        </div>
         <div
           v-for="item in dockMenuItems"
           :key="item.action"
@@ -2893,6 +2904,10 @@ const REMOTE_TURN_CANCEL_PREFIX = 'ai_chat_turn_cancel:'
 const REMOTE_TURN_PENDING_PREFIX = 'ai_chat_pending:'
 const REMOTE_TURN_POLL_MS = 400
 const REMOTE_TURN_STALE_MS = 10_000
+// 回合状态键持续缺失判定：执行侧写状态先于派发 ack 返回，正常等待开始时键必在；
+// 持续缺失 = 执行侧异常清理/存储配额驱逐——按执行侧死亡收尾，不得无限空转
+// （曾把 busy 钉死到 10 分钟硬上限：任务已完成但窗口位置菜单一直「任务执行中」）
+const REMOTE_TURN_STATE_MISSING_MS = 8_000
 // 会话容量预算（设计定稿 §2.7）：单文档 ≤200KB 且 ≤100 条消息（50 轮），
 // 全局 ≤30 个文档键 LRU。超限裁最旧，面板提示「更早的会话已清理」
 const SCOPE_BUDGET_BYTES = 200_000
@@ -4620,6 +4635,25 @@ export default {
         Object.values(this.sendRoutingLocks || {}).some(Boolean)
       )
     },
+    // busy 构成清单：isWindowBusy 的每一项具名化。busy 钉死时（真机实证可 40s+
+    // 不自愈）窗口位置菜单的提示行和 scopeDebug 探针据此直接指出卡的是哪个标志，
+    // 不用再靠猜。
+    windowBusyReasons() {
+      const reasons = []
+      const mcpCount = Object.keys(this.activeMcpTurnContexts || {}).length
+      const legacyCount = Object.keys(this.activeLegacyTurnContexts || {}).length
+      if (mcpCount) reasons.push(`智能体回合×${mcpCount}`)
+      if (legacyCount) reasons.push(`对话回合×${legacyCount}`)
+      if (this.isStreaming) reasons.push('流式标记')
+      if (this.activeDocumentRevisionRunContext) reasons.push('修订预览')
+      if (this.activeDocumentAwareRunContext) reasons.push('整篇处理')
+      if (this.activeGeneratedOutputRunContext) reasons.push('文件生成')
+      if (this.docWriteLockState?.locked) reasons.push('文档写锁')
+      const queueLen = this.docWriteLockState?.queue?.length || 0
+      if (queueLen) reasons.push(`写锁排队×${queueLen}`)
+      if (Object.values(this.sendRoutingLocks || {}).some(Boolean)) reasons.push('发送路由锁')
+      return reasons
+    },
     activeChatStreaming() {
       // 当前会话是否处于可视的流式/等待态：回合上下文优先；
       // 文档类长任务无会话级上下文，用全局 isStreaming + 当前会话末条加载态兜底
@@ -4934,6 +4968,25 @@ export default {
     // 对话页打开即计入 Star 提示的价值门槛；达标且未解决时展示提示卡
     this.tryOpenStarPrompt()
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
+    // dev 源码模式（vite）下 window.Application 注入可能晚于 mounted——挂载瞬间
+    // detectAddonType() 落到 wps/空，助手列表走错分支。延迟重试宿主判定，
+    // 宿主确定后再按需重载一次（生产安装不受影响，重复调用幂等）
+    const retryHostAssistantLoad = (delay) => {
+      setTimeout(() => {
+        try {
+          if (this._lastLoadedHost) return // 已按正确宿主加载过（轮询通道维护）
+          const before = this.assistantItems.length
+          this.loadAssistantItems()
+          const host = detectAddonType()
+          if (host !== 'wps' && (this.assistantItems.length !== before || this.hostAssistantMode)) {
+            this._lastLoadedHost = host
+            console.info(`[assistant] 宿主延迟就绪(${host})，助手列表已重载 ${this.assistantItems.length} 项`)
+          }
+        } catch (_) { /* ignore */ }
+      }, delay)
+    }
+    retryHostAssistantLoad(800)
+    retryHostAssistantLoad(2500)
     // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
     // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索
@@ -5000,20 +5053,36 @@ export default {
       // 孤儿回合上下文回收：远程回合终态合并后 ctx 应已清；但若面板在回合
       // 运行中被切走/重挂载，watch 循环可能随旧视图一起丢失——ctx 残留会把
       // isWindowBusy 永久钉在 true（真机实证：d2 回合完成后 40s busy 不解，
-      // 挡住 d1 的历史加载）。此处对每个残留 ctx 读执行侧回合状态，终态即回收。
+      // 挡住 d1 的历史加载）。兑现「读执行侧回合状态，终态即回收」：
+      // 等待循环还活着不动（它自己会收尾）；循环已丢且执行侧已终态 → 就地回收。
       try {
         const orphanIds = Object.keys(this.activeMcpTurnContexts || {})
         for (const orphanChatId of orphanIds) {
+          const ctx = this.activeMcpTurnContexts[orphanChatId] || {}
           // 10 分钟 = waitForRemoteMcpTurn 硬上限（其超时路径会自清）；超过上限
           // 仍残留的 ctx 必然是 watch 循环随旧视图丢失的孤儿——就地回收，
           // 解除 isWindowBusy 的永久钉死（真机实证 busy 40s+ 不自愈）
-          const startedAt = Number(this.activeMcpTurnContexts[orphanChatId]?.startedAt || 0)
+          const startedAt = Number(ctx.startedAt || 0)
           if (startedAt && Date.now() - startedAt > 600_000) {
+            this.clearMcpTurnCtx(orphanChatId)
+            continue
+          }
+          if (ctx.waitLoopAlive) continue
+          const msg = (this.currentMessages || []).find(m => m?.id === ctx.messageId)
+          const turnId = String(msg?.mcpRemoteTurnId || '')
+          if (!turnId) continue
+          const state = this.readRemoteTurnState(turnId)
+          if (state && state.phase !== 'running') {
+            // 执行侧已终态（done/error/cancelled）但没人收尾：任务实际已结束，
+            // busy 不应继续压住窗口切换
             this.clearMcpTurnCtx(orphanChatId)
           }
         }
         if (orphanIds.length) this.settleGlobalStreamingFlag()
       } catch (_) { /* 回收失败不影响主流程 */ }
+      // isStreaming 周期性清算：所有回合/长任务上下文都已消失时自动落下流式标记，
+      // 不让任何一条清理遗漏路径把 busy 钉死（settle 只在全部源为空时才动作，安全）
+      try { this.settleGlobalStreamingFlag() } catch (_) { /* ignore */ }
       // 诊断探针：scope 键 + 探测结果写 PluginStorage，wps_status 可带出（wps_status.scopeDebug）
       try {
         window.Application?.PluginStorage?.setItem('ai_chat_scope_debug', JSON.stringify({
@@ -5021,6 +5090,7 @@ export default {
           current: this.historyStorageScopeKey,
           docId: this.historyStorageDocId,
           busy: !!this.isWindowBusy,
+          busyReasons: this.windowBusyReasons,
           source: this.historyStorageSource
         }))
       } catch (_) { /* ignore */ }
@@ -5222,7 +5292,17 @@ export default {
       }
     },
     async handleDockAction(action) {
-      if (this.dockSwitching || this.isWindowBusy) return
+      if (this.dockSwitching || this.isWindowBusy) {
+        // 置灰项被点不再无声吞掉：busy 可 40s+ 不自愈（真机实证），静默 return 会被
+        // 用户当成"菜单点不动"。明确告知原因，与下方切换失败提示同通道（inAppAlert）。
+        await inAppAlert(
+          this.isWindowBusy
+            ? '有任务正在执行，暂时无法切换窗口位置；请先停止任务或等待完成。'
+            : '窗口位置正在切换中，请稍候。',
+          { title: '窗口位置' }
+        )
+        return
+      }
       const item = this.dockMenuItems.find((i) => i.action === action)
       if (item && (item.disabled || item.active)) return
       this.closeDockMenu()
@@ -6209,50 +6289,83 @@ export default {
         if (ctrl.signal.aborted) onAbort()
         else ctrl.signal.addEventListener('abort', onAbort, { once: true })
       }
+      // 等待循环存活标记：1.5s 巡检只回收「循环已丢」的孤儿 ctx，不动活循环
+      const loopCtx = this.activeMcpTurnContexts?.[turnChatId]
+      if (loopCtx) loopCtx.waitLoopAlive = true
       // 无限轮询由终态/陈旧判定收敛：phase 终态合并退出；running 且心跳
       // 超过 REMOTE_TURN_STALE_MS 视为执行侧（基座 webview）死亡 → 中断收尾
       const waitStart = Date.now()
-      for (;;) {
-        await new Promise(r => setTimeout(r, REMOTE_TURN_POLL_MS))
-        // 硬上限：任何回合不超过 10 分钟（防执行侧永挂把 UI 钉死）
-        if (Date.now() - waitStart > 600_000) {
-          assistantMsg.mcpRemoteSettled = true
-          assistantMsg.mcpStreamingText = ''
-          const partial = String(assistantMsg.mcpStreamingText || '').trim()
-          assistantMsg.content = partial || '回合超时（超过 10 分钟未完成）。请重试或拆小任务。'
-          this.stopAssistantLoadingProgress(assistantMsg)
-          assistantMsg.isLoading = false
-          assistantMsg.mcpStepsExpanded = false
-          this.clearMcpTurnCtx(turnChatId)
-          this.settleGlobalStreamingFlag()
-          this.saveHistory()
-          return
-        }
-        const state = this.readRemoteTurnState(turnId)
-        if (!state) continue
-        if (state.phase === 'running') {
-          this.applyRemoteTurnProgress(assistantMsg, state)
-          if (Date.now() - Number(state.updatedAt || 0) > REMOTE_TURN_STALE_MS) {
+      try {
+        let stateMissingSince = 0
+        for (;;) {
+          await new Promise(r => setTimeout(r, REMOTE_TURN_POLL_MS))
+          // 硬上限：任何回合不超过 10 分钟（防执行侧永挂把 UI 钉死）
+          if (Date.now() - waitStart > 600_000) {
             assistantMsg.mcpRemoteSettled = true
             assistantMsg.mcpStreamingText = ''
-            const partial = String(state.streamText || '').trim()
-            assistantMsg.content = partial
-              ? `${partial}\n\n（生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。）`
-              : '生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。'
+            const partial = String(assistantMsg.mcpStreamingText || '').trim()
+            assistantMsg.content = partial || '回合超时（超过 10 分钟未完成）。请重试或拆小任务。'
+            this.stopAssistantLoadingProgress(assistantMsg)
+            assistantMsg.isLoading = false
+            assistantMsg.mcpStepsExpanded = false
+            this.saveHistory()
+            return
+          }
+          const state = this.readRemoteTurnState(turnId)
+          if (!state) {
+            // 状态键持续缺失 = 执行侧异常清理/存储配额驱逐。旧实现无限 continue，
+            // 任务实际已结束却把 busy 钉到 10 分钟硬上限（真机「执行完毕仍无法
+            // 切换窗口位置」的直接成因之一）。缺失超过宽限即按执行侧死亡收尾。
+            if (!stateMissingSince) {
+              stateMissingSince = Date.now()
+              continue
+            }
+            if (Date.now() - stateMissingSince <= REMOTE_TURN_STATE_MISSING_MS) continue
+            const partialBeforeLoss = String(assistantMsg.mcpStreamingText || '').trim()
+            assistantMsg.mcpRemoteSettled = true
+            assistantMsg.mcpStreamingText = ''
+            assistantMsg.content = partialBeforeLoss
+              ? `${partialBeforeLoss}\n\n（生成中断：执行回合状态丢失。重新发送可重试。）`
+              : '生成中断：执行回合状态丢失。重新发送可重试。'
             assistantMsg.mcpInterrupted = true
             this.stopAssistantLoadingProgress(assistantMsg)
             assistantMsg.isLoading = false
             assistantMsg.mcpStepsExpanded = false
-            this.clearMcpTurnCtx(turnChatId)
-            this.settleGlobalStreamingFlag()
             this.saveHistory()
             this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
             return
           }
-          continue
+          stateMissingSince = 0
+          if (state.phase === 'running') {
+            this.applyRemoteTurnProgress(assistantMsg, state)
+            if (Date.now() - Number(state.updatedAt || 0) > REMOTE_TURN_STALE_MS) {
+              assistantMsg.mcpRemoteSettled = true
+              assistantMsg.mcpStreamingText = ''
+              const partial = String(state.streamText || '').trim()
+              assistantMsg.content = partial
+                ? `${partial}\n\n（生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。）`
+                : '生成中断：执行回合的窗口已关闭或无响应。重新发送可重试。'
+              assistantMsg.mcpInterrupted = true
+              this.stopAssistantLoadingProgress(assistantMsg)
+              assistantMsg.isLoading = false
+              assistantMsg.mcpStepsExpanded = false
+              this.saveHistory()
+              this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
+              return
+            }
+            continue
+          }
+          this.mergeRemoteTurnOutcome(assistantMsg, state, turnChatId)
+          return
         }
-        this.mergeRemoteTurnOutcome(assistantMsg, state, turnChatId)
-        return
+      } finally {
+        // 兜底：任何退出路径（含异常抛出）都必须回收回合上下文并清算流式标志，
+        // 否则 isWindowBusy 永久钉死、窗口位置菜单永久「任务执行中」。
+        // 各正常路径里的清理是幂等的，这里只是给异常路径兜底。
+        const ctxNow = this.activeMcpTurnContexts?.[turnChatId]
+        if (ctxNow) ctxNow.waitLoopAlive = false
+        this.clearMcpTurnCtx(turnChatId)
+        this.settleGlobalStreamingFlag()
       }
     },
     // 重挂载恢复：loadHistory 后调用。当前 scope 有进行中/未合并的远程回合 →
@@ -6281,6 +6394,17 @@ export default {
             detail: '切换文档期间生成未中断，正在恢复观察。',
             percent: 30
           })
+          // 恢复观察也要登记回合上下文：回合确实还在执行侧跑着，busy 语义与首发
+          // 一致（此前不登记，恢复期间窗口切换防线的判定比首发松）
+          if (!this.activeMcpTurnContexts[this.currentChatId]) {
+            this.activeMcpTurnContexts[this.currentChatId] = {
+              messageId: msg.id || '',
+              abortController: null,
+              cancelled: false,
+              chatId: this.currentChatId,
+              startedAt: Number(state.startedAt) || Date.now()
+            }
+          }
           this.waitForRemoteMcpTurn({ turnId: pendingTurnId, assistantMsg: msg, ctrl: null, turnChatId: this.currentChatId })
         } else {
           this.mergeRemoteTurnOutcome(msg, state, this.currentChatId)
@@ -19864,6 +19988,21 @@ export default {
   box-shadow: 0 14px 34px -12px rgba(15, 23, 42, 0.28), 0 4px 10px -6px rgba(15, 23, 42, 0.18);
 }
 
+.dock-menu-busy-note {
+  padding: 5px 8px 6px;
+  color: #b45309;
+  font-size: 11.5px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--ai-border);
+  margin-bottom: 4px;
+  white-space: normal;
+}
+
+.dock-menu-busy-detail {
+  color: #92400e;
+  opacity: 0.85;
+}
+
 .dock-menu-item {
   display: flex;
   align-items: center;
@@ -19874,6 +20013,14 @@ export default {
   font-size: 12.5px;
   cursor: pointer;
   user-select: none;
+}
+
+/* 点击命中统一落在条目本身：WPS 内嵌 CEF（Chromium 104）对内联 SVG 事件目标
+   有历史怪癖，子元素不拦 pointer 事件可彻底绕开 */
+.dock-menu-pict,
+.dock-menu-label,
+.dock-menu-check {
+  pointer-events: none;
 }
 
 .dock-menu-item:hover:not(.disabled) {

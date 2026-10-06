@@ -16,6 +16,35 @@ const pkgVersion = (() => {
   }
 })()
 
+
+// dev:debug 三宿主 ribbon 分发：WPS 在线模式对每个宿主都拉 origin/ribbon.xml（同一份
+// 文字版）——ET/WPP 顶部 tab 由 getVisible 按 detectAddonType 判定，但 ribbon 回调运行前
+// tab 已按"不可见"被裁剪（在线模式裁剪时机早于 webview JS），顶部助手全消失（实测）。
+// 此中间件按查询参数伺服对应宿主的 ribbon XML：注册 URL 带 ?ribbon=et 时 WPS 拉到的
+// 就是 ribbon-et.xml。
+function ribbonByHostDevPlugin() {
+  return {
+    name: 'chayuan-ribbon-by-host',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = new URL(req.url || '/', 'http://localhost')
+        const host = url.searchParams.get('ribbon')
+        if (!host || !['wps', 'et', 'wpp'].includes(host)) return next()
+        const file = host === 'wps' ? 'ribbon.xml' : `ribbon-${host}.xml`
+        try {
+          const xml = readFileSync(new URL(`./public/${file}`, import.meta.url), 'utf8')
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'text/xml; charset=utf-8')
+          res.end(xml)
+        } catch {
+          res.statusCode = 404
+          res.end('ribbon xml not found')
+        }
+      })
+    }
+  }
+}
+
 function createDashscopeDevProxy() {
   return {
     name: 'dashscope-dev-proxy',
@@ -98,6 +127,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkgVersion),
   },
   plugins: [
+    ribbonByHostDevPlugin(),
     createUserManualSyncPlugin(),
     copyFile({
       src: 'manifest.xml',

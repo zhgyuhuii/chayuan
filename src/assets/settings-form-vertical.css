@@ -187,8 +187,11 @@
 }
 
 /* ─────────── 8. dialog 容器自身 padding 减少 ─────────── */
+/* 注意：不能写裸 .dialog-page —— 该类同时挂在 body 和 #app 上（App.vue
+   updateDialogPageClass 对所有弹窗路由都挂），会把 AI 助手（/ai-assistant）
+   浮窗与停靠面板整体右移 12px 且右侧裁切 12px（真机"切换后显示问题"根源）。
+   只给设置页自己的容器加内边距。 */
 
-.dialog-page,
 .dialog-page .config-panel,
 .dialog-page .config-content {
   padding-left: 12px;
@@ -196,7 +199,6 @@
 }
 
 @media (max-width: 480px) {
-  .dialog-page,
   .dialog-page .config-panel,
   .dialog-page .config-content {
     padding-left: 8px;

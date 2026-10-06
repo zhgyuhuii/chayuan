@@ -819,6 +819,15 @@ npm run mcp:build-binary     # 交叉编译 5 平台单文件二进制（需 Bun
 
 本地调试一般使用 **`wpsjs debug`** 将加载项指向开发服务或构建目录。CI 可参考 `.github/workflows` 下工作流。
 
+> ⚠️ `wpsjs debug` 只会写入**单宿主**（`type=wps`，即 WPS 文字）的注册，表格/演示宿主不会加载；且它自带的静态服务无法运行 vite 源码工程。**三宿主（文字/表格/演示）联调请用**：
+>
+> ```bash
+> npm run dev:debug                # 起 vite + 写三宿主调试注册 + 拉起 WPS
+> npm run dev:debug -- --restore   # 结束调试，还原正式安装的 publish.xml
+> ```
+>
+> 首次在表格/演示宿主加载时 WPS 可能弹「信任加载项」确认（authaddin.json 按宿主分记），选信任即可。
+
 ---
 
 ## 十、捐助与社区

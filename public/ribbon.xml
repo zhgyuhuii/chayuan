@@ -3,7 +3,7 @@
         <tabs>
          
             <!-- 察元助理菜单 -->
-            <tab id="tabAssistant" label="察元AI助理" > 
+            <tab id="tabAssistant" label="察元AI助理" getVisible="ribbon.OnGetWriterTabVisible" > 
                 <!-- 关于分组 -->
                 <group id="groupAbout" label="关于" autoScale="true">
                     <button id="btnAboutChayuan" label="关于察元" onAction="ribbon.OnAction" size="large" getImage="ribbon.GetImage"  />
@@ -92,7 +92,7 @@
             </tab>
             
             <!-- 察元编审菜单 -->
-            <tab id="tabReview" label="察元AI编审">
+            <tab id="tabReview" label="察元AI编审" getVisible="ribbon.OnGetWriterTabVisible">
                 
                 <!-- 表单辅助分组 -->
                 <group id="groupFormAssist" label="表单辅助" autoScale="true">
@@ -125,6 +125,18 @@
                 </group>
             </tab>
              
+            <!-- 表格/演示宿主：单按钮入口（聊天→MCP 完成一切操作）；
+                 宿主 tab 与文字 tab 通过 getVisible 互斥显隐 -->
+            <tab id="tabAssistantEt" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
+                <group id="groupAIAssistantEt" label="AI助手" autoScale="true">
+                    <button id="btnAIAssistantEt" label="AI表格助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                </group>
+            </tab>
+            <tab id="tabAssistantWpp" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
+                <group id="groupAIAssistantWpp" label="AI助手" autoScale="true">
+                    <button id="btnAIAssistantWpp" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                </group>
+            </tab>
         </tabs>
     </ribbon>
     <!-- 右键菜单配置：正文/标题/表格单元格均显示固定入口，其余助手按配置显示 -->
