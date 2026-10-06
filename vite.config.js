@@ -50,6 +50,15 @@ function ribbonByHostDevPlugin() {
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || '/', 'http://localhost')
         const p = url.pathname
+        // 宿主分段路径下的静态资源（图片/CSS/JS）重写到根路径——
+        // GetImage 返回相对路径 images/xxx.svg，WPS 基于 url 前缀解析成
+        // /et/images/xxx.svg，需重写到根的 /images/ 才能命中
+        const assetRedirect = p.match(/^\/(et|wpp|wps)\/((?:images|assets|docs)\/.+)$/)
+        if (assetRedirect) {
+          res.statusCode = 301
+          res.setHeader('Location', '/' + assetRedirect[2])
+          return res.end()
+        }
         if (p === '/et/ribbon.xml') return serve(res, 'ribbon-et.xml')
         if (p === '/wpp/ribbon.xml') return serve(res, 'ribbon-wpp.xml')
         if (p === '/wps/ribbon.xml') return serve(res, 'ribbon.xml')
