@@ -492,8 +492,9 @@
             <div class="star-prompt-title">{{ starPromptThanksText }}</div>
           </div>
         </div>
+        <!-- 欢迎横幅仅空会话显示：发出第一条消息或切入有历史的会话即隐藏，不再常驻对话顶部 -->
         <div
-          v-if="displayedWelcomePrompt"
+          v-if="displayedWelcomePrompt && currentMessages.length === 0"
           class="welcome-inline-banner"
           :class="{ 'welcome-inline-banner--setup': !hasConfiguredChatModels }"
         >
@@ -4870,21 +4871,28 @@ export default {
     currentChatId() {
       this.messageWindowSize = 50
       this.$nextTick(() => {
-        this.refreshWelcomePrompt()
         if (this.currentMessages.length === 0) {
+          this.refreshWelcomePrompt()
           this.prepareWelcomeSupportEntryAnimation()
         } else {
+          // 有历史的会话不重打欢迎横幅，避免它在对话顶部再次常驻
+          this.stopWelcomePromptTyping()
+          this.displayedWelcomePrompt = ''
           this.finishWelcomeSupportExitAnimation()
         }
       })
     },
     currentMessageCount(count, previousCount) {
       if (count === 0 && previousCount > 0) {
+        // 会话被清空回到空态：换一条新欢迎语重新打字，保持“空会话显示欢迎横幅”的一致性
+        this.refreshWelcomePrompt()
         this.finishWelcomeSupportExitAnimation()
         this.$nextTick(() => this.prepareWelcomeSupportEntryAnimation())
       }
       if (count > 0 && previousCount === 0) {
+        // 会话开始后欢迎横幅整体退场：停打字并清空已显示文本，避免残留在对话顶部
         this.stopWelcomePromptTyping()
+        this.displayedWelcomePrompt = ''
       }
     }
   },
@@ -8562,7 +8570,32 @@ export default {
         getValue: () => {
           if (this.historySaveDirty) {
             this.historySaveDirty = false
-            this.pendingHistorySavePayload = this.buildHistorySavePayload(this.pendingHistorySaveOptions || {})
+            // 用置脏时刻的快照构建（数据属主），不受当前 chatHistory（可能已被
+            // 切文档清空/替换）影响——写穿的永远是"那一刻的数据"
+            const snapshotScope = this._dirtyScopeKey || ''
+            const snapshotHistory = this._dirtyChatHistory
+            const snapshotCurrent = this._dirtyCurrentChatId
+            this._dirtyChatHistory = null
+            if (snapshotHistory) {
+              const keys = this.getHistoryStorageKeys(snapshotScope)
+              const cleanHistory = snapshotHistory
+                .filter(chat => !chat?.draft)
+                .map(chat => ({
+                  ...chat,
+                  messages: Array.isArray(chat?.messages)
+                    ? chat.messages.map(({ _renderedHtml, _renderedContent, mcpStreamingText, ...m }) => m)
+                    : chat?.messages
+                }))
+              this.enforceScopeBudgetOnPayload(cleanHistory)
+              this.pendingHistorySavePayload = {
+                storageKeys: keys,
+                scopeKey: snapshotScope,
+                historyJson: JSON.stringify(cleanHistory),
+                currentChatId: snapshotCurrent || ''
+              }
+            } else {
+              this.pendingHistorySavePayload = this.buildHistorySavePayload(this.pendingHistorySaveOptions || {})
+            }
           }
           return this.pendingHistorySavePayload
         },
@@ -8594,6 +8627,15 @@ export default {
         // tick 都全量 JSON.stringify 全部会话（含 loopHistory 大对象），运行期主线
         // 程被反复占用——智能体多轮执行时的掉帧源之一
         this.pendingHistorySaveOptions = options
+        // 数据属主快照：脏置位时刻的 scope + 会话内容。切换文档的 sync 会清空
+        // chatHistory——延迟写入若在清空后才取值，会把空列表写进原 scope 键，
+        // 造成"切回来对话消失"（持久层 9 键几乎全空的实测根因）。快照保证
+        // 写穿的永远是置脏那一刻的数据，与"当前显示哪个文档"解耦。
+        if (!this.historySaveDirty) {
+          this._dirtyScopeKey = this.historyStorageScopeKey || 'no_active_document'
+          this._dirtyChatHistory = this.chatHistory
+          this._dirtyCurrentChatId = this.currentChatId
+        }
         this.historySaveDirty = true
         if (options.immediate === true || options.flush === true) {
           this.flushHistorySaveNow()
