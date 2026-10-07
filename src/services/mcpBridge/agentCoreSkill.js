@@ -40,7 +40,7 @@ async function probeHostDocumentId(host, signal) {
   }
 }
 
-const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|revision|layout|toc|table|image|hyperlink|headerfooter|watermark|style|export|spreadsheet|presentation)$/
+const WRITE_TOOL_RE = /^(document_replace|document_insert|document_apply_ops|document_save|proofread_apply_comments|format_run|format_para|format_apply_ops|comment|comment_delete|revision|revision_mode|layout|layout_columns|toc|toc_insert|toc_update|table|table_insert|image|image_insert|image_delete|hyperlink|hyperlink_add|hyperlink_delete|headerfooter|headerfooter_set|watermark|watermark_set|watermark_clear|style|export|spreadsheet|presentation|slide_add|slide_delete|slide_duplicate|slide_move|textbox_add|shape_add|shape_update|notes_set|picture_add|chart_add|break_insert|page_blank_insert|bookmark_goto|nav_pane_set|nav_outline)$/
 
 // 聚合域工具（名字=工具，action 区分读写）的只读 action：不注入 confirmed、
 // 不带 OCC 基线 token、不算 mutated（否则 style list / comment list 会被当写操作）

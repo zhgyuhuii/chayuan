@@ -1,5 +1,7 @@
 export type {
   AgentImage,
+  AgentAudio,
+  AgentVideo,
   AgentMessage,
   AgentStreamCallbacks,
   AgentStreamHandle,
@@ -13,14 +15,16 @@ export type {
 } from './types'
 export { composeSkills } from './skill'
 export type { AgentSkill, DegradedFallback, ExecutedToolCall } from './skill'
+export { createMediaSkill } from './media-skill'
+export type { MediaCapabilityFlags, MediaSkillBridge } from './media-skill'
 export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   DEFAULT_MAX_TURNS,
+  parseDegradedToolCalls,
   TOOL_ABORTED_OUTPUT,
   invalidArgumentFields,
   missingRequiredFields,
-  parseDegradedToolCalls,
   runtimePreamble,
   sanitizeAgentPayload,
 } from './loop'

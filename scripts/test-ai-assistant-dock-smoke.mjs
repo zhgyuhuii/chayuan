@@ -31,8 +31,8 @@ function assert(name, condition, detail = '') {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const LOCK_KEY = 'nd_ai_assistant_window_lock'
-const REQUEST_KEY = 'nd_ai_assistant_window_request'
+const LOCK_KEY = 'nd_ai_assistant_window_lock_wps' // 锁键按宿主分域（windowManager hostSuffix）；fake app 无 Workbooks/Presentations → wps
+const REQUEST_KEY = 'nd_ai_assistant_window_request_wps'
 
 // ---------------------------------------------------------------------------
 // 伪造基础设施
@@ -511,14 +511,16 @@ async function testDockManager(mod) {
     assert('失败面板被删除', ctx.panes.size === 0)
   }
 
-  // T4 面板页始终不 boot（ready 超时）→ 回滚锁、保持原浮窗、不误写探测缓存
+  // T4 面板页始终不 boot（ready 超时）→ 回滚锁、以 reopen 语义重开浮窗、不误写探测缓存
+  // （2026-10-06 真机实证：部分宿主 CreateTaskPane 会顶掉原浮窗，keptPrevious 假设
+  //  浮窗存活不安全——统一 reopen:'1' 重开，单实例锁保证活着则聚焦、死了则重建）
   {
     const ctx = freshDock({ noBoot: true })
     const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
     ctx.localStorage.setItem(LOCK_KEY, JSON.stringify({ instanceId: 'float_win_1', mode: 'float', updatedAt: Date.now() }))
     const res = await dock.dockTo('left')
-    assert('ready 超时判失败且保持原浮窗', res.ok === false && res.keptPrevious === true)
-    assert('失败不另开浮窗', ctx.app.showDialogCalls.length === 0)
+    assert('ready 超时判失败且重开浮窗', res.ok === false && res.reopenedFloat === true)
+    assert('失败重开浮窗恰好一次', ctx.app.showDialogCalls.length === 1)
     const lock = JSON.parse(ctx.localStorage.getItem(LOCK_KEY) || 'null')
     assert('交接失败回滚锁到原浮窗', lock?.instanceId === 'float_win_1' && !lock?.handover)
     const probe = JSON.parse(ctx.storage.getItem('ai_assistant_dock_probe') || '{}')

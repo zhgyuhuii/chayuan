@@ -12,3 +12,80 @@
 {"id":"W12","lane":"wps","desc":"定点添加批注","attempt":1,"start":"2026-10-02T06:47:48.009Z","ack":true,"pass":true,"evidence":"marker=true  len=235","secs":27}
 {"id":"W13","lane":"wps","desc":"批注清单报告","attempt":1,"start":"2026-10-02T06:48:17.664Z","ack":true,"pass":true,"evidence":"marker=true  len=340","secs":33}
 {"id":"W14","lane":"wps","desc":"删除一条批注","attempt":2,"start":"2026-10-02T06:53:17.153Z","ack":true,"pass":false,"evidence":"批注已删=true marker=false 剩余=0","secs":261}
+{"id":"W01","lane":"wps","desc":"文档元信息与段落清单","attempt":1,"start":"2026-10-06T15:39:18.231Z","ack":true,"pass":true,"evidence":"marker=true  len=376","secs":171}
+{"id":"W02","lane":"wps","desc":"文末追加生成段落","attempt":1,"start":"2026-10-06T15:42:11.953Z","ack":true,"pass":true,"evidence":"marker=true extra(结论与展望)=true len=549","secs":270}
+{"id":"W03","lane":"wps","desc":"锚点段后插入注释","attempt":1,"start":"2026-10-06T15:46:44.717Z","ack":true,"pass":true,"evidence":"marker=true extra(本段目标用户描述需与市场)=true len=579","secs":313}
+{"id":"W04","lane":"wps","desc":"定点替换年份","attempt":2,"start":"2026-10-06T15:56:17.729Z","ack":true,"pass":true,"evidence":"marker=true extra(2026年)=true len=586","secs":27}
+{"id":"W05","lane":"wps","desc":"通读全文生成摘要并置于文首","attempt":2,"start":"2026-10-06T16:01:12.434Z","ack":true,"pass":true,"evidence":"marker=true extra(摘要：)=true len=671","secs":523}
+{"id":"W06","lane":"wps","desc":"新章节生成三段内容","attempt":1,"start":"2026-10-06T16:09:58.668Z","ack":true,"pass":true,"evidence":"marker=true extra(第四章)=true len=1085","secs":339}
+{"id":"W07","lane":"wps","desc":"要点化改写首段","attempt":1,"start":"2026-10-06T16:15:40.996Z","ack":true,"pass":true,"evidence":"marker=true  len=1146","secs":632}
+{"id":"W08","lane":"wps","desc":"段落翻译并对照插入","attempt":1,"start":"2026-10-06T16:26:15.503Z","ack":true,"pass":true,"evidence":"marker=true extra([EN])=true len=1374","secs":265}
+{"id":"W09","lane":"wps","desc":"文末新建表格","attempt":2,"start":"2026-10-06T16:35:07.395Z","ack":true,"pass":false,"evidence":"tables={\"ok\":true,\"total\":1,\"returned\":1,\"items\":[{\"tableIndex\":1,\"rows\":3,\"cols\":3,\"range\":{\"start\":756,\"end\":768},\"headerSnip marker=false","secs":243}
+{"id":"W10","lane":"wps","desc":"全文统计报告（只读）","attempt":1,"start":"2026-10-06T16:39:13.555Z","ack":true,"pass":true,"evidence":"marker=true extra(统计)=true len=1434","secs":78}
+{"id":"W11","lane":"wps","desc":"全文校对并落批注","attempt":2,"start":"2026-10-06T16:47:24.731Z","ack":true,"pass":false,"evidence":"comments=0 marker=true","secs":308}
+{"id":"W12","lane":"wps","desc":"定点添加批注","attempt":1,"start":"2026-10-06T16:52:35.604Z","ack":true,"pass":true,"evidence":"marker=true  len=234","secs":22}
+{"id":"W13","lane":"wps","desc":"批注清单报告","attempt":1,"start":"2026-10-06T16:53:00.825Z","ack":true,"pass":true,"evidence":"marker=true  len=243","secs":105}
+{"id":"W14","lane":"wps","desc":"删除一条批注","attempt":1,"start":"2026-10-06T16:54:48.536Z","ack":true,"pass":true,"evidence":"批注已删=true marker=true 剩余=0","secs":207}
+{"id":"W15","lane":"wps","desc":"开启修订并修改一处","attempt":1,"start":"2026-10-06T16:58:18.060Z","ack":true,"pass":true,"evidence":"revisions=3 marker=true","secs":232}
+{"id":"W16","lane":"wps","desc":"接受全部修订","attempt":1,"start":"2026-10-06T17:02:13.057Z","ack":true,"pass":true,"evidence":"revisions=0 marker=true","secs":78}
+{"id":"W09","lane":"wps","desc":"文末新建表格","attempt":2,"start":"2026-10-06T17:13:12.481Z","ack":true,"pass":false,"evidence":"tables={\"ok\":true,\"total\":1,\"returned\":1,\"items\":[{\"tableIndex\":1,\"rows\":3,\"cols\":3,\"range\":{\"start\":756,\"end\":796},\"headerSnip marker=false","secs":243}
+{"id":"W11","lane":"wps","desc":"全文校对并落批注","attempt":2,"start":"2026-10-06T17:22:30.020Z","ack":true,"pass":false,"evidence":"comments=0 marker=true","secs":302}
+{"id":"W17","lane":"wps","desc":"占位符检查（只读）","attempt":1,"start":"2026-10-06T17:27:34.711Z","ack":true,"pass":true,"evidence":"marker=true extra(TODO)=true len=281","secs":13}
+{"id":"W18","lane":"wps","desc":"错别字定点替换","attempt":1,"start":"2026-10-06T17:27:50.628Z","ack":true,"pass":true,"evidence":"marker=true  len=289","secs":13}
+{"id":"W19","lane":"wps","desc":"术语统一（登陆→登录）","attempt":1,"start":"2026-10-06T17:28:06.540Z","ack":true,"pass":true,"evidence":"无残留登陆=true marker=true","secs":13}
+{"id":"W20","lane":"wps","desc":"半角标点规范化","attempt":2,"start":"2026-10-06T17:32:30.284Z","ack":true,"pass":true,"evidence":"marker=true  len=305","secs":18}
+{"id":"W21","lane":"wps","desc":"标题加粗","attempt":2,"start":"2026-10-06T17:37:03.750Z","ack":true,"pass":true,"evidence":"marker=true  len=134","secs":9}
+{"id":"W22","lane":"wps","desc":"关键词颜色字号","attempt":1,"start":"2026-10-06T17:37:15.427Z","ack":true,"pass":true,"evidence":"marker=true  len=141","secs":22}
+{"id":"W23","lane":"wps","desc":"段落居中","attempt":1,"start":"2026-10-06T17:37:39.955Z","ack":true,"pass":true,"evidence":"marker=true  len=148","secs":9}
+{"id":"W24","lane":"wps","desc":"全文行距","attempt":2,"start":"2026-10-06T17:41:59.167Z","ack":true,"pass":true,"evidence":"marker=true  len=156","secs":17}
+{"id":"W25","lane":"wps","desc":"标题样式应用","attempt":1,"start":"2026-10-06T17:42:19.362Z","ack":true,"pass":true,"evidence":"marker=true  len=163","secs":68}
+{"id":"W26","lane":"wps","desc":"样式清单与审计","attempt":1,"start":"2026-10-06T17:43:30.613Z","ack":true,"pass":true,"evidence":"marker=true  len=165","secs":9}
+{"id":"W27","lane":"wps","desc":"系统字体查询","attempt":2,"start":"2026-10-06T17:47:50.241Z","ack":true,"pass":true,"evidence":"marker=true  len=172","secs":9}
+{"id":"W28","lane":"wps","desc":"首行缩进","attempt":1,"start":"2026-10-06T17:48:02.528Z","ack":true,"pass":true,"evidence":"marker=true  len=180","secs":23}
+{"id":"W29","lane":"wps","desc":"格式读取报告","attempt":2,"start":"2026-10-06T17:52:38.639Z","ack":true,"pass":true,"evidence":"marker=true  len=190","secs":9}
+{"id":"W30","lane":"wps","desc":"关键词高亮","attempt":1,"start":"2026-10-06T17:52:50.319Z","ack":true,"pass":true,"evidence":"marker=true  len=198","secs":9}
+{"id":"W31","lane":"wps","desc":"插入目录","attempt":1,"start":"2026-10-06T17:53:06.537Z","ack":true,"pass":true,"evidence":"marker=true  len=276","secs":9}
+{"id":"W32","lane":"wps","desc":"更新目录","attempt":2,"start":"2026-10-06T17:57:26.028Z","ack":true,"pass":true,"evidence":"marker=true  len=283","secs":9}
+{"id":"W33","lane":"wps","desc":"书签清单","attempt":1,"start":"2026-10-06T17:57:37.700Z","ack":true,"pass":true,"evidence":"书签含察元书签=true marker=true","secs":9}
+{"id":"W34","lane":"wps","desc":"书签跳转","attempt":1,"start":"2026-10-06T17:57:49.820Z","ack":true,"pass":true,"evidence":"marker=true  len=298","secs":9}
+{"id":"W35","lane":"wps","desc":"插入分页符","attempt":2,"start":"2026-10-06T18:02:09.211Z","ack":true,"pass":false,"evidence":"marker=false  len=300","secs":243}
+{"id":"W36","lane":"wps","desc":"文末空白页","attempt":1,"start":"2026-10-06T18:06:15.235Z","ack":true,"pass":true,"evidence":"marker=true  len=277","secs":9}
+{"id":"W37","lane":"wps","desc":"页面设置横向","attempt":1,"start":"2026-10-06T18:06:26.917Z","ack":true,"pass":true,"evidence":"marker=true  len=284","secs":9}
+{"id":"W38","lane":"wps","desc":"分栏","attempt":1,"start":"2026-10-06T18:06:38.585Z","ack":true,"pass":true,"evidence":"marker=true  len=292","secs":9}
+{"id":"W39","lane":"wps","desc":"大纲结构报告","attempt":2,"start":"2026-10-06T18:10:58.155Z","ack":true,"pass":true,"evidence":"marker=true  len=300","secs":9}
+{"id":"W40","lane":"wps","desc":"定位到章节","attempt":1,"start":"2026-10-06T18:11:09.876Z","ack":true,"pass":true,"evidence":"marker=true  len=310","secs":9}
+{"id":"W41","lane":"wps","desc":"网络搜图并插入","attempt":2,"start":"2026-10-06T18:16:33.127Z","ack":true,"pass":true,"evidence":"marker=true  len=102","secs":13}
+{"id":"W42","lane":"wps","desc":"AI 生图并插入","attempt":2,"start":"2026-10-06T18:22:56.419Z","ack":true,"pass":false,"evidence":"images=1(需≥2) marker=false","secs":362}
+{"id":"W43","lane":"wps","desc":"图片清单","attempt":2,"start":"2026-10-06T18:33:09.025Z","ack":true,"pass":false,"evidence":"images=1 marker=true","secs":242}
+{"id":"W44","lane":"wps","desc":"导出图片","attempt":1,"start":"2026-10-06T18:37:14.442Z","ack":true,"pass":true,"evidence":"file=false marker=true","secs":30}
+{"id":"W45","lane":"wps","desc":"删除图片","attempt":2,"start":"2026-10-06T18:41:55.162Z","ack":true,"pass":true,"evidence":"images=0(前=1，应-1) marker=true","secs":14}
+{"id":"W46","lane":"wps","desc":"添加超链接","attempt":1,"start":"2026-10-06T18:42:12.586Z","ack":true,"pass":true,"evidence":"超链接=true marker=true","secs":9}
+{"id":"W47","lane":"wps","desc":"超链接清单","attempt":1,"start":"2026-10-06T18:42:24.553Z","ack":true,"pass":true,"evidence":"marker=true  len=152","secs":9}
+{"id":"W48","lane":"wps","desc":"删除超链接","attempt":2,"start":"2026-10-06T18:46:43.822Z","ack":true,"pass":true,"evidence":"marker=true  len=160","secs":9}
+{"id":"W49","lane":"wps","desc":"表格题注","attempt":2,"start":"2026-10-06T18:51:03.503Z","ack":true,"pass":true,"evidence":"marker=true extra(表1)=true len=190","secs":9}
+{"id":"W50","lane":"wps","desc":"插入 SEQ 域","attempt":2,"start":"2026-10-06T18:56:23.145Z","ack":true,"pass":true,"evidence":"marker=true  len=198","secs":21}
+{"id":"W51","lane":"wps","desc":"设置页眉","attempt":2,"start":"2026-10-06T19:00:58.143Z","ack":true,"pass":true,"evidence":"页眉命中=true marker=true","secs":9}
+{"id":"W52","lane":"wps","desc":"设置页脚","attempt":1,"start":"2026-10-06T19:01:10.124Z","ack":true,"pass":true,"evidence":"页脚命中=true marker=true","secs":9}
+{"id":"W53","lane":"wps","desc":"读取页眉页脚","attempt":1,"start":"2026-10-06T19:01:22.090Z","ack":true,"pass":true,"evidence":"marker=true  len=483","secs":21}
+{"id":"W54","lane":"wps","desc":"设置水印","attempt":1,"start":"2026-10-06T19:01:46.536Z","ack":true,"pass":true,"evidence":"marker=true  len=490","secs":9}
+{"id":"W55","lane":"wps","desc":"清除水印","attempt":2,"start":"2026-10-06T19:06:05.829Z","ack":true,"pass":true,"evidence":"marker=true  len=498","secs":9}
+{"id":"W56","lane":"wps","desc":"保存文档","attempt":1,"start":"2026-10-06T19:06:17.489Z","ack":true,"pass":true,"evidence":"marker=true  len=506","secs":17}
+{"id":"W57","lane":"wps","desc":"导出 PDF","attempt":2,"start":"2026-10-06T19:11:43.664Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":739}
+{"id":"W58","lane":"wps","desc":"表格导出","attempt":2,"start":"2026-10-06T19:36:29.817Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":739}
+{"id":"W59","lane":"wps","desc":"段落级批量替换","attempt":2,"start":"2026-10-06T20:01:15.925Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":739}
+{"id":"W60","lane":"wps","desc":"脱敏预览与应用","attempt":2,"start":"2026-10-06T20:18:55.049Z","ack":true,"pass":false,"evidence":"手机号已脱=false marker=true","secs":302}
+{"id":"W61","lane":"wps","desc":"脱敏还原","attempt":2,"start":"2026-10-06T20:29:07.432Z","ack":true,"pass":true,"evidence":"手机号已还原=true marker=true","secs":17}
+{"id":"X01","lane":"wps","desc":"助手配方域检索","attempt":1,"start":"2026-10-06T20:29:31.931Z","ack":true,"pass":true,"evidence":"marker=true  len=514","secs":9}
+{"id":"X02","lane":"wps","desc":"知识库检索（无库时优雅降级）","attempt":2,"start":"2026-10-06T20:33:51.212Z","ack":true,"pass":true,"evidence":"marker=true  len=521","secs":9}
+{"id":"X05","lane":"wps","desc":"字体服务","attempt":1,"start":"2026-10-06T20:34:02.882Z","ack":true,"pass":true,"evidence":"marker=true  len=528","secs":9}
+{"id":"X03","lane":"wps","desc":"跨宿主取数：表格→Writer 报告","attempt":2,"start":"2026-10-06T20:39:21.943Z","ack":true,"pass":false,"evidence":"S03!F2= 文档含值= marker=true","secs":303}
+{"id":"X06","lane":"wps","desc":"独立搜图服务","attempt":1,"start":"2026-10-06T20:44:27.562Z","ack":true,"pass":true,"evidence":"marker=true  len=658","secs":9}
+{"id":"W09","lane":"wps","desc":"文末新建表格","attempt":2,"start":"2026-10-07T16:24:56.173Z","ack":true,"pass":false,"evidence":"tables={\"ok\":true,\"total\":0,\"returned\":0,\"items\":[],\"document\":{\"open\":true,\"name\":\"doc-A-内容.docx\",\"fullName\":\"/Users/zyh/work/ marker=false","secs":243}
+{"id":"W35","lane":"wps","desc":"插入分页符","attempt":2,"start":"2026-10-07T16:33:22.829Z","ack":true,"pass":false,"evidence":"marker=false  len=369","secs":243}
+{"id":"W09","lane":"wps","desc":"文末新建表格","attempt":2,"start":"2026-10-07T16:41:46.618Z","ack":true,"pass":false,"evidence":"tables={\"ok\":true,\"total\":1,\"returned\":1,\"items\":[{\"tableIndex\":1,\"rows\":2,\"cols\":3,\"range\":{\"start\":40,\"end\":64},\"headerSnippe marker=false","secs":548}
+{"id":"W42","lane":"wps","desc":"AI 生图并插入","attempt":2,"start":"2026-10-07T16:47:49.690Z","ack":true,"pass":false,"evidence":"images=0(需≥2) marker=false","secs":364}
+{"id":"W43","lane":"wps","desc":"图片清单","attempt":2,"start":"2026-10-07T16:58:40.583Z","ack":true,"pass":false,"evidence":"images=0 marker=false","secs":555}
+{"id":"W57","lane":"wps","desc":"导出 PDF","attempt":2,"start":"2026-10-07T17:13:45.528Z","ack":true,"pass":false,"evidence":"pdf=false size=0 marker=false","secs":322}
+{"id":"W58","lane":"wps","desc":"表格导出","attempt":2,"start":"2026-10-07T17:24:27.600Z","ack":true,"pass":false,"evidence":"csv=false marker=false","secs":471}
+{"id":"W60","lane":"wps","desc":"脱敏预览与应用","attempt":2,"start":"2026-10-07T17:38:57.200Z","ack":true,"pass":false,"evidence":"手机号已脱=false marker=false","secs":319}
+{"id":"X03","lane":"wps","desc":"跨宿主取数：表格→Writer 报告","attempt":2,"start":"2026-10-07T17:50:53.162Z","ack":true,"pass":false,"evidence":"S03!F2= 文档含值= marker=false","secs":327}

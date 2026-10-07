@@ -22,3 +22,55 @@
 {"id":"NP15","lane":"wpp","desc":"配方 wpp-mfg-sop 设备操作SOP页","attempt":2,"start":"2026-10-02T09:44:51.832Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
 {"id":"NP16","lane":"wpp","desc":"配方 wpp-fin-roadshow 投资者路演","attempt":2,"start":"2026-10-02T09:45:38.103Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
 {"id":"NP17","lane":"wpp","desc":"配方 wpp-fin-compliance 合规内训课件","attempt":2,"start":"2026-10-02T09:46:24.332Z","pass":false,"evidence":"chat_turn 未接单: {\"code\":\"WPS_AGENT_OFFLINE\",\"message\":\"WPS Agent offline\"}","secs":18}
+{"id":"NP01","lane":"wpp","desc":"配方 wpp-proof 整套校对","attempt":1,"start":"2026-10-07T07:20:16.234Z","ack":true,"pass":true,"evidence":"末页 marker=true shapes=3","secs":27}
+{"id":"NP02","lane":"wpp","desc":"配方 wpp-structure 结构诊断","attempt":1,"start":"2026-10-07T07:20:48.735Z","ack":true,"pass":true,"evidence":"末页 marker=true shapes=4","secs":32}
+{"id":"NP03","lane":"wpp","desc":"配方 wpp-translate 整套翻译（英）","attempt":1,"start":"2026-10-07T07:21:25.700Z","ack":true,"pass":true,"evidence":"标题英文命中=true 旧中文标题残留=false | 察元AI 2026 Autumn Business Review / Product Introduction / Sales Performance / 客户案例 / 团队介绍 / 销售区域战报","secs":52}
+{"id":"NP04","lane":"wpp","desc":"配方 wpp-notes-timed 口播稿（8 分钟版）","attempt":2,"start":"2026-10-07T07:32:30.785Z","ack":true,"pass":true,"evidence":"第1页 marker=true shapes=3","secs":9}
+{"id":"NP05","lane":"wpp","desc":"配方 wpp-footer 页码页脚统一","attempt":1,"start":"2026-10-07T07:32:45.267Z","ack":true,"pass":true,"evidence":"P1 marker=true P2 页脚=true","secs":14}
+{"id":"NP06","lane":"wpp","desc":"配方 wpp-scaffold 结构件补齐","attempt":2,"start":"2026-10-07T07:43:26.631Z","ack":true,"pass":true,"evidence":"目录=true 感谢/谢谢=true slides=10","secs":82}
+{"id":"NP07","lane":"wpp","desc":"配方 wpp-to-doc 转讲义文档（跨宿主写 Word）","attempt":2,"start":"2026-10-07T07:55:08.405Z","ack":true,"pass":false,"evidence":"doc 含标记=false len=249","secs":609}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-07T08:15:39.209Z","ack":true,"pass":false,"evidence":"slides 13→13（需+4） marker=false","secs":611}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-07T08:36:06.978Z","ack":true,"pass":false,"evidence":"slides 16→7（需+3） marker=false","secs":607}
+{"id":"NP10","lane":"wpp","desc":"配方 wpp-gov-safetyedu 安全警示教育课件","attempt":2,"start":"2026-10-07T08:56:30.392Z","pass":false,"evidence":"ENOSPC: no space left on device, open '/Users/zyh/work/chayuan-wps/artifacts/e2e-180/.llm.lock'","secs":1}
+{"id":"NP11","lane":"wpp","desc":"配方 wpp-med-mdt 病例讨论课件","attempt":2,"start":"2026-10-07T08:56:42.769Z","pass":false,"evidence":"ENOSPC: no space left on device, open '/Users/zyh/work/chayuan-wps/artifacts/e2e-180/.llm.lock'","secs":1}
+{"id":"NP13","lane":"wpp","desc":"配方 wpp-med-dept 科室年度汇报","attempt":2,"start":"2026-10-07T09:14:27.806Z","ack":true,"pass":false,"evidence":"slides 10→14（需+3） marker=false","secs":605}
+{"id":"NP14","lane":"wpp","desc":"配方 wpp-mfg-safety 安全生产培训课件","attempt":1,"start":"2026-10-07T09:24:38.169Z","ack":true,"pass":true,"evidence":"slides 14→20（需+3） marker=true","secs":108}
+{"id":"NP15","lane":"wpp","desc":"配方 wpp-mfg-sop 设备操作SOP页","attempt":1,"start":"2026-10-07T09:26:31.237Z","ack":true,"pass":true,"evidence":"slides 20→25（需+2） marker=true","secs":132}
+{"id":"NP16","lane":"wpp","desc":"配方 wpp-fin-roadshow 投资者路演","attempt":2,"start":"2026-10-07T09:39:08.018Z","ack":true,"pass":false,"evidence":"slides 25→33（需+4） marker=false","secs":617}
+{"id":"NP17","lane":"wpp","desc":"配方 wpp-fin-compliance 合规内训课件","attempt":2,"start":"2026-10-07T09:59:44.513Z","ack":true,"pass":false,"evidence":"slides 39→39（需+3） marker=true","secs":615}
+{"id":"NP18","lane":"wpp","desc":"配方 wpp-fin-product 产品说明会","attempt":1,"start":"2026-10-07T10:10:04.397Z","ack":true,"pass":true,"evidence":"slides 39→45（需+3） marker=true","secs":158}
+{"id":"NP19","lane":"wpp","desc":"配方 wpp-ec-battle 大促战报页","attempt":2,"start":"2026-10-07T10:23:07.613Z","ack":true,"pass":true,"evidence":"slides 48→51（需+2） marker=true","secs":252}
+{"id":"NP20","lane":"wpp","desc":"配方 wpp-ec-live-script 直播脚本分镜","attempt":2,"start":"2026-10-07T10:37:48.277Z","ack":true,"pass":true,"evidence":"slides 55→59（需+2） marker=true","secs":182}
+{"id":"NP21","lane":"wpp","desc":"配方 wpp-edu-parents 家长会课件","attempt":2,"start":"2026-10-07T10:51:28.975Z","ack":true,"pass":true,"evidence":"slides 59→65（需+2） marker=true","secs":181}
+{"id":"NP23","lane":"wpp","desc":"配方 wpp-edu-class 主题班会课件","attempt":1,"start":"2026-10-07T11:20:27.617Z","ack":true,"pass":true,"evidence":"slides 60→65（需+2） marker=true","secs":185}
+{"id":"NP24","lane":"wpp","desc":"配方 wpp-realestate 楼盘推介","attempt":2,"start":"2026-10-07T11:34:09.103Z","ack":true,"pass":true,"evidence":"slides 71→76（需+3） marker=true","secs":181}
+{"id":"NP25","lane":"wpp","desc":"配方 wpp-wed-flow 婚礼流程页","attempt":2,"start":"2026-10-07T11:47:51.120Z","ack":true,"pass":false,"evidence":"slides 79→83（需+2） marker=false","secs":620}
+{"id":"NP26","lane":"wpp","desc":"配方 wpp-event-plan 活动执行方案","attempt":2,"start":"2026-10-07T12:08:46.643Z","ack":true,"pass":false,"evidence":"slides 87→92（需+2） marker=false","secs":645}
+{"id":"NP27","lane":"wpp","desc":"配方 wpp-food-new 新品推介页","attempt":1,"start":"2026-10-07T12:19:34.439Z","ack":true,"pass":true,"evidence":"slides 92→96（需+2） marker=true","secs":417}
+{"id":"NP28","lane":"wpp","desc":"配方 wpp-img-web 搜图配图","attempt":2,"start":"2026-10-07T12:37:32.577Z","ack":true,"pass":false,"evidence":"slides 96→96 末页形状 4→4（需+1）","secs":638}
+{"id":"NP29","lane":"wpp","desc":"配方 wpp-img-model AI生图配图","attempt":2,"start":"2026-10-07T12:59:10.188Z","ack":true,"pass":false,"evidence":"slides 96→96 末页形状 4→4（需+1）","secs":652}
+{"id":"NP30","lane":"wpp","desc":"配方 wpp-img-svg 矢量图标装饰","attempt":2,"start":"2026-10-07T13:21:04.278Z","ack":true,"pass":false,"evidence":"slides 96→96 末页形状 4→4（需+2）","secs":653}
+{"id":"BT-P1","lane":"wpp","desc":"顶部·生成PPT（对话流）","attempt":1,"start":"2026-10-07T14:20:18.488Z","ack":true,"pass":true,"evidence":"slides 96→99（需+3） marker=true","secs":244}
+{"id":"BT-P2","lane":"wpp","desc":"顶部·整套摘要（autoSend）","attempt":1,"start":"2026-10-07T14:24:25.988Z","ack":true,"pass":true,"evidence":"核心要点页=true","secs":175}
+{"id":"BT-P3","lane":"wpp","desc":"顶部·美化统一（autoSend）","attempt":1,"start":"2026-10-07T14:27:23.819Z","ack":true,"pass":true,"evidence":"回合完成（末页形状 3，format_uniform 无读回通道，以回合成功为准）","secs":53}
+{"id":"BT-P4","lane":"wpp","desc":"顶部·口播稿（autoSend）","attempt":1,"start":"2026-10-07T14:28:19.665Z","ack":true,"pass":true,"evidence":"回合完成（notes_set 无读回通道，以回合成功为准；末页形状 3）","secs":36}
+{"id":"BT-P5","lane":"wpp","desc":"顶部·保密检查（autoSend）","attempt":1,"start":"2026-10-07T14:28:58.456Z","ack":true,"pass":true,"evidence":"末页清单命中=true","secs":561}
+{"id":"BT-P6","lane":"wpp","desc":"顶部·结构诊断（autoSend）——已过 NP02，此处复核按钮提示词","attempt":2,"start":"2026-10-07T14:46:43.801Z","ack":true,"pass":false,"evidence":"末页摘要命中=false","secs":499}
+{"id":"BT-P7","lane":"wpp","desc":"顶部·整套翻译（下拉）——已过 NP03，复核按钮提示词","attempt":2,"start":"2026-10-07T15:03:36.091Z","ack":true,"pass":true,"evidence":"TRANSLATED 标记=true","secs":43}
+{"id":"BT-P8","lane":"wpp","desc":"顶部·课件生成（下拉）","attempt":2,"start":"2026-10-07T15:15:10.345Z","ack":true,"pass":false,"evidence":"slides 104→107（需+4） marker=false","secs":653}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-07T17:09:20.869Z","ack":true,"pass":false,"evidence":"slides 111→111（需+4） marker=false","secs":653}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-07T17:31:15.066Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":650}
+{"id":"NP10","lane":"wpp","desc":"配方 wpp-gov-safetyedu 安全警示教育课件","attempt":2,"start":"2026-10-07T17:53:04.924Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":629}
+{"id":"NP08","lane":"wpp","desc":"配方 wpp-gov-rectify 整改汇报","attempt":2,"start":"2026-10-07T18:10:12.869Z","ack":true,"pass":false,"evidence":"slides 111→111（需+4） marker=false","secs":647}
+{"id":"NP13","lane":"wpp","desc":"配方 wpp-med-dept 科室年度汇报","attempt":2,"start":"2026-10-07T18:15:08.794Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":647}
+{"id":"NP09","lane":"wpp","desc":"配方 wpp-gov-livelihood 民生实事汇报","attempt":2,"start":"2026-10-07T18:31:56.662Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":647}
+{"id":"NP16","lane":"wpp","desc":"配方 wpp-fin-roadshow 投资者路演","attempt":2,"start":"2026-10-07T18:36:52.502Z","ack":true,"pass":false,"evidence":"slides 111→111（需+4） marker=false","secs":647}
+{"id":"NP10","lane":"wpp","desc":"配方 wpp-gov-safetyedu 安全警示教育课件","attempt":2,"start":"2026-10-07T18:53:40.479Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":647}
+{"id":"NP17","lane":"wpp","desc":"配方 wpp-fin-compliance 合规内训课件","attempt":2,"start":"2026-10-07T18:58:36.292Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":647}
+{"id":"NP13","lane":"wpp","desc":"配方 wpp-med-dept 科室年度汇报","attempt":2,"start":"2026-10-07T19:15:24.151Z","ack":true,"pass":false,"evidence":"slides 111→111（需+3） marker=false","secs":647}
+{"id":"NP25","lane":"wpp","desc":"配方 wpp-wed-flow 婚礼流程页","attempt":2,"start":"2026-10-07T19:20:20.021Z","ack":true,"pass":false,"evidence":"slides 111→111（需+2） marker=false","secs":647}
+{"id":"NP25","lane":"wpp","desc":"配方 wpp-wed-flow 婚礼流程页","attempt":2,"start":"2026-10-07T19:37:08.034Z","ack":true,"pass":false,"evidence":"slides 111→111（需+2） marker=false","secs":647}
+{"id":"NP26","lane":"wpp","desc":"配方 wpp-event-plan 活动执行方案","attempt":2,"start":"2026-10-07T19:42:03.876Z","ack":true,"pass":false,"evidence":"slides 111→111（需+2） marker=false","secs":647}
+{"id":"NP26","lane":"wpp","desc":"配方 wpp-event-plan 活动执行方案","attempt":2,"start":"2026-10-07T19:59:02.257Z","ack":true,"pass":false,"evidence":"slides 111→111（需+2） marker=false","secs":657}
+{"id":"NP28","lane":"wpp","desc":"配方 wpp-img-web 搜图配图","attempt":2,"start":"2026-10-07T20:04:58.172Z","ack":true,"pass":false,"evidence":"slides 111→111 末页形状 1→1（需+1）","secs":668}
+{"id":"NP28","lane":"wpp","desc":"配方 wpp-img-web 搜图配图","attempt":1,"start":"2026-10-07T20:10:02.566Z","ack":true,"pass":true,"evidence":"slides 111→111 末页形状 1→2（需+1）","secs":512}

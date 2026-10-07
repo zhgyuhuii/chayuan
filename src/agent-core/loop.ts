@@ -1,7 +1,9 @@
 import type { AgentSkill, ExecutedToolCall } from './skill'
 import type {
+  AgentAudio,
   AgentImage,
   AgentMessage,
+  AgentVideo,
   AgentStreamHandle,
   AgentToolCall,
   AgentToolDef,
@@ -431,6 +433,12 @@ function messageSize(m: AgentMessage): number {
   if (m.role === 'user' && m.images) {
     n += m.images.reduce((s, img) => s + img.base64.length, 0)
   }
+  if (m.role === 'user' && m.audio) {
+    n += m.audio.reduce((s, a) => s + a.base64.length, 0)
+  }
+  if (m.role === 'user' && m.video) {
+    n += m.video.reduce((s, v) => s + (v.base64?.length ?? 0), 0)
+  }
   if (m.role === 'assistant' && m.toolCalls) {
     for (const c of m.toolCalls) {
       try {
@@ -480,19 +488,6 @@ export class AgentLoop<TSnapshot = unknown> {
   private lastTurnSig = ''
   private identicalTurns = 0
   private allErrorTurns = 0
-  /**
-   * Degraded mode ("compatibility mode"): the operator model cannot issue
-   * protocol tool_calls, so turns run without wire tools and the model acts by
-   * emitting JSON text (parseDegradedToolCalls). Set statically via degrade()
-   * (capability matrix) or dynamically by the silent-turn probe below.
-   */
-  private degraded = false
-  /** a probe turn is in flight: tools are withheld and the reply is parsed for JSON tool calls */
-  private degradedProbe = false
-  /** the probe ran once for this loop instance; a failed probe is never retried (model just talks) */
-  private probeUsed = false
-  /** consecutive zero-tool turns within the current run */
-  private silentTurns = 0
   private turnStopReason: string | null = null
   private turnText = ''
   private turnReasoning = ''
@@ -507,6 +502,19 @@ export class AgentLoop<TSnapshot = unknown> {
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
   private abortController: AbortController | null = null
+  /**
+   * Degraded mode ("compatibility mode"): the operator model cannot issue
+   * protocol tool_calls, so turns run without wire tools and the model acts by
+   * emitting JSON text (parseDegradedToolCalls). Set statically via degrade()
+   * (capability matrix) or dynamically by the silent-turn probe below.
+   */
+  private degraded = false
+  /** a probe turn is in flight: tools are withheld and the reply is parsed for JSON tool calls */
+  private degradedProbe = false
+  /** the probe ran once for this loop instance; a failed probe is never retried (model just talks) */
+  private probeUsed = false
+  /** consecutive zero-tool turns within the current run */
+  private silentTurns = 0
 
   constructor(options: AgentLoopOptions<TSnapshot>) {
     this.options = options
@@ -514,10 +522,6 @@ export class AgentLoop<TSnapshot = unknown> {
 
   get busy(): boolean {
     return this.running
-  }
-
-  get messages(): readonly AgentMessage[] {
-    return this.history
   }
 
   /** true while this loop runs in degraded (JSON-text protocol) mode */
@@ -534,6 +538,10 @@ export class AgentLoop<TSnapshot = unknown> {
     if (this.options.skill.degradedFallback?.() == null) return false
     this.degraded = true
     return true
+  }
+
+  get messages(): readonly AgentMessage[] {
+    return this.history
   }
 
   /**
@@ -600,8 +608,17 @@ export class AgentLoop<TSnapshot = unknown> {
     this.trimHistory()
   }
 
-  /** images: inline attachments for this user turn (vision input; see AgentImage) */
-  run(instruction: string, images?: AgentImage[]): void {
+  /**
+   * images/audio/video: inline attachments for this user turn (multimodal
+   * input; see AgentImage/AgentAudio/AgentVideo). Protocol converters reject
+   * parts their wire format cannot carry — gate with the capability matrix
+   * (resolveModelCapabilities().audioInput/videoInput) before calling.
+   */
+  run(
+    instruction: string,
+    images?: AgentImage[],
+    media?: { audio?: AgentAudio[]; video?: AgentVideo[] },
+  ): void {
     if (this.running || !instruction) return
     this.running = true
     this.cancelled = false
@@ -636,6 +653,8 @@ export class AgentLoop<TSnapshot = unknown> {
         role: 'user',
         text: format(instruction, context),
         ...(images?.length ? { images } : {}),
+        ...(media?.audio?.length ? { audio: media.audio } : {}),
+        ...(media?.video?.length ? { video: media.video } : {}),
       }
       void this.beginRun(userMsg)
     } catch (err) {
@@ -899,12 +918,12 @@ export class AgentLoop<TSnapshot = unknown> {
     this.turnReasoning = ''
     this.toolCalls = []
     this.turnStopReason = null
-    // Some transports emit an extra onDone after cancel — this turn may finalize only once
-    let settled = false
     // Degraded turns withhold wire tools entirely (a no-FC model would ignore
     // them anyway) and append the skill's JSON-text protocol to the system prompt.
     const degradedTurn = this.degraded || this.degradedProbe
     const degradedFallback = degradedTurn ? this.options.skill.degradedFallback?.() : null
+    // Some transports emit an extra onDone after cancel — this turn may finalize only once
+    let settled = false
     try {
       this.handle = this.options.transport.stream(
         {
@@ -1094,7 +1113,7 @@ export class AgentLoop<TSnapshot = unknown> {
       // prompt: Anthropic rejects empty content arrays, Gemini rejects empty
       // parts, and OpenAI-compatible routes send content:null with no tool_calls —
       // all of which make follow-up turns fail or return empty again (see
-      // genoffice#12 / #22: first prompt works, second shows "no summary").
+      // chatoffice#12 / #22: first prompt works, second shows "no summary").
       // Same normalization as restore(), applied unconditionally: cancelled and
       // read-only empty turns poison follow-ups just the same. onDone still
       // reports the raw turn text so app UIs keep their localized fallbacks
@@ -1127,6 +1146,10 @@ export class AgentLoop<TSnapshot = unknown> {
     this.history.push({
       role: 'assistant',
       text: this.turnText || COMPLETED_VIA_TOOLS_TEXT,
+      // 察元本地补丁（fork 764fa206 缺这段）：降级模式必须把 tool_calls 挡在
+      // assistant 消息之外——no-FC 模型 API 既拒绝 assistant.tool_calls，也拒绝
+      // 「有 tool_calls 却无后续 role:'tool' 消息」的转录；下面的结果折叠是
+      // user 消息，配不上对，第二轮必 400。FC 路径保持原样。
       ...(this.degraded || this.degradedProbe
         ? {}
         : {
