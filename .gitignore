@@ -56,3 +56,5 @@ release/.mac-scripts
 
 # 本地下载的安装包（wps-office 等）不入库
 /*.deb
+artifacts/e2e-180/
+artifacts/e2e-v2/shots/
