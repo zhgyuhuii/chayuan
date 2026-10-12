@@ -1,4 +1,5 @@
 import { activateDialogWindow } from './windowActivation.js'
+import { detectAddonType } from './host/hostType.js'
 
 const LOCK_KEY = 'nd_settings_window_lock'
 const REQUEST_KEY = 'nd_settings_window_request'
@@ -48,9 +49,14 @@ function normalizeQuery(query) {
   // 之前白名单只保留 menu 和 item,sub 在窗口间传递的过程中被丢,导致点击"前往设置"
   // 跳到设置页但停留在默认子页,看不到知识库设置。
   const sub = String(query?.sub || '').trim()
+  // host:打开方所在宿主(wps/et/wpp)。设置窗口是独立 ShowDialog webview,其内
+  // window.Application 注入时机不可靠——由调用方(ribbon/助手面板,宿主判定可靠)
+  // 显式传入,设置页据此对助手设置清单做宿主分流。
+  const host = String(query?.host || '').trim().toLowerCase()
   if (menu) normalized.menu = menu
   if (item) normalized.item = item
   if (sub) normalized.sub = sub
+  if (host) normalized.host = host
   return normalized
 }
 
@@ -95,7 +101,12 @@ export function focusExistingSettingsWindow(query = {}) {
 }
 
 export function openSettingsWindow(query = {}, options = {}) {
-  const normalizedQuery = normalizeQuery(query)
+  // host 默认取调用方 webview 的宿主判定(调用方可显式覆盖)。新窗口走 URL 参数、
+  // 已开窗口走焦点请求,两条通道都会把 host 带给设置窗口。
+  const normalizedQuery = {
+    host: detectAddonType(),
+    ...normalizeQuery(query)
+  }
   if (focusExistingSettingsWindow(normalizedQuery)) return true
   const title = String(options?.title || '设置').trim() || '设置'
   // 2026-06-03:设置窗口尺寸的【唯一真源】。全部 7 个入口都走本方法。

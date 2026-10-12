@@ -23,6 +23,7 @@ export {
   DEFAULT_MAX_TURNS,
   parseDegradedToolCalls,
   TOOL_ABORTED_OUTPUT,
+  coerceArgumentFields,
   invalidArgumentFields,
   missingRequiredFields,
   runtimePreamble,

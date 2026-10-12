@@ -123,6 +123,8 @@ ${rmOld}
 echo copying publish.xml...>> "%LOG%"
 copy /Y "publish.xml" "%destination_folder%\\publish.xml" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail_publish
+rem WPS 部分构建按 jsplugins.xml 加载本地插件——与 publish.xml 同步落一份，杜绝升级后残留旧注册
+copy /Y "publish.xml" "%destination_folder%\\jsplugins.xml" >> "%LOG%" 2>&1
 
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
 if not exist "%sidecar_runtime%\\bin" mkdir "%sidecar_runtime%\\bin"

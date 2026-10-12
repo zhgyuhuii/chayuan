@@ -194,6 +194,9 @@ export default {
     showDesktopGuide() {
       // 桌面版在线时不打扰；已探测确认离线、或根本没有任何 KB 连接时，引导用户安装桌面版。
       if (this.desktopState && this.desktopState.online) return false
+      // 知识库已经识别到（树非空，或连接在位正在加载）时不打扰：探测「离线」可能只是
+      // 过时结论，工具栏角标保留轻提示即可，不再弹安装引导
+      if (this.hasConnection && (this.loading || this.tree.some((g) => (g.children || []).length > 0))) return false
       return this.desktopBadge?.tone === 'off' || !this.hasConnection
     },
     selectedNames() {

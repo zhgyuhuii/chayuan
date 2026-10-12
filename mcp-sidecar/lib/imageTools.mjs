@@ -1,7 +1,9 @@
 /* eslint-env node */
 /**
  * 图像工具（三级生图，参考 chayuan-office image-source 体系）：
- *   image_search — 网络搜图（免 key 源：Openverse → DuckDuckGo 兜底），下载到本地返回路径
+ *   image_search — 网络搜图：设置页「网络资源搜索」里启用的 keyed 资源
+ *     （Serper/Pexels/Pixabay/…）按清单顺序优先 → 免 Key 兜底（必应 → Openverse），
+ *     下载到本地返回路径
  *   generate_image — OpenAI 兼容 images/generations 生图（配置：dataDir/image-gen.json）
  *
  * 资金安全铁律（照抄 chayuan-office 共识 #3）：工具只做自己份内的事；来源失败返回
@@ -10,6 +12,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { searchWebImages } from './webResources.mjs'
 
 const OPENVERSE = 'https://api.openverse.org/v1/images/'
 const UA = 'Mozilla/5.0 (compatible; chayuan-wps-imagebot/1.0)'
@@ -30,6 +33,23 @@ async function bingImageSearch(query, maxResults = 8) {
 }
 
 function tmpImageDir(dataDir) {
+  // WPS 是沙盒应用：webview 里 Shapes.AddPicture 只能读自己容器内的文件。
+  // ~/.config/chayuan-wps/mcp/tmp-images（dataDir）在容器外——真机实证
+  // 「插入图片失败：…tmp-images/web-*.jpg（请确认是本地可读路径）」。
+  // Mac 上优先落到 WPS 容器内的 Application Support（sidecar 与 WPS 同用户可读写）。
+  if (process.platform === 'darwin') {
+    const home = process.env.HOME || ''
+    if (home) {
+      const dir = path.join(
+        home, 'Library', 'Containers', 'com.kingsoft.wpsoffice.mac', 'Data',
+        'Library', 'Application Support', 'chayuan-wps', 'tmp-images'
+      )
+      try {
+        fs.mkdirSync(dir, { recursive: true })
+        return dir
+      } catch { /* 容器目录不可建则回落 dataDir */ }
+    }
+  }
   const dir = path.join(dataDir, 'tmp-images')
   fs.mkdirSync(dir, { recursive: true })
   return dir
@@ -75,7 +95,28 @@ export async function imageSearchTool(dataDir, { query, count = 3 } = {}) {
   if (!q) return { ok: false, error: '缺少搜索词 query' }
   const want = Number(count) || 3
   const errors = []
-  // 必应优先（国内可达），Openverse 兜底（海外网络）
+  // ① 设置页「网络资源搜索」启用的 keyed 资源按清单顺序优先（三级生图 Tier2 主力）
+  try {
+    const chain = await searchWebImages(dataDir, q, want * 2)
+    if (chain.ok) {
+      for (const r of chain.candidates.slice(0, want * 2)) {
+        try {
+          const dl = await downloadImage(r.url, dataDir)
+          return {
+            ok: true, source: 'web', query: q, path: dl.path, bytes: dl.bytes,
+            origin: r.source, license: r.license || ''
+          }
+        } catch (e) {
+          errors.push(`${chain.origin}/${String(e.message || e).slice(0, 60)}`)
+        }
+      }
+      errors.push(`${chain.origin}: 搜到 ${chain.candidates.length} 张但下载全败`)
+    }
+    errors.push(...(chain.errors || []))
+  } catch (e) {
+    errors.push(`资源链: ${String(e.message || e).slice(0, 80)}`)
+  }
+  // ② 免 Key 兜底：必应优先（国内可达），Openverse 次之（海外网络）
   for (const search of [bingImageSearch, openverseSearch]) {
     let results = []
     try {
@@ -94,7 +135,7 @@ export async function imageSearchTool(dataDir, { query, count = 3 } = {}) {
     }
     errors.push(`${search.name}: 搜到 ${results.length} 张但下载全败`)
   }
-  return { ok: false, error: `搜图失败（全部来源）：${errors[0] || ''}` }
+  return { ok: false, error: `搜图失败（全部来源）：${errors[0] || ''}`, errors: errors.slice(0, 6) }
 }
 
 /** 生图配置：dataDir/image-gen.json {apiUrl, apiKey, model, size} */

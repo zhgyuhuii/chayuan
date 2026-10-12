@@ -50,6 +50,40 @@ install_all() {
 	done
 }
 
+# 同步 jsplugins.xml：WPS(Linux) 实际按 jsplugins.xml 加载本地插件，publish.xml 只是
+# wpsjs 在线安装清单。只更新本产品三条目，其它插件条目原样保留；旧条目指向已清理
+# 删除的版本目录会让 WPS 加载失败/回退旧缓存。
+sync_jsplugins() {
+	dest="$1"
+	pb="$dest/publish.xml"
+	jp="$dest/jsplugins.xml"
+	if ! test -f "$pb"; then return 0; fi
+	entries="$(grep 'name="chayuan' "$pb" || true)"
+	if test -z "$entries"; then return 0; fi
+	if ! test -f "$jp" || ! grep -q '<jsplugins' "$jp" 2>/dev/null; then
+		{
+			echo '<?xml version="1.0" encoding="UTF-8"?>'
+			echo '<jsplugins>'
+			echo "$entries"
+			echo '</jsplugins>'
+		} > "$jp" 2>/dev/null || return 0
+		chown "$TARGET_USER:$TARGET_USER" "$jp" 2>/dev/null || true
+		echo "chayuan-wps-addon: wrote jsplugins.xml -> $dest"
+		return 0
+	fi
+	tmp="$jp.sync"
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<jsplugins>'
+		grep -v 'name="chayuan' "$jp" 2>/dev/null | grep -v '</jsplugins>' | grep -v '<?xml' || true
+		echo "$entries"
+		echo '</jsplugins>'
+	} > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+	mv -f "$tmp" "$jp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+	chown "$TARGET_USER:$TARGET_USER" "$jp" 2>/dev/null || true
+	echo "chayuan-wps-addon: synced jsplugins.xml -> $dest"
+}
+
 merge_publish_online() {
 	PUBLISH_XML="$1"
 	if test -f "$INSTALL_ROOT/publish-merge-fileurl.py"; then
@@ -109,6 +143,7 @@ do
 		install_all "$ALT" || true
 		cp -f "$INSTALL_ROOT/publish.xml" "$ALT/" || true
 		merge_publish_online "$ALT/publish.xml"
+		sync_jsplugins "$ALT"
 		chmod -R a+rX "$ALT" 2>/dev/null || true
 		cleanup_old_addons "$ALT"
 		echo "chayuan-wps-addon: also copied to $ALT"
@@ -140,6 +175,7 @@ do
 	install_all "$DEST"
 	cp -f "$INSTALL_ROOT/publish.xml" "$DEST/"
 	merge_publish_online "$DEST/publish.xml"
+	sync_jsplugins "$DEST"
 	for FOLDER in "$ADDON_FOLDER" $HOST_FOLDERS; do
 		test -d "$DEST/$FOLDER" && chown -R "$TARGET_USER:$TARGET_USER" "$DEST/$FOLDER" 2>/dev/null || true
 	done

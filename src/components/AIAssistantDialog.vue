@@ -87,7 +87,7 @@
           <button
             type="button"
             class="toolbar-icon-btn"
-            @click="openAssistantSettings('create-custom-assistant')"
+            @click="openAddAssistantSettings"
             title="添加助手"
           >
             <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
@@ -424,9 +424,24 @@
             </span>
           </button>
         </div>
-        <!-- 执行中的任务清单漂浮卡：回合进行中常驻右上角、可折叠/展开；回合结束自动隐藏 -->
+        <!-- 执行中的任务清单漂浮卡：默认收为右上角圆点（运行中轨道转圈动画），
+             旁边带「展开」；点击展开完整清单。无清单（模型未规划）不显示 -->
         <div v-if="mcpTodoFloat" class="mcp-todo-float-anchor">
-          <div class="mcp-todo-float">
+          <button
+            v-if="mcpTodoFloatCollapsed"
+            type="button"
+            class="mcp-todo-dot"
+            :title="`任务清单 ${getMcpTodoDoneCount(mcpTodoFloat)}/${mcpTodoFloatTodos.length} · 点击展开`"
+            @click="mcpTodoFloatCollapsed = false"
+          >
+            <span class="mcp-todo-dot-orbit-box" aria-hidden="true">
+              <span class="mcp-todo-dot-core"></span>
+              <span class="mcp-todo-dot-orbit"></span>
+            </span>
+            <span class="mcp-todo-dot-progress">{{ getMcpTodoDoneCount(mcpTodoFloat) }}/{{ mcpTodoFloatTodos.length }}</span>
+            <span class="mcp-todo-dot-expand">展开 ▴</span>
+          </button>
+          <div v-else class="mcp-todo-float">
             <button
               type="button"
               class="mcp-todo-float-head"
@@ -440,10 +455,6 @@
               <span class="mcp-todo-float-arrow" aria-hidden="true">{{ mcpTodoFloatCollapsed ? '▾' : '▴' }}</span>
             </button>
             <div v-if="!mcpTodoFloatCollapsed" class="mcp-todo-float-body">
-              <div v-if="!mcpTodoFloatTodos.length" class="mcp-todo-item is-placeholder">
-                <span class="mcp-todo-spinner" aria-hidden="true"></span>
-                <span class="mcp-todo-content">正在规划任务清单…</span>
-              </div>
               <div
                 v-for="(todo, todoIdx) in mcpTodoFloatTodos"
                 :key="`mcp-todo-float-${mcpTodoFloat.id}-${todoIdx}`"
@@ -488,7 +499,7 @@
               {{ starPromptChatOpens >= 5 ? `你已经和察元助手聊了 ${starPromptChatOpens} 次` : '觉得察元好用吗？' }}
             </div>
             <div class="star-prompt-body">
-              察元是免费开源的文档智能助手。关注微信公众号「智灵鸟科技」获取更新与教程；也欢迎到 GitHub 点个 Star 支持开源。
+              免费开源，欢迎 Star 支持。
             </div>
           </div>
           <div class="star-prompt-actions">
@@ -2808,7 +2819,7 @@ import { exportDocumentImagesAsAssets } from '../utils/documentImageExportServic
 import { exportDocumentEmbeddedObjects } from '../utils/documentEmbeddedObjectService.js'
 import { createAIAssistantWindowSession } from '../utils/aiAssistantWindowManager.js'
 import { sendDockSwitchRequest, awaitDockSwitchResult } from '../utils/aiAssistantDockRequest.js'
-import { PANE_PROTOCOL_KEYS, getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
+import { PANE_PROTOCOL_KEYS, SCREEN_WIDTH_MEMO_KEY, getAIAssistantDockManager } from '../utils/host/aiAssistantDockManager.js'
 import {
   GITHUB_REPO_URL,
   isStarredResolved,
@@ -2843,7 +2854,13 @@ import {
   runMcpChatOrchestrator
 } from '../services/mcpBridge/mcpChatOrchestrator.js'
 import { startSidecarBestEffort } from '../services/mcpBridge/sidecarLauncher.js'
-import { getHostAssistantItems } from '../utils/assistant/hostAssistants.js'
+import {
+  getHostAssistantDisplayItems,
+  getCustomHostAssistants,
+  saveCustomHostAssistants,
+  notifyHostAssistantSettingsChanged,
+  HOST_ASSISTANT_SETTINGS_VERSION_KEY
+} from '../utils/assistant/hostAssistants.js'
 import { DEFAULT_TASK_LIST_WINDOW_HEIGHT, DEFAULT_TASK_LIST_WINDOW_WIDTH, focusExistingTaskListWindow } from '../utils/taskListWindowManager.js'
 import { startMultimodalTask, stopMultimodalTask } from '../utils/multimodalTaskRunner.js'
 import { extractStructuredAttachmentText, isStructuredTextAttachment } from '../utils/attachmentTextParser.js'
@@ -2889,7 +2906,7 @@ import ToolAssistantPanel from './ToolAssistantPanel.vue'
 import SourceCodeLinks from './common/SourceCodeLinks.vue'
 import WelcomeAdSlots from './common/WelcomeAdSlots.vue'
 import { applyKbRetrievalIfBound } from '../services/kb/retrievalMiddleware.js'
-import { setAssistantKbBindingGetter } from '../utils/assistant/kbAssistantBinding.js'
+import { setAssistantKbBindingGetter, publishAssistantKbBinding } from '../utils/assistant/kbAssistantBinding.js'
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
 import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan, evalLicense } from '../utils/licenseStore.js'
@@ -4300,8 +4317,8 @@ export default {
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
       activeMcpTurnContexts: {},
-      // 任务清单漂浮卡的用户折叠状态（新回合开始时重置为展开）
-      mcpTodoFloatCollapsed: false,
+      // 任务清单漂浮卡的折叠状态：true=右上角圆点态（新回合默认收起），false=完整清单
+      mcpTodoFloatCollapsed: true,
       mcpDropdownOpen: false,
       mcpServerList: [],
       sidebarWidth: 300,
@@ -4710,10 +4727,10 @@ export default {
       return this.currentMessages.length
     },
     /**
-     * 执行中的任务清单漂浮卡数据源：当前会话有进行中的 MCP 回合即返回该回合的
-     * 助手消息——清单尚未产出时模板渲染「规划中」占位态，保证回合一开始卡片就
-     * 出现在右上角，而不是等模型第一轮 todo_write 之后。回合结束
-     * （clearMcpTurnCtx）后 ctx 消失，漂浮卡自动隐藏；清单本体仍留在消息流里。
+     * 执行中的任务清单漂浮卡数据源：当前会话有进行中的 MCP 回合且模型已产出
+     * 清单（todo_write 过）才显示——无清单不显示（用户口径）。默认收为右上角
+     * 圆点（运行中轨道转圈），点击展开完整清单；每步完成状态随清单实时更新。
+     * 回合结束（clearMcpTurnCtx）后 ctx 消失自动隐藏；清单本体仍留在消息流里。
      */
     mcpTodoFloat() {
       const ctx = this.activeMcpTurnContexts?.[this.currentChatId]
@@ -4721,6 +4738,7 @@ export default {
       if (!messageId) return null
       const msg = (this.currentMessages || []).find(m => m && m.id === messageId)
       if (!msg) return null
+      if (!Array.isArray(msg.mcpTodos) || !msg.mcpTodos.length) return null
       return msg
     },
     mcpTodoFloatTodos() {
@@ -4872,6 +4890,10 @@ export default {
         this.aiAssistantWindowSession?.syncState?.()
       }
     },
+    // 绑定变更(选择/取消知识库、切换对话)→ 重新发布共享绑定，基座托管回合据此检索
+    currentChatKbBinding(binding) {
+      publishAssistantKbBinding(binding)
+    },
     // 回合结束 → 支持提示裁决。只在「任意回合在跑 → 全部结束」的下降沿触发一次;
     // 结束时校验当前会话末条 AI 消息非失败/停止态(成功才讨赏),用户正在打字则放弃本次。
     anyChatTurnRunning(running, prev) {
@@ -4971,6 +4993,8 @@ export default {
     // 浮窗磁吸：拖到屏幕左/右/底边自动停靠（任务执行中/切换中不触发）
     if (!this.aiAssistantTaskPaneMode) {
       this.startFloatSnapWatch()
+      // 浮窗是真实窗口：真实屏宽落共享记忆，供基座（假屏）停靠设宽解析半屏宽
+      this.reportRealScreenWidthMemo()
     }
     bootMeasure('loadAssistantItems', () => this.loadAssistantItems())
     // dev 源码模式（vite）下 window.Application 注入可能晚于 mounted——挂载瞬间
@@ -4994,8 +5018,11 @@ export default {
     retryHostAssistantLoad(2500)
     // 领域包懒加载完成后刷新助手列表,确保面板渲染/搜索/意图路由都能感知新增领域助手
     ensureDomainPacksLoaded().then(() => this.loadAssistantItems()).catch(() => {})
-    // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索
+    // 把"当前对话绑定的知识库"暴露给执行器,供 KB 对比/核查类助手检索;
+    // 同时发布到 PluginStorage——基座 webview 托管的 chat_turn 回合经存储版
+    // getter 读取(跨 webview 模块实例互不可见,不发布则基座误报未绑定)
     setAssistantKbBindingGetter(() => this.currentChatKbBinding)
+    publishAssistantKbBinding(this.currentChatKbBinding)
     this.loadAssistantFavorites()
     bootMeasure('refreshModelSelection', () => this.refreshModelSelection())
     const hashPart = (window.location.hash || '').split('?')[1] || ''
@@ -5374,7 +5401,9 @@ export default {
       try {
         // 编排统一由 ribbon 基座 webview 执行（本页上下文里 CreateTaskPane 在部分
         // 宿主会顶掉自身、面板页自调 Delete 会连带销毁自身——2026-10-06 真机实证）
-        const sent = sendDockSwitchRequest(action)
+        // 本页是真实窗口：透传真实屏宽，基座假屏(1×1)场景停靠半屏宽以此为真源
+        const screenW = this.realScreenWidthPx()
+        const sent = sendDockSwitchRequest(action, screenW ? { screenW } : {})
         if (!sent) throw new Error('dock-request-write-failed')
         const result = await awaitDockSwitchResult(sent.requestId)
         if (result && result.ok) {
@@ -5459,6 +5488,14 @@ export default {
       }
     },
     handleStorageEvent(event) {
+      // 设置窗口保存了宿主配方/自定义助手 → 即时重载清单(仅表格/演示宿主分流模式)
+      if (event?.key === HOST_ASSISTANT_SETTINGS_VERSION_KEY && event?.newValue) {
+        try {
+          const host = detectAddonType()
+          if (host === 'et' || host === 'wpp') this.loadAssistantItems()
+        } catch (_) { /* ignore */ }
+        return
+      }
       if (event?.key !== 'NdDocumentBackupRestoreSignal' || !event?.newValue) return
       try {
         const payload = JSON.parse(event.newValue)
@@ -6209,6 +6246,7 @@ export default {
           },
           selectionCtx: this.buildMcpSelectionCtx(),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
+          kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,
           historyMessages,
           previousTodos,
           loopHistory: previousLoopHistory
@@ -6545,8 +6583,8 @@ export default {
       // 手动编辑后另一会话发消息,本回合的写仍会被拦下要求重读。
       const writeBaselineToken = `mcp-turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
       setWriteBaseline(undefined, undefined, writeBaselineToken)
-      // 新回合任务清单漂浮卡默认展开（用户上一回合的折叠选择不延续）
-      this.mcpTodoFloatCollapsed = false
+      // 新回合任务清单漂浮卡默认收为右上角圆点（用户上一回合的展开选择不延续）
+      this.mcpTodoFloatCollapsed = true
       this.isStreaming = true
       assistantMsg.lane = 'mcp'
       assistantMsg.primaryRoute = {
@@ -6605,6 +6643,7 @@ export default {
           model,
           selectionCtx: this.buildMcpSelectionCtx(),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
+          kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,
           historyMessages,
           previousTodos,
           writeBaselineToken,
@@ -7771,12 +7810,39 @@ export default {
     // 停靠协议：挂载即写 ready 握手 + 真实 innerWidth/Height（resize 防抖刷新）。
     // manager（ribbon 侧）据此确认面板存活并验证 DockPosition 切换后的尺寸真实生效
     // ——WPS 的 Width/Height 同步读回值在布局沉降前是假的，只有页面回报可信（探针结论）。
+    /** 本 webview 的真实屏宽（左右停靠半屏宽的真源之一，见 aiAssistantDockManager）。
+     *  假屏防护：部分 WPS webview 的 screen 是 1×1 或等于窗口自身宽，屏必须显著
+     *  宽于本窗口才可信；不可信返回 null */
+    realScreenWidthPx() {
+      try {
+        const w = Number(window.screen?.availWidth || window.screen?.width || 0)
+        if (Number.isFinite(w) && w >= 560 && w >= window.innerWidth * 1.2) return Math.round(w)
+      } catch (_) {}
+      return null
+    },
+    /** 真实屏宽写入共享记忆（PluginStorage 加载项级共享）：基座 webview 假屏 1×1，
+     *  它执行停靠设宽时依赖此真源解析半屏宽 */
+    reportRealScreenWidthMemo() {
+      try {
+        const sw = this.realScreenWidthPx()
+        const storage = window.Application?.PluginStorage
+        if (sw && storage && storage.getItem(SCREEN_WIDTH_MEMO_KEY) !== String(sw)) {
+          storage.setItem(SCREEN_WIDTH_MEMO_KEY, String(sw))
+        }
+        return sw
+      } catch (_) {}
+      return null
+    },
     startTaskPaneProtocol() {
       this._taskPaneBootId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const report = () => {
         try {
           const storage = window.Application?.PluginStorage
           if (!storage) return
+          const sw = this.realScreenWidthPx()
+          if (sw && storage.getItem(SCREEN_WIDTH_MEMO_KEY) !== String(sw)) {
+            storage.setItem(SCREEN_WIDTH_MEMO_KEY, String(sw))
+          }
           storage.setItem(PANE_PROTOCOL_KEYS.ready, JSON.stringify({
             bootId: this._taskPaneBootId,
             mode: 'taskpane',
@@ -7786,6 +7852,7 @@ export default {
             bootId: this._taskPaneBootId,
             w: window.innerWidth,
             h: window.innerHeight,
+            sw,
             updatedAt: Date.now()
           }))
         } catch (_) {}
@@ -7972,7 +8039,9 @@ export default {
       // 点击行为见 runAssistant 的 host-assistant 分支。
       const host = detectAddonType()
       if (host === 'et' || host === 'wpp') {
-        this.assistantItems = getHostAssistantItems(host)
+        // 内置配方(带用户编辑覆盖) + 宿主自定义助手;停用的(enabled=false)面板隐藏,
+        // 设置清单仍可见可重新启用
+        this.assistantItems = getHostAssistantDisplayItems(host).filter(item => item.enabled !== false)
         return
       }
       this.assistantItems = getAssistantSettingItems(
@@ -8614,6 +8683,9 @@ export default {
       return true
     },
     isCustomAssistant(item) {
+      // 宿主自定义助手(表格/演示配方)与文档自定义助手同等待遇:面板显示"自定义"
+      // 标记与删除按钮
+      if (item?.type === 'host-assistant') return item.isCustom === true
       return item?.type === 'custom-assistant'
     },
     loadHistory(options = {}) {
@@ -9599,6 +9671,14 @@ export default {
     openAssistantSettings(itemKey = 'create-custom-assistant') {
       openSettingsWindow({ menu: 'assistant-settings', item: itemKey }, { title: '助手设置' })
     },
+    // 添加助手入口按宿主分流:表格/演示跳宿主自定义助手创建页(文档的
+    // create-custom-assistant 在宿主清单里不存在,点了只会落到别的助手)
+    openAddAssistantSettings() {
+      const host = detectAddonType()
+      this.openAssistantSettings(
+        host === 'et' || host === 'wpp' ? 'create-custom-host-assistant' : 'create-custom-assistant'
+      )
+    },
     openSettingsDialog() {
       openSettingsWindow()
     },
@@ -9943,6 +10023,18 @@ export default {
         danger: true
       })
       if (!confirmed) return
+      // 宿主自定义助手(表格/演示配方)走宿主分桶存储
+      if (item.type === 'host-assistant') {
+        const host = item.host || detectAddonType()
+        const next = getCustomHostAssistants(host).filter(entry => entry.id !== item.key)
+        if (!saveCustomHostAssistants(host, next)) {
+          await inAppAlert('删除助手失败，请稍后重试')
+          return
+        }
+        notifyHostAssistantSettingsChanged()
+        this.loadAssistantItems()
+        return
+      }
       const next = getCustomAssistants().filter(entry => entry.id !== item.key)
       const saved = saveCustomAssistants(next)
       if (!saved) {
@@ -20640,17 +20732,24 @@ export default {
   font-size: 13.5px;
   font-weight: 600;
   color: #78350f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .star-prompt-card.thanks .star-prompt-title {
   color: #065f46;
 }
 
+/* 单行引导语：窄面板下省略号兜底，绝不换行堆叠 */
 .star-prompt-body {
   margin-top: 3px;
   font-size: 12px;
   line-height: 1.5;
   color: #92400e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .star-prompt-actions {
@@ -21221,6 +21320,75 @@ export default {
   align-items: flex-start;
   justify-content: flex-end;
   pointer-events: none;
+}
+/* 收起态：右上角圆点。圆点为圆心，运行指示沿外圈轨道转圈；旁边进度 + 「展开」 */
+.mcp-todo-dot {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 8px 4px 4px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(252, 253, 255, 0.9);
+  box-shadow: 0 2px 10px rgba(15, 40, 80, 0.14);
+  cursor: pointer;
+  font: inherit;
+  backdrop-filter: blur(6px);
+}
+.mcp-todo-dot:hover {
+  background: rgba(245, 249, 255, 0.98);
+}
+.mcp-todo-dot-orbit-box {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.mcp-todo-dot-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: #1c5a9e;
+}
+.mcp-todo-dot-orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: mcpTodoDotOrbit 1.1s linear infinite;
+}
+/* 轨道运行体：外圈上的一个小亮点，随容器旋转绕圆心转圈 */
+.mcp-todo-dot-orbit::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -1.5px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: #4a9eff;
+  box-shadow: 0 0 4px rgba(74, 158, 255, 0.9);
+}
+@keyframes mcpTodoDotOrbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mcp-todo-dot-progress {
+  font-size: 11px;
+  color: #1c5a9e;
+  font-variant-numeric: tabular-nums;
+}
+.mcp-todo-dot-expand {
+  font-size: 11px;
+  color: #8a92a6;
+  white-space: nowrap;
 }
 .mcp-todo-float {
   pointer-events: auto;

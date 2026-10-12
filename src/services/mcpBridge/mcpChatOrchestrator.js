@@ -28,9 +28,11 @@ import { loadGlobalSettings } from '../../utils/globalSettings.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 
 // 大文档（数千字 / 百行表格）一轮「校对 + 改写」常需多次工具调用；旧值 8 会让模型
-// 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。提到 16 留出余量，正常流程
-// 走 proofread_run 单次调用，根本用不到这么多轮。
-const MAX_ROUNDS = 16
+// 撞上轮次上限而中断（见「已达到工具调用轮次上限」）。16→24：整篇写作（封面+目录
+// +排版+保存）按系统提示词的批量纪律 ~8 轮可完成，模型碎步化时也有缓冲；正常校对/
+// 改字流程走 proofread_run / document_apply_ops 单次调用，用不到这么多轮。仍撞上限
+// 且 todo 有未完成项时由下方自动续跑兜底。
+const MAX_ROUNDS = 24
 
 // 回合启动提速：工具清单短 TTL 缓存。此前每回合都要 initialize + tools/list（本机
 // 两个串行 HTTP 往返，上游 MCP 每个还要白名单同步 + 拉取，动辄数百 ms 起）——连续
@@ -164,6 +166,9 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
       : isWpp
         ? '【改字落点】先用 presentation(action=slide_read) 定位页与形状，再 text_set/text_replace 修改；新增内容用 textbox_add/slide_add，不得清空已有页。'
         : '【写作落点】先用 document_meta / document_get_text 或 document_locate 确认当前内容与落点，再用 document_insert 或 document_apply_ops 写入；空白文档可直接输入，有正文时保留原文，按用户指定选区/位置插入，未指定则追加到文末，不得为写作先清空全文。',
+    host === 'wps'
+      ? '【整篇写作·批量成稿】从零写整篇文章（如「写一篇…，1000字以上，带目录/封面，排版规范」）必须按批量打法控制轮次，全任务目标 ≤10 轮：① 计划：todo_write 列清单（正文→排版→标题样式→目录→封面→保存），与首个写工具同轮并行提交；② 正文：少量大块 document_insert(position=append) 写入（单块 text 可含多个 \\n 分段、≥400 字），严禁逐段一调用一插入；③ 统一正文排版：format_run(scope=document，字体/字号) 与 format_para(scope=document，行距/首行缩进/对齐) 同轮各一次；④ 各级标题：style_apply 套标题样式，多个标题在同一轮并行提交（一条消息多个调用），严禁一个标题占一轮；⑤ 目录：一律 toc_insert 自动目录域（基于标题样式、置于正文之前），严禁手写「一、…… 1」目录文本行再回头删，页码变动用 toc_update 刷新；⑥ 封面一轮完成：document_insert(position=prepend) 主副标题 + format_run 大字号加粗 + format_para 居中 + break_insert(kind=page) 分页；⑦ document_save 收尾。'
+      : '',
     `【没有${targetNoun}或桥接失败】当前没有打开${targetNoun}时停止操作，提示用户手动打开目标文件后重试；工具失败不得以新建、重新打开文件或重启宿主作为恢复手段。`,
     `【对话↔文档绑定】本对话只服务于发起它的${targetNoun}。若执行层校验发现活动文档与本对话不一致（错误含 DOC_MISMATCH/文档不一致字样），如实告知用户"对话与当前文档不匹配，已停止"，请用户切回对应文档或开启新对话；绝不要尝试改写、移动或另存文件来"绕过"校验。`,
     isEt
@@ -173,16 +178,16 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
             let src = 'auto'
             try { src = String(loadGlobalSettings()?.imageSource || 'auto') } catch (_) { /* 设置读不到按 auto */ }
             const imgLines = {
-              auto: '【配图·三级生图】需要插图时依次尝试：① generate_image（已配置生图模型）② image_search（网络搜图）③ presentation(action=svg_add) 内联矢量图形兜底。上级来源失败（返回 ok:false）才降级下一级，禁止跳级硬试；插画/图标/抽象背景用 ①③，真实照片/实物用 ②。',
-              model: '【配图·模型生图】插图一律 generate_image 生成（描述注明风格与配色），失败改 presentation(action=svg_add) 矢量兜底；禁止改用 image_search。',
-              web: '【配图·网络搜图】插图一律 image_search 搜索后 presentation(action=picture_add) 插入，失败改 presentation(action=svg_add) 矢量兜底；禁止改用 generate_image。',
+              auto: '【配图·三级生图】需要插图时依次尝试：① generate_image（按「默认设置→图像生成」启用的模型依次尝试，本机服务兜底）② image_search（网络搜图：自动按「默认设置→网络资源搜索」启用的 Serper/Pexels/Pixabay 等优先，必应/Openverse 免Key兜底）③ presentation(action=svg_add) 内联矢量图形兜底。上级来源失败（返回 ok:false）才降级下一级，禁止跳级硬试；插画/图标/抽象背景用 ①③，真实照片/实物用 ②。',
+              model: '【配图·模型生图】插图一律 generate_image 生成（按「默认设置→图像生成」启用的模型依次尝试；描述注明风格与配色），失败改 presentation(action=svg_add) 矢量兜底；禁止改用 image_search。',
+              web: '【配图·网络搜图】插图一律 image_search 搜索（自动按「默认设置→网络资源搜索」启用的资源优先，免Key兜底）后 presentation(action=picture_add) 插入，失败改 presentation(action=svg_add) 矢量兜底；禁止改用 generate_image。',
               svg: '【配图·矢量优先】插图一律 presentation(action=svg_add) 内联矢量图形（每个图形一个语义单元：图标/图示/装饰，单个 ≤1.5k 字符，一页 2-4 个），不用搜图/生图。'
             }
             const crossHost = '【跨宿主】可只读其它宿主作内容源，但只写当前演示文稿。需要 Word 内容用 document_get_text 只读提取（文档转 PPT），需要表格数据用 spreadsheet(action=range_read) 只读提取；首次写入前系统会自动校验目标身份，无需你处理。'
             return crossHost + (imgLines[src] || imgLines.auto)
           })()
         : '',
-    '【任务清单·搭车提交】请求包含 ≥2 个可独立交付的子任务或明确多步流程时：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。单一简单请求（一问一答、单次工具能完成的）不要用 todo_write。',
+    '【任务清单·搭车提交】预计要调用 ≥2 次工具的回合（含「生成+插入+排版」类组合，如生成图片再插入再叠文字）都必须用清单：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。真正单一的请求（一问一答、单次工具能完成）不要用 todo_write。',
     host === 'wps'
       ? '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。'
       : '',
@@ -190,7 +195,16 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
       ? '【改正错别字·多处】一次改多处必须用 document_apply_ops(action:"replace", operations:[{originalText,outputText},…]) 单次批量替换——每条 originalText 自动定位、最多 200 条；同一处的正文/拼音等都作为不同 operation 一起提交。严禁「逐条 document_locate 再 document_replace」：N 处错字 = N×2 次调用，必然撞上轮次上限。仅改单处且原文已知时才用 document_replace。'
       : '',
     host === 'wps'
+      ? '【写新内容≠替换】往文档里写新段落 / 新章节（起草、续写、扩写、按清单逐段落稿）必须用 document_insert（锚点定位插入）或 document_apply_ops 的 insert/insert_after 类操作；严禁用 document.replace / document_replace 写新内容——replace 只能替换文档中已存在的原文（originalText 必须先经 document.locate 或读取确认存在），空文档或定位不到原文时会全部 LOCATE_NOT_FOUND / LOCATE_MISMATCH 失败，一段都写不出去。长文按「先骨架（标题+空段落）→ 逐段 insert 填充」推进。'
+      : '',
+    host === 'wps'
       ? '【排版前先读】查每段字体/字号/样式/对齐/行距现状（只读）→ format_read（scope=document 或锚点；granularity=runs 看段内混排明细）；设置才用 format_run/format_para/style。用户给出排版规范（如「按438c/公文格式」）时：format_read 摸清现状 → 逐类 format_apply_ops/style 批量设置 → format_read 复核。'
+      : '',
+    host === 'wps'
+      ? '【排版规范缺省口径】用户要求「排版要规范 / 公文格式 / 红头文件 / 按规范排版」却未给出具体字体字号时，默认按党政机关公文格式（GB/T 9704）执行并在完成汇报里说明所采用口径：正文三号(16磅)仿宋_GB2312、一级标题黑体三号、二级标题楷体三号、三级及以下仿宋三号加粗、行距固定值28磅、首行缩进2字符、页边距上3.7cm下3.5cm左2.8cm右2.6cm。标题落地必须两步走：先 style(action=apply) 套「标题 1/标题 2」（保目录域可用），再 format_run 直接指定字体+字号+黑色+加粗（覆盖主题样式的默认字体颜色，避免视觉与公文预期不符）。用户显式给出字体字号口径时以用户为准。'
+      : '',
+    host === 'wps'
+      ? '【封面页做法】要求「带封面」时：封面=WPS 文档没有专用封面页工具，用组合模拟——首行主标题（黑体或小标宋，初号/48磅，加粗，居中），空一行副标题（楷体，三号，居中），落款（日期，仿宋，居中），然后 break.insert 分页；完成汇报里注明「封面为标题页模拟」。'
       : '',
     host === 'wps'
       ? '【改样子≠改字】加粗/变色/字号/字体/删除线/拼音 → format_run 或 format_apply_ops；对齐/行距 → format_para；标题样式 → style(action=apply)。严禁用 document_replace 做加粗变色。'
@@ -290,6 +304,7 @@ export async function runMcpChatOrchestrator({
   model,
   selectionCtx = null,
   kbBound = false,
+  kbBinding = null,
   historyMessages = [],
   previousTodos = [],
   writeBaselineToken = '',
@@ -459,19 +474,24 @@ export async function runMcpChatOrchestrator({
   }
 
   // 跑一轮完整的 agent 循环。settle 为 { result }（onDone）或 { error: string }（onError）。
+  // opts 供自动续跑复用：systemPrompt 覆盖领域提示词（如按未完成 todo 重建「沿用清单」）、
+  // restoreMessages 直接恢复上一 loop 的完整历史、runText 换驱动指令、phaseLabel 标注
+  // 进度步骤（「续跑」）。默认值 = 原始单轮行为。
   let loopRef = null
-  const runLoop = (forceDegraded) => new Promise((resolve) => {
+  let lastRunDegraded = false
+  const runLoop = (forceDegraded, opts = {}) => new Promise((resolve) => {
     let onAbort = null
     const settle = (value) => {
       if (onAbort) signal?.removeEventListener?.('abort', onAbort)
       resolve(value)
     }
     const skill = createMcpDocumentSkill({
-      systemPrompt: system,
+      systemPrompt: opts.systemPrompt || system,
       mergedTools,
       pushProgress,
       writeBaselineToken,
       targetDocumentId,
+      kbBinding,
       onTodoWrite: (list) => {
         todos = normalizeTodoList(list)
         onTodos?.(todos)
@@ -487,7 +507,7 @@ export async function runMcpChatOrchestrator({
       transport: createAgentCoreTransport({
         model,
         signal,
-        onTurnStart: (turnNo) => pushStep(`模型思考（第 ${turnNo} 轮）`, model?.name || model?.modelId || '')
+        onTurnStart: (turnNo) => pushStep(`模型思考（第 ${turnNo} 轮${opts.phaseLabel ? ` · ${opts.phaseLabel}` : ''}）`, model?.name || model?.modelId || '')
       }),
       skill,
       events: {
@@ -513,11 +533,20 @@ export async function runMcpChatOrchestrator({
       captureSnapshot: captureDocSnapshot
     })
     loopRef = loop
+    lastRunDegraded = !!forceDegraded
     if (forceDegraded) loop.degrade()
-    restoreHistory(loop)
+    if (Array.isArray(opts.restoreMessages) && opts.restoreMessages.length) {
+      // 续跑：restore 上一个 loop 的完整历史（本回合读过的文档、工具结论全保留），
+      // 不走 loopHistory/种子窗口兜底
+      try {
+        loop.restore(opts.restoreMessages)
+      } catch { /* 损坏历史回落常规恢复 */ restoreHistory(loop) }
+    } else {
+      restoreHistory(loop)
+    }
     onAbort = () => loop.cancel()
     if (signal && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
-    loop.run(String(userText))
+    loop.run(String(opts.runText ?? userText))
   })
 
   let out = await runLoop(false)
@@ -529,6 +558,31 @@ export async function runMcpChatOrchestrator({
     out = await runLoop(true)
   }
 
+  // 自动续跑：整篇写作等重任务撞轮次上限、但 todo 清单仍有未完成项时，自动再跑一段
+  // （仅一次，成本护栏）——把「请用户手动说继续」变成系统行为。续跑 loop restore 本
+  // 回合完整历史（工具结论保留、过期的轮次上限便签由 restore 剥离），以未完成清单为
+  // 指令驱动；系统提示词按 pending 重建，激活「沿用清单」纪律。降级（JSON 协议）运行
+  // 的历史形态不同，不续跑；todo 为空说明模型没立清单，无从判断剩余项，也不续跑。
+  let continued = false
+  if (out.result?.turnLimit && !lastRunDegraded && !signal?.aborted) {
+    const pending = todos.filter(t => t && t.status !== 'completed' && String(t.content || '').trim())
+    if (pending.length && Array.isArray(loopRef?.messages) && loopRef.messages.length) {
+      pushStep('轮次已达上限，仍有未完成任务，自动续跑', pending.map(t => t.content).join('；').slice(0, 160))
+      const continueText = [
+        '【系统续跑】上一段执行因轮次上限中断，以下任务尚未完成：',
+        ...pending.map((t, i) => `${i + 1}. ${t.content}`),
+        '请继续调用工具完成上述剩余任务；已完成的部分不要重做，全部完成后按惯例总结交付。'
+      ].join('\n')
+      out = await runLoop(false, {
+        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx }),
+        restoreMessages: loopRef.messages,
+        runText: continueText,
+        phaseLabel: '续跑'
+      })
+      continued = true
+    }
+  }
+
   if (typeof out.error === 'string' && out.error) {
     if (signal?.aborted) throw abortError()
     logEvent('mcp_turn_end', { outcome: 'model_error', ms: Date.now() - turnLogT0, steps: steps.length })
@@ -537,9 +591,9 @@ export async function runMcpChatOrchestrator({
   const r = out.result || {}
   if (r.cancelled || signal?.aborted) throw abortError()
   const fallbackText = r.turnLimit
-    ? '已达到工具调用轮次上限，请根据上方步骤继续或重试。'
+    ? (continued ? '已自动续跑一段仍达到轮次上限，请根据上方步骤继续或重试。' : '已达到工具调用轮次上限，请根据上方步骤继续或重试。')
     : '已完成。'
-  logEvent('mcp_turn_end', { outcome: r.turnLimit ? 'turn_limit' : 'ok', ms: Date.now() - turnLogT0, steps: steps.length })
+  logEvent('mcp_turn_end', { outcome: r.turnLimit ? 'turn_limit' : 'ok', continued, ms: Date.now() - turnLogT0, steps: steps.length })
   return {
     ok: true,
     content: String(r.text || '').trim() || fallbackText,

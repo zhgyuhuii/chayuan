@@ -1030,8 +1030,10 @@ export async function handleKbRetrieve(params = {}) {
     throw err
   }
   let binding = null
+  let bindingSource = 'none'
   if (params.binding && typeof params.binding === 'object') {
     binding = params.binding
+    bindingSource = 'params'
   } else if (Array.isArray(params.kbNames) && params.kbNames.length) {
     binding = {
       kbNames: params.kbNames,
@@ -1039,11 +1041,14 @@ export async function handleKbRetrieve(params = {}) {
       topK: Number(params.topK) || 5,
       connectionId: String(params.connectionId || '')
     }
+    bindingSource = 'params'
   } else {
     try {
       binding = getAssistantKbBinding()
+      bindingSource = binding ? 'current-chat' : 'none'
     } catch {
       binding = null
+      bindingSource = 'error'
     }
   }
   const result = await retrieveKbContextForAssistant(binding, query, {})
@@ -1051,6 +1056,9 @@ export async function handleKbRetrieve(params = {}) {
     query: query.slice(0, 500),
     context: result.context || '',
     notice: result.notice || '',
+    // 绑定来源诊断：再次出现「未绑定」时据此区分面板没发布 / getter 没注册 / 读失败
+    bindingSource,
+    bindingKbCount: Array.isArray(binding?.kbNames) ? binding.kbNames.length : 0,
     sourceCount: Array.isArray(result.sources) ? result.sources.length : 0,
     sources: (result.sources || []).slice(0, 24).map((c) => ({
       text: String(c.text || '').slice(0, 2000),

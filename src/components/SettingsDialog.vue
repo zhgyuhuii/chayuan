@@ -121,27 +121,34 @@
           <div v-else-if="activeMainMenu === 'assistant-settings'" class="default-settings-list-container">
             <div class="assistant-settings-toolbar">
               <div class="column-title assistant-settings-toolbar-title">助手设置项</div>
-              <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="triggerAssistantImport">
-                导入助手
-              </button>
-              <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="openAssistantGroupDialog">
-                新建分组
-              </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-compact assistant-import-btn"
-                :disabled="chayuanSpaceSyncing"
-                @click="syncFromChayuanSpace"
-              >
-                {{ chayuanSpaceSyncing ? '同步中…' : '从智能空间同步' }}
-              </button>
-              <input
-                ref="assistantImportInputRef"
-                type="file"
-                accept=".json,application/json"
-                class="icon-file-input"
-                @change="onAssistantImportFileChange"
-              />
+              <template v-if="!isHostAssistantSettingsMode">
+                <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="triggerAssistantImport">
+                  导入助手
+                </button>
+                <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="openAssistantGroupDialog">
+                  新建分组
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-compact assistant-import-btn"
+                  :disabled="chayuanSpaceSyncing"
+                  @click="syncFromChayuanSpace"
+                >
+                  {{ chayuanSpaceSyncing ? '同步中…' : '从智能空间同步' }}
+                </button>
+                <input
+                  ref="assistantImportInputRef"
+                  type="file"
+                  accept=".json,application/json"
+                  class="icon-file-input"
+                  @change="onAssistantImportFileChange"
+                />
+              </template>
+              <template v-else>
+                <button type="button" class="btn btn-secondary btn-compact assistant-import-btn" @click="openCreateCustomHostAssistant">
+                  新建助手
+                </button>
+              </template>
             </div>
             <div
               v-for="group in assistantSettingGroups"
@@ -160,7 +167,7 @@
                   <div class="assistant-settings-group-title">{{ group.label }}</div>
                   <span class="assistant-settings-group-count">{{ group.items.length }}</span>
                 </div>
-                <div class="assistant-settings-group-hint">可拖拽排序，右键菜单可复制、删除、上移、下移</div>
+                <div v-if="!isHostAssistantSettingsMode" class="assistant-settings-group-hint">可拖拽排序，右键菜单可复制、删除、上移、下移</div>
               </div>
               <div
                 v-show="isAssistantGroupExpanded(group)"
@@ -186,7 +193,7 @@
                     }"
                     :draggable="isAssistantSettingReorderable(item)"
                     @click="selectAssistantSettingItem(item)"
-                    @contextmenu.prevent="item.type !== 'create-custom-assistant' && showAssistantContextMenu($event, item)"
+                    @contextmenu.prevent="item.type !== 'create-custom-assistant' && item.type !== 'host-assistant' && showAssistantContextMenu($event, item)"
                     @dragstart="onAssistantDragStart($event, group.key, item)"
                     @dragover.prevent.stop="onAssistantDragOver($event, group.key, item)"
                     @dragleave.stop="onAssistantDragLeave($event, group.key, item)"
@@ -534,10 +541,10 @@
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </span>
-                    <button class="btn-icon btn-paste" :disabled="isFormSaved" @click="pasteApiUrl" title="粘贴剪贴板内容">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2h2a2 2 0 0 0 2-2v-4"></path><rect x="8" y="3" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
                   </div>
+                  <button class="btn-icon btn-paste" :disabled="isFormSaved" @click="pasteApiUrl" title="粘贴剪贴板内容">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="btn-paste-icon"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+                  </button>
                 </div>
                 <p v-if="currentModelConfig.apiUrl" class="config-preview">
                   对话接口预览: {{ getApiPreviewUrl() }}
@@ -674,6 +681,14 @@
             </div>
           </div>
 
+          <!-- 默认设置 → 右侧：网络资源搜索（三级生图 Tier2 资源清单） -->
+          <div
+            v-else-if="activeMainMenu === 'default-settings' && activeDefaultSettingItem === 'web-resources'"
+            class="config-panel wr-settings-host"
+          >
+            <WebResourceSettings />
+          </div>
+
           <!-- 默认设置 → 右侧：段落截取设置 -->
           <div
             v-else-if="activeMainMenu === 'default-settings' && activeDefaultSettingItem === 'chunk'"
@@ -744,7 +759,108 @@
           </div>
 
           <div
-            v-else-if="activeMainMenu === 'assistant-settings' && currentAssistantSettingItem"
+            v-else-if="activeMainMenu === 'assistant-settings' && currentAssistantSettingItem && (currentAssistantSettingItem.type === 'host-assistant' || currentAssistantSettingItem.type === 'create-custom-host-assistant')"
+            class="config-panel"
+          >
+            <div class="column-title">助手设置</div>
+            <div class="config-header">
+              <div class="config-header-text">
+                <h4>
+                  <span class="category-icon">
+                    <img
+                      v-if="isAssistantIconImage(currentAssistantSettingItem.icon)"
+                      :src="getAssistantIconSrc(currentAssistantSettingItem.icon)"
+                      class="assistant-icon-image assistant-icon-image-large"
+                      alt=""
+                    />
+                    <span v-else>{{ currentAssistantSettingItem.icon }}</span>
+                  </span>
+                  {{ currentAssistantSettingItem.label }}
+                </h4>
+                <p v-if="currentAssistantSettingItem.description" class="config-header-desc">
+                  {{ currentAssistantSettingItem.description }}
+                </p>
+              </div>
+              <div class="config-header-actions">
+                <label v-if="currentAssistantSettingItem.type === 'host-assistant'" class="switch">
+                  <input
+                    type="checkbox"
+                    v-model="assistantForm.enabled"
+                    @change="onAssistantFormChange"
+                  />
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="config-content">
+              <div class="config-item">
+                <label class="config-label">显示名称</label>
+                <input
+                  v-model="assistantForm.title"
+                  type="text"
+                  class="config-input"
+                  placeholder="请输入显示名称"
+                  @input="onAssistantFormChange"
+                />
+              </div>
+
+              <div class="config-item">
+                <label class="config-label">功能说明</label>
+                <textarea
+                  v-model="assistantForm.description"
+                  class="config-input config-textarea"
+                  rows="3"
+                  placeholder="请输入这个助手的用途说明"
+                  @input="onAssistantFormChange"
+                ></textarea>
+              </div>
+
+              <div class="config-item">
+                <label class="config-label">配方提示词</label>
+                <textarea
+                  v-model="assistantForm.prompt"
+                  class="config-input config-textarea"
+                  rows="8"
+                  placeholder="请输入点击助手时填入输入框的提示词"
+                  @input="onAssistantFormChange"
+                ></textarea>
+                <p class="config-hint">点击助手时填入输入框并发送给模型的提示词，可按需改写。</p>
+              </div>
+
+              <div class="config-item">
+                <label class="config-label">触发方式</label>
+                <select v-model="assistantForm.mode" class="config-input" @change="onAssistantFormChange">
+                  <option value="send">点击后立即发送</option>
+                  <option value="prefill">点击后预填输入框，补充要求后发送</option>
+                </select>
+                <p class="config-hint">{{ hostAssistantSettingsHint }}</p>
+              </div>
+
+              <div class="assistant-inline-actions">
+                <button
+                  v-if="currentAssistantSettingItem.type === 'create-custom-host-assistant'"
+                  type="button"
+                  class="btn btn-primary"
+                  @click="createCustomHostAssistant"
+                >创建智能助手</button>
+                <button
+                  v-else-if="!currentAssistantSettingItem.isCustom"
+                  type="button"
+                  class="btn btn-secondary"
+                  @click="restoreHostAssistantDefaults"
+                >恢复默认模板</button>
+                <button
+                  v-else
+                  type="button"
+                  class="btn btn-danger"
+                  @click="deleteCurrentCustomHostAssistant"
+                >删除当前助手</button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-else-if="activeMainMenu === 'assistant-settings' && currentAssistantSettingItem && currentAssistantSettingItem.type !== 'host-assistant' && currentAssistantSettingItem.type !== 'create-custom-host-assistant'"
             class="config-panel"
           >
             <div class="column-title">助手设置</div>
@@ -2575,6 +2691,19 @@ import {
   INPUT_SOURCE_OPTIONS,
   getAssistantGroupLabel
 } from '../utils/assistantRegistry.js'
+import { detectAddonType, resetAddonTypeCache } from '../utils/host/hostType.js'
+import {
+  getHostAssistantItems,
+  getHostAssistantRecipe,
+  getHostAssistantDefaultConfig,
+  getHostAssistantSettingsMap,
+  saveHostAssistantSettingsMap,
+  getCustomHostAssistants,
+  saveCustomHostAssistants,
+  normalizeCustomHostAssistant,
+  buildCustomHostAssistantItem,
+  notifyHostAssistantSettingsChanged as emitHostAssistantSettingsChanged
+} from '../utils/assistant/hostAssistants.js'
 import {
   createDefaultReportSettings,
   getReportTypeGroups,
@@ -2615,6 +2744,7 @@ import {
 } from '../utils/assistantRegressionSampleStore.js'
 import { getMultimodalServerFallbackConfig } from '../utils/multimodalServerBridge.js'
 import KbSettingsPanel from './KbSettingsPanel.vue'
+import WebResourceSettings from './WebResourceSettings.vue'
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value))
@@ -2650,11 +2780,17 @@ const MODEL_INVENTORY = [
 
 export default {
   name: 'SettingsDialog',
-  components: { KbSettingsPanel },
+  components: { KbSettingsPanel, WebResourceSettings },
   data() {
     return {
       // 领域包懒加载完成标记(自增以触发助手设置列表重算)
       domainPacksVersion: 0,
+      // 设置窗口所在宿主类型(wps=文字 / et=表格 / wpp=演示):助手设置清单按宿主分流
+      settingsHostKind: 'wps',
+      // 宿主配方助手(et/wpp)的编辑态:完整解析配置,保存时差异落盘
+      hostAssistantSettingsMap: {},
+      // 宿主自定义助手(按宿主分桶):与内置配方同形态,面板可直接执行
+      customHostAssistantsMap: { et: [], wpp: [] },
       // 助手设置分组展开状态(groupKey->bool;未显式设置则默认仅展开含当前选中项的分组)
       expandedAssistantGroups: {},
       // 主菜单
@@ -3035,7 +3171,7 @@ export default {
         m => m.name.toLowerCase().includes(search) || m.id.toLowerCase().includes(search)
       )
     },
-    // 默认设置下的设置项列表（模型分类 + 段落截取设置）
+    // 默认设置下的设置项列表（模型分类 + 段落截取设置 + 网络资源搜索）
     defaultSettingsItems() {
       const modelItems = this.modelCategories.map(c => ({
         key: c.key,
@@ -3046,6 +3182,7 @@ export default {
       }))
       return [
         ...modelItems,
+        { key: 'web-resources', label: '网络资源搜索', icon: '🌐', type: 'web-resources' },
         { key: 'chunk', label: '段落截取设置', icon: '📄', type: 'chunk' }
       ]
     },
@@ -3110,10 +3247,38 @@ export default {
       if (!m) return ''
       return getModelLogoPath(m.providerId) || 'images/ai-assistant.svg'
     },
+    isHostAssistantSettingsMode() {
+      return this.settingsHostKind === 'et' || this.settingsHostKind === 'wpp'
+    },
+    hostAssistantSettingsHint() {
+      const noun = this.settingsHostKind === 'et' ? '表格' : '演示'
+      return `${noun}配方助手可编辑名称、说明与提示词，保存后 AI 助手面板即按新配置执行；停用后该助手将从面板隐藏。自定义助手请在文字（文档）宿主中创建。`
+    },
     assistantSettingsItems() {
       // 依赖 domainPacksVersion:领域包懒加载完成后自增,强制本计算属性重算
       // (BUILTIN_ASSISTANTS 是非响应式模块数组,懒加载注入后不会自动触发刷新)。
       void this.domainPacksVersion
+      // 宿主分流(与 AIAssistantDialog.loadAssistantItems 同一纪律):表格宿主只列
+      // 表格配方助手、演示宿主只列演示配方助手;文字宿主维持文档助手现状。
+      // 传入本地编辑态映射,编辑显示名称时左栏即时跟随(与文档助手一致);
+      // 尾部追加"创建智能助手"入口与已创建的宿主自定义助手。
+      if (this.isHostAssistantSettingsMode) {
+        const customList = this.customHostAssistantsMap[this.settingsHostKind] || []
+        return [
+          ...getHostAssistantItems(this.settingsHostKind, this.hostAssistantSettingsMap),
+          {
+            key: 'create-custom-host-assistant',
+            label: '创建智能助手',
+            shortLabel: '创建智能助手',
+            icon: 'images/add-to-assistant.svg',
+            group: 'custom',
+            type: 'create-custom-host-assistant',
+            modelType: 'chat',
+            description: '创建一个显示在本宿主 AI 助手面板中的自定义助手。'
+          },
+          ...customList.map(entry => buildCustomHostAssistantItem(entry, this.settingsHostKind))
+        ]
+      }
       return getAssistantSettingItems(this.customAssistants, this.assistantSettingsMap)
     },
     assistantSettingGroups() {
@@ -3125,10 +3290,12 @@ export default {
         if (!groups[key]) groups[key] = []
         groups[key].push(item)
       })
-      this.assistantCustomGroups.forEach(groupName => {
-        const key = normalizeAssistantGroupName(groupName)
-        if (!groups[key]) groups[key] = []
-      })
+      if (!this.isHostAssistantSettingsMode) {
+        this.assistantCustomGroups.forEach(groupName => {
+          const key = normalizeAssistantGroupName(groupName)
+          if (!groups[key]) groups[key] = []
+        })
+      }
       return Object.keys(groups).map(key => ({
         key,
         label: ASSISTANT_GROUP_LABELS[key] || getAssistantGroupLabel(key),
@@ -3797,7 +3964,19 @@ export default {
       this.loadDefaultModel()
       this.loadChunkSettings()
       this.loadSpellCheckCommentPolicy()
+      // 宿主分流:设置窗口在表格/演示宿主里打开时,助手设置只列对应宿主的配方助手。
+      // 打开方通过 URL host 参数显式传入宿主;窗口内 Application 检测做兜底复核
+      this.settingsHostKind = this.resolveSettingsHost(this.$route?.query?.host)
       this.loadAssistantConfigData()
+      // dev 源码模式(vite)下 window.Application 注入可能晚于 mounted,宿主判定落到
+      // wps——延迟复核一次,确认非文字宿主后清单自动切换(生产安装不受影响,幂等)
+      ;[800, 2500].forEach(delay => {
+        window.setTimeout(() => {
+          try {
+            this.applySettingsHost(this.$route?.query?.host)
+          } catch (_) { /* ignore */ }
+        }, delay)
+      })
       // 设置窗口是独立 WPS 窗口、模块状态隔离:必须自行触发领域包懒加载,否则
       // BUILTIN_ASSISTANTS 只含同步核心助手,助手设置列表会缺所有领域包助手。
       ensureDomainPacksLoaded().then(() => { this.domainPacksVersion += 1 }).catch(() => {})
@@ -3866,20 +4045,27 @@ export default {
     handleSettingsWindowRequest(query = {}) {
       const menu = String(query?.menu || '').trim()
       const item = String(query?.item || '').trim()
+      const host = String(query?.host || '').trim().toLowerCase()
       const nextQuery = {}
       if (menu) nextQuery.menu = menu
       if (item) nextQuery.item = item
+      if (host) nextQuery.host = host
       const currentMenu = String(this.$route?.query?.menu || '').trim()
       const currentItem = String(this.$route?.query?.item || '').trim()
-      const sameQuery = currentMenu === String(nextQuery.menu || '') && currentItem === String(nextQuery.item || '')
+      const currentHost = String(this.$route?.query?.host || '').trim().toLowerCase()
+      const sameQuery = currentMenu === String(nextQuery.menu || '') && currentItem === String(nextQuery.item || '') && currentHost === String(nextQuery.host || '')
       if (!sameQuery) {
         this.$router.replace({ path: this.$route?.path || '/settings', query: nextQuery }).catch(() => {})
       }
+      // 设置窗口是跨宿主单例:焦点请求携带打开方最新宿主,先切清单再进子菜单
+      this.applySettingsHost(host)
       if (menu === 'assistant-settings') {
         this.activeMainMenu = 'assistant-settings'
         if (item) {
           this.activeAssistantSettingItem = item
         }
+        // 深链的文档助手 key 可能不在当前宿主清单里(如表格宿主)——回落到首项
+        this.normalizeActiveAssistantSettingItem()
         this.$nextTick(() => {
           this.loadAssistantFormForItem(this.activeAssistantSettingItem)
         })
@@ -3964,13 +4150,54 @@ export default {
     loadMoreAssistantIconPickerOptions() {
       this.assistantIconPickerVisibleCount += 120
     },
+    // 宿主解析:窗口内 Application 检测到 et/wpp 是确凿证据,优先;否则信打开方
+    // 传入的显式 host 提示(ShowDialog 弹窗里 Application 可能根本没注入,提示是
+    // 唯一线索);两者都没有才落到 wps(=维持文档助手现状)
+    resolveSettingsHost(hostHint) {
+      try {
+        resetAddonTypeCache()
+        const detected = detectAddonType()
+        if (detected === 'et' || detected === 'wpp') return detected
+      } catch (_) { /* ignore */ }
+      const hint = String(hostHint || '').trim().toLowerCase()
+      if (hint === 'et' || hint === 'wpp') return hint
+      return 'wps'
+    },
+    applySettingsHost(hostHint) {
+      const next = this.resolveSettingsHost(hostHint)
+      if (next === this.settingsHostKind) return false
+      this.settingsHostKind = next
+      if (this.activeMainMenu === 'assistant-settings') {
+        this.normalizeActiveAssistantSettingItem()
+        this.loadAssistantFormForItem(this.activeAssistantSettingItem)
+      }
+      return true
+    },
+    // 宿主分流后,当前选中项可能不在清单里(如表格宿主里残留的文档助手 key):
+    // 宿主模式回落到配方清单首项;旧的文档"创建助手"入口映射到宿主创建入口;
+    // 文字宿主维持原默认(spell-check)不变
+    normalizeActiveAssistantSettingItem() {
+      if (this.isHostAssistantSettingsMode && this.activeAssistantSettingItem === 'create-custom-assistant') {
+        this.activeAssistantSettingItem = 'create-custom-host-assistant'
+      }
+      const exists = this.assistantSettingsItems.some(item => item.key === this.activeAssistantSettingItem)
+      if (exists) return
+      if (this.isHostAssistantSettingsMode) {
+        this.activeAssistantSettingItem = this.assistantSettingsItems[0]?.key || ''
+      } else {
+        this.activeAssistantSettingItem = 'spell-check'
+      }
+    },
     loadAssistantConfigData() {
       this.assistantSettingsMap = loadAssistantSettings()
       this.customAssistants = this.mergeDuplicateCustomAssistants(getCustomAssistants())
       this.assistantCustomGroups = getCustomAssistantGroups(this.customAssistants)
-      if (!this.activeAssistantSettingItem) {
-        this.activeAssistantSettingItem = 'spell-check'
+      this.hostAssistantSettingsMap = getHostAssistantSettingsMap()
+      this.customHostAssistantsMap = {
+        et: getCustomHostAssistants('et'),
+        wpp: getCustomHostAssistants('wpp')
       }
+      this.normalizeActiveAssistantSettingItem()
       this.loadAssistantFormForItem(this.activeAssistantSettingItem)
     },
     normalizeAssistantSimilarityText(value) {
@@ -4347,6 +4574,9 @@ export default {
           if (item) {
             this.activeAssistantSettingItem = item
           }
+          // 宿主分流模式下深链的文档助手 key 可能不在清单里(含旧"创建助手"入口)——
+          // 与 handleSettingsWindowRequest 对齐,先映射/回落再加载表单
+          this.normalizeActiveAssistantSettingItem()
           this.$nextTick(() => {
             this.loadAssistantFormForItem(this.activeAssistantSettingItem)
           })
@@ -4381,6 +4611,37 @@ export default {
         form.modelType = definition?.modelType || 'chat'
         form.reportSettings = normalizeReportSettings(form.reportSettings, createDefaultReportSettings())
         form.icon = getAssistantResolvedIcon(item.key, form.icon || definition?.icon)
+        return form
+      }
+      if (item.type === 'create-custom-host-assistant') {
+        return {
+          enabled: true,
+          title: '',
+          description: '',
+          icon: '🤖',
+          prompt: '',
+          mode: 'prefill',
+          modelId: null
+        }
+      }
+      if (item.type === 'host-assistant') {
+        // 自定义宿主助手:表单直接绑定存储条目(可编辑+删除)
+        if (item.isCustom) {
+          const entry = (this.customHostAssistantsMap[this.settingsHostKind] || [])
+            .find(record => record.id === item.key)
+          if (entry) {
+            const form = cloneValue(entry)
+            form.enabled = form.enabled !== false
+            form.mode = form.mode === 'send' ? 'send' : 'prefill'
+            return form
+          }
+        }
+        const recipe = getHostAssistantRecipe(item.key)
+        const base = this.hostAssistantSettingsMap[item.key] ||
+          getHostAssistantDefaultConfig(recipe)
+        const form = cloneValue(base)
+        form.enabled = form.enabled !== false
+        form.mode = form.mode === 'send' ? 'send' : 'prefill'
         return form
       }
       const custom = this.customAssistants.find(entry => entry.id === item.key)
@@ -4549,9 +4810,10 @@ export default {
     },
     sortAssistantItems(items) {
       const list = Array.isArray(items) ? items.slice() : []
+      const isCreateEntry = (type) => type === 'create-custom-assistant' || type === 'create-custom-host-assistant'
       return list.sort((a, b) => {
-        if (a.type === 'create-custom-assistant' && b.type !== 'create-custom-assistant') return -1
-        if (b.type === 'create-custom-assistant' && a.type !== 'create-custom-assistant') return 1
+        if (isCreateEntry(a.type) && !isCreateEntry(b.type)) return -1
+        if (isCreateEntry(b.type) && !isCreateEntry(a.type)) return 1
         const aOrder = this.getAssistantItemDisplayOrder(a)
         const bOrder = this.getAssistantItemDisplayOrder(b)
         if (aOrder !== bOrder) return aOrder - bOrder
@@ -4763,6 +5025,25 @@ export default {
         this.customAssistants = this.customAssistants.map(entry => (
           entry.id === item.key ? cloneValue(this.assistantForm) : entry
         ))
+      } else if (item.type === 'host-assistant') {
+        if (item.isCustom) {
+          const host = this.settingsHostKind
+          const list = this.customHostAssistantsMap[host] || []
+          const form = cloneValue(this.assistantForm)
+          this.customHostAssistantsMap = {
+            ...this.customHostAssistantsMap,
+            [host]: list.map(entry => (
+              entry.id === item.key
+                ? normalizeCustomHostAssistant({ ...entry, ...form, updatedAt: new Date().toISOString() }, entry.sortOrder)
+                : entry
+            ))
+          }
+        } else {
+          this.hostAssistantSettingsMap = {
+            ...this.hostAssistantSettingsMap,
+            [item.key]: cloneValue(this.assistantForm)
+          }
+        }
       }
     },
     normalizeCustomAssistantNames(list = []) {
@@ -5042,6 +5323,80 @@ export default {
       if (!this.currentAssistantDefinition) return
       this.assistantForm = getAssistantDefaultConfig(this.currentAssistantDefinition)
       this.onAssistantFormChange()
+    },
+    // 宿主配方助手恢复默认:表单回到配方包默认值;保存时差异为空即清除已存覆盖
+    restoreHostAssistantDefaults() {
+      const item = this.currentAssistantSettingItem
+      if (item?.type !== 'host-assistant') return
+      const recipe = getHostAssistantRecipe(item.key)
+      if (!recipe) return
+      this.assistantForm = getHostAssistantDefaultConfig(recipe)
+      this.onAssistantFormChange()
+      this.showMessage('已恢复默认模板，点击右下角“保存”后生效')
+    },
+    // 跨 webview 通知:助手面板监听该键的 storage 事件即时重载宿主助手清单
+    notifyHostAssistantSettingsChanged() {
+      emitHostAssistantSettingsChanged()
+    },
+    openCreateCustomHostAssistant() {
+      this.commitAssistantForm()
+      this.activeAssistantSettingItem = 'create-custom-host-assistant'
+      this.loadAssistantFormForItem(this.activeAssistantSettingItem)
+      this.isFormSaved = false
+    },
+    createCustomHostAssistant() {
+      const form = this.assistantForm || {}
+      const title = String(form.title || '').trim()
+      const prompt = String(form.prompt || '').trim()
+      if (!title) {
+        this.showMessage('请填写助手名称', 'error')
+        return
+      }
+      if (!prompt) {
+        this.showMessage('请填写配方提示词', 'error')
+        return
+      }
+      const host = this.settingsHostKind
+      const list = this.customHostAssistantsMap[host] || []
+      const now = new Date().toISOString()
+      const entry = normalizeCustomHostAssistant({
+        ...form,
+        id: `custom-host-${Date.now()}`,
+        sortOrder: list.length,
+        createdAt: now,
+        updatedAt: now
+      })
+      const next = [...list, entry]
+      if (!saveCustomHostAssistants(host, next)) {
+        this.showMessage('智能助手创建失败，请稍后重试', 'error')
+        return
+      }
+      this.customHostAssistantsMap = { ...this.customHostAssistantsMap, [host]: next }
+      this.notifyHostAssistantSettingsChanged()
+      this.activeAssistantSettingItem = entry.id
+      this.assistantForm = this.buildAssistantForm(
+        this.assistantSettingsItems.find(record => record.key === entry.id)
+      )
+      this.isFormSaved = true
+      this.showMessage('智能助手已创建，并已同步到 AI 助手面板')
+    },
+    deleteCurrentCustomHostAssistant() {
+      const item = this.currentAssistantSettingItem
+      if (item?.type !== 'host-assistant' || !item.isCustom) return
+      const host = this.settingsHostKind
+      const next = (this.customHostAssistantsMap[host] || []).filter(entry => entry.id !== item.key)
+      if (!saveCustomHostAssistants(host, next)) {
+        this.showMessage('智能助手删除失败，请稍后重试', 'error')
+        return
+      }
+      this.customHostAssistantsMap = { ...this.customHostAssistantsMap, [host]: next }
+      this.notifyHostAssistantSettingsChanged()
+      this.activeAssistantSettingItem = 'create-custom-host-assistant'
+      this.assistantForm = this.buildAssistantForm(
+        this.assistantSettingsItems.find(record => record.key === 'create-custom-host-assistant')
+      )
+      this.isFormSaved = true
+      this.showMessage('智能助手已删除，并已同步到 AI 助手面板')
     },
     isReportAssistantPresetGroupCollapsed(groupKey) {
       return this.reportAssistantPresetCollapsedGroups[groupKey] === true
@@ -5654,7 +6009,7 @@ export default {
         this.activeDefaultSettingItem = this.activeDefaultSettingItem || 'chat'
       }
       if (key === 'assistant-settings') {
-        this.activeAssistantSettingItem = this.activeAssistantSettingItem || 'spell-check'
+        this.normalizeActiveAssistantSettingItem()
         this.loadAssistantFormForItem(this.activeAssistantSettingItem)
       }
       if (key === 'general') {
@@ -7338,6 +7693,21 @@ export default {
         )
         hasError = true
       }
+      // 4.1 保存宿主配方助手设置(差异落盘;恢复默认后差异为空即清除覆盖)
+      if (!saveHostAssistantSettingsMap(this.hostAssistantSettingsMap)) {
+        this.showMessage('宿主助手设置保存失败', 'error')
+        hasError = true
+      }
+      // 4.2 保存宿主自定义助手(逐宿主分桶落盘)
+      ;['et', 'wpp'].forEach(host => {
+        if (!saveCustomHostAssistants(host, this.customHostAssistantsMap[host] || [])) {
+          this.showMessage('宿主自定义助手保存失败', 'error')
+          hasError = true
+        }
+      })
+      if (this.isHostAssistantSettingsMode) {
+        this.notifyHostAssistantSettingsChanged()
+      }
       if (!saveCustomAssistants(this.customAssistants)) {
         this.showMessage('智能助手保存失败', 'error')
         hasError = true
@@ -8600,6 +8970,12 @@ export default {
 
 /* 知识库设置面板 host:让 KbSettingsPanel 占满父容器,不复用 form-saved 状态 */
 .config-panel.kb-settings-host {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 网络资源搜索面板：占满父容器，自带滚动（复用 KB 设置面板的宿主模式） */
+.config-panel.wr-settings-host {
   padding: 0;
   overflow: hidden;
 }

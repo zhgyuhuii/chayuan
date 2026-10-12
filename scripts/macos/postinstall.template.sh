@@ -44,6 +44,93 @@ cleanup_old_addons() {
 	done
 }
 
+# 同步 jsplugins.xml：WPS(Mac) 实际按 jsplugins.xml 加载本地插件，publish.xml 只是
+# wpsjs 在线安装清单。只更新本产品三条目（chayuan / chayuan-et / chayuan-wpp），
+# 其它插件条目原样保留；旧条目指向已清理删除的版本目录会让 WPS 加载失败/回退旧缓存。
+sync_jsplugins() {
+	local dest="$1"
+	local pb="$dest/publish.xml"
+	local jp="$dest/jsplugins.xml"
+	[[ -f "$pb" ]] || return 0
+	local entries
+	entries="$(/usr/bin/grep 'name="chayuan' "$pb" || true)"
+	[[ -n "$entries" ]] || return 0
+	if [[ ! -f "$jp" ]] || ! /usr/bin/grep -q '<jsplugins' "$jp" 2>/dev/null; then
+		printf '<?xml version="1.0" encoding="UTF-8"?>\n<jsplugins>\n%s\n</jsplugins>\n' "$entries" > "$jp" 2>/dev/null || return 0
+		/usr/sbin/chown -R "$CONSOLE_USER:staff" "$jp" 2>/dev/null || true
+		echo "Chayuan WPS: wrote jsplugins.xml -> $dest"
+		return 0
+	fi
+	local tmp="$jp.sync"
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<jsplugins>'
+		/usr/bin/grep -v 'name="chayuan' "$jp" 2>/dev/null | /usr/bin/grep -v '</jsplugins>' | /usr/bin/grep -v '<?xml' || true
+		echo "$entries"
+		echo '</jsplugins>'
+	} > "$tmp" 2>/dev/null || { /bin/rm -f "$tmp"; return 0; }
+	/bin/mv -f "$tmp" "$jp" 2>/dev/null || { /bin/rm -f "$tmp"; return 0; }
+	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$jp" 2>/dev/null || true
+	echo "Chayuan WPS: synced jsplugins.xml -> $dest"
+}
+
+# 同步 authaddin.json：WPS(Mac)「开发工具 → 加载项」与实际加载都按这份登记表的
+# path 走。升级后若残旧条目指向已清理删除的版本目录，会把 WPS 打回旧版/加载失败。
+# 只改本产品条目的版本目录段（chayuan(-et|-wpp)_<ver> → 本次安装目录名），其它不动；
+# 必须在 WPS 未运行时执行（WPS 退出时会用内存状态覆写本文件）。
+sync_authaddin() {
+	local dest="$1"
+	local aa="$dest/authaddin.json"
+	[[ -f "$aa" ]] || return 0
+	local et="" wpp="" k
+	for k in $HOST_FOLDERS; do
+		case "$k" in
+			*-et_*) et="$k" ;;
+			*-wpp_*) wpp="$k" ;;
+		esac
+	done
+	local before after
+	before="$(/bin/cat "$aa" 2>/dev/null)" || return 0
+	local sed_args=( -E -e "s|/jsaddons/chayuan_[0-9][0-9.]*\"|/jsaddons/${ADDON_FOLDER}\"|g" )
+	[[ -n "$et" ]] && sed_args+=( -e "s|/jsaddons/chayuan-et_[0-9][0-9.]*\"|/jsaddons/${et}\"|g" )
+	[[ -n "$wpp" ]] && sed_args+=( -e "s|/jsaddons/chayuan-wpp_[0-9][0-9.]*\"|/jsaddons/${wpp}\"|g" )
+	after="$(/usr/bin/sed "${sed_args[@]}" <<< "$before" 2>/dev/null)" || return 0
+	if [[ "$after" != "$before" ]]; then
+		printf '%s\n' "$after" > "$aa" 2>/dev/null || return 0
+		/usr/sbin/chown -R "$CONSOLE_USER:staff" "$aa" 2>/dev/null || true
+		echo "Chayuan WPS: synced authaddin.json paths -> $dest"
+	fi
+	# 去重：多轮升级会在宿主下累积同名多条目（过渡态曾触发 ksojscore 启动崩溃），
+	# 每个宿主每个 name 只留一条（优先指向当前版本的）；有 python3 才做，没有则跳过
+	if /usr/bin/command -v python3 >/dev/null 2>&1; then
+		/usr/bin/python3 - "$aa" <<'PYI' 2>/dev/null || true
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+changed = False
+for host, v in list(d.items()):
+    if not isinstance(v, dict):
+        continue
+    entries = {k: e for k, e in v.items() if isinstance(e, dict) and 'path' in e}
+    names = {}
+    for k, e in entries.items():
+        n = e.get('name', '')
+        if n not in names or '6.0.0' in e.get('path', ''):
+            names[n] = (k, e)
+    if len(entries) > len(names):
+        nv = {}
+        for n, (k, e) in names.items():
+            nv[k] = e
+        nv['namelist'] = sorted(nv.keys())[0]
+        d[host] = nv
+        changed = True
+if changed:
+    json.dump(d, open(p, 'w'), indent=4, ensure_ascii=False)
+    print('Chayuan WPS: deduped authaddin.json entries')
+PYI
+	fi
+}
+
 CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
 if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then
 	CONSOLE_USER="${SUDO_USER:-}"
@@ -114,6 +201,8 @@ install_all_one() {
 	local dest="$1"
 	[[ -z "$dest" ]] && return 0
 	/bin/mkdir -p "$dest" || return 1
+	# 目录本身可能是上一次 root 安装留下的（root 属主会让用户级后续写入失败），一并归还
+	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest" 2>/dev/null || true
 	# 安装前先清理历史版本目录（chayuan_<ver> / chayuan-et_<ver> / chayuan-wpp_<ver>），
 	# 只保留本次要装的版本；本次同名目录由 install_one 替换逻辑原子覆盖。
 	cleanup_old_addons "$dest"
@@ -124,6 +213,8 @@ install_all_one() {
 	done
 	/bin/cp -f "$INSTALL_ROOT/publish.xml" "$dest/publish.xml" 2>/dev/null || true
 	/usr/sbin/chown -R "$CONSOLE_USER:staff" "$dest/publish.xml" 2>/dev/null || true
+	sync_jsplugins "$dest"
+	sync_authaddin "$dest"
 	# 装完兜底再扫一遍（正常情况下安装前清理已清光）
 	cleanup_old_addons "$dest"
 	return $ok
@@ -169,6 +260,17 @@ if [[ -d "$MCP_SRC" ]]; then
 	else
 		echo "Chayuan WPS: MCP sidecar staging failed (non-fatal)" >&2
 	fi
+fi
+
+# WPS 运行中安装 = 注册表白同步（WPS 退出时用内存状态覆写 authaddin.json，
+# 打回旧版路径）。响亮警告 + 指引，宁可重装也不让用户默默留在旧版。
+if /usr/bin/pgrep -xq wpsoffice 2>/dev/null; then
+	echo "*******************************************************************" >&2
+	echo "Chayuan WPS: 检测到 WPS 正在运行！" >&2
+	echo "  本次写入的插件注册会在 WPS 退出时被旧状态覆写（加载项仍显示旧版本）。" >&2
+	echo "  请：① 完全退出 WPS（保存文档后 ⌘Q，或 pkill -x wpsoffice）" >&2
+	echo "      ② 重新运行本安装包  ③ 再打开 WPS" >&2
+	echo "*******************************************************************" >&2
 fi
 
 # Only fail the installer if add-in never landed anywhere and payload missing

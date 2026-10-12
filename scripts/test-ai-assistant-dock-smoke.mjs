@@ -102,14 +102,14 @@ function createFakeStorage() {
 }
 
 /** 回调在所属 webview 执行，避免 A 的心跳读写 B 的 window 或移除 B 的监听。 */
-function createFakeWindow({ storage, app }) {
+function createFakeWindow({ storage, app, screen }) {
   const listeners = {}
   const timers = createFakeTimers((fn) => withWindow(win, fn))
   const win = {
     localStorage: storage,
     Application: app || null,
     location: { protocol: 'file:', href: 'file:///addons/chayuan_5.1.2/index.html' },
-    screen: { width: 1600, availWidth: 1600 },
+    screen: screen || { width: 1600, availWidth: 1600 },
     devicePixelRatio: 1,
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
@@ -143,6 +143,8 @@ function createFakeWindow({ storage, app }) {
  *   - Width/Height 被设置后 ~6ms 页面收到 resize 并回报真实值
  * behavior.dead / behavior.deadAxis：对应轴永远回报 14px（坏死面板，探针实测现象）
  * behavior.noBoot：页面永远不 boot（ready 超时路径）
+ * behavior.paneScreenW：面板页回报的真实屏宽（size 协议 sw 字段；缺省不回报）
+ * behavior.baseScreen：基座 webview 的 window.screen（缺省 1600 真屏）
  */
 function createFakeApp(behavior = {}) {
   const storage = createFakeStorage() // PluginStorage（加载项级共享）
@@ -161,7 +163,7 @@ function createFakeApp(behavior = {}) {
       )
       storage.setItem(
         'ai_assistant_pane_size',
-        JSON.stringify({ bootId, w, h, updatedAt: Date.now() })
+        JSON.stringify({ bootId, w, h, sw: behavior.paneScreenW ?? null, updatedAt: Date.now() })
       )
     }
     pane._pageWrite(300, 400) // WPS 默认面板尺寸（探针：底栏初始高 ~402）
@@ -241,7 +243,7 @@ function createFakeApp(behavior = {}) {
 function freshDock(behavior = {}) {
   const { app, storage, panes } = createFakeApp(behavior)
   const localStorage = createFakeStorage()
-  const win = createFakeWindow({ storage: localStorage, app })
+  const win = createFakeWindow({ storage: localStorage, app, screen: behavior.baseScreen })
   globalThis.window = win
   return { app, panes, storage, localStorage, win }
 }
@@ -251,6 +253,7 @@ const TEST_TIMING = {
   sizeTotalMs: 260,
   sizeExactGraceMs: 90,
   sizeSetAttempts: 2,
+  sizeSetTotalAttempts: 3,
   sizePollMs: 8,
   readyTimeoutMs: 400,
   readyPollMs: 5,
@@ -615,6 +618,37 @@ async function testDockManager(mod) {
     assert('方向仍判可用', dock.isDockSupported('left') === true)
   }
 
+  // T13 基座假屏（Mac WPS 实测 screen=1×1，a820609 起停靠编排由基座执行）+
+  //     面板页回报真实屏宽 → 目标修正为半屏并落地，学到的屏宽落入共享记忆
+  {
+    const ctx = freshDock({ baseScreen: { width: 1, availWidth: 1 }, paneScreenW: 1600 })
+    const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
+    const res = await dock.openAs('left')
+    assert('基座假屏下停靠成功且宽为半屏(1600/2=800)', res.ok && ctx.panes.get(1).Width === 800)
+    assert('学到的屏宽落入共享记忆', ctx.storage.getItem('ai_assistant_screen_width') === '1600')
+  }
+
+  // T14 基座假屏 + 面板页也不回报屏宽，但共享记忆已有（浮窗等真实窗口写入过）
+  //     → 直接按记忆半屏设宽（首设即目标值，无需等回报修正）
+  {
+    const ctx = freshDock({ baseScreen: { width: 1, availWidth: 1 } })
+    ctx.storage.setItem('ai_assistant_screen_width', '1600')
+    const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
+    const res = await dock.openAs('left')
+    assert('记忆屏宽驱动半屏设宽', res.ok && ctx.panes.get(1).Width === 800)
+  }
+
+  // T15 dock 请求透传的屏宽（发起方=浮窗等真实窗口）优先于面板回报/记忆/本 webview 假屏；
+  //     screenW 属编排参数，不进面板 URL
+  {
+    const ctx = freshDock({ baseScreen: { width: 1, availWidth: 1 }, paneScreenW: 1600 })
+    ctx.storage.setItem('ai_assistant_screen_width', '1600')
+    const dock = createAIAssistantDockManager({ getApplication: () => ctx.app, timing: TEST_TIMING })
+    const res = await dock.dockTo('right', { screenW: 2000, prompt: 'p' })
+    assert('请求屏宽优先：目标 2000/2=1000', res.ok && ctx.panes.get(1).Width === 1000)
+    assert('screenW 不进面板 URL', !/screenW/.test(ctx.panes.get(1).url) && /prompt=p/.test(ctx.panes.get(1).url))
+  }
+
   // T10 默认面板 URL 构造（file:// 场景）
   {
     const url = buildAIAssistantPaneUrl('left', { prompt: '察元' })
@@ -687,7 +721,7 @@ async function testDockManagerBusy(mod) {
 
 function testPureHelpers(mod) {
   console.log('\n-- 纯函数 --')
-  const { normalizeDockMode, clampPaneSizeValue, isAcceptableSizeReport } = mod
+  const { normalizeDockMode, clampPaneSizeValue, isAcceptableSizeReport, sanitizeScreenWidthPx } = mod
   assert('mode 归一化', normalizeDockMode(' LEFT ') === 'left' && normalizeDockMode('top') === null && normalizeDockMode('') === null)
   assert('尺寸钳制', clampPaneSizeValue('9999', 280, 720) === 720 && clampPaneSizeValue('100', 280, 720) === 280 && clampPaneSizeValue('x', 1, 2) === null)
   assert(
@@ -697,6 +731,13 @@ function testPureHelpers(mod) {
       isAcceptableSizeReport({ w: 300, h: 320 }, 'bottom', 320) === true &&
       isAcceptableSizeReport({ w: 300, h: 304 }, 'bottom', 320) === true &&
       isAcceptableSizeReport({ w: 300, h: 200 }, 'bottom', 320) === false
+  )
+  assert(
+    '屏宽健康判定（假屏 1×1 / 越界 / 非数 全部拒收）',
+    sanitizeScreenWidthPx(1600) === 1600 && sanitizeScreenWidthPx('2000') === 2000 &&
+      sanitizeScreenWidthPx(1) === null && sanitizeScreenWidthPx(99999) === null &&
+      sanitizeScreenWidthPx(null) === null && sanitizeScreenWidthPx(undefined) === null &&
+      sanitizeScreenWidthPx(559) === null && sanitizeScreenWidthPx(560) === 560
   )
 }
 

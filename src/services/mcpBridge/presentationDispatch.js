@@ -24,7 +24,7 @@ export const PRESENTATION_WRITE_ACTIONS = new Set([
   'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout',
   'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add',
   'slideshow_run', 'export', 'slide_export_image',
-  'notes_set', 'format_uniform',
+  'notes_set', 'format_uniform', 'shape_zorder',
   'security_encrypt_save', 'security_decrypt_save'
 ])
 
@@ -274,6 +274,14 @@ function handleTextReplace(params) {
   return { ok: true, index: Number(safeGet(() => slide.SlideIndex, params.index)), replacedShapes: replacedCount, shapeIndexes: touched }
 }
 
+/** 文本字体统一应用：fontName/bold（textbox_add 与 text_set 共用） */
+function applyTextFontProps(textRange, params) {
+  const fontName = String(params?.fontName || '').trim()
+  if (fontName) textRange.Font.Name = fontName
+  if (params?.bold === true) textRange.Font.Bold = true
+  else if (params?.bold === false) textRange.Font.Bold = false
+}
+
 function handleTextSet(params) {
   const text = String(params.text ?? '')
   const pres = getActivePresentation()
@@ -288,6 +296,16 @@ function handleTextSet(params) {
     const tr = sh.TextFrame.TextRange
     if (params.append === true) tr.InsertAfter(text)
     else tr.Text = text
+    const align = String(params.align || '').toLowerCase()
+    // ppAlignLeft=1 / ppAlignCenter=2 / ppAlignRight=3
+    if (align === 'center' || align === '居中') tr.ParagraphFormat.Alignment = 2
+    else if (align === 'right' || align === '右对齐') tr.ParagraphFormat.Alignment = 3
+    else if (align === 'left' || align === '左对齐') tr.ParagraphFormat.Alignment = 1
+    const fontSize = Number(params.fontSize)
+    if (fontSize > 0) tr.Font.Size = fontSize
+    applyTextFontProps(tr, params)
+    const color = params.color !== undefined ? colorToBgr(params.color) : null
+    if (color !== null && color !== undefined) tr.Font.Color.RGB = color
   })
   return { ok: true, index: Number(safeGet(() => slide.SlideIndex, params.index)), shapeIndex, appended: params.append === true }
 }
@@ -305,11 +323,18 @@ function handleTextboxAdd(params) {
   withScreenUpdating(window.Application, () => {
     shape = slide.Shapes.AddTextbox(1, left, top, w, h)
     if (!shape) throw hostError('TEXTBOX_ADD_FAILED', 'AddTextbox 未返回形状')
-    shape.TextFrame.TextRange.Text = text
+    const tr = shape.TextFrame.TextRange
+    tr.Text = text
     const fontSize = Number(params.fontSize)
-    if (fontSize > 0) shape.TextFrame.TextRange.Font.Size = fontSize
+    if (fontSize > 0) tr.Font.Size = fontSize
+    applyTextFontProps(tr, params)
     const color = params.color !== undefined ? colorToBgr(params.color) : null
-    if (color !== null && color !== undefined) shape.TextFrame.TextRange.Font.Color.RGB = color
+    if (color !== null && color !== undefined) tr.Font.Color.RGB = color
+    const align = String(params.align || '').toLowerCase()
+    // ppAlignLeft=1 / ppAlignCenter=2 / ppAlignRight=3；封面/标题类文本居中是刚需
+    if (align === 'center' || align === '居中') tr.ParagraphFormat.Alignment = 2
+    else if (align === 'right' || align === '右对齐') tr.ParagraphFormat.Alignment = 3
+    else if (align === 'left' || align === '左对齐') tr.ParagraphFormat.Alignment = 1
   })
   return {
     ok: true,
@@ -327,8 +352,59 @@ function handlePictureAdd(params) {
   const top = Number(params.top ?? 60)
   const w = Number(params.width ?? 320)
   const h = Number(params.height ?? 240)
+  const fit = String(params.fit || '').toLowerCase()
   let shape = null
   withScreenUpdating(window.Application, () => {
+    if (fit === 'cover' || fit === 'contain' || fit === '铺满' || fit === '适应') {
+      // 等比缩放模式：目标框缺省整页（封面背景的常规需求），显式 width/height 覆盖。
+      // contain=框内完整显示居中；cover=铺满裁掉溢出（PictureFormat 裁剪百分比按
+      // 缩放后溢出量折算）。裁剪 API 不可用时退化为 contain——宁可留白不变形。
+      const sw = Number(safeGet(() => pres.PageSetup?.SlideWidth, 960))
+      const sh = Number(safeGet(() => pres.PageSetup?.SlideHeight, 540))
+      const boxW = Number(params.width) > 0 ? Number(params.width) : sw
+      const boxH = Number(params.height) > 0 ? Number(params.height) : sh
+      const boxLeft = Number(params.width) > 0 ? left : 0
+      const boxTop = Number(params.height) > 0 ? top : 0
+      shape = slide.Shapes.AddPicture(path, false, true, 0, 0)
+      if (!shape) throw hostError('PICTURE_ADD_FAILED', `插入图片失败：${path}`)
+      const natW = Number(safeGet(() => shape.Width, 0)) || 1
+      const natH = Number(safeGet(() => shape.Height, 0)) || 1
+      const scaleContain = Math.min(boxW / natW, boxH / natH)
+      if (fit === 'contain' || fit === '适应') {
+        shape.Width = natW * scaleContain
+        shape.Height = natH * scaleContain
+        shape.Left = boxLeft + (boxW - shape.Width) / 2
+        shape.Top = boxTop + (boxH - shape.Height) / 2
+        return
+      }
+      const scaleCover = Math.max(boxW / natW, boxH / natH)
+      const scaledW = natW * scaleCover
+      const scaledH = natH * scaleCover
+      try {
+        const pf = shape.PictureFormat
+        if (scaledW > boxW + 0.5) {
+          const over = (scaledW - boxW) / scaledW / 2
+          pf.CropLeft = over
+          pf.CropRight = over
+        }
+        if (scaledH > boxH + 0.5) {
+          const over = (scaledH - boxH) / scaledH / 2
+          pf.CropTop = over
+          pf.CropBottom = over
+        }
+        shape.Left = boxLeft
+        shape.Top = boxTop
+        shape.Width = boxW
+        shape.Height = boxH
+      } catch (_) {
+        // 裁剪不可用：退化为 contain，保证不变形
+        shape.Width = natW * scaleContain
+        shape.Height = natH * scaleContain
+        shape.Left = boxLeft + (boxW - shape.Width) / 2
+        shape.Top = boxTop + (boxH - shape.Height) / 2
+      }
+      return
+    }
     try {
       shape = slide.Shapes.AddPicture(path, false, true, left, top, w, h)
     } catch {
@@ -337,7 +413,30 @@ function handlePictureAdd(params) {
     }
   })
   if (!shape) throw hostError('PICTURE_ADD_FAILED', `插入图片失败：${path}（请确认是本地可读路径）`)
-  return { ok: true, index: Number(safeGet(() => slide.SlideIndex, params.index)), left, top, width: w, height: h }
+  return { ok: true, index: Number(safeGet(() => slide.SlideIndex, params.index)), left, top, width: w, height: h, fit: fit || undefined }
+}
+
+/** shape_zorder：封面等分层排版的刚需——背景图置底、标题置顶。
+ *  msoZOrderSendToBack=1 / msoZOrderBringToFront=0（MSO 稳定枚举值） */
+function handleShapeZorder(params) {
+  const pres = getActivePresentation()
+  const slide = resolveSlide(pres, params.index)
+  const shapeIndex = Number(params.shapeIndex)
+  if (!shapeIndex || shapeIndex < 1) {
+    throw hostError('INVALID_PARAMS', 'shapeIndex 必填（用 shape_list 或 slide_read 查看）')
+  }
+  const sh = slide.Shapes.Item(shapeIndex)
+  if (!sh) throw hostError('SHAPE_NOT_FOUND', `第 ${params.index} 页找不到形状 ${shapeIndex}`)
+  const order = String(params.order || params.zorder || '').toLowerCase()
+  const toBack = ['back', 'sendtoback', '置底', '底部', 'behind'].includes(order)
+  const toFront = ['front', 'bringtofront', '置顶', '顶部', 'top'].includes(order)
+  if (!toBack && !toFront) {
+    throw hostError('INVALID_PARAMS', "order 必填：'front'（置顶）或 'back'（置底）")
+  }
+  withScreenUpdating(window.Application, () => {
+    sh.ZOrder(toBack ? 1 : 0)
+  })
+  return { ok: true, index: Number(safeGet(() => slide.SlideIndex, params.index)), shapeIndex, order: toBack ? 'sendToBack' : 'bringToFront' }
 }
 
 function handleTableAdd(params) {
@@ -484,7 +583,24 @@ async function handleSvgAdd(params) {
   if (!png) throw hostError('SVG_RASTERIZE_FAILED', 'SVG 光栅化失败（内容可能过于复杂），请简化图形后重试')
   const saved = await uploadTmpImage(png, 'png')
   if (!saved?.path) throw hostError('SVG_SAVE_FAILED', '光栅化产物落盘失败')
-  const shapes = withScreenUpdating(app, () => slide.Shapes.AddPicture(saved.path))
+  // AddPicture 必须带完整签名：真机实证单参调用被宿主拒绝（Missing required
+  // parameter linktofile）。缺省定位左上 (60,60)，原尺寸插入；left/top/width/height 可选。
+  const slideWidth = Number(safeGet(() => pres.PageSetup?.SlideWidth, 960))
+  const left = Number(params.left ?? 60)
+  const top = Number(params.top ?? 60)
+  const w = Number(params.width ?? Math.max(120, slideWidth - left * 2))
+  const h = Number(params.height ?? 0)
+  let shapes = null
+  withScreenUpdating(app, () => {
+    try {
+      shapes = h > 0
+        ? slide.Shapes.AddPicture(saved.path, false, true, left, top, w, h)
+        : slide.Shapes.AddPicture(saved.path, false, true, left, top)
+    } catch {
+      shapes = slide.Shapes.AddPicture(saved.path, false, true, left, top)
+    }
+  })
+  if (!shapes) throw hostError('SVG_INSERT_FAILED', `矢量图形插入失败：${saved.path}`)
   return {
     ok: true,
     slide: Number(safeGet(() => slide.SlideIndex, params.index)),
@@ -634,6 +750,7 @@ const WRITE_HANDLERS = {
   text_set: handleTextSet,
   textbox_add: handleTextboxAdd,
   picture_add: handlePictureAdd,
+  shape_zorder: handleShapeZorder,
   table_add: handleTableAdd,
   slideshow_run: handleSlideshowRun,
   export: handleExport,

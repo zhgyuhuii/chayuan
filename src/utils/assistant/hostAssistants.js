@@ -10,6 +10,7 @@
  * 配方提示词里的工具指引发给 chat.turn 基座的模型，由它编排 spreadsheet 与
  * presentation 域工具完成；写操作走现有预览→确认闸门。
  */
+import { loadGlobalSettings, saveGlobalSettings, getGlobalSettingsVersion } from '../globalSettings.js'
 
 export const HOST_ASSISTANT_PACKS = {
   et: [
@@ -1233,24 +1234,32 @@ export const HOST_ASSISTANT_PACKS = {
   ]
 }
 
-/** 宿主 → 配方条目（面板 assistantItems 形状） */
-export function getHostAssistantItems(host) {
+/** 宿主 → 配方条目（面板 assistantItems 形状）。
+ *  settingsMapOverride:设置窗口传入的本地编辑态(未保存);不传则用已存储设置。
+ *  配方可编辑(名称/说明/提示词/触发方式/启用),编辑后的值同时作用于面板展示
+ *  与点击执行(runAssistant 直接读 item.prompt / item.mode)。 */
+export function getHostAssistantItems(host, settingsMapOverride = null) {
   const pack = HOST_ASSISTANT_PACKS[host]
   if (!pack) return []
-  return pack.map(item => ({
-    key: item.id,
-    label: item.label,
-    shortLabel: item.shortLabel || item.label,
-    icon: item.icon,
-    group: item.group,
-    type: 'host-assistant',
-    host,
-    mode: item.mode || 'prefill',
-    description: item.description,
-    prompt: item.prompt,
-    domain: '',
-    tags: []
-  }))
+  const storedMap = getHostAssistantSettingsMap()
+  return pack.map(item => {
+    const config = settingsMapOverride?.[item.id] || storedMap[item.id] || getHostAssistantDefaultConfig(item)
+    return {
+      key: item.id,
+      label: config.title || item.label,
+      shortLabel: config.title || item.shortLabel || item.label,
+      icon: config.icon || item.icon,
+      group: item.group,
+      type: 'host-assistant',
+      host,
+      mode: config.mode || item.mode || 'prefill',
+      description: config.description ?? item.description,
+      prompt: config.prompt ?? item.prompt,
+      domain: '',
+      tags: [],
+      enabled: config.enabled !== false
+    }
+  })
 }
 
 export function getHostAssistantRecipe(id) {
@@ -1259,4 +1268,162 @@ export function getHostAssistantRecipe(id) {
     if (found) return { ...found, host }
   }
   return null
+}
+
+/*
+ * ── 宿主助手设置存取 ──
+ * 与 assistantSettings.js 同一套纪律:默认值来自配方包,存储只落与默认的差异
+ * (防 QuotaExceeded),读取时按 globalSettings version 缓存。
+ */
+const HOST_ASSISTANT_SETTINGS_KEY = 'hostAssistantSettings'
+
+function _deepClone(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function _ensureObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+export function getHostAssistantDefaultConfig(recipe) {
+  return {
+    enabled: true,
+    title: recipe?.label || '',
+    description: recipe?.description || '',
+    icon: recipe?.icon || '',
+    prompt: recipe?.prompt || '',
+    mode: recipe?.mode || 'prefill',
+    modelId: null
+  }
+}
+
+function buildHostAssistantSettingsDefaults() {
+  const defaults = {}
+  Object.keys(HOST_ASSISTANT_PACKS).forEach(host => {
+    HOST_ASSISTANT_PACKS[host].forEach(recipe => {
+      defaults[recipe.id] = getHostAssistantDefaultConfig(recipe)
+    })
+  })
+  return defaults
+}
+
+let _hostAssistantSettingsCache = null
+let _hostAssistantSettingsCacheVersion = -1
+
+export function getHostAssistantSettingsMap() {
+  const version = getGlobalSettingsVersion()
+  if (_hostAssistantSettingsCache && _hostAssistantSettingsCacheVersion === version) {
+    return _hostAssistantSettingsCache
+  }
+  const defaults = buildHostAssistantSettingsDefaults()
+  const stored = _ensureObject(loadGlobalSettings()[HOST_ASSISTANT_SETTINGS_KEY])
+  const merged = {}
+  Object.keys(defaults).forEach(id => {
+    merged[id] = { ..._deepClone(defaults[id]), ..._ensureObject(stored[id]) }
+  })
+  _hostAssistantSettingsCache = merged
+  _hostAssistantSettingsCacheVersion = version
+  return _hostAssistantSettingsCache
+}
+
+export function getHostAssistantSetting(id) {
+  const settings = getHostAssistantSettingsMap()
+  return settings[id] ? _deepClone(settings[id]) : null
+}
+
+// settingsMap 传完整解析态(默认+编辑),落盘只保留与默认有差异的字段;
+// 恢复默认 = 表单/映射里回到默认值,差异为空自然不落盘。
+export function saveHostAssistantSettingsMap(settingsMap) {
+  const defaults = buildHostAssistantSettingsDefaults()
+  const stored = {}
+  Object.keys(defaults).forEach(id => {
+    const full = { ..._deepClone(defaults[id]), ..._ensureObject(settingsMap?.[id]) }
+    const diff = {}
+    Object.keys(full).forEach(key => {
+      if (JSON.stringify(full[key]) !== JSON.stringify(defaults[id][key])) {
+        diff[key] = full[key]
+      }
+    })
+    if (Object.keys(diff).length > 0) stored[id] = diff
+  })
+  return saveGlobalSettings({ [HOST_ASSISTANT_SETTINGS_KEY]: stored })
+}
+
+/*
+ * ── 宿主自定义助手 ──
+ * 与内置配方同形态(名称/说明/提示词/触发方式/启用),存于 customHostAssistants
+ * (按宿主分桶),面板与设置页统一走 getHostAssistantDisplayItems 组合展示。
+ */
+const CUSTOM_HOST_ASSISTANTS_KEY = 'customHostAssistants'
+
+// 跨 webview 通知键:设置窗口/面板保存宿主助手配置后写入时间戳,其他 webview
+// 监听 storage 事件即时重载清单(否则要重开面板才能看到编辑效果)
+export const HOST_ASSISTANT_SETTINGS_VERSION_KEY = 'NdHostAssistantSettingsVersion'
+
+export function notifyHostAssistantSettingsChanged() {
+  try {
+    localStorage.setItem(HOST_ASSISTANT_SETTINGS_VERSION_KEY, String(Date.now()))
+  } catch (_) { /* ignore */ }
+}
+
+export function normalizeCustomHostAssistant(entry, index = 0) {
+  return {
+    id: String(entry?.id || `custom-host-${Date.now()}_${index}`),
+    title: String(entry?.title || entry?.name || '').trim() || '自定义助手',
+    description: String(entry?.description || ''),
+    icon: String(entry?.icon || '🤖'),
+    prompt: String(entry?.prompt || ''),
+    mode: entry?.mode === 'send' ? 'send' : 'prefill',
+    group: 'custom',
+    enabled: entry?.enabled !== false,
+    sortOrder: Number.isFinite(Number(entry?.sortOrder)) ? Number(entry.sortOrder) : index,
+    createdAt: String(entry?.createdAt || ''),
+    updatedAt: String(entry?.updatedAt || entry?.createdAt || '')
+  }
+}
+
+export function getCustomHostAssistants(host) {
+  const settings = loadGlobalSettings()
+  const stored = settings[CUSTOM_HOST_ASSISTANTS_KEY]
+  const list = host && Array.isArray(stored?.[host]) ? stored[host] : []
+  return list
+    .filter(item => item && typeof item === 'object')
+    .map((item, index) => normalizeCustomHostAssistant(item, index))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+}
+
+export function saveCustomHostAssistants(host, list) {
+  if (!host) return false
+  const stored = _ensureObject(loadGlobalSettings()[CUSTOM_HOST_ASSISTANTS_KEY])
+  const next = { ...stored }
+  next[host] = (Array.isArray(list) ? list : []).map((item, index) => normalizeCustomHostAssistant(item, index))
+  return saveGlobalSettings({ [CUSTOM_HOST_ASSISTANTS_KEY]: next })
+}
+
+export function buildCustomHostAssistantItem(entry, host) {
+  const normalized = normalizeCustomHostAssistant(entry)
+  return {
+    key: normalized.id,
+    label: normalized.title,
+    shortLabel: normalized.title,
+    icon: normalized.icon,
+    group: 'custom',
+    type: 'host-assistant',
+    host,
+    mode: normalized.mode,
+    description: normalized.description,
+    prompt: normalized.prompt,
+    domain: '',
+    tags: [],
+    enabled: normalized.enabled,
+    isCustom: true
+  }
+}
+
+/** 宿主完整清单 = 内置配方(带用户覆盖) + 自定义助手。面板与设置页共用。 */
+export function getHostAssistantDisplayItems(host, options = {}) {
+  const packItems = getHostAssistantItems(host, options.settingsMapOverride)
+  const customSource = Array.isArray(options.customList) ? options.customList : getCustomHostAssistants(host)
+  const customItems = customSource.map(entry => buildCustomHostAssistantItem(entry, host))
+  return [...packItems, ...customItems]
 }

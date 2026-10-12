@@ -199,6 +199,7 @@ export function resolveAggregateCall(toolName, args = {}) {
       text_set: { method: 'presentation.text_set', args: rest, requireConfirmed: true },
       textbox_add: { method: 'presentation.textbox_add', args: rest, requireConfirmed: true },
       picture_add: { method: 'presentation.picture_add', args: rest, requireConfirmed: true },
+      shape_zorder: { method: 'presentation.shape_zorder', args: rest, requireConfirmed: true },
       table_add: { method: 'presentation.table_add', args: rest, requireConfirmed: true },
       slideshow_run: { method: 'presentation.slideshow_run', args: rest, requireConfirmed: true },
       export: { method: 'presentation.export', args: rest, requireConfirmed: true },
@@ -723,11 +724,11 @@ export const AGGREGATE_TOOLS = [
   tool({
     name: 'presentation',
     description: [
-      'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add|svg_add vector graphics) / notes_set (speaker notes per slide) / format_uniform (unify fonts/sizes/colors across all slides) / slideshow_run / export (pdf|images) / slide_export_image.',
+      'WHAT: WPS 演示(WPP/Presentation) domain — operates the ACTIVE PRESENTATION in the WPS Presentation host. status / slide IO (slide_list|slide_read|slide_add|slide_delete|slide_duplicate|slide_move|slide_layout) / text (text_replace|text_set|textbox_add) / objects (picture_add|table_add|svg_add vector graphics) / shape_zorder (front|back) / notes_set (speaker notes per slide) / format_uniform (unify fonts/sizes/colors across all slides) / slideshow_run / export (pdf|images) / slide_export_image.',
       'WHEN: user asks anything about PPT/幻灯片/演示文稿/slides while WPS 演示 is the host, e.g. 「加一页标题页」「把第2页的错别字改掉」「插入图片」「给每页写演讲备注」「统一字体」「导出PDF」「开始放映」.',
       'NOT: Not for Word documents. Text edits need shapeIndex (slide_read/shape_list first).',
-      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). notes_set: notes=[{slide,text}] or slide+text. format_uniform: fontName/titleSize/bodySize/color — table shapes are skipped. security_encrypt_save/security_decrypt_save: 给当前演示稿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存副本；密码遗忘无法找回）。',
-      'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"notes_set","notes":[{"slide":1,"text":"开场白：各位领导好"},{"slide":2,"text":"本页强调三个数字"}],"confirmed":true} ; {"action":"format_uniform","fontName":"微软雅黑","titleSize":28,"bodySize":18,"confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+      'HOW: Slides are 1-based. layout names: title|text|twoText|table|chart|titleOnly|blank (or numeric ppLayout). Writes need confirmed=true (preview returned first). notes_set: notes=[{slide,text}] or slide+text. format_uniform: fontName/titleSize/bodySize/color — table shapes are skipped. security_encrypt_save/security_decrypt_save: 给当前演示稿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存副本；密码遗忘无法找回）。排版/封面必须先 {"action":"status"} 取 slideWidth/slideHeight（磅）再算坐标：left/top/width/height 单位磅。背景图 picture_add 传 fit:"cover"（等比铺满整页、裁掉溢出，缺省框=整页），插入后 shape_zorder order:"back" 置底，再 textbox_add 叠可编辑文字（文字永远在图片之上）。',
+      'EXAMPLE: {"action":"status"} ; {"action":"slide_list"} ; {"action":"slide_add","index":1,"layout":"title","title":"年度总结","content":"2026 年度经营回顾","confirmed":true} ; {"action":"picture_add","path":"/tmp/cover.png","fit":"cover","confirmed":true} ; {"action":"shape_zorder","index":1,"shapeIndex":1,"order":"back","confirmed":true} ; {"action":"textbox_add","text":"2027 年春节","left":120,"top":200,"width":720,"height":90,"fontSize":44,"bold":true,"align":"center","confirmed":true} ; {"action":"notes_set","notes":[{"slide":1,"text":"开场白：各位领导好"}],"confirmed":true} ; {"action":"format_uniform","fontName":"微软雅黑","titleSize":28,"bodySize":18,"confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     inputSchema: {
@@ -735,19 +736,23 @@ export const AGGREGATE_TOOLS = [
       additionalProperties: false,
       required: ['action'],
       properties: {
-        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'notes_set', 'format_uniform', 'svg_add', 'slideshow_run', 'export', 'slide_export_image', 'security_encrypt_save', 'security_decrypt_save'] },
+        action: { type: 'string', enum: ['status', 'slide_list', 'slide_read', 'shape_list', 'slide_add', 'slide_delete', 'slide_duplicate', 'slide_move', 'slide_layout', 'text_replace', 'text_set', 'textbox_add', 'picture_add', 'table_add', 'notes_set', 'format_uniform', 'shape_zorder', 'svg_add', 'slideshow_run', 'export', 'slide_export_image', 'security_encrypt_save', 'security_decrypt_save'] },
         confirmed: { type: 'boolean' },
         index: { type: 'number', description: '幻灯片序号（1-based；缺省=最后一页或活动页视 action 而定）' },
         from: { type: 'number' }, to: { type: 'number' },
         layout: { type: 'string', description: '版式名 title|text|twoText|table|chart|titleOnly|blank 或 ppLayout 数字' },
         title: { type: 'string' }, content: { type: 'string' },
         find: { type: 'string' }, replace: { type: 'string' },
-        shapeIndex: { type: 'number' }, text: { type: 'string' }, append: { type: 'boolean' },
+        shapeIndex: { type: 'number', description: '形状序号（1-based，slide_read/shape_list 查看）' }, text: { type: 'string' }, append: { type: 'boolean' },
+        align: { type: 'string', description: 'text_set/textbox_add 对齐：left|center|right' },
+        bold: { type: 'boolean', description: 'text_set/textbox_add 加粗' },
+        order: { type: 'string', enum: ['front', 'back'], description: 'shape_zorder 层级：front=置顶 / back=置底' },
+        fit: { type: 'string', enum: ['cover', 'contain'], description: 'picture_add 等比模式：cover=铺满目标框裁掉溢出（缺省框=整页）/ contain=完整显示居中' },
         password: { type: 'string', description: 'security_encrypt_save 的打开密码（不回显）' },
         savePath: { type: 'string', description: 'security_* 另存路径（缺省=当前文件）' },
         notes: { type: 'array', items: { type: 'object', properties: { slide: { type: 'number' }, text: { type: 'string' } } }, description: 'notes_set 每页备注 [{slide, text}]' },
         svg: { type: 'string', description: 'svg_add 的 SVG 源文本（矢量图形，禁止 script/外链）' },
-        fontName: { type: 'string', description: 'format_uniform 统一字体名' },
+        fontName: { type: 'string', description: 'format_uniform 统一字体名；text_set/textbox_add 亦可指定' },
         titleSize: { type: 'number', description: 'format_uniform 标题字号' },
         bodySize: { type: 'number', description: 'format_uniform 正文字号' },
         fontSize: { type: 'number' }, color: { type: 'string' },
@@ -755,7 +760,10 @@ export const AGGREGATE_TOOLS = [
         rows: { type: 'number' }, cols: { type: 'number' },
         data: { type: 'array', items: { type: 'array' }, description: 'table_add 单元格文本二维数组' },
         format: { type: 'string', enum: ['pdf', 'images'] },
-        width: { type: 'number' }, height: { type: 'number' }
+        left: { type: 'number', description: 'textbox_add/picture_add/table_add 左上角 X（磅）' },
+        top: { type: 'number', description: 'textbox_add/picture_add/table_add 左上角 Y（磅）' },
+        width: { type: 'number', description: '宽度（磅）；fit 模式缺省=整页宽' },
+        height: { type: 'number', description: '高度（磅）；fit 模式缺省=整页高' }
       }
     }
   })

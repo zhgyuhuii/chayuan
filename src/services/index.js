@@ -261,9 +261,11 @@ const ribbonHelpers = {
 // 保证 services.kb.connectionCipher 等子模块对外可见。
 import * as kbNs from './kb/index.js'
 import * as desktopNs from './desktop/index.js'
+import * as webResourcesNs from './webResources/index.js'
 
 const kb = { ...kbNs.default, ...kbNs }
 const desktop = { ...desktopNs.default, ...desktopNs }
+const webResources = { ...webResourcesNs.default, ...webResourcesNs }
 
 /* ────────── 默认导出 ────────── */
 
@@ -286,7 +288,8 @@ export default {
   ui,
   ribbonHelpers,
   kb,
-  desktop
+  desktop,
+  webResources
 }
 
 export {
@@ -294,5 +297,5 @@ export {
   host, router, workflow, ribbonHelpers, evolutionExtras,
   documentIntelligence, toolRegistry, workflowOrchestration,
   assistantEvolution, schema, ui, sendPipeline,
-  kb, desktop
+  kb, desktop, webResources
 }

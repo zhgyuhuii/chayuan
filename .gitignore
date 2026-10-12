@@ -58,3 +58,4 @@ release/.mac-scripts
 /*.deb
 artifacts/e2e-180/
 artifacts/e2e-v2/shots/
+.deploy-staging/

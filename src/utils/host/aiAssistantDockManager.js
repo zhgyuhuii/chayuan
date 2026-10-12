@@ -9,7 +9,9 @@
  *   2. 浮窗↔停靠原子交接（先建后关：markHandover → 建面板 → ready 握手 → 验尺寸 → 关旧）
  *   3. 尺寸设置规范：DockPosition 切换后延迟 ≥400ms 再设 Width/Height（立即设会得到
  *      14px 坏死面板，且同步读回值是假的）；以面板页 resize 回报的真实 innerWidth/Height
- *      （PluginStorage）为准，有界重试，禁止相信 Width/Height 读回值
+ *      （PluginStorage）为准，有界重试，禁止相信 Width/Height 读回值。左右停靠目标宽
+ *      =真实屏幕一半，屏宽真源逐级回落：dock 请求透传 > 面板页回报 > 共享记忆 >
+ *      本 webview screen（基座 webview 假屏 1×1，见 resolveScreenWidthPx）
  *   4. 运行时能力探测缓存（按 Application.Version）：回报 <50px 或超时判该方向不支持
  *
  * 面板页（AIAssistantDialog.vue，?mode=taskpane）配合约定：
@@ -49,12 +51,16 @@ export const PANE_PROTOCOL_KEYS = {
   ready: 'ai_assistant_pane_ready',
   size: 'ai_assistant_pane_size'
 }
+// 真实屏宽共享记忆：浮窗/面板页（真实窗口）写入，基座 webview（假屏）读取。
+// 单独导出供 AIAssistantDialog.vue 写入
+export const SCREEN_WIDTH_MEMO_KEY = 'ai_assistant_screen_width'
 const KEYS = {
   mode: 'ai_assistant_dock_mode',
   paneId: 'ai_assistant_taskpane_id',
   probe: 'ai_assistant_dock_probe',
   width: 'ai_assistant_dock_width',
   height: 'ai_assistant_dock_height',
+  screenW: SCREEN_WIDTH_MEMO_KEY,
   ...PANE_PROTOCOL_KEYS
 }
 
@@ -62,7 +68,8 @@ export const TIMING_DEFAULTS = {
   settleDelayMs: 400, // DockPosition→Width/Height 首设延迟（探针：≥~400ms 才不触发布局竞态）
   sizeTotalMs: 9000, // 尺寸观察总窗口（探针：赋值落地延迟 0.7~3.5s 且随重设变长，窗口要足够长）
   sizeExactGraceMs: 3500, // 此窗口内坚持等精确匹配；过后接受健康默认尺寸（共识：不可设用默认）
-  sizeSetAttempts: 2, // 总赋值次数上限：频繁重设疑似推迟布局沉降（探针 round2 时间线）
+  sizeSetAttempts: 2, // 同一目标值的赋值次数上限：频繁重设疑似推迟布局沉降（探针 round2 时间线）
+  sizeSetTotalAttempts: 3, // 全程赋值次数上限：仅当学到新屏宽目标变化时才允许额外重设
   sizePollMs: 300,
   verifyIntervalMs: 200,
   pollsPerAttempt: 2,
@@ -84,18 +91,14 @@ export const SIZE_LIMITS = {
 export const DEFAULT_PANE_SIZE = { width: 420, height: 320 }
 
 /**
- * 左右停靠的目标宽度：屏幕一半（与 WPS 文档平分屏幕宽度，用户口径即屏幕）。
- * manager 运行在 WPS webview 里，window.screen 与 WPS 主窗口同屏；
- * 取不到 screen 时回落旧默认 420。
+ * 屏宽数值健康判定：过窄（<2×minWidth，含基座 webview 实测假屏 1×1）或离谱
+ * （>8K 物理上限）都不可用作半屏宽依据。
  */
-function resolveHalfScreenWidthPx() {
-  try {
-    const w = Number(window.screen?.availWidth || window.screen?.width || 0)
-    if (Number.isFinite(w) && w >= 2 * SIZE_LIMITS.minWidth) {
-      return Math.floor(w / 2)
-    }
-  } catch (_) {}
-  return DEFAULT_PANE_SIZE.width
+export function sanitizeScreenWidthPx(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  if (num < 2 * SIZE_LIMITS.minWidth || num > 16384) return null
+  return Math.round(num)
 }
 
 const FLOAT_DIALOG_TITLE = '察元 AI 助手'
@@ -309,7 +312,37 @@ export function createAIAssistantDockManager(deps = {}) {
   }
 
   // -- 尺寸设置规范（探针配方：延迟首设 + 面板页回报验证 + 有界重试） --
-  function resolveTargetSize(mode) {
+  // 屏宽真源优先级：请求方上报（浮窗等真实窗口，经 dock 请求透传）> 面板页回报
+  // sw > PluginStorage 记忆 > 本 webview window.screen。
+  // 背景：a820609 起停靠编排由 ribbon 基座 webview 执行，而基座的 window.screen
+  // 在 Mac WPS 实测是假屏 1×1（probe-dock env 记录）——只读本 webview screen 会把
+  // 半屏宽错回落成 420（三宿主停靠面板变窄的回归根因）。
+  function paneReportedScreenWidth() {
+    const report = readJson(KEYS.size)
+    // 只信当前 ready 面板的回报，避免旧面板残留值误导
+    if (!report || !readyBootId || report.bootId !== readyBootId) return null
+    return sanitizeScreenWidthPx(report.sw)
+  }
+  function localScreenWidth() {
+    try {
+      return sanitizeScreenWidthPx(window.screen?.availWidth || window.screen?.width || 0)
+    } catch (_) {
+      return null
+    }
+  }
+  function resolveScreenWidthPx(queryScreenW) {
+    return (
+      sanitizeScreenWidthPx(queryScreenW) ||
+      paneReportedScreenWidth() ||
+      sanitizeScreenWidthPx(readRaw(KEYS.screenW)) ||
+      localScreenWidth()
+    )
+  }
+  function memoizeScreenWidth(screenW) {
+    if (!screenW || readRaw(KEYS.screenW) === String(screenW)) return
+    writeRaw(KEYS.screenW, String(screenW))
+  }
+  function resolveTargetSize(mode, screenW = null) {
     if (mode === 'bottom') {
       const height =
         clampPaneSizeValue(readRaw(KEYS.height), SIZE_LIMITS.minHeight, SIZE_LIMITS.maxHeight) ||
@@ -317,10 +350,11 @@ export function createAIAssistantDockManager(deps = {}) {
       return { axis: 'height', value: height }
     }
     // 左/右：屏幕一半（用户约定），不套 maxWidth 上限（1920 屏即 960）；
-    // 最小可用宽仍受 minWidth 保护
-    const half = resolveHalfScreenWidthPx()
-    const width = Math.max(SIZE_LIMITS.minWidth, half)
-    return { axis: 'width', value: width }
+    // 最小可用宽仍受 minWidth 保护；拿不到任何真实屏宽时回落旧默认 420
+    const width = screenW
+      ? Math.max(SIZE_LIMITS.minWidth, Math.floor(screenW / 2))
+      : DEFAULT_PANE_SIZE.width
+    return { axis: 'width', value: width, screenW: screenW || null }
   }
   function readSizeReport(createdAt) {
     const report = readJson(KEYS.size)
@@ -335,21 +369,31 @@ export function createAIAssistantDockManager(deps = {}) {
   //   延迟赋值生效；宽度赋值落地慢（0.7~3.5s）且频繁重设疑似推迟沉降，因此赋值
   //   次数受限、精确匹配只等一个宽限期，之后按健康默认放行。
   // - 只有始终无健康回报（页面没起来/14px 坏死）才判该方向不支持。
-  async function applyAndVerifyPaneSize(pane, mode, createdAt) {
+  async function applyAndVerifyPaneSize(pane, mode, createdAt, queryScreenW = null) {
     await delay(timing.settleDelayMs)
-    const target = resolveTargetSize(mode)
     const startedAt = Date.now()
-    let setCount = 0
+    let target = resolveTargetSize(mode, resolveScreenWidthPx(queryScreenW))
+    memoizeScreenWidth(target.screenW)
+    let setCount = 0 // 当前目标值的赋值次数
+    let totalSetCount = 0 // 全程赋值次数（含学到新屏宽后的目标修正重设）
     let sawReport = false
     let lastDim = -1
     let stableCount = 0
     while (Date.now() - startedAt < timing.sizeTotalMs) {
-      if (setCount < timing.sizeSetAttempts) {
+      // 面板页回报可能带来首个真实屏宽（基座假屏场景的真源）：目标变化允许重设
+      const nextTarget = resolveTargetSize(mode, resolveScreenWidthPx(queryScreenW))
+      if (nextTarget.value !== target.value) {
+        memoizeScreenWidth(nextTarget.screenW)
+        target = nextTarget
+        setCount = 0
+      }
+      if (setCount < timing.sizeSetAttempts && totalSetCount < timing.sizeSetTotalAttempts) {
         try {
           if (target.axis === 'width') pane.Width = target.value
           else pane.Height = target.value
         } catch (_) {}
         setCount += 1
+        totalSetCount += 1
       }
       await delay(timing.sizePollMs)
       const report = readSizeReport(createdAt)
@@ -473,6 +517,10 @@ export function createAIAssistantDockManager(deps = {}) {
       cacheProbeResult(normalized, false)
       return fallbackToFloat(query, `dock-unsupported:${normalized}`)
     }
+    // 发起方（浮窗/面板页，真实窗口）经 dock 请求透传的真实屏宽——基座假屏场景的
+    // 首选真源；从 query 剥离，不进面板/浮窗 URL
+    const queryScreenW = sanitizeScreenWidthPx(query?.screenW)
+    const paneQuery = queryScreenW ? { ...query, screenW: undefined } : query
 
     // 停靠间互切快路径：活面板直接改 DockPosition（探针 round1 验证过同一面板
     // 切换位置可用），免掉新 webview 冷启动整页重载与锁交接——从数秒降到亚秒。
@@ -486,7 +534,7 @@ export function createAIAssistantDockManager(deps = {}) {
         const currentReport = readJson(KEYS.size)
         if (!currentReport?.bootId) throw new Error('fast-no-report')
         readyBootId = currentReport.bootId
-        const sizeResult = await applyAndVerifyPaneSize(activePane, normalized, 0)
+        const sizeResult = await applyAndVerifyPaneSize(activePane, normalized, 0, queryScreenW)
         if (!sizeResult.ok) throw new Error('fast-size-unhealthy')
         setMode(normalized)
         cacheProbeResult(normalized, true)
@@ -514,13 +562,13 @@ export function createAIAssistantDockManager(deps = {}) {
     let createdPane = null
     readyBootId = null
     try {
-      createdPane = createPane(normalized, query)
+      createdPane = createPane(normalized, paneQuery)
       writeRaw(KEYS.paneId, String(createdPane.ID))
 
       const ready = await waitPaneReady(beforeReady, createdAt)
       if (!ready) throw new Error('pane-ready-timeout')
 
-      const sizeResult = await applyAndVerifyPaneSize(createdPane, normalized, createdAt)
+      const sizeResult = await applyAndVerifyPaneSize(createdPane, normalized, createdAt, queryScreenW)
       if (!sizeResult.ok) {
         // 只有“面板页活着但尺寸坏死(<50px)”才缓存为该方向不支持；
         // 零回报（页面没起来）不缓存，避免慢机器被误判永久隐藏入口
@@ -555,13 +603,13 @@ export function createAIAssistantDockManager(deps = {}) {
         // 原浮窗若仍活着，凭单实例锁认领会聚焦收敛；死了则这里就是重建。
         const reopenReason = String(e?.message || e)
         try {
-          openFloat({ ...(query || {}), reopen: '1' })
+          openFloat({ ...(paneQuery || {}), reopen: '1' })
           return { ok: false, reason: reopenReason, reopenedFloat: true }
         } catch (e2) {
           return { ok: false, reason: `${reopenReason};float-reopen-failed`, error: e2, keptPrevious: true }
         }
       }
-      return fallbackToFloat(query, String(e?.message || e))
+      return fallbackToFloat(paneQuery, String(e?.message || e))
     }
   }
 

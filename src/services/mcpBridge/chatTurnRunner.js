@@ -25,6 +25,7 @@ import {
 } from '../documentWriteLock.js'
 import { setChatApiConfigOverride } from '../../utils/chatApi.js'
 import { checkDocBinding } from '../../utils/chat/docBinding.js'
+import { setAssistantKbBindingGetter, readAssistantKbBinding } from '../../utils/assistant/kbAssistantBinding.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 
 const TURN_KEY_PREFIX = 'ai_chat_turn:'
@@ -126,6 +127,13 @@ function runDetachedTurn(params = {}) {
   const turnId = String(params.turnId || '').trim()
   const scopeKey = String(params.scopeKey || '')
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+
+  // KB 绑定双保险：回合参数直传的绑定优先，共享存储兜底（面板发布）。基座托管
+  // 回合里的 kb 检索工具经本 getter 取绑定，任一通道可用即不再误报「未绑定」
+  const turnKbBinding = params.kbBinding && Array.isArray(params.kbBinding.kbNames) && params.kbBinding.kbNames.length
+    ? params.kbBinding
+    : null
+  setAssistantKbBindingGetter(() => turnKbBinding || readAssistantKbBinding())
 
   // OCC 基线必须在执行侧（本 webview）建立：写锁校验读的是本进程模块内的
   // baselines Map，面板侧的基线跨不过 webview 边界
@@ -235,6 +243,7 @@ function runDetachedTurn(params = {}) {
         model,
         selectionCtx: params.selectionCtx || null,
         kbBound: !!params.kbBound,
+        kbBinding: turnKbBinding,
         historyMessages: Array.isArray(params.historyMessages) ? params.historyMessages : [],
         previousTodos: Array.isArray(params.previousTodos) ? params.previousTodos : [],
         writeBaselineToken,

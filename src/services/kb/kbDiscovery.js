@@ -2,12 +2,15 @@
  * kbDiscovery — 自动发现本机 chayuan-harness(chatop) 知识库服务并动态接入
  *
  * 服务端事实(chayuan-harness docs/port-registry.md + chatop-kb/src/service.js):
- *   - chatop-kb 对外服务:固定基址 52582,被占顺延 +1 最多 20 个,根路径与
- *     /api/chatop-kb/* 前缀等价;端口持久化在 harness storages/chatop-kb/service.json
+ *   - chatop-kb 对外服务严格固定在 52582(2026-10-12 端口纪律升级:一格一号、
+ *     永不漂移——被占告警拒绝启动,不顺延、不持久化历史端口);根路径与
+ *     /api/chatop-kb/* 前缀等价
  *   - dsh 宿主管理面:52584(web 形态),多用户会话段 52601+,KB 挂在
  *     /api/chatop-kb 前缀下;旧装机保留 3080..3090 兼容尾巴
  *   - 全部 loopback-only、无 token(回环信任),/status 返回
  *     { ok:true, kbs:[...], chain?, ... } — 该形状即指纹,随机本机服务不可能误配
+ *   - 端口梯仅作旧装机兼容(顺延时代残留 52582+20 / dsh 形态 / 旧段),
+ *     新装机首候选 52582 必中
  *
  * 发现协议(与 chayuan-office kb-client「四级发现」同构,去掉浏览器拿不到的
  * hint-file 层):

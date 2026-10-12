@@ -115,6 +115,8 @@ const STUBS = {
       globalThis.__MOCK__.localCalls.push({ name: serverId + '__' + toolName, args })
       return { ok: true }
     }
+    // agentImageTier（生图链）依赖：桩仅保证可打包，路径返回空让链路自行降级
+    export async function uploadTmpImage() { return { ok: false, reason: 'stub' } }
   `,
   // src/utils/taskListStore.js
   [join(REPO, 'src/utils/taskListStore.js')]: `
@@ -533,6 +535,53 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(r.isError && JSON.parse(r.output).error === 'NO_ACTIVE_DOCUMENT', 'S21 no-document turn cannot write')
   A(m.localCalls.length === 1, 'S21 no-document turn never reaches host')
   console.log('S21 原文档身份不可伪造，无文档回合禁止写入')
+}
+
+// 场景 22：轮次上限 + todo 有未完成项 → 自动续跑补完（MAX_ROUNDS 首段 + 续跑段）
+{
+  const m = baseMock()
+  // 首段：todo_write（1 完成 2 未完成）与首个工具同轮提交；再 23 轮工具调用把循环
+  // 顶到上限（参数逐轮变化，避开同回合重复熔断）；第 25 轮为无工具收尾轮 = turnLimit
+  m.chatScript = [{ tool_calls: [
+    toolCall('t1', 'todo_write', { todos: [
+      { content: '写正文', status: 'completed' },
+      { content: '统一排版', status: 'in_progress' },
+      { content: '生成目录', status: 'pending' }
+    ] }),
+    toolCall('c1', 'chayuan__document_locate', { text: 'x1' })
+  ] }]
+  for (let i = 2; i <= 24; i++) m.chatScript.push({ tool_calls: [toolCall('c' + i, 'chayuan__document_locate', { text: 'x' + i })] })
+  m.chatScript.push({ content: '正文已写完，排版与目录未做。' })
+  // 续跑段：补完剩余任务（todo_write 全勾 + 写操作）后总结
+  m.chatScript.push({ tool_calls: [
+    toolCall('t2', 'todo_write', { todos: [
+      { content: '写正文', status: 'completed' },
+      { content: '统一排版', status: 'completed' },
+      { content: '生成目录', status: 'completed' }
+    ] }),
+    toolCall('r1', 'chayuan__document_replace', { originalText: 'a', newText: 'b' })
+  ] })
+  m.chatScript.push({ content: '排版与目录已补完，任务全部完成。' })
+  const r = await run({})
+  A(r.ok === true, 'S22 ok')
+  A(r.content.includes('任务全部完成'), 'S22 content 来自续跑收尾: ' + r.content)
+  A(m.localCalls.some(c => c.name === 'document_replace'), 'S22 续跑补完写操作')
+  A(r.steps.some(s => s.label.includes('自动续跑')), 'S22 step 自动续跑')
+  A(r.steps.some(s => s.label.includes('· 续跑）')), 'S22 续跑轮次有标注')
+  // 24 工具轮 + 1 收尾轮 + 2 续跑轮 = 27 次模型请求
+  A(m.requests.length === 27, 'S22 请求数, got ' + m.requests.length)
+  const limitReq = m.requests[24]
+  A(limitReq.messages.some(x => x.role === 'user' && String(x.content).includes('tool-call turn limit')), 'S22 上限收尾轮带系统便签')
+  const contReq = m.requests[25]
+  const contUser = contReq.messages.filter(x => x.role === 'user').pop()
+  A(String(contUser && contUser.content).includes('【系统续跑】'), 'S22 续跑指令注入用户位')
+  A(String(contUser && contUser.content).includes('统一排版'), 'S22 续跑指令携带未完成清单')
+  A(String(contReq.messages[0].content).includes('沿用清单'), 'S22 续跑系统提示词激活沿用清单')
+  A(contReq.messages.some(x => x.role === 'tool' && x.tool_call_id === 'c24'), 'S22 续跑保留首段工具结论')
+  A(!contReq.messages.some(x => String(x.content || '').includes('no more tools')), 'S22 过期轮次便签已剥离')
+  A(r.todos.length === 3 && r.todos.every(t => t.status === 'completed'), 'S22 续跑后清单全部完成')
+  A(JSON.stringify(r.loopMessages || []).includes('任务全部完成'), 'S22 持久化含续跑结论')
+  console.log('✓ S22 轮次上限自动续跑（未完成清单驱动）')
 }
 
 console.log('ALL SCENARIOS PASSED')

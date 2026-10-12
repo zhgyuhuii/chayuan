@@ -31,7 +31,7 @@ function networkErrorMessage(err) {
 }
 
 let _cachedSidecarToken = null
-/** 敏感路由访问令牌（FS 同源读取，见 webviewFsProbe.readSidecarToken）；读不到为空串 */
+/** 敏感路由访问令牌：FS 同源读取 → PluginStorage 播种（agentClient.syncTokenFromSidecar 写入）；读不到为空串 */
 function sidecarAccessToken() {
   if (_cachedSidecarToken !== null) return _cachedSidecarToken
   try {
@@ -39,7 +39,33 @@ function sidecarAccessToken() {
   } catch {
     _cachedSidecarToken = ''
   }
+  if (!_cachedSidecarToken) {
+    // WPS 沙盒里 FileSystem 读不到 ~/.config（真机实证：svg_add 落盘 401 unauthorized），
+    // 回退注册链路播进 PluginStorage 的同一把 token（与 agentClient.sidecarAccessToken 对齐）
+    try {
+      _cachedSidecarToken = String(window.Application?.PluginStorage?.getItem?.('mcp_sidecar_token') || '').trim()
+    } catch {
+      _cachedSidecarToken = ''
+    }
+  }
   return _cachedSidecarToken
+}
+
+/** 兜底第三条：localhost bootstrap 直取（/token?bootstrap=1，仅环回可达）并回写缓存与播种 */
+async function ensureSidecarToken() {
+  if (sidecarAccessToken()) return sidecarAccessToken()
+  try {
+    const res = await fetch(`${MCP_BASE_URL}/token?bootstrap=1`, { method: 'GET' })
+    const data = await res.json().catch(() => null)
+    const t = String(data?.token || '').trim()
+    if (t) {
+      _cachedSidecarToken = t
+      try {
+        window.Application?.PluginStorage?.setItem?.('mcp_sidecar_token', t)
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+  return sidecarAccessToken()
 }
 
 async function postJson(url, body, { headers = {}, signal, timeoutMs = 60000 } = {}) {
@@ -144,11 +170,27 @@ async function localRpc(method, params = {}, { signal, timeoutMs } = {}) {
 
 /** svg_add 光栅化产物落盘：POST /tmp-image（token 门禁），返回 {ok, path} */
 export async function uploadTmpImage(base64, ext = 'png', { signal, timeoutMs = 30000 } = {}) {
+  const token = await ensureSidecarToken()
   const res = await postJson(`${MCP_BASE_URL}/tmp-image`,
     { base64, ext },
-    { headers: { 'X-Chayuan-Token': sidecarAccessToken() }, signal, timeoutMs })
+    { headers: token ? { 'X-Chayuan-Token': token } : {}, signal, timeoutMs })
   if (!res.ok) throw new Error(res.json?.error || `落盘失败 HTTP ${res.status}`)
   return res.json
+}
+
+/**
+ * 通用 sidecar 原生端点 POST（token 门禁路由，如 /web-resources/*）。
+ * 首发带缓存 token，401 时 bootstrap 重取再试一次（与 uploadTmpImage 同款纪律）。
+ */
+export async function sidecarPost(path, body, { signal, timeoutMs = 30000 } = {}) {
+  const send = async (token) => postJson(`${MCP_BASE_URL}${path}`, body, {
+    headers: token ? { 'X-Chayuan-Token': token } : {},
+    signal,
+    timeoutMs
+  })
+  let res = await send(await ensureSidecarToken())
+  if (res.status === 401) res = await send(await ensureSidecarToken())
+  return res
 }
 
 export async function initializeLocal({ signal } = {}) {

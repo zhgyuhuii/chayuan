@@ -4,16 +4,50 @@
 
 # 察元 AI 文档助手 · Chayuan AI Document Assistant
 
-**WPS 文字智能加载项 / WPS 文档智能体** — 以**内嵌智能体**在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
+**WPS 文字 / 表格 / 演示三端智能加载项 / WPS 文档智能体** — 以**内嵌智能体**在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；文字 / 表格 / 演示三端内置助手（4526 + 29 + 25），**三级生图**与**网络资源搜索**为 PPT 配图保底；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Version](https://img.shields.io/badge/version-5.1.4-purple.svg)](package.json)
+[![Version](https://img.shields.io/badge/version-6.0.0-purple.svg)](package.json)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 </div>
 
 > **关键词 / Keywords：** WPS 加载项 · WPS 文字 AI · **内嵌智能体** · **文档智能体** · **WPS 智能体** · **多文档校对与修正** · 错别字检查 · 拼写语法检查 · **MCP / Model Context Protocol** · 离线文档 AI · 本地大模型 · 知识库 RAG · 公文校对 · WPS Office add-in · document AI agent · proofreading · offline LLM · 察元 AI 助手
+
+---
+
+## v6.0.0 更新说明 — 表格助手 · 演示稿助手 · 三级生图
+
+> 6.0.0 从「文字端智能加载项」升级为「**三端 AI 工作台**」：WPS 表格、WPS 演示与文字端共享同一套智能体内核，新增表格助手 / 演示稿助手 / 三级生图 / 网络资源搜索 / 本机知识库自动发现 / 多文档会话隔离六大主线。完整清单见 [RELEASE_NOTES_v6.0.0.md](RELEASE_NOTES_v6.0.0.md)。
+
+### 表格助手（WPS 表格）
+
+- 表格域 **21 个 MCP 动作** + **29 个内置助手配方**（通用 8 + 行业 21）：数据洞察、一键图表、公式助手、数据清洗
+- 计算优先写公式（SUMIF / VLOOKUP），数字由表格自己算、可复核；财务场景完成后主动提醒人工复核
+- 数据清洗先报告再动手；跨宿主编排读 Word 生成战报表
+
+### 演示稿助手（WPS 演示）
+
+- 演示域 **20 个 MCP 动作** + **25 个内置助手配方**（通用 7 + 配图 3 + 行业 15）
+- 「AI 生成 PPT」：主题一句话 → 大纲确认 → 逐页生成（版式 / 标题 / 正文 / 演讲备注）
+- 文档转 PPT 跨宿主编排、整套摘要、美化统一、口播稿
+
+### 三级生图 + 网络资源搜索
+
+- **三级图源**：模型生图 → 网络搜图 → SVG 矢量自动降级（降级铁律：上级失败才降级，绝不静默换花钱来源）；图源四模式 auto / model / web / svg
+- **网络资源搜索设置**（新）：Serper / Tavily / Linkup / SearXNG + Pexels / Pixabay / Unsplash + 必应 / Openverse 免 Key 兜底——独立开关、Key 本地保存、一键测活，启用清单驱动 `image_search` 搜图链
+- 生图模型直连 agent 生图链（百炼原生 / OpenAI 兼容双通道路由）
+
+### 本机知识库自动发现
+
+- 装有察元AI OS 的机器打开知识库设置即自动发现并接入本机知识库，零配置；服务端口注册表统一编制、严格固定
+- 库列表实时同步：察元OS 侧增删知识库自动反映，无需重配
+
+### 多文档会话隔离 + 三宿主体验统一
+
+- 对话跟随文档（三宿主文件内身份），面板跨窗口切换自动跟随、切回即恢复；隔离三重防线
+- Ribbon 常驻助手按钮语义化图标全量覆盖（118/118）；三宿主停靠（磁吸拖动）行为统一
 
 ---
 
@@ -57,7 +91,7 @@
 - **5.1.2（2026-09-18）**：macOS arm64 安装包重打，内置新编 sidecar 二进制
 - **5.1.4（2026-09-25）**：在线客服嵌入（侧栏「反馈及建议」直达官网机器人聊天页，离线回落公众号二维码）；Windows sidecar 改 GUI 子系统，双击直启不再弹黑窗；升级检查版本口径统一取自 package.json，绝不误报
 
-历史版本：[v4.1（表格结构写回 · 技能双向自启）](RELEASE_NOTES_v4.1.md) · [v4.0.0（本机 MCP 文档智能体）](RELEASE_NOTES_v4.0.md) · [v3.0（远程知识库 RAG）](RELEASE_NOTES_v3.0.md)
+历史版本：[v6.0.0（三端 AI 工作台 · 本篇顶部）](RELEASE_NOTES_v6.0.0.md) · [v5.x 更新说明（下文）](#v5x-更新说明--内嵌智能体--接入智能体--停靠双形态) · [v4.1（表格结构写回 · 技能双向自启）](RELEASE_NOTES_v4.1.md) · [v4.0.0（本机 MCP 文档智能体）](RELEASE_NOTES_v4.0.md) · [v3.0（远程知识库 RAG）](RELEASE_NOTES_v3.0.md)
 
 ---
 

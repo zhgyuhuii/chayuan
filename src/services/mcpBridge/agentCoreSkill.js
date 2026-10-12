@@ -16,6 +16,7 @@ import {
   parseNamespacedTool
 } from './mcpServerRegistry.js'
 import { callLocalTool, callUpstreamTool } from './mcpHttpClient.js'
+import { generateImageViaModelChain } from '../imagery/agentImageTier.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
@@ -92,7 +93,7 @@ function needsAutoConfirm(serverId, toolName, args) {
 /** 客户端 todo 工具：不落 sidecar，只经 onTodoWrite 回调透出给消息卡渲染 */
 const TODO_WRITE_TOOL = {
   name: 'todo_write',
-  description: '维护本轮任务清单（整表替换式更新）。当请求包含 ≥2 个可独立交付的子任务或明确多步流程时使用：与首个真实工具调用放在同一条消息里并行提交（列出完整计划、首项置 in_progress），之后每次状态更新都随下一批真实工具调用搭车提交，不要单独占用一轮。开始某项前将其置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress。单一简单请求不要使用。',
+  description: '维护本轮任务清单（整表替换式更新）。预计要调用 ≥2 次工具的回合（含「生成+插入+排版」类组合，如生成图片再插入再叠文字）必须使用：与首个真实工具调用放在同一条消息里并行提交（列出完整计划、首项置 in_progress），之后每次状态更新都随下一批真实工具调用搭车提交，不要单独占用一轮。开始某项前将其置 in_progress，完成后立即置 completed；同一时刻至多一项 in_progress。真正单一的请求（一问一答、单次工具能完成）不要使用。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -226,7 +227,8 @@ export function createMcpDocumentSkill({
   onTodoWrite,
   writeBaselineToken = '',
   targetDocumentId,
-  initialHostPins
+  initialHostPins,
+  kbBinding = null
 } = {}) {
   // 回合 pin 表（追问 5 定案）：{ 宿主 → 活动对象 FullName }。发起宿主由调用方
   // 种子（targetDocumentId 兼容旧签名）；跨宿主首写时经 status 探针自动补齐。
@@ -237,6 +239,10 @@ export function createMcpDocumentSkill({
   }
   // 本回合成功落笔的写操作数（按 ops 条目计），供 verifyResponse 与末轮声称核对
   let executedWriteOps = 0
+  // 任务清单催单：回合里真实工具已开跑但模型还没 todo_write 过（快档模型常见），
+  // 在首个工具结果里注入一次提醒——工具结果对模型的约束力远强于系统提示词
+  let todosWritten = false
+  let todoNudgeGiven = false
   const countWriteOps = (toolName, args, result) => {
     if (result?.isError) return 0
     if (toolName === 'document_apply_ops') {
@@ -301,6 +307,7 @@ export function createMcpDocumentSkill({
       }
       if (call?.name === TODO_WRITE_TOOL.name) {
         const todos = normalizeTodoList(call?.input?.todos)
+        todosWritten = true
         onTodoWrite?.(todos)
         const done = todos.filter(t => t.status === 'completed').length
         return {
@@ -324,6 +331,12 @@ export function createMcpDocumentSkill({
       // 模型带 confirmed:true），写工具是否带 confirmed 由本层统一决定后注入。
       delete args.confirmed
       delete args.__expectedDocId
+      // KB 绑定随调用直传：绑定真源在发起回合的 webview（PluginStorage 按宿主进程
+      // 隔离，而 sidecar 把 kb.retrieve 按 any 路由——多宿主同开时会落到别的宿主
+      // 基座执行）。注入进工具参数后无论路由到哪个 webview 都能拿到真实绑定。
+      if (toolName === 'kb_retrieve' && kbBinding && Array.isArray(kbBinding.kbNames) && kbBinding.kbNames.length) {
+        args.binding = kbBinding
+      }
       if (needsAutoConfirm(serverId, toolName, args)) {
         args.confirmed = true
       }
@@ -357,6 +370,38 @@ export function createMcpDocumentSkill({
           }
           if (toolName === 'proofread_run') {
             result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })
+          } else if (toolName === 'generate_image') {
+            // 三级生图 Tier1：先用设置页启用的图像生成模型（webview 侧直连，
+            // 产物落盘 WPS 容器可读路径）。失败/未配置 → 回落 sidecar 原生
+            // generate_image（image-gen.json 配置面）；两级都失败返回 ok:false，
+            // 模型按配图策略降级 image_search / svg_add（铁律：不静默替位）。
+            const tier1 = await generateImageViaModelChain({
+              prompt: args?.prompt,
+              aspectRatio: args?.aspectRatio || args?.size,
+              signal
+            })
+            if (tier1.ok) {
+              toolLogEnd(true, { tier: 'model', model: tier1.modelId })
+              const output = JSON.stringify({
+                ok: true,
+                source: 'model',
+                path: tier1.path,
+                model: tier1.modelId,
+                prompt: String(args?.prompt || '')
+              })
+              return {
+                output,
+                isError: false,
+                summary: `生图完成（模型 ${tier1.modelId}）`
+              }
+            }
+            if (tier1.reason === 'model-failed' || tier1.reason === 'no-model') {
+              pushProgress?.({
+                label: '模型生图未走通，尝试本机生图服务',
+                detail: tier1.errors?.join('；') || tier1.error || ''
+              })
+            }
+            result = await callLocalTool(toolName, args, { signal })
           } else {
             result = await callLocalTool(toolName, args, { signal })
           }
@@ -365,14 +410,21 @@ export function createMcpDocumentSkill({
         }
         const card = extractProofreadCard(toolName, args, result)
         if (card) onProofreadCard?.(card)
-        const output = summarizeToolResult(result)
+        let output = summarizeToolResult(result)
+        const summaryBase = output.slice(0, 120)
+        // 催单（仅一次）：真实工具已在跑但清单还没立——提醒模型下一条消息立即补
+        // todo_write（已完成项标 completed），与下一个工具调用并行提交
+        if (!todosWritten && !todoNudgeGiven && serverId === CHAYUAN_SERVER_ID && result?.isError !== true) {
+          todoNudgeGiven = true
+          output += '\n【清单提醒】本回合将调用多个工具：请立即用 todo_write 建立任务清单（已完成的步骤标 completed、当前步骤 in_progress、余下步骤 pending），与你的下一个工具调用放在同一条消息里并行提交，不要单独占用一轮。'
+        }
         const mutated = !result?.isError && isWriteTool(serverId, toolName, args)
         if (mutated) executedWriteOps += countWriteOps(toolName, args, result)
         toolLogEnd(!result?.isError)
         return {
           output,
           isError: result?.isError === true,
-          summary: output.slice(0, 120) || nsName,
+          summary: summaryBase || nsName,
           // 写工具成功落笔才视为变更：退避守卫据此豁免「重复相同写操作」的熔断
           mutated
         }

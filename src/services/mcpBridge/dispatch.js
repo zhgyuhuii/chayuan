@@ -2,6 +2,13 @@
  * Unified MCP Agent dispatcher — handles jobs from sidecar long-poll.
  */
 import { withDocumentWriteLock } from '../documentWriteLock.js'
+import { registerStoredAssistantKbBindingGetter } from '../../utils/assistant/kbAssistantBinding.js'
+
+// 本 dispatcher 在 ribbon 基座 webview 常驻（agentClient 于 OnAddinLoad 引入），
+// kb.retrieve 等 KB 工具 job 都在此执行：必须在此注册存储版 KB 绑定 getter。
+// 只在 chatTurnRunner 注册不够——面板本地编排的回合不经过基座 chat.turn，
+// 其工具调用仍派回本 webview，那时 chatTurnRunner 根本没加载过
+registerStoredAssistantKbBindingGetter()
 import {
   startSpellCheckAllTask,
   startSpellCheckSelectionTask,

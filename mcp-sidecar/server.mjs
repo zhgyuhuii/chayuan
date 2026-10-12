@@ -27,6 +27,7 @@ import { createAuditLog } from './lib/auditLog.mjs'
 import { writeMcpServerJson, findWpsExecutable, launchWps } from './lib/platformBridge.mjs'
 import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
 import { imageSearchTool, generateImageTool, saveTmpImage } from './lib/imageTools.mjs'
+import { probeResource, saveWebResourcesConfig, loadWebResourcesConfig } from './lib/webResources.mjs'
 
 const dataDir = ensureDataDir()
 const token = loadOrCreateToken()
@@ -595,6 +596,38 @@ const server = http.createServer(async (req, res) => {
       if (!isTrusted(req)) { unauthorized(res); return }
       const body = (await readBody(req)) || {}
       sendJson(res, 200, saveTmpImage(dataDir, body))
+      return
+    }
+    // 网络资源搜索（设置：默认设置 → 网络资源搜索；三级生图 Tier2 的资源面）：
+    //   /web-resources/config — 启用清单落盘 dataDir/web-resources.json（image_search 消费）
+    //   /web-resources/test   — 按各资源协议发最小真实请求（设置页「测试」按钮）
+    if (pathname === '/web-resources/config' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      try {
+        const clean = saveWebResourcesConfig(dataDir, body)
+        sendJson(res, 200, { ok: true, count: clean.providers.length })
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: String(e?.message || e) })
+      }
+      return
+    }
+    if (pathname === '/web-resources/test' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      try {
+        sendJson(res, 200, await probeResource(String(body?.id || ''), {
+          apiKey: String(body?.apiKey || ''),
+          baseUrl: String(body?.baseUrl || '')
+        }))
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: String(e?.message || e) })
+      }
+      return
+    }
+    if (pathname === '/web-resources/config' && req.method === 'GET') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      sendJson(res, 200, { ok: true, ...loadWebResourcesConfig(dataDir) })
       return
     }
     // 配置桥：把宿主侧用户设置（~/.config/chayuan/settings.json）暴露给加载项
