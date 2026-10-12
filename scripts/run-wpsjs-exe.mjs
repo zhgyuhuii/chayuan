@@ -127,6 +127,9 @@ copy /Y "publish.xml" "%destination_folder%\\jsplugins.xml" >> "%LOG%" 2>&1
 
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
 if not exist "%sidecar_runtime%\\bin" mkdir "%sidecar_runtime%\\bin"
+rem kill a running old sidecar first -- its exe file lock would silently break the
+rem copy below and leave the PREVIOUS version running (install reports OK anyway)
+taskkill /F /IM ${SIDECAR_EXE_NAME} >> "%LOG%" 2>&1
 echo copying sidecar...>> "%LOG%"
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%" >> "%LOG%" 2>&1
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}" >> "%LOG%" 2>&1
