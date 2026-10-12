@@ -481,7 +481,6 @@
                       @blur="updateModelConfig"
                       @input="onFormChange"
                       @focus="onApiKeyInputFocus"
-                      @keydown="onApiKeyKeydown"
                     />
                     <span
                       v-if="currentModelConfig.apiKey && !isFormSaved"
@@ -530,7 +529,6 @@
                       @blur="updateModelConfig"
                       @input="onFormChange"
                       @focus="onApiKeyInputFocus"
-                      @keydown="onApiUrlKeydown"
                     />
                     <span
                       v-if="currentModelConfig.apiUrl && !isFormSaved"
@@ -6386,22 +6384,6 @@ export default {
         this.onFormChange()
         this.showMessage('已粘贴')
       })
-    },
-    onApiUrlKeydown(e) {
-      const key = String(e.key || '').toLowerCase()
-      if (key !== 'v' || !(e.metaKey || e.ctrlKey)) return
-      e.preventDefault()
-      e.stopPropagation()
-      this.pasteApiUrl()
-    },
-    onApiKeyKeydown(e) {
-      // WPS CEF webview 里 Cmd/Ctrl+V 的原生粘贴路径可能被主进程拦截（真机实证
-      // 手动粘贴也失败）；在 keydown 阶段捕获快捷键，走 sidecar 系统剪贴板填充
-      const key = String(e.key || '').toLowerCase()
-      if (key !== 'v' || !(e.metaKey || e.ctrlKey)) return
-      e.preventDefault()
-      e.stopPropagation()
-      this.pasteApiKey()
     },
     async pasteApiKey() {
       const text = (await this.readClipboardTextSafe()).trim()

@@ -53,6 +53,8 @@ ExecStart=$EXEC_START
 Restart=on-failure
 RestartSec=3
 Environment=CHAYUAN_MCP_DATA_DIR=$DATA_DIR
+# /clipboard 用 xclip 读系统剪贴板，必须有 DISPLAY，否则 systemd 重启后读出恒为空
+Environment=DISPLAY=:0
 
 [Install]
 WantedBy=default.target
