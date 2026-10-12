@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 REM Spike helper: prove ShellExecute can run a local script.
 REM Writes a marker file under %LOCALAPPDATA%\chayuan-wps\mcp\spikes\
 setlocal

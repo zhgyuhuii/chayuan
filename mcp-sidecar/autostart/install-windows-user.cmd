@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 REM Register chayuan-mcp user autostart (HKCU Run) and start now.
-REM Prefer this .cmd over .ps1 — some Windows Defender policies quarantine *.ps1 under autostart/.
+REM Prefer this .cmd over .ps1 -- some Windows Defender policies quarantine *.ps1 under autostart/.
 REM Usage:
 REM   install-windows-user.cmd
 REM   install-windows-user.cmd /uninstall

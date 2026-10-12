@@ -100,8 +100,7 @@ for /d %%D in ("%destination_folder%\\${pkg.name}-wpp_*") do call :rmold "%%~nxD
 		copyBlocks.push(`if exist "${hf}" xcopy /E /I /Y /Q "${hf}" "%destination_folder%\\${hf}" >> "%LOG%" 2>&1`, `if errorlevel 1 goto :fail_addon`)
 	}
 	// Keep every character ASCII. Chinese comments here WILL break cmd.exe on CP936.
-	return Buffer.from(
-		`@echo off
+	const bat = `@echo off
 setlocal EnableExtensions
 set "LOG=%TEMP%\\chayuan-wps-install.log"
 set "source_folder=${folder}"
@@ -123,7 +122,7 @@ ${rmOld}
 echo copying publish.xml...>> "%LOG%"
 copy /Y "publish.xml" "%destination_folder%\\publish.xml" >> "%LOG%" 2>&1
 if errorlevel 1 goto :fail_publish
-rem WPS 部分构建按 jsplugins.xml 加载本地插件——与 publish.xml 同步落一份，杜绝升级后残留旧注册
+rem some WPS builds load local addons via jsplugins.xml -- write it alongside publish.xml
 copy /Y "publish.xml" "%destination_folder%\\jsplugins.xml" >> "%LOG%" 2>&1
 
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
@@ -173,9 +172,11 @@ echo ERROR: failed to copy publish.xml
 echo See log: %LOG%
 pause
 exit /b 1
-`,
-		'utf-8'
-	)
+`
+	if (/[^\x00-\x7F]/.test(bat)) {
+		throw new Error('copy.bat 含非 ASCII 字符——Windows OEM 代码页(CP936)下会乱码，禁止中文注释/文案')
+	}
+	return Buffer.from(bat, 'utf-8')
 }
 
 async function main() {
@@ -250,6 +251,20 @@ async function main() {
 	fs.writeFileSync(path.join(tmp, 'publish.xml'), publishXmlForWindowsOffline(pkg))
 	fs.copyFileSync(SIDECAR_EXE, path.join(tmp, SIDECAR_EXE_NAME))
 	fs.writeFileSync(path.join(tmp, 'copy.bat'), buildCopyBat(pkg, hostSuffixes))
+
+	// 编码防线：载荷内所有 .bat/.cmd 必须纯 ASCII（Windows cmd 按 OEM 代码页读脚本）
+	const badScripts = []
+	const scanAscii = (dir) => {
+		for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+			const p = path.join(dir, e.name)
+			if (e.isDirectory()) scanAscii(p)
+			else if (/\.(bat|cmd)$/i.test(e.name) && /[^\x00-\x7F]/.test(fs.readFileSync(p, 'utf8'))) badScripts.push(p)
+		}
+	}
+	scanAscii(tmp)
+	if (badScripts.length) {
+		throw new Error(`载荷脚本含非 ASCII 字符(Windows 下会乱码): ${badScripts.map((p) => path.relative(tmp, p)).join(', ')}`)
+	}
 
 	// 4. 7z 压缩载荷
 	const archive7z = path.join(tmp, `${name}.7z`)
