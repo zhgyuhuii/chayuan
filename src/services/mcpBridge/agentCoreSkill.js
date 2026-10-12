@@ -375,9 +375,24 @@ export function createMcpDocumentSkill({
             // 产物落盘 WPS 容器可读路径）。失败/未配置 → 回落 sidecar 原生
             // generate_image（image-gen.json 配置面）；两级都失败返回 ok:false，
             // 模型按配图策略降级 image_search / svg_add（铁律：不静默替位）。
+            // 宿主感知尺寸：WPP 宿主且模型未显式指定比例 → 按当前演示稿页面
+            // 宽高比自动选 16:9/9:16（否则生图模型默认 1:1，铺不满 PPT 页）
+            let genAspectRatio = args?.aspectRatio || args?.size || ''
+            if (!genAspectRatio && detectAddonType() === 'wpp') {
+              try {
+                const st = await callLocalTool('presentation', { action: 'status' }, { signal })
+                const info = st?.structuredContent?.presentation || st?.presentation || {}
+                const sw = Number(info.slideWidth || 0)
+                const sh = Number(info.slideHeight || 0)
+                if (sw > 0 && sh > 0) {
+                  const ratio = sw / sh
+                  genAspectRatio = ratio > 1.2 ? '16:9' : ratio < 0.83 ? '9:16' : '1:1'
+                }
+              } catch (_) { /* 探测失败按缺省 1:1 */ }
+            }
             const tier1 = await generateImageViaModelChain({
               prompt: args?.prompt,
-              aspectRatio: args?.aspectRatio || args?.size,
+              aspectRatio: genAspectRatio,
               signal
             })
             if (tier1.ok) {

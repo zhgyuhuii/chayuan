@@ -148,9 +148,16 @@ function loadImageGenConfig(dataDir) {
 }
 
 /** generate_image 工具入口：OpenAI 兼容 images/generations → 下载 URL → 本地路径 */
-export async function generateImageTool(dataDir, { prompt, size = '512x512' } = {}) {
+export async function generateImageTool(dataDir, { prompt, size = '512x512', aspectRatio = '' } = {}) {
   const p = String(prompt || '').trim()
   if (!p) return { ok: false, error: '缺少生图描述 prompt' }
+  // aspectRatio 优先于 size：按宽高比映射到生图端点的具体尺寸（与 webview 侧
+  // mediaApi.mapAspectRatioToImageSize 同一映射，两条生图通道行为一致）
+  let effSize = size
+  const ar = String(aspectRatio || '').trim()
+  if (ar === '16:9') effSize = '1792x1024'
+  else if (ar === '9:16') effSize = '1024x1792'
+  else if (ar === '1:1') effSize = '1024x1024'
   const cfg = loadImageGenConfig(dataDir)
   if (!cfg) {
     return { ok: false, error: '未配置生图模型（dataDir/image-gen.json），请改用 svg_add 矢量图形兜底', unavailable: true }
@@ -169,7 +176,7 @@ export async function generateImageTool(dataDir, { prompt, size = '512x512' } = 
         body: JSON.stringify({
           model: cfg.model,
           input: { messages: [{ role: 'user', content: [{ type: 'text', text: p }] }] },
-          parameters: size ? { size: String(size).replace('x', '*') } : {}
+          parameters: effSize ? { size: String(effSize).replace('x', '*') } : {}
         })
       }, 180000)
       const mm = await mmResp.json()
@@ -180,7 +187,7 @@ export async function generateImageTool(dataDir, { prompt, size = '512x512' } = 
       data = { data: [{ url: imageUrl }] }
     } else {
       const body = { model: cfg.model, prompt: p, n: 1 }
-      if (size) body.size = size
+      if (effSize) body.size = effSize
       const resp = await fetchWithTimeout(`${base}/images/generations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },

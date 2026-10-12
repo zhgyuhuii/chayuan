@@ -348,11 +348,14 @@ function handlePictureAdd(params) {
   const path = requirePath(params)
   const pres = getActivePresentation()
   const slide = resolveSlide(pres, params.index)
+  // 缺省语义：未指定 width/height 也未指定 fit → 按整页 cover（铺满裁切）。
+  // 封面/背景是插图的绝对主流场景，模型漏传参数时不再落到 320×240 小图
+  const noExplicitSize = !(Number(params.width) > 0) && !(Number(params.height) > 0)
+  const fit = String(params.fit || (noExplicitSize ? 'cover' : '')).toLowerCase()
   const left = Number(params.left ?? 60)
   const top = Number(params.top ?? 60)
   const w = Number(params.width ?? 320)
   const h = Number(params.height ?? 240)
-  const fit = String(params.fit || '').toLowerCase()
   let shape = null
   withScreenUpdating(window.Application, () => {
     if (fit === 'cover' || fit === 'contain' || fit === '铺满' || fit === '适应') {

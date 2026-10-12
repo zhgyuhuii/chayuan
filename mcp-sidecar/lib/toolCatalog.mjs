@@ -1558,10 +1558,10 @@ const IMAGE_TOOLS = [
     name: 'generate_image',
     description: [
       'WHAT: Generate an image with the configured image model (OpenAI-compatible), save locally, return a file path.',
-      'WHEN: slide/sheet needs an illustration/icon/background that search cannot provide; image source is model/auto.',
+      'WHEN: slide/sheet needs an illustration/icon/background that search cannot provide; image source is model/auto. 演示稿封面/背景/横幅场景系统会按当前 PPT 页面宽高比自动选择生成比例（16:9 等），无需手动指定。',
       'NOT: Not for real photos (image_search). Returns only a local path — then insert with presentation picture_add.',
-      'HOW: {"prompt":"扁平插画风格的数据增长曲线，蓝色主色调","size":"1024x1024"}. If it returns ok:false (unconfigured/failed), fall back to presentation svg_add — do NOT silently switch to image_search.',
-      'EXAMPLE: {"prompt":"扁平风格的团队协作插画，蓝白配色"}'
+      'HOW: {"prompt":"扁平插画风格的数据增长曲线，蓝色主色调","aspectRatio":"16:9"}. aspectRatio: 16:9|9:16|1:1（可省略；省略时非 PPT 场景按 1:1）。If it returns ok:false (unconfigured/failed), fall back to presentation svg_add — do NOT silently switch to image_search.',
+      'EXAMPLE: {"prompt":"2027年春节主题封面，红金配色，灯笼与祥云","aspectRatio":"16:9"}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     inputSchema: {
@@ -1570,7 +1570,7 @@ const IMAGE_TOOLS = [
       required: ['prompt'],
       properties: {
         prompt: { type: 'string', description: '生图描述（建议注明风格与配色）' },
-        size: { type: 'string', description: '尺寸，默认 1024x1024' }
+        aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: '宽高比（省略时 PPT 宿主自动按页面比例，其它场景 1:1）' }
       }
     }
   })

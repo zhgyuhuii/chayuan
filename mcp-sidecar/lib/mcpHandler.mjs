@@ -498,7 +498,7 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
       }
       case 'generate_image': {
         try {
-          const result = await generateImageTool(dataDir, { prompt: args?.prompt, size: args?.size })
+          const result = await generateImageTool(dataDir, { prompt: args?.prompt, size: args?.size, aspectRatio: args?.aspectRatio })
           if (result.ok) audit?.append({ tool: 'generate_image', confirmed: true })
           return jsonResult(result)
         } catch (e) {
