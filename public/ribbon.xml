@@ -106,6 +106,7 @@
                 <group id="groupModelEdit" label="模板管理" autoScale="true">
                     <button id="btnSaveDocument" label="导出模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnImportDocument" label="导入模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnTemplateNew" label="从模板新建" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnDownloadTemplate" label="下载模板" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <separator id="Sep8" /> 
                 </group>

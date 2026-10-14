@@ -489,7 +489,14 @@
           class="mcp-soft-banner"
           role="status"
         >
-          {{ mcpSoftBanner }}
+          <span>{{ mcpSoftBanner }}</span>
+          <button
+            v-if="mcpFailReason === 'sidecar_down'"
+            type="button"
+            class="mcp-soft-banner-btn"
+            :disabled="mcpStartInProgress"
+            @click="handleMcpBannerStart"
+          >{{ mcpStartInProgress ? '正在启动…' : '一键启动' }}</button>
         </div>
         <!-- GitHub Star / 公众号 提示：未表态时展示引导卡；侧栏另有常驻入口 -->
         <div v-if="starPromptVisible" class="star-prompt-card" role="dialog" aria-label="支持我们">
@@ -2751,7 +2758,7 @@ import {
   MODEL_TYPE_VIDEO_GENERATION,
   MODEL_TYPE_TTS
 } from '../utils/modelTypeUtils.js'
-import { applyDocumentAction, getActiveDocument, getDocumentText, resolveDocumentInput, textLooksLikePlanStatsJson } from '../utils/documentActions.js'
+import { applyDocumentAction, collectPresentationShapeTargets, getActiveDocument, getDocumentText, resolveDocumentInput, textLooksLikePlanStatsJson, writePresentationShapeText } from '../utils/documentActions.js'
 import { prepareDialogDisplayText } from '../utils/dialogTextDisplay.js'
 import { looksLikeMarkdown, renderMarkdownSafe } from '../utils/chatMarkdown.js'
 import { resolveDocumentTaskInputScope } from '../utils/documentTaskScope.js'
@@ -2872,6 +2879,7 @@ import { saveAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.j
 import { resolveWpsCapabilityRoute } from '../utils/wpsCapabilityRouter.js'
 import { getWpsCapabilityByKey } from '../utils/wpsCapabilityCatalog.js'
 import { startWpsCapabilityTask, stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
+import { materializeAttachmentToTemp } from '../utils/documentTemplates.js'
 import { getCurrentDocumentSavePath } from '../utils/documentFileActions.js'
 import { canCreateDocumentBackup, createDocumentBackupRecord, restoreDocumentBackupRecordById } from '../utils/documentBackupStore.js'
 import { REPORT_TYPE_OPTIONS, getReportTypeLabel, createDefaultReportSettings, normalizeReportSettings } from '../utils/reportSettings.js'
@@ -4316,6 +4324,9 @@ export default {
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
       mcpSoftBanner: '',
+      // 横幅"一键启动"状态：failReason 供按钮显隐（仅服务未起时显示），in-progress 防重复点击
+      mcpFailReason: '',
+      mcpStartInProgress: false,
       activeMcpTurnContexts: {},
       // 任务清单漂浮卡的折叠状态：true=右上角圆点态（新回合默认收起），false=完整清单
       mcpTodoFloatCollapsed: true,
@@ -6170,7 +6181,8 @@ export default {
         // 被动路径（打开对话框 / 展开智能体下拉 / 切换开关 / 发送消息 / 点「刷新」）只做健康探活，
         // 绝不在此自动 ShellExecute 启动本机 sidecar。否则会触发 WPS「可执行文件安全风险」弹窗，
         // 且在未装 Node.js 的部署机上 sidecar 永远起不来 → 每次交互都重复弹出。
-        // 只有显式入口（options.startSidecar=true，即设置页「启动本机服务」）才允许尝试拉起进程。
+        // 两个例外：options.startSidecar=true（设置页「启动本机服务」/横幅「一键启动」按钮）；
+        // 以及用户曾在横幅点过「一键启动」后的授权自动拉起（每会话至多一次，见 maybeAutoStartSidecar）。
         const bundle = await probeMcpHealthBundle({
           deep: options.deep === true,
           ensureSidecar: options.startSidecar === true
@@ -6182,18 +6194,23 @@ export default {
           // 三级分诊（2026-09-09）：WPS 安全层可拦环回 HTTP，须与「进程没起」区分，
           // 否则用户按「服务未启动」排障方向全错。旁路判定见 webviewFsProbe.js
           if (bundle.failReason === 'loopback_blocked') {
+            this.mcpFailReason = 'loopback_blocked'
             this.mcpSoftBanner = '本机服务在运行，但应用安全层拦截了加载项的连接——请在设置中信任察元AI加载项（或确认安全弹窗）后重启应用'
             this.mcpHealthHint = `环回被拦截（sidecar 进程经心跳旁路判定存活）${bundle.blocklistEntries ? ` · 检测到 jsaddons 拦截表 ${bundle.blocklistEntries} 条` : ''}`
           } else {
+            this.mcpFailReason = 'sidecar_down'
             this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
             this.mcpHealthHint = bundle.failReason === 'sidecar_down'
               ? 'sidecar 未运行（心跳文件无响应）'
               : 'sidecar 不可用或无已启用 MCP'
+            this.maybeAutoStartSidecar()
           }
         } else if (bundle.level === 'yellow') {
+          this.mcpFailReason = ''
           this.mcpSoftBanner = ''
           this.mcpHealthHint = `仅外服可用（${bundle.upstreamOkCount}/${bundle.upstreamTotal}），察元文档通道未就绪`
         } else {
+          this.mcpFailReason = ''
           this.mcpSoftBanner = ''
           this.mcpHealthHint = bundle.agentOnline
             ? '察元 MCP 与 Agent 可用'
@@ -6202,10 +6219,38 @@ export default {
         return bundle
       } catch (e) {
         this.mcpHealthLevel = 'gray'
+        this.mcpFailReason = 'sidecar_down'
         this.mcpSoftBanner = '本机文档服务未就绪，发送将使用内置助手'
         this.mcpHealthHint = e?.message || '健康检查失败'
+        this.maybeAutoStartSidecar()
         return { anyOk: false, level: 'gray' }
       }
+    },
+    // 横幅「一键启动」：显式拉起 sidecar（走与设置页「启动本机服务」同一条链路），
+    // 同时把本次点击记为用户授权——之后的被动探活失败允许静默自动拉起一次
+    async handleMcpBannerStart() {
+      if (this.mcpStartInProgress) return
+      this.mcpStartInProgress = true
+      try {
+        try { localStorage.setItem('chayuan_mcp_autostart_consent', '1') } catch (_) { /* 存储不可用不影响本次启动 */ }
+        const bundle = await this.refreshMcpHealthBundle({ startSidecar: true })
+        if (bundle?.anyOk) {
+          this.mcpSoftBanner = ''
+          this.mcpHealthHint = '本机文档服务已启动'
+        }
+      } finally {
+        this.mcpStartInProgress = false
+      }
+    },
+    // 授权后的静默自动拉起：仅 sidecar_down（服务真没起）时尝试，每会话至多一次。
+    // loopback_blocked（服务活着被拦）不在此列——拉起解决不了安全层拦截。
+    maybeAutoStartSidecar() {
+      if (this._mcpAutoStartTried || this.mcpStartInProgress) return
+      let consent = false
+      try { consent = localStorage.getItem('chayuan_mcp_autostart_consent') === '1' } catch (_) { consent = false }
+      if (!consent) return
+      this._mcpAutoStartTried = true
+      this.refreshMcpHealthBundle({ startSidecar: true }).catch(() => {})
     },
     buildMcpSelectionCtx() {
       const snap = this.selectionContextSnapshot
@@ -12070,11 +12115,47 @@ export default {
       })
       return params
     },
+    /**
+     * 模板类能力的附件直连：模板名留空或为指代词（这个/附件…）时，
+     * 取消息/composer 中第一个模板格式附件落盘为临时模板文件。
+     * 只落盘不登记——入库由用户「存为模板」显式决定（用后询问）。
+     */
+    async resolveTemplateAttachmentParams(message, params = {}) {
+      const ref = String(params.templateRef || '').trim()
+      const refIsPlaceholder = !ref
+        || ref === '空白'
+        || /^(这个|该|此|附件|上传|刚才)(里的|中的|上传的)?模板?$/.test(ref)
+      if (!refIsPlaceholder) return {}
+      const pools = [
+        Array.isArray(this.attachments) ? this.attachments : [],
+        ((message && message.messageMeta && message.messageMeta.attachments) || [])
+      ]
+      const templateItem = pools.flat().find(item =>
+        item && item.rawFile instanceof File
+        && /\.(aidocx|docx|doc|xlsm|xlsx|xls|et|csv|pptx|ppsx|dps)$/i.test(String(item.name || item.rawFile?.name || ''))
+      )
+      if (!templateItem) return {}
+      const materialized = await materializeAttachmentToTemp(templateItem.rawFile)
+      if (!materialized.ok) {
+        console.warn('模板附件落盘失败:', materialized.error)
+        return {}
+      }
+      return { templatePath: materialized.path, templateRef: '' }
+    },
     async runWpsCapabilityTaskFromMessage(message, capabilityKey, options = {}) {
       const capability = getCapabilityBusItem(capabilityKey) || getWpsCapabilityByKey(capabilityKey)
       if (!capability) throw new Error('未找到对应的 察元AI能力')
       const taskTitle = capability.label || '察元AI操作'
       const params = options.params && typeof options.params === 'object' ? options.params : {}
+      // 模板类能力：聊天附件直连模板（用后询问入库，不自动登记）
+      if (capabilityKey === 'generate-from-template' || capabilityKey === 'new-document-from-template') {
+        try {
+          const injected = await this.resolveTemplateAttachmentParams(message, params)
+          Object.assign(params, injected)
+        } catch (e) {
+          console.warn('模板附件注入失败（回落到原参数）:', e)
+        }
+      }
       const { taskId, promise } = startWpsCapabilityTask({
         capabilityKey,
         taskTitle,
@@ -12840,7 +12921,10 @@ export default {
           isText: false,
           content: '',
           truncated: false,
-          parsedKind: ''
+          parsedKind: '',
+          // 保留原始 File 引用：模板类附件（docx/xlsx/pptx 系）供「从模板生成」直连使用；
+          // 历史持久化走 JSON 序列化，File 会自然退化为 {}，不产生影响
+          rawFile: file
         }
         if (isTextLikeAttachment(file)) {
           try {
@@ -13032,7 +13116,10 @@ export default {
           content: item?.content || '',
           truncated: item?.truncated === true,
           parsedKind: item?.parsedKind || '',
-          recognition: item?.recognition ? JSON.parse(JSON.stringify(item.recognition)) : null
+          recognition: item?.recognition ? JSON.parse(JSON.stringify(item.recognition)) : null,
+          // 保留原始 File：模板类附件直连生成依赖它（仅会话内有效；
+          // 历史持久化 JSON 序列化时 File 退化为 {}，无副作用）
+          rawFile: item?.rawFile instanceof File ? item.rawFile : undefined
         }))
         : []
     },
@@ -17313,6 +17400,58 @@ export default {
     },
     resolveDocumentRevisionSource(intent) {
       const requestedScope = String(intent?.scope || 'selection-preferred')
+      // 演示宿主(WPP)没有 ActiveDocument/段落/Range 模型，下面的 keyword/
+      // paragraph/selection/document 分支全部依赖 Writer 能力，必须先拦截：
+      // 修订目标改为"页→形状"逐个处理，写回用 shape.TextRange 直写。
+      const presentationTargets = collectPresentationShapeTargets()
+      if (Array.isArray(presentationTargets)) {
+        if (presentationTargets.length === 0) {
+          throw new Error('当前演示文稿没有可修订的文本内容（可能全部为图片、表格或空白页）')
+        }
+        let targets = presentationTargets
+        let sourceLabel = '演示文稿全部文本'
+        const keywordList = Array.isArray(intent?.keywordTarget?.keywordList) ? intent.keywordTarget.keywordList : []
+        if (keywordList.length > 0) {
+          targets = String(intent.keywordTarget.keywordRelation) === 'and'
+            ? targets.filter(item => keywordList.every(k => item.text.includes(k)))
+            : targets.filter(item => keywordList.some(k => item.text.includes(k)))
+          if (targets.length === 0) {
+            throw new Error(`未找到包含“${keywordList.join('、')}”的幻灯片文本`)
+          }
+          sourceLabel = '命中形状文本'
+        }
+        if (requestedScope !== 'document') {
+          let selectionText = ''
+          try { selectionText = String(this.resolveBestSelectionContext()?.text || '').trim() } catch (_) { selectionText = '' }
+          if (selectionText) {
+            const hit = targets.filter(item => item.text === selectionText || item.text.includes(selectionText))
+            if (hit.length > 0) {
+              return {
+                actualScope: 'presentation-shapes',
+                sourceLabel: '选中形状文本',
+                sourceText: hit.map(item => item.text).join('\n\n'),
+                targets: hit
+              }
+            }
+          }
+          if (requestedScope === 'selection') {
+            throw new Error('请先选中需要修订的形状文本')
+          }
+        }
+        return {
+          actualScope: 'presentation-shapes',
+          sourceLabel,
+          sourceText: targets.map(item => item.text).join('\n\n'),
+          targets
+        }
+      }
+      // 表格宿主：正文可读（总结/分析类技能受益），但写回链路 applyDocumentAction
+      // 仅支持文字文档——修订类技能快速失败，避免跑完模型才在写回时失败。
+      let hasActiveWorkbook = false
+      try { hasActiveWorkbook = !!window.Application?.ActiveWorkbook } catch (_) { hasActiveWorkbook = false }
+      if (!getActiveDocument() && hasActiveWorkbook) {
+        throw new Error('当前宿主为电子表格，暂不支持修订写回；可使用总结、分析、翻译等只读技能')
+      }
       if (Array.isArray(intent?.keywordTarget?.keywordList) && intent.keywordTarget.keywordList.length > 0) {
         const targets = getRevisionParagraphTargetsByKeywords(
           intent.keywordTarget.keywordList,
@@ -17437,7 +17576,7 @@ export default {
       ]
     },
     async confirmDocumentRevisionRun(intent, sourceInfo, chunkCount = 1) {
-      if (sourceInfo?.actualScope !== 'document') return true
+      if (sourceInfo?.actualScope !== 'document' && sourceInfo?.actualScope !== 'presentation-shapes') return true
       const scopeLabel = this.getDocumentRevisionPurposeLabel(intent)
       const charCount = Number(String(sourceInfo?.sourceText || '').length || 0)
       const ok = await inAppConfirm(
@@ -17556,6 +17695,24 @@ export default {
       }
       return `已完成 ${processedCount} 个命中段落的修订。`
     },
+    applyPresentationShapesRevisionResult(pending) {
+      const targets = Array.isArray(pending?.targets) ? pending.targets : []
+      const outputs = Array.isArray(pending?.outputText) ? pending.outputText : []
+      if (targets.length === 0 || outputs.length === 0) {
+        throw new Error('缺少形状修订结果，无法写回')
+      }
+      let appliedCount = 0
+      // 倒序写回：同一页多个形状时先处理靠后的，降低中途失败留下的不一致面
+      for (let i = targets.length - 1; i >= 0; i--) {
+        const revised = String(outputs[i] || '').trim()
+        if (!revised) continue
+        if (writePresentationShapeText(targets[i]?.path, revised)) appliedCount += 1
+      }
+      if (appliedCount === 0) {
+        throw new Error('未能写回任何幻灯片文本，请检查演示文稿是否处于可编辑状态')
+      }
+      return `已完成 ${appliedCount}/${targets.length} 处幻灯片文本修订。`
+    },
     async startDocumentRevisionMessage(text, model, prepared = null) {
       const resolvedPrepared = prepared || this.prepareOutgoingMessages(text)
       if (!resolvedPrepared) return
@@ -17603,7 +17760,7 @@ export default {
         const purposeLabel = this.getDocumentRevisionPurposeLabel(resolvedIntent)
         const { chunks } = sourceInfo.actualScope === 'document'
           ? this.getDocumentChunks(sourceInfo.sourceText, 'transform')
-          : sourceInfo.actualScope === 'keyword-paragraphs'
+          : sourceInfo.actualScope === 'keyword-paragraphs' || sourceInfo.actualScope === 'presentation-shapes'
             ? { chunks: sourceInfo.targets.map(item => item.text) }
           : { chunks: [sourceInfo.sourceText] }
         this.appendDocumentRevisionDetail(
@@ -17663,7 +17820,7 @@ export default {
           )
         }
         this.ensureDocumentRevisionRunActive(runContext, assistantMsg)
-        const finalOutput = sourceInfo.actualScope === 'keyword-paragraphs'
+        const finalOutput = sourceInfo.actualScope === 'keyword-paragraphs' || sourceInfo.actualScope === 'presentation-shapes'
           ? outputs.map(item => String(item || '').trim())
           : outputs.filter(Boolean).join('\n\n').trim()
         const preview = this.createDocumentRevisionPreview(resolvedIntent, sourceInfo, finalOutput, chunks.length)
@@ -17771,9 +17928,11 @@ export default {
             }
             this.appendDocumentRevisionDetail(pending, `已备份源文件：${backupRef.backupPath}`)
           }
-          const resultMessage = pending.actualScope === 'keyword-paragraphs'
-            ? this.applyKeywordParagraphRevisionResult(pending)
-            : this.applyDocumentRevisionResult(pending.actualScope || 'document', pending.outputText, pending)
+          const resultMessage = pending.actualScope === 'presentation-shapes'
+            ? this.applyPresentationShapesRevisionResult(pending)
+            : pending.actualScope === 'keyword-paragraphs'
+              ? this.applyKeywordParagraphRevisionResult(pending)
+              : this.applyDocumentRevisionResult(pending.actualScope || 'document', pending.outputText, pending)
           this.appendDocumentRevisionDetail(pending, resultMessage)
           const commentCount = this.addDocumentRevisionComments(
             pending.actualScope || 'document',
@@ -20581,6 +20740,27 @@ export default {
   color: #7a5a14;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* 横幅「一键启动」：仅服务未起（sidecar_down）时显示，走设置页同一条拉起链路 */
+.mcp-soft-banner-btn {
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(122, 90, 20, 0.4);
+  background: transparent;
+  color: #7a5a14;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mcp-soft-banner-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mcp-soft-banner-btn:not(:disabled):hover {
+  background: rgba(122, 90, 20, 0.12);
 }
 
 /* 「支持我们」随缘提示气泡:对话流末尾,AI 语气文案 + 内嵌收款码(频控见 tipJar.js) */

@@ -305,3 +305,40 @@ export async function activateAndSaveWpsMac() {
   if (key.ok) return { ok: true, via: 'keystroke' }
   return { ok: false, code: 'NATIVE_SAVE_FAILED', error: `menu: ${menu.err} | keystroke: ${key.err}` }
 }
+
+const OS_OPEN_EXTENSIONS = new Set([
+  '.doc', '.docx', '.dotx', '.aidocx',
+  '.xls', '.xlsx', '.xlsm', '.et', '.ett', '.csv',
+  '.ppt', '.pptx', '.ppsx', '.dps', '.potx'
+])
+
+/**
+ * OS 级打开本地文档（等同用户双击）：模板新建通路的 viaOs 兜底——
+ * Mac 沙盒里 webview 无法 spawn，统一由 sidecar 代为打开。
+ * 仅接受办公文档扩展名白名单，路径必须真实存在。
+ */
+export function openFileWithOs(rawPath) {
+  const filePath = normalizePath(rawPath)
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { ok: false, code: 'FILE_NOT_FOUND', error: '文件不存在：' + filePath }
+  }
+  const ext = path.extname(filePath).toLowerCase()
+  if (!OS_OPEN_EXTENSIONS.has(ext)) {
+    return { ok: false, code: 'EXTENSION_NOT_ALLOWED', error: '不支持的文件类型：' + ext }
+  }
+  try {
+    if (process.platform === 'darwin') {
+      const child = spawn('open', [filePath], { detached: true, stdio: 'ignore' })
+      child.unref()
+    } else if (process.platform === 'win32') {
+      const child = spawn('cmd.exe', ['/c', 'start', '', filePath], { detached: true, stdio: 'ignore', windowsHide: true })
+      child.unref()
+    } else {
+      const child = spawn('xdg-open', [filePath], { detached: true, stdio: 'ignore' })
+      child.unref()
+    }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, code: 'OS_OPEN_FAILED', error: String(e?.message || e) }
+  }
+}

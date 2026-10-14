@@ -5,12 +5,12 @@
       <button class="btn-close" @click="onClose">×</button>
     </div>
     <div class="dialog-body">
-      <p class="import-desc">选择 .aidocx 格式的模板文件，将添加到本地模板库，新建文档时可从此处选择。</p>
+      <p class="import-desc">选择模板文件（.docx / .xlsx / .pptx / .aidocx），将添加到本地模板库；从模板新建与 AI 生成时可从此处选择，模板类型须与当前文档类型一致。</p>
       <div class="import-actions">
         <input
           ref="fileInputRef"
           type="file"
-          accept=".aidocx"
+          accept=".aidocx,.docx,.doc,.xlsx,.xlsm,.et,.pptx,.ppsx,.dps"
           style="display:none"
           @change="onFileInputChange"
         />
@@ -25,6 +25,7 @@
         <p class="list-title">已保存的模板（共 {{ templates.length }} 个）</p>
         <ul class="list">
           <li v-for="t in templates" :key="t.id" class="list-item">
+            <span class="item-kind" :title="t.kind">{{ kindLabel(t.kind) }}</span>
             <span class="item-name" :title="t.path">{{ t.name }}</span>
             <button class="btn-remove" type="button" title="删除" @click="removeTemplate(t.id)">×</button>
           </li>
@@ -63,6 +64,9 @@ export default {
   methods: {
     refreshList() {
       this.templates = loadDocumentTemplates()
+    },
+    kindLabel(kind) {
+      return { doc: '文字', sheet: '表格', slide: '演示' }[kind] || '文字'
     },
     showMessage(text, type = 'success') {
       this.message = { text, type }

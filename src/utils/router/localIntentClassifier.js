@@ -35,6 +35,10 @@ const KIND_ASST = 'assistant-task'
 const RULES = [
   // ---------- 察元AI原生能力(高置信)----------
   { pattern: /(?:保存|另存为|保存到|导出到|存盘|存档).{0,12}(文档|文件)?/, kind: KIND_WPS, score: 90, subKind: 'save-document' },
+  { pattern: /(?:用|按|基于|从|套用).{0,8}模板.{0,20}(?:新建|创建|生成|做|写|出)/, kind: KIND_WPS, score: 89, subKind: 'template-generation' },
+  { pattern: /模板.{0,8}(?:新建|创建|生成)/, kind: KIND_WPS, score: 89, subKind: 'template-generation' },
+  { pattern: /(?:确认执行|按计划执行|执行(?:上?一?步?)?(?:模板|生成)?计划)/, kind: KIND_WPS, score: 89, subKind: 'template-plan-execute' },
+  { pattern: /(?:存为|保存为|存成|收进|加入)模板/, kind: KIND_WPS, score: 88, subKind: 'save-as-template' },
   { pattern: /(?:加密|设置密码).{0,8}(?:文档|文件)/, kind: KIND_WPS, score: 90, subKind: 'encrypt-document' },
   { pattern: /(?:解密|去掉密码|移除密码|取消加密).{0,8}(?:文档|文件)/, kind: KIND_WPS, score: 90, subKind: 'decrypt-document' },
   { pattern: /(?:插入|新增|添加).{0,12}(表格)/, kind: KIND_WPS, score: 88, subKind: 'insert-table' },

@@ -8,6 +8,8 @@
  */
 import http from 'node:http'
 import fs from 'node:fs'
+// Node <18（Win7/8 回落运行时装 Node 14/16）补全局 fetch/AbortController；Node 18+ 零副作用
+import './lib/fetchPolyfill.mjs'
 import {
   ensureDataDir,
   getDataDir,
@@ -24,7 +26,7 @@ import { createAgentHub } from './lib/agentHub.mjs'
 import { createMcpHandler } from './lib/mcpHandler.mjs'
 import { isWebSocketUpgrade, acceptWebSocket } from './lib/miniWs.mjs'
 import { createAuditLog } from './lib/auditLog.mjs'
-import { writeMcpServerJson, findWpsExecutable, launchWps } from './lib/platformBridge.mjs'
+import { writeMcpServerJson, findWpsExecutable, launchWps, openFileWithOs } from './lib/platformBridge.mjs'
 import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
 import { imageSearchTool, generateImageTool, saveTmpImage } from './lib/imageTools.mjs'
 import { probeResource, saveWebResourcesConfig, loadWebResourcesConfig } from './lib/webResources.mjs'
@@ -596,6 +598,14 @@ const server = http.createServer(async (req, res) => {
       if (!isTrusted(req)) { unauthorized(res); return }
       const body = (await readBody(req)) || {}
       sendJson(res, 200, saveTmpImage(dataDir, body))
+      return
+    }
+    // 模板新建通路的 viaOs 兜底：webview（尤其 Mac 沙盒）无法 spawn，由 sidecar
+    // 以用户双击等价的 OS 方式打开办公文档（扩展名白名单 + isTrusted 门禁）
+    if (pathname === '/open-local-file' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, openFileWithOs(String(body?.path || '')))
       return
     }
     // 网络资源搜索（设置：默认设置 → 网络资源搜索；三级生图 Tier2 的资源面）：

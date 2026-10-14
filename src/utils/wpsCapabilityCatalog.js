@@ -513,6 +513,129 @@ export const WPS_CAPABILITIES = [
       }
     ],
     optionalParams: []
+  },
+  {
+    capabilityKey: 'new-document-from-template',
+    label: '从模板新建文档',
+    category: 'document-file',
+    description: '复制模板库中的模板（或空白模板）为新文件并打开，不做内容改写。同宿主约束：模板类型须与当前宿主一致。',
+    routingPromptHint: '当用户要求从模板新建、用模板开一份新文档/表格/PPT（不含内容生成诉求）时使用。',
+    executeMode: 'direct',
+    executorKey: 'new-document-from-template',
+    requiredParams: [
+      {
+        key: 'templateRef',
+        label: '模板名称或路径',
+        type: 'text',
+        placeholder: '模板库名（如「合同模板」）、完整路径，或填「空白」新建；已上传模板附件时可填「附件」',
+        required: true,
+        defaultResolver: () => ''
+      }
+    ],
+    optionalParams: []
+  },
+  {
+    capabilityKey: 'generate-from-template',
+    label: '从模板生成文档',
+    category: 'document-file',
+    description: '基于用户模板（库名/路径）生成新文档：剖析模板样式结构 → AI 规划改写 → 在模板副本上就地写入内容（保留样式）→ 质检循环 → 另存交付。同宿主约束：模板类型须与当前宿主一致。',
+    routingPromptHint: '当用户要求用/按/基于某个模板生成、制作、写一份新文档、表格或 PPT 时使用（带内容生成诉求）。',
+    executeMode: 'direct',
+    executorKey: 'generate-from-template',
+    requiredParams: [
+      {
+        key: 'templateRef',
+        label: '模板名称或路径',
+        type: 'text',
+        placeholder: '模板库名（如「项目汇报模板」）、完整路径；已上传模板附件时可填「附件」',
+        required: true,
+        defaultResolver: () => ''
+      },
+      {
+        key: 'requirement',
+        label: '生成需求',
+        type: 'textarea',
+        placeholder: '描述要生成什么内容：主题、要点、受众等',
+        required: true,
+        defaultResolver: () => ''
+      }
+    ],
+    optionalParams: [
+      {
+        key: 'pageTarget',
+        label: '目标页数',
+        type: 'number',
+        placeholder: 'PPT 可填目标页数，文档/表格可留空',
+        required: false,
+        defaultResolver: () => 0
+      },
+      {
+        key: 'toneFollow',
+        label: '文案文风',
+        type: 'select',
+        options: ['跟随模板文风', '自由发挥'],
+        placeholder: '新文案是否模仿模板原文案的语体',
+        required: false,
+        defaultResolver: () => '跟随模板文风'
+      },
+      {
+        key: 'planOnly',
+        label: '执行方式',
+        type: 'select',
+        options: ['直接生成', '先出计划确认'],
+        placeholder: '先出计划确认：生成改写计划供你过目，回复「确认执行」后再写入',
+        required: false,
+        defaultResolver: () => '直接生成'
+      },
+      {
+        key: 'savePath',
+        label: '交付路径',
+        type: 'path',
+        placeholder: '质检通过后另存到此路径；留空则打开新文档手动保存',
+        required: false,
+        defaultResolver: () => ''
+      }
+    ]
+  },
+  {
+    capabilityKey: 'execute-template-plan',
+    label: '确认执行模板生成计划',
+    category: 'document-file',
+    description: '执行上一步「先出计划确认」暂存的模板改写计划：打开模板副本写入内容、质检并交付。',
+    routingPromptHint: '当用户在模板生成计划出来后回复确认执行、按计划执行、开始写入时使用。',
+    executeMode: 'direct',
+    executorKey: 'execute-template-plan',
+    requiredParams: [],
+    optionalParams: [
+      {
+        key: 'savePath',
+        label: '交付路径',
+        type: 'path',
+        placeholder: '可改交付路径；留空沿用计划时设置',
+        required: false,
+        defaultResolver: () => ''
+      }
+    ]
+  },
+  {
+    capabilityKey: 'save-current-as-template',
+    label: '存为模板',
+    category: 'document-file',
+    description: '把当前打开的文档/表格/演示另存为模板并登记进本地模板库，之后可从模板新建或 AI 生成时引用。',
+    routingPromptHint: '当用户要求把当前文档存为模板、保存成模板、收进模板库时使用。',
+    executeMode: 'direct',
+    executorKey: 'save-current-as-template',
+    requiredParams: [],
+    optionalParams: [
+      {
+        key: 'name',
+        label: '模板名称',
+        type: 'text',
+        placeholder: '缺省用当前文档名',
+        required: false,
+        defaultResolver: () => ''
+      }
+    ]
   }
 ]
 

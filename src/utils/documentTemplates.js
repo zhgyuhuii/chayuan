@@ -4,13 +4,44 @@
  * 否则使用 PluginStorage 存储清单，模板路径为用户选择的原路径
  */
 
-import { getEffectiveDataDir, getModelDir, joinDataPath, ensureDir, pathJoin, pathSep } from './dataPathSettings.js'
+import { getEffectiveDataDir, getModelDir, joinDataPath, ensureDir, pathJoin } from './dataPathSettings.js'
+import { BLANK_ASSETS } from './blankAssets.js'
 
 const STORAGE_KEY = 'chayuan_document_templates'
 const LEGACY_STORAGE_KEY = 'niudang_document_templates'
 const FILE_NAME = 'chayuan_document_templates.json'
 const LEGACY_FILE_NAME = 'niudang_document_templates.json'
 const isWin = typeof ActiveXObject !== 'undefined'
+
+/** 模板种类：doc=文字 / sheet=表格 / slide=演示（三宿主同宿主使用的根基字段） */
+export const TEMPLATE_KINDS = ['doc', 'sheet', 'slide']
+
+const KIND_EXTENSIONS = {
+  doc: ['.aidocx', '.docx', '.doc', '.dotx'],
+  sheet: ['.xlsx', '.xls', '.et', '.csv', '.ett'],
+  slide: ['.pptx', '.ppt', '.dps', '.potx']
+}
+
+/** 按扩展名推断模板 kind；无法识别返回 null */
+export function kindFromFileExtension(path) {
+  const lower = String(path || '').toLowerCase().trim()
+  for (const [kind, exts] of Object.entries(KIND_EXTENSIONS)) {
+    if (exts.some(ext => lower.endsWith(ext))) return kind
+  }
+  return null
+}
+
+/** 归一化 kind：显式 kind 优先，其次扩展名推断，最后默认 doc（兼容旧 .aidocx 数据） */
+export function normalizeTemplateKind(kind, path) {
+  const raw = String(kind || '').toLowerCase().trim()
+  if (TEMPLATE_KINDS.includes(raw)) return raw
+  return kindFromFileExtension(path) || 'doc'
+}
+
+/** kind 对应的「新建副本」落盘扩展名（.aidocx 复制为 .docx 便于 WPS 识别） */
+export function targetExtensionForKind(kind) {
+  return { doc: '.docx', sheet: '.xlsx', slide: '.pptx' }[normalizeTemplateKind(kind)] || '.docx'
+}
 
 /** 文档变量名：标记为从模板新建的未保存文件，保存时需弹出另存为 */
 export const NEW_FILE_VAR_NAME = 'NdNewFile'
@@ -30,7 +61,7 @@ export function setNewFileMarker(doc, isNew) {
       try {
         const v = doc.Variables.Item(NEW_FILE_VAR_NAME)
         if (v) v.Delete()
-      } catch (e) {}
+      } catch (_) { /* 标记不存在即视为已清除 */ }
     }
   } catch (e) {
     console.warn('setNewFileMarker:', e)
@@ -43,7 +74,7 @@ export function isNewFile(doc) {
   try {
     const v = doc.Variables.Item(NEW_FILE_VAR_NAME)
     return v && String(v.Value || '') === '1'
-  } catch (e) {}
+  } catch (_) { /* 无标记载体 */ }
   return false
 }
 
@@ -107,7 +138,7 @@ function setStorage(list) {
       if (saveToFile(list)) {
         try {
           window.Application?.PluginStorage?.setItem(STORAGE_KEY, JSON.stringify(list))
-        } catch (e) {}
+        } catch (_) { /* 文件通道已成功，镜像失败不阻塞 */ }
         return true
       }
     }
@@ -122,12 +153,30 @@ function setStorage(list) {
 }
 
 /**
- * 获取文档模板清单
- * @returns {Array<{id:string, path:string, name:string, addedAt:string}>}
+ * 获取文档模板清单（读时归一化 kind，旧数据无 kind 按扩展名/默认 doc 迁移）
+ * @returns {Array<{id:string, path:string, name:string, addedAt:string, kind:string}>}
  */
 export function loadDocumentTemplates() {
   const list = getStorage()
-  return Array.isArray(list) ? list : []
+  return (Array.isArray(list) ? list : []).map(t => ({
+    ...t,
+    kind: normalizeTemplateKind(t?.kind, t?.path)
+  }))
+}
+
+/**
+ * 按显示名/路径模糊解析模板（聊天引用「用我那个合同模板」时用）
+ * 命中顺序：精确名 > 名包含 > 路径包含；kind 不匹配的条目不参与
+ */
+export function findTemplateByRef(reference, { kind = null } = {}) {
+  const ref = String(reference || '').trim()
+  if (!ref) return null
+  const candidates = loadDocumentTemplates().filter(t => !kind || t.kind === kind)
+  const lower = ref.toLowerCase()
+  return candidates.find(t => (t.name || '').toLowerCase() === lower)
+    || candidates.find(t => (t.name || '').toLowerCase().includes(lower))
+    || candidates.find(t => String(t.path || '').toLowerCase().includes(lower))
+    || null
 }
 
 /**
@@ -233,12 +282,18 @@ function writeFileFromBuffer(fs, destPath, arrayBuffer) {
 /**
  * 添加文档模板（从 File 对象，用于数据路径已设置时）
  * @param {File} file - 用户选择的文件对象
- * @returns {Promise<{ok:boolean, id?:string, error?:string}>}
+ * @param {string} [kind] - 模板种类 doc|sheet|slide，缺省按扩展名推断
+ * @returns {Promise<{ok:boolean, id?:string, kind?:string, error?:string}>}
  */
-export function addDocumentTemplateFromFile(file) {
+export function addDocumentTemplateFromFile(file, kind = null) {
   return new Promise((resolve) => {
     if (!file || !(file instanceof File)) {
       resolve({ ok: false, error: '文件无效' })
+      return
+    }
+    const resolvedKind = normalizeTemplateKind(kind, file?.name)
+    if (!resolvedKind) {
+      resolve({ ok: false, error: '不支持的模板格式（仅支持 docx/xlsx/pptx 系）' })
       return
     }
     const modelDir = getModelDir()
@@ -280,6 +335,7 @@ export function addDocumentTemplateFromFile(file) {
           id,
           path: targetPath,
           name: displayName,
+          kind: resolvedKind,
           addedAt: new Date().toISOString()
         }
         list.push(item)
@@ -287,7 +343,7 @@ export function addDocumentTemplateFromFile(file) {
           resolve({ ok: false, error: '保存清单失败' })
           return
         }
-        resolve({ ok: true, id })
+        resolve({ ok: true, id, kind: resolvedKind })
       } catch (e) {
         resolve({ ok: false, error: e?.message || '添加失败' })
       }
@@ -301,14 +357,19 @@ export function addDocumentTemplateFromFile(file) {
  * 添加文档模板（从路径，用于未设置数据路径时）
  * @param {string} path - 模板文件完整路径
  * @param {string} [name] - 显示名称，默认从路径提取文件名
- * @returns {{ok:boolean, id?:string, error?:string}}
+ * @param {string} [kind] - 模板种类 doc|sheet|slide，缺省按扩展名推断
+ * @returns {{ok:boolean, id?:string, kind?:string, error?:string}}
  */
-export function addDocumentTemplate(path, name) {
+export function addDocumentTemplate(path, name, kind = null) {
   if (!path || typeof path !== 'string') {
     return { ok: false, error: '路径无效' }
   }
   const normalized = String(path).trim().replace(/^file:\/\//i, '').replace(/\\\\/g, '/')
   if (!normalized) return { ok: false, error: '路径无效' }
+  const resolvedKind = normalizeTemplateKind(kind, normalized)
+  if (!resolvedKind) {
+    return { ok: false, error: '不支持的模板格式（仅支持 docx/xlsx/pptx 系）' }
+  }
 
   const list = getStorage()
   const displayName = (name || '').trim() || normalized.split(/[/\\]/).pop() || '未命名模板'
@@ -342,11 +403,12 @@ export function addDocumentTemplate(path, name) {
     id,
     path: destPath,
     name: displayName,
+    kind: resolvedKind,
     addedAt: new Date().toISOString()
   }
   list.push(item)
   if (!setStorage(list)) return { ok: false, error: '保存失败' }
-  return { ok: true, id }
+  return { ok: true, id, kind: resolvedKind }
 }
 
 /**
@@ -396,8 +458,6 @@ export function getDesktopPath() {
       }
     }
 
-    const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform) || /Macintosh/.test(navigator.userAgent)
-    const isLinux = /Linux/.test(navigator.platform) && !isMac
 
     if (typeof app.Env.GetDownloadPath === 'function') {
       const download = String(app.Env.GetDownloadPath() || '')
@@ -463,14 +523,17 @@ export function copyTemplateToDesktop(templatePath) {
 
 /**
  * 复制模板到临时文件并返回路径，供新建文档时打开
- * .aidocx 本质为 docx 格式，复制为 .docx 便于 WPS 识别并避免扩展名导致崩溃
+ * doc 类（.aidocx 本质 docx）复制为 .docx 便于 WPS 识别并避免扩展名导致崩溃；
+ * sheet/slide 类保持原生扩展名
  * @param {string} templatePath - 模板文件路径（通常在 dataPath/model/ 下）
+ * @param {string} [kind] - 模板种类 doc|sheet|slide，缺省按扩展名推断
  * @returns {{ok:boolean, path?:string, error?:string}}
  */
-export function copyTemplateToTempForNew(templatePath) {
+export function copyTemplateToTempForNew(templatePath, kind = null) {
   if (!templatePath || typeof templatePath !== 'string') {
     return { ok: false, error: '模板路径无效' }
   }
+  const resolvedKind = normalizeTemplateKind(kind, templatePath)
   try {
     const app = window.Application
     const fs = app?.FileSystem
@@ -480,46 +543,37 @@ export function copyTemplateToTempForNew(templatePath) {
     if (app?.Env?.GetTempPath) {
       const raw = app.Env.GetTempPath()
       tempDir = String(raw || '').replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
-      console.log('GetTempPath 返回:', tempDir)
     }
     if (!tempDir && getEffectiveDataDir()) {
       tempDir = pathJoin(getEffectiveDataDir(), '_temp')
-      console.log('使用数据路径下的临时目录:', tempDir)
       ensureDir(fs, tempDir)
     }
     if (!tempDir) {
       const fallbackDir = isWin ? 'C:\\Temp' : '/tmp'
       tempDir = pathJoin(fallbackDir, 'chayuan_temp')
-      console.log('使用备用临时目录:', tempDir)
       try {
         ensureDir(fs, tempDir)
       } catch (e) {
-        console.warn('创建备用临时目录失败:', e)
+        console.warn('创建备用临时目录失败:', tempDir, e)
       }
     }
     if (!tempDir) return { ok: false, error: '无法获取临时目录' }
 
-    const baseName = templatePath.split(/[/\\]/).pop() || 'template'
-    const nameWithoutExt = baseName.replace(/\.(aidocx|docx)$/i, '')
-    const tempFileName = 'chayuan_new_' + Date.now() + '.docx'
+    const ext = targetExtensionForKind(resolvedKind)
+    const tempFileName = 'chayuan_new_' + Date.now() + ext
     const tempPath = pathJoin(tempDir, tempFileName)
     const tempForFs = isWin ? tempPath.replace(/\//g, '\\') : tempPath.replace(/\\/g, '/')
 
-    console.log('复制模板:', { from: templatePath, to: tempForFs, tempDir })
-    
     if (!ensureDir(fs, tempDir)) {
       console.warn('临时目录创建可能失败:', tempDir)
     }
-    
+
     const srcForFs = isWin ? templatePath.replace(/\//g, '\\') : templatePath.replace(/\\/g, '/')
-    console.log('源文件路径（格式化后）:', srcForFs)
-    
     const copySuccess = copyFile(srcForFs, tempForFs)
     if (copySuccess) {
-      console.log('模板复制成功:', tempForFs)
       return { ok: true, path: tempForFs }
     }
-    
+
     const errorMsg = `复制失败：无法从 ${templatePath} 复制到 ${tempForFs}。请检查：1) 源文件是否存在 2) 是否有读取权限 3) 临时目录是否有写入权限`
     console.error(errorMsg)
     return { ok: false, error: errorMsg }
@@ -530,10 +584,202 @@ export function copyTemplateToTempForNew(templatePath) {
 }
 
 /**
+ * 确保空白模板文件就位并返回路径（不登记进模板库，按需落盘到临时目录）
+ * 空白新建 = 从空白模板复制打开，绕开 Documents.Add() 崩溃路径，Mac 亦可用
+ * @param {string} kind - doc|sheet|slide
+ * @returns {{ok:boolean, path?:string, name?:string, error?:string}}
+ */
+export function ensureBlankTemplateFile(kind) {
+  const resolvedKind = normalizeTemplateKind(kind)
+  const b64 = BLANK_ASSETS[resolvedKind]
+  if (!b64) return { ok: false, error: `暂无 ${resolvedKind} 类空白模板` }
+
+  try {
+    const app = window.Application
+    const fs = app?.FileSystem
+    if (!fs?.writeAsBinaryString) return { ok: false, error: '当前环境不支持文件写入' }
+
+    let tempDir = ''
+    if (getEffectiveDataDir()) {
+      tempDir = pathJoin(getEffectiveDataDir(), '_temp')
+    } else if (app?.Env?.GetTempPath) {
+      tempDir = String(app.Env.GetTempPath() || '').replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
+    }
+    if (!tempDir) tempDir = pathJoin(isWin ? 'C:\\Temp' : '/tmp', 'chayuan_temp')
+    ensureDir(fs, tempDir)
+
+    const ext = targetExtensionForKind(resolvedKind)
+    const blankPath = pathJoin(tempDir, 'chayuan_blank' + ext)
+    const blankForFs = isWin ? blankPath.replace(/\//g, '\\') : blankPath.replace(/\\/g, '/')
+
+    // base64 → binary string → 落盘（同 writeFileFromBuffer 通路）
+    const raw = atob(b64)
+    if (!fs.writeAsBinaryString(blankForFs, raw)) {
+      return { ok: false, error: '空白模板落盘失败，请检查数据路径/临时目录写入权限' }
+    }
+    const def = { doc: '空白文档', sheet: '空白表格', slide: '空白演示' }[resolvedKind]
+    return { ok: true, path: blankForFs, name: def }
+  } catch (e) {
+    console.error('ensureBlankTemplateFile 异常:', e)
+    return { ok: false, error: e?.message || '空白模板准备失败' }
+  }
+}
+
+/**
+ * 统一解析模板来源：模板库 id / 库名引用 / 任意路径 / 空白
+ * @param {{templateId?:string, templateRef?:string, templatePath?:string, blank?:boolean|string, kind?:string}} source
+ * @returns {{ok:boolean, path?:string, name?:string, kind?:string, error?:string}}
+ */
+export function resolveTemplateSource(source = {}) {
+  if (source.blank) {
+    const kind = normalizeTemplateKind(typeof source.blank === 'string' ? source.blank : source.kind)
+    const blank = ensureBlankTemplateFile(kind)
+    if (!blank.ok) return blank
+    return { ok: true, path: blank.path, name: blank.name || '空白文档', kind }
+  }
+  if (source.templateId) {
+    const t = loadDocumentTemplates().find(x => x.id === source.templateId)
+    if (!t?.path) return { ok: false, error: '模板库中未找到该模板' }
+    return { ok: true, path: t.path, name: t.name, kind: t.kind }
+  }
+  if (source.templateRef) {
+    const t = findTemplateByRef(source.templateRef, { kind: source.kind || null })
+    if (!t) return { ok: false, error: `模板库中未找到「${source.templateRef}」` }
+    return { ok: true, path: t.path, name: t.name, kind: t.kind }
+  }
+  if (source.templatePath) {
+    const normalized = String(source.templatePath).trim().replace(/^file:\/\//i, '')
+    const kind = normalizeTemplateKind(source.kind, normalized)
+    if (!kindFromFileExtension(normalized)) {
+      return { ok: false, error: '无法识别的模板格式（支持 docx/xlsx/pptx 系）' }
+    }
+    return { ok: true, path: normalized, name: (normalized.split(/[/\\]/).pop() || '模板').replace(/\.[^.]+$/, ''), kind }
+  }
+  return { ok: false, error: '缺少模板来源（templateId/templateRef/templatePath/blank 任选其一）' }
+}
+
+/**
  * 是否应使用文件选择器（数据路径已设置时用 File 对象直接写入，否则用路径）
  */
 export function shouldUseFileInputForImport() {
   return !!getModelDir()
+}
+
+/**
+ * 把聊天附件的 File 对象落盘到临时目录（不登记入库——入库走「用后询问」）
+ * @param {File} file - 用户附件
+ * @returns {Promise<{ok:boolean, path?:string, name?:string, kind?:string, error?:string}>}
+ */
+export function materializeAttachmentToTemp(file) {
+  return new Promise((resolve) => {
+    if (!file || !(file instanceof File)) {
+      resolve({ ok: false, error: '附件无效' })
+      return
+    }
+    const kind = normalizeTemplateKind(null, file?.name)
+    if (!kindFromFileExtension(file?.name)) {
+      resolve({ ok: false, error: '该附件不是可用的模板格式（支持 docx/xlsx/pptx 系）' })
+      return
+    }
+    try {
+      const fs = window.Application?.FileSystem
+      if (!fs?.writeAsBinaryString) {
+        resolve({ ok: false, error: '当前环境不支持文件写入' })
+        return
+      }
+      let tempDir = ''
+      if (getEffectiveDataDir()) tempDir = pathJoin(getEffectiveDataDir(), '_temp')
+      else if (window.Application?.Env?.GetTempPath) {
+        tempDir = String(window.Application.Env.GetTempPath() || '').replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
+      }
+      if (!tempDir) tempDir = pathJoin(isWin ? 'C:\\Temp' : '/tmp', 'chayuan_temp')
+      ensureDir(fs, tempDir)
+
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const buf = reader.result
+          if (!(buf instanceof ArrayBuffer)) {
+            resolve({ ok: false, error: '读取附件失败' })
+            return
+          }
+          const safeName = 'chayuan_attach_' + Date.now() + '_' + String(file.name || 'template').replace(/[<>:"|?*\\/]/g, '_')
+          const target = pathJoin(tempDir, safeName)
+          const targetForFs = isWin ? target.replace(/\//g, '\\') : target.replace(/\\/g, '/')
+          if (!writeFileFromBuffer(fs, targetForFs, buf)) {
+            resolve({ ok: false, error: '附件落盘失败，请检查数据路径/临时目录写入权限' })
+            return
+          }
+          resolve({ ok: true, path: targetForFs, name: String(file.name || '').replace(/\.[^.]+$/, ''), kind })
+        } catch (e) {
+          resolve({ ok: false, error: e?.message || '附件处理失败' })
+        }
+      }
+      reader.onerror = () => resolve({ ok: false, error: '读取附件失败' })
+      reader.readAsArrayBuffer(file)
+    } catch (e) {
+      resolve({ ok: false, error: e?.message || '附件处理失败' })
+    }
+  })
+}
+
+function detectAddonTypeSafe() {
+  try {
+    const app = window.Application
+    if (!app) return 'wps'
+    const has = (key) => { try { return !!app[key] } catch { return false } }
+    if (has('Workbooks')) return 'et'
+    if (has('Presentations')) return 'wpp'
+    return 'wps'
+  } catch (_) {
+    return 'wps'
+  }
+}
+
+/**
+ * 把当前活动文档另存为模板并登记入库（三宿主通用，「存为模板」闭环）。
+ * @param {{name?:string}} options - name 缺省取活动文档名
+ * @returns {{ok:boolean, path?:string, name?:string, kind?:string, id?:string, error?:string}}
+ */
+export function saveActiveDocumentAsTemplate(options = {}) {
+  try {
+    const app = window.Application
+    const obj = app?.ActiveDocument || app?.ActiveWorkbook || app?.ActivePresentation
+    if (!obj) return { ok: false, error: '当前没有活动文档' }
+    const modelDir = getModelDir()
+    if (!modelDir) return { ok: false, error: '未设置数据路径，请先在设置中配置数据路径' }
+    const fs = app?.FileSystem
+    if (!fs) return { ok: false, error: 'FileSystem 不可用' }
+
+    const kind = normalizeTemplateKind(null, String(obj?.FullName || obj?.Name || ''))
+      || ({ wps: 'doc', et: 'sheet', wpp: 'slide' }[detectAddonTypeSafe()] || 'doc')
+    const rawName = String(options.name || obj?.Name || '').replace(/\.[^.]+$/, '').trim() || '我的模板'
+    const safeName = rawName.replace(/[<>:"|?*\\/]/g, '_')
+
+    const ext = kind === 'sheet' ? '.xlsx' : kind === 'slide' ? '.pptx' : '.aidocx'
+    const id = 'tpl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    const targetPath = pathJoin(modelDir, safeName + '_' + id.slice(-6) + ext)
+    const targetForFs = isWin ? targetPath.replace(/\//g, '\\') : targetPath.replace(/\\/g, '/')
+
+    ensureDir(fs, getEffectiveDataDir())
+    ensureDir(fs, modelDir)
+
+    // SaveAs2 直接落模板库目录（格式按扩展名映射；三级回退同 deliverActiveDocument）
+    const fmt = { '.aidocx': 12, '.xlsx': 51, '.pptx': 24 }[ext]
+    let saved = false
+    const trySave = (fn) => { try { return !!fn() } catch (e) { console.warn('saveActiveDocumentAsTemplate 保存形态失败:', e?.message || e); return false } }
+    if (fmt !== undefined) saved = trySave(() => !!obj.SaveAs2(targetForFs, fmt))
+    if (!saved) saved = trySave(() => !!obj.SaveAs2(targetForFs))
+    if (!saved) saved = trySave(() => !!obj.SaveAs(targetForFs))
+    if (!saved) return { ok: false, error: '另存失败：无法写入模板库目录' }
+
+    const reg = addDocumentTemplate(targetPath, safeName, kind)
+    if (!reg.ok) return { ok: false, error: '模板已保存但登记失败：' + (reg.error || '') }
+    return { ok: true, path: targetPath, name: safeName, kind, id: reg.id }
+  } catch (e) {
+    console.error('saveActiveDocumentAsTemplate 异常:', e)
+    return { ok: false, error: e?.message || '存为模板失败' }
+  }
 }
 
 /**
@@ -549,7 +795,7 @@ export function pickAidocFile() {
         return
       }
 
-      const fileFilter = '察元模板 (*.aidocx), *.aidocx'
+      const fileFilter = '察元模板 (*.aidocx *.docx *.xlsx *.pptx), *.aidocx;*.docx;*.xlsx;*.pptx'
       const filterIndex = 1
 
       // 优先使用 GetOpenFileName（若 WPS 支持）
@@ -573,7 +819,7 @@ export function pickAidocFile() {
       fd.Title = '选择模板文件'
       fd.AllowMultiSelect = false
       fd.Filters.Clear()
-      fd.Filters.Add('察元模板 (*.aidocx)', '*.aidocx', 1)
+      fd.Filters.Add('察元模板', '*.aidocx;*.docx;*.xlsx;*.pptx', 1)
       fd.FilterIndex = 1
       if (fd.Show() === -1) {
         const item = fd.SelectedItems.Item(1)

@@ -151,6 +151,11 @@ const router = createRouter({
       component: () => import('../components/DocumentTemplateImport.vue')
     },
     {
+      path: '/document-template-select',
+      name: '从模板新建',
+      component: () => import('../components/DocumentTemplateSelect.vue')
+    },
+    {
       path: '/template-download-dialog',
       name: '下载模板',
       component: () => import('../components/TemplateDownloadDialog.vue')

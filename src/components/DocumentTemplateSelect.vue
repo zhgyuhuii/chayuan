@@ -1,11 +1,11 @@
 <template>
   <div class="document-template-select">
     <div class="dialog-header">
-      <h3>新建文档</h3>
+      <h3>{{ hostTitle }}</h3>
       <button class="btn-close" @click="onClose">×</button>
     </div>
     <div class="dialog-body">
-      <p class="select-desc">从列表中选择一个文件，将复制一份打开并标记为新建</p>
+      <p class="select-desc">选择模板将复制一份打开并标记为新建；保存时会提示另存为新文件</p>
       <div class="template-list">
         <div
           v-for="t in templates"
@@ -16,17 +16,18 @@
           @click="selectedId = t.id"
         >
           <span class="item-name">{{ t.name }}</span>
+          <button class="item-delete" title="删除模板" @click.stop="onDelete(t)">×</button>
         </div>
         <div
           class="template-item template-item-blank"
           :class="{ selected: selectedId === '__blank__' }"
           @click="selectedId = '__blank__'"
         >
-          <span class="item-name">空白文档</span>
+          <span class="item-name">空白{{ hostLabel }}</span>
         </div>
       </div>
-      <div v-if="!templates.length && !selectedId" class="empty-hint">
-        暂无模板，请先在「导入模板」中添加 .aidocx 模板
+      <div v-if="!templates.length" class="empty-hint">
+        暂无本类模板，可直接创建空白{{ hostLabel }}，或在「导入模板」中添加
       </div>
       <div v-if="message" class="message" :class="message.type">
         {{ message.text }}
@@ -35,152 +36,79 @@
     <div class="dialog-footer">
       <button class="btn btn-secondary" @click="onClose">取消</button>
       <button class="btn btn-primary" :disabled="!selectedId || creating" @click="onConfirm">
-        {{ creating ? '创建中...' : '确定' }}
+        {{ creating ? '创建中...' : '新建' }}
       </button>
     </div>
   </div>
 </template>
 
 <script>
-import { loadDocumentTemplates, setNewFileMarker, copyTemplateToDesktop } from '../utils/documentTemplates.js'
+import { loadDocumentTemplates, removeDocumentTemplate } from '../utils/documentTemplates.js'
+import { createFromTemplate, detectHostKind } from '../utils/documentCreateFromTemplate.js'
 
 export default {
   name: 'DocumentTemplateSelect',
   data() {
     return {
+      hostKind: 'doc',
       templates: [],
       selectedId: '__blank__',
       creating: false,
       message: null
     }
   },
+  computed: {
+    hostLabel() {
+      return { doc: '文档', sheet: '表格', slide: '演示' }[this.hostKind] || '文档'
+    },
+    hostTitle() {
+      return `从模板新建${this.hostLabel}`
+    }
+  },
   mounted() {
-    this.templates = loadDocumentTemplates()
+    // 同宿主约束：模板库对话框只展示与当前宿主匹配的 kind
+    this.hostKind = detectHostKind()
+    this.refreshList()
   },
   methods: {
+    refreshList() {
+      this.templates = loadDocumentTemplates().filter(t => t.kind === this.hostKind)
+      if (this.selectedId !== '__blank__' && !this.templates.some(t => t.id === this.selectedId)) {
+        this.selectedId = '__blank__'
+      }
+    },
     showMessage(text, type = 'error') {
       this.message = { text, type }
       setTimeout(() => {
         this.message = null
-      }, 3000)
+      }, 4000)
+    },
+    async onDelete(t) {
+      if (!t?.id) return
+      if (!window.confirm(`删除模板「${t.name}」？（不删除磁盘上的模板文件）`)) return
+      removeDocumentTemplate(t.id)
+      this.refreshList()
     },
     async onConfirm() {
       if (!this.selectedId || this.creating) return
       this.creating = true
       this.message = null
       try {
-        const app = window.Application
-        if (!app || !app.Documents) {
-          this.showMessage('无法访问文档对象')
+        const result = await createFromTemplate(
+          this.selectedId === '__blank__'
+            ? { blank: this.hostKind }
+            : { templateId: this.selectedId }
+        )
+        if (!result.ok) {
+          this.showMessage(result.error || '创建失败')
           return
         }
-        if (this.selectedId === '__blank__') {
-          const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform) || /Macintosh/.test(navigator.userAgent)
-          if (isMac) {
-            this.showMessage('Mac 版暂不支持空白文档，请选择模板创建')
-            this.creating = false
-            return
-          }
-          app.Documents.Add()
-          const doc = app.ActiveDocument
-          if (doc) setNewFileMarker(doc, true)
-          this.onClose()
-          return
-        }
-        const t = this.templates.find(x => x.id === this.selectedId)
-        if (!t?.path) {
-          this.showMessage('模板路径无效')
-          return
-        }
-        const templatePath = t.path
-        const copyResult = copyTemplateToDesktop(templatePath)
-        if (!copyResult.ok) {
-          this.showMessage(copyResult.error || '复制模板到桌面失败')
-          return
-        }
-        
-        // 将本地路径转换为 file:// URL 格式
-        const convertToFileUrl = (localPath) => {
-          if (!localPath) return null
-          let path = String(localPath).replace(/\\/g, '/')
-          // 如果路径不是以 / 开头（Windows 路径如 C:/），需要添加 /
-          if (path.match(/^[A-Za-z]:/)) {
-            path = '/' + path
-          }
-          // 确保路径以 / 开头
-          if (!path.startsWith('/')) {
-            path = '/' + path
-          }
-          return 'file://' + encodeURI(path)
-        }
-        
-        const fileUrl = convertToFileUrl(copyResult.path)
-        console.log('准备打开文档:', { localPath: copyResult.path, fileUrl })
-        
-        const openDocument = () => {
-          try {
-            // 优先使用 OpenFromUrl（参考 systemdemo.js 的实现）
-            if (typeof app.Documents.OpenFromUrl === 'function' && fileUrl) {
-              console.log('使用 OpenFromUrl 打开:', fileUrl)
-              app.Documents.OpenFromUrl(fileUrl)
-              // OpenFromUrl 是异步的，等待一下再获取文档
-              setTimeout(() => {
-                const doc = app.ActiveDocument
-                if (doc) {
-                  setNewFileMarker(doc, true)
-                  this.onClose()
-                } else {
-                  console.warn('OpenFromUrl 后未找到活动文档，尝试其他方法')
-                  this.tryAlternativeOpen(copyResult.path)
-                }
-              }, 300)
-            } else if (typeof app.Documents.Open === 'function') {
-              console.log('使用 Documents.Open 打开:', copyResult.path)
-              const doc = app.Documents.Open(copyResult.path, false, false, true)
-              if (doc) {
-                setNewFileMarker(doc, true)
-                this.onClose()
-              } else {
-                this.showMessage('打开文档失败：无法获取文档对象')
-              }
-            } else {
-              this.showMessage('当前环境不支持打开文档')
-            }
-          } catch (e) {
-            console.error('打开文档失败:', e)
-            // 如果 OpenFromUrl 失败，尝试备用方法
-            this.tryAlternativeOpen(copyResult.path)
-          }
-        }
-        
-        // 延迟打开，确保文件已完全写入
-        setTimeout(openDocument, 100)
+        this.showMessage(`已创建：${result.name}${result.viaOs ? '（系统打开，请点击该文档继续）' : ''}`, 'info')
+        setTimeout(() => this.onClose(), result.viaOs ? 2500 : 600)
       } catch (e) {
-        this.showMessage('创建文档失败：' + (e?.message || '未知错误'))
+        this.showMessage('创建失败：' + (e?.message || '未知错误'))
       } finally {
         this.creating = false
-      }
-    },
-    tryAlternativeOpen(localPath) {
-      try {
-        const app = window.Application
-        if (!app) {
-          this.showMessage('Application 不可用')
-          return
-        }
-        console.log('尝试备用打开方法:', localPath)
-        if (typeof app.Documents.Open === 'function') {
-          const doc = app.Documents.Open(localPath, false, false, true)
-          if (doc) {
-            setNewFileMarker(doc, true)
-            this.onClose()
-            return
-          }
-        }
-        this.showMessage('打开文档失败：所有方法都失败')
-      } catch (e) {
-        console.error('备用打开方法失败:', e)
-        this.showMessage('打开文档失败：' + (e?.message || '未知错误'))
       }
     },
     onClose() {
@@ -237,12 +165,13 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
   margin-bottom: 12px;
 }
 .template-item {
-  padding: 10px 12px;
+  position: relative;
+  padding: 10px 32px 10px 12px;
   border: 1px solid #e8e8e8;
   border-radius: 4px;
   cursor: pointer;
@@ -265,6 +194,22 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.item-delete {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #bbb;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.item-delete:hover {
+  color: #ff4d4f;
 }
 .empty-hint {
   font-size: 13px;

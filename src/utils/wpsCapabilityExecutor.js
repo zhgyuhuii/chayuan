@@ -10,6 +10,9 @@ import { buildGeneratedArtifactDescriptor, mergeTaskOrchestrationData } from './
 import { appendCapabilityAuditRecord } from './capabilityAuditStore.js'
 import { evaluateCapabilityPolicy, inferCapabilityRiskLevel } from './capabilityPolicyStore.js'
 import { appendCapabilityQuotaUsage, evaluateCapabilityQuota } from './capabilityQuotaStore.js'
+import { createFromTemplate, detectHostKind } from './documentCreateFromTemplate.js'
+import { runTemplateGenerationTask, runTemplatePlanExecution } from './templateGenerationTask.js'
+import { saveActiveDocumentAsTemplate } from './documentTemplates.js'
 
 const activeCapabilityRuns = new Map()
 
@@ -49,6 +52,9 @@ function createItem(index, title, content, status = 'done', extra = {}) {
 
 function buildCapabilityWriteTargets(capabilityKey, params, result) {
   const safeResult = result && typeof result === 'object' ? result : {}
+  if (['new-document-from-template', 'generate-from-template', 'execute-template-plan', 'save-current-as-template'].includes(capabilityKey)) {
+    return []
+  }
   if (['save-document', 'save-document-as', 'save-document-with-dialog', 'encrypt-document', 'encrypt-document-with-dialog', 'decrypt-document'].includes(capabilityKey)) {
     return []
   }
@@ -129,6 +135,44 @@ function buildCapabilityWriteTargets(capabilityKey, params, result) {
 }
 
 export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
+  if (capabilityKey === 'new-document-from-template') {
+    const ref = String(params.templateRef || '').trim()
+    const explicitPath = String(params.templatePath || '').trim()
+    let source
+    if (explicitPath) source = { templatePath: explicitPath }
+    else if (!ref || /^(空白|blank)$/i.test(ref)) source = { blank: detectHostKind() }
+    else if (/[\\/]/.test(ref)) source = { templatePath: ref }
+    else source = { templateRef: ref }
+    return createFromTemplate(source)
+  }
+  if (capabilityKey === 'generate-from-template') {
+    const ref = String(params.templateRef || '').trim()
+    const explicitPath = String(params.templatePath || '').trim()
+    const pathLike = /[\\/]/.test(ref)
+    return runTemplateGenerationTask({
+      templatePath: explicitPath || (pathLike ? ref : undefined),
+      templateRef: explicitPath ? undefined : (pathLike ? undefined : (ref || undefined)),
+      templateId: params.templateId,
+      requirement: params.requirement,
+      pageTarget: Number(params.pageTarget) || 0,
+      toneFollow: params.toneFollow !== '自由发挥',
+      planOnly: params.planOnly === '先出计划确认' || params.planOnly === true,
+      savePath: params.savePath,
+      qcRounds: Number(params.qcRounds) || undefined,
+      __taskId: params.__taskId,
+      __isCancelled: params.__isCancelled
+    })
+  }
+  if (capabilityKey === 'execute-template-plan') {
+    return runTemplatePlanExecution({
+      savePath: params.savePath,
+      __taskId: params.__taskId,
+      __isCancelled: params.__isCancelled
+    })
+  }
+  if (capabilityKey === 'save-current-as-template') {
+    return saveActiveDocumentAsTemplate({ name: params.name })
+  }
   if (capabilityKey === 'save-document') return saveActiveDocument(params)
   if (capabilityKey === 'save-document-as') return saveActiveDocumentAs(params.savePath)
   if (capabilityKey === 'save-document-with-dialog') {
@@ -204,6 +248,18 @@ export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
 }
 
 function buildSuccessMessage(capabilityKey, result) {
+  if (capabilityKey === 'new-document-from-template') {
+    return `已从模板创建并打开：${result?.name || result?.path || '新文档'}${result?.viaOs ? '（系统打开，请点击该文档继续）' : ''}`
+  }
+  if (capabilityKey === 'generate-from-template') {
+    return result?.message || '模板生成完成'
+  }
+  if (capabilityKey === 'execute-template-plan') {
+    return result?.message || '模板生成计划已执行完成'
+  }
+  if (capabilityKey === 'save-current-as-template') {
+    return `已存为模板「${result?.name || ''}」并登记进模板库：${result?.path || ''}`
+  }
   if (capabilityKey === 'save-document') {
     return `已保存文档：${result.fileName || result.path || '当前文档'}`
   }
@@ -355,7 +411,11 @@ export async function executeWpsCapabilityTask(options = {}) {
     })
     throwIfCancelled(runState)
 
-    const result = executeWpsCapabilityDirect(capabilityKey, params)
+    const result = await executeWpsCapabilityDirect(capabilityKey, {
+      ...params,
+      __taskId: taskId,
+      __isCancelled: () => !!runState.cancelled
+    })
     appendCapabilityQuotaUsage({
       namespace: 'wps',
       capabilityKey

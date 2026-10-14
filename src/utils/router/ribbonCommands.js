@@ -35,6 +35,7 @@ export const RIBBON_COMMAND_LIST = Object.freeze([
 
   // ── 文档质量 ──
   { id: 'rb.spell.check',        btnId: 'btnSpellCheck',          group: '文档质量', title: '拼写与语法检查',    keywords: ['spell', 'check', '拼写', '错别字', 'grammar'], priority: 90 },
+  { id: 'rb.template.new',       btnId: 'btnTemplateNew',         group: '模板', title: '从模板新建文档',       keywords: ['template', 'new', '模板', '新建'] },
   { id: 'rb.security.check',     btnId: 'btnDocumentCheck',       group: '文档质量', title: '保密合规检查',      keywords: ['security', 'compliance', '保密', '合规'] },
   { id: 'rb.ai.trace.check',     btnId: 'btnAITraceCheck',        group: '文档质量', title: 'AI 痕迹检测',        keywords: ['ai', 'trace', '痕迹', '降重'] },
 

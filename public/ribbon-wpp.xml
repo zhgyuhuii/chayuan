@@ -14,6 +14,7 @@
                     <button id="btnWppNotes" label="口播稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppProof" label="整套校对" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppStructure" label="结构诊断" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnWppTemplateNew" label="模板新建" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <menu id="menuWppSecurity" label="文档安全" getImage="ribbon.GetImage" size="large">
                         <button id="btnWppSecurityCheck" label="保密检查" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>
                         <button id="btnWppSecEncrypt" label="加密演示稿" onAction="ribbon.OnAction" getImage="ribbon.GetImage"/>

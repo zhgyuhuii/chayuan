@@ -3,7 +3,7 @@ import SystemDemo from './js/systemdemo.js'
 // xlsx 仅在"导出表格到 Excel"动作里用到,改为按需动态加载(saves ~600KB+ from main bundle).
 import { getOpenAIModelIndex } from './ribbon/modelHelpers.js'
 import { loadRulesFromDoc, saveRulesToDoc } from '../utils/templateRules.js'
-import { setNewFileMarker, isNewFile } from '../utils/documentTemplates.js'
+import { setNewFileMarker, isNewFile, addDocumentTemplate } from '../utils/documentTemplates.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { isRibbonModelEnabled } from '../utils/modelSettings.js'
 import {
@@ -3676,6 +3676,18 @@ function OnAction(control) {
         false
       )
       break
+    // 三宿主统一：从模板新建（同宿主约束，对话框内按 kind 过滤）
+    case 'btnTemplateNew':
+    case 'btnEtTemplateNew':
+    case 'btnWppTemplateNew':
+      window.Application.ShowDialog(
+        Util.GetUrlPath() + Util.GetRouterHash() + '/document-template-select',
+        '从模板新建',
+        420 * (window.devicePixelRatio || 1),
+        480 * (window.devicePixelRatio || 1),
+        false
+      )
+      break
     case 'btnImportDocument':
       window.Application.ShowDialog(
         Util.GetUrlPath() + Util.GetRouterHash() + '/document-template-import',
@@ -3699,6 +3711,13 @@ function OnAction(control) {
         const wdFormatXMLDocument = window.Application.Enum?.wdFormatXMLDocument ?? 12
         doc.SaveAs2(path, wdFormatXMLDocument)
         if (isNewFile(doc)) setNewFileMarker(doc, false)
+        // 导出即登记：消灭「导出模板后还要手动再导入一次」的断链（best-effort 不阻塞）
+        try {
+          const regName = (String(path).split(/[/\\]/).pop() || '模板').replace(/\.(aidocx|docx)$/i, '')
+          addDocumentTemplate(path, regName, 'doc')
+        } catch (regErr) {
+          console.warn('模板自动登记失败（不影响导出）:', regErr)
+        }
         alert('文档已另存为：\n' + path)
       } catch (e) {
         console.error('另存文档失败:', e)
@@ -4017,6 +4036,9 @@ function getRibbonImageRelative(control) {
     'btnDownloadTemplate': 'images/download-template.svg',
     'btnSaveDocument': 'images/save-document.svg',
     'btnImportDocument': 'images/import-document.svg',
+    'btnTemplateNew': 'images/newFromTemp.svg',
+    'btnEtTemplateNew': 'images/newFromTemp.svg',
+    'btnWppTemplateNew': 'images/newFromTemp.svg',
     'btnAssistFill': 'images/fill.svg',
     'btnFormContentPreview': 'images/report.svg',
     // 文档审查分组

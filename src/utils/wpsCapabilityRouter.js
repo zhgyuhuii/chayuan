@@ -25,6 +25,22 @@ function parseJsonCandidate(raw) {
 export function routeWpsCapabilityByRule(text = '') {
   const normalized = String(text || '').trim()
   if (!normalized) return null
+  // 模板生成/模板新建（必须先于「另存为」等规则，避免「用模板生成后另存为」被抢路由）
+  if (/(确认执行|按计划执行|执行(上?一?步?)?(模板|生成)?计划)/.test(normalized)) {
+    return { capabilityKey: 'execute-template-plan', confidence: 'high', reason: '命中了确认执行已生成模板计划的表述。' }
+  }
+  if (/(存为|保存为|存成|收进|加入)模板|(当前文档|这份文档|这个文档).{0,8}(存|收).{0,4}模板/.test(normalized)) {
+    return { capabilityKey: 'save-current-as-template', confidence: 'high', reason: '命中了把当前文档存为模板的表述。' }
+  }
+  const wantsTemplate = /(模板)/.test(normalized)
+  const wantsCreate = /(新建|创建|生成|做一份|做一版|写一份|出一份|开一份|做一|做一个|做一套|写一个)/.test(normalized)
+  if (wantsTemplate && wantsCreate) {
+    const contentIntent = /(生成|写|做一份|做一版|出一份|内容|按需求|按大纲)/.test(normalized)
+    if (contentIntent) {
+      return { capabilityKey: 'generate-from-template', confidence: 'high', reason: '命中了基于模板生成内容的表述。' }
+    }
+    return { capabilityKey: 'new-document-from-template', confidence: 'high', reason: '命中了从模板新建文件的表述。' }
+  }
   if (/(另存为|另存文档|保存到|导出到).{0,24}(文档|文件)?/.test(normalized)) {
     return { capabilityKey: 'save-document-as', confidence: 'high', reason: '命中了另存为/保存到路径的直接操作表述。' }
   }
