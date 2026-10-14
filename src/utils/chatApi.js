@@ -137,6 +137,26 @@ function getErrorDetailMessage(rawText) {
   }
 }
 
+// 严格网关（内网模型/vLLM 系）要求 system 消息只能出现在 messages 开头。
+// 会话历史、KB 注入、摘要注入等多条组装路径可能产生"中置 system"或"多条
+// system"，在内网模型上直接报 "system message must be at the beginning"。
+// 在出口统一归一：全部 system 提到最前，同为字符串时合并为一条。
+export function normalizeChatMessages(messages) {
+  if (!Array.isArray(messages) || messages.length < 2) return messages
+  const firstSystemIndex = messages.findIndex(m => m?.role === 'system')
+  if (firstSystemIndex < 0) return messages
+  const hasMisplacedSystem = firstSystemIndex > 0 ||
+    messages.some((m, i) => m?.role === 'system' && i > firstSystemIndex)
+  if (!hasMisplacedSystem) return messages
+  const systems = messages.filter(m => m?.role === 'system')
+  const rest = messages.filter(m => m?.role !== 'system')
+  if (systems.every(s => typeof s.content === 'string')) {
+    const merged = systems.map(s => String(s.content || '').trim()).filter(Boolean).join('\n\n')
+    return merged ? [{ role: 'system', content: merged }, ...rest] : rest
+  }
+  return [...systems, ...rest]
+}
+
 function normalizeChatApiErrorMessage(status, rawText, fallbackText = '') {
   const statusCode = Number(status || 0)
   const { detail, code, type } = getErrorDetailMessage(rawText)
@@ -288,7 +308,7 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
   const body = {
     ...extraBody,
     model: cfg.model,
-    messages,
+    messages: normalizeChatMessages(messages),
     stream: true
   }
 
@@ -419,7 +439,7 @@ export function buildChatCompletionsRequestSnapshot({
   const body = {
     ...extraBody,
     model: cfg?.model || modelId || '',
-    messages: Array.isArray(messages) ? messages : [],
+    messages: normalizeChatMessages(Array.isArray(messages) ? messages : []),
     stream: stream === true
   }
   return {
@@ -478,7 +498,7 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
   const body = {
     ...extraBody,
     model: cfg.model,
-    messages,
+    messages: normalizeChatMessages(messages),
     stream: false
   }
 
@@ -553,7 +573,7 @@ export async function chatCompletionMessage({
   const body = {
     ...extraBody,
     model: cfg.model,
-    messages,
+    messages: normalizeChatMessages(messages),
     stream: false
   }
 

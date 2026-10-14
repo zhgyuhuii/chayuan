@@ -305,17 +305,26 @@ function Install-Runtime {
     Write-Host "  ⚠ 覆盖二进制失败（可能仍被占用），沿用已有 runtime：$($_.Exception.Message)" -ForegroundColor Yellow
     if (-not (Test-Path -LiteralPath $exeDst)) { Write-Error "runtime 无可用二进制: $exeDst"; return }
   }
-  # 隐藏启动：裸 start "" 会留常驻控制台窗口，关窗即杀 sidecar
-  $startCmd = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -Command `"Start-Process -FilePath '%~dp0$SidExe' -WindowStyle Hidden`"`r`n"
-  [System.IO.File]::WriteAllText((Join-Path $runtimeDir 'start-mcp.cmd'), $startCmd, [System.Text.Encoding]::ASCII)
+  # 多 OS 启动器（exe → 探活 → Win7/8 下自动回落 node）与回落载荷统一来自载荷树，
+  # 不再内联生成仅含 exe 的 start-mcp.cmd（那在 Win7/8 上静默失败）
+  foreach ($f in @('start-mcp.cmd', 'server.mjs', 'chayuan-mcp-watch.vbs')) {
+    Copy-Item -LiteralPath (Join-Path $Sidecar $f) -Destination $runtimeDir -Force
+  }
+  Copy-Item -LiteralPath (Join-Path $Sidecar 'lib') -Destination (Join-Path $runtimeDir 'lib') -Recurse -Force
   # Run 键指向 start-mcp.cmd（隐藏启动）；直启 exe 每次登录弹常驻控制台窗口
   $runValue = "`"$runtimeDir\start-mcp.cmd`""
   $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
   New-Item -Path $regPath -Force | Out-Null
   Set-ItemProperty -Path $regPath -Name 'ChayuanWpsMcp' -Value $runValue -Type String
   Write-Host "  ✓ Run → $runtimeDir\start-mcp.cmd (hidden launch)"
-  Start-Process -FilePath $exeDst -WindowStyle Hidden
-  Write-Host '  ✓ Started sidecar (hidden)'
+  # 看门狗：每 2 分钟隐藏跑一次 start-mcp.cmd；healthz 正常时静默退出（自愈崩溃/漏启动）
+  $tr = "wscript.exe `"$runtimeDir\chayuan-mcp-watch.vbs`""
+  & schtasks /Create /F /TN ChayuanWpsMcpWatch /SC MINUTE /MO 2 /TR $tr | Out-Null
+  if ($LASTEXITCODE -eq 0) { Write-Host '  ✓ Watchdog task: ChayuanWpsMcpWatch (every 2 min)' }
+  else { Write-Host '  ⚠ schtasks 注册失败（策略限制？），仅靠 Run 键自启' -ForegroundColor Yellow }
+  # 经启动器拉起（内部先探活，避免双启）
+  & (Join-Path $runtimeDir 'start-mcp.cmd')
+  Write-Host '  ✓ Start requested via start-mcp.cmd'
 }
 
 if ($DoAddon)  { Install-Addon }

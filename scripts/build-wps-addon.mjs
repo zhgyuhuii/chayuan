@@ -265,6 +265,15 @@ function writeInstallReadme(pkg, releaseDir) {
 		'- 麒麟 / UOS 应用商店专业版：另可能在 /opt/apps/cn.wps.wps-office-pro/.../office6/jsaddons；安装 .deb 后请重启 WPS，必要时执行 quickstartoffice restart（见该路径下 bin）。',
 		'- macOS：~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons',
 		'',
+		'【Windows 7 / 8 部署（内置本机文档服务）】',
+		'Win10/11：sidecar 二进制（bun 编译）随安装自启，无需 Node.js。',
+		'Win7/8：bun 二进制无法运行，安装器释放的 start-mcp.cmd 会自动回落到 Node.js 运行：',
+		'  1. 先装 Node.js 16.x x64（14.18+ 亦可；Win7 需 SP1）；',
+		'  2. 登录自启与「设置 → MCP 服务 → 启动本机服务」都走 start-mcp.cmd：先试二进制，探活失败自动 node server.mjs；',
+		'  3. 看门狗：计划任务 ChayuanWpsMcpWatch 每 2 分钟检查一次，服务掉线自动重新拉起（healthz 正常时静默跳过）；',
+		'  4. 排查日志：%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\sidecar-start.log；',
+		'     心跳：%LOCALAPPDATA%\\chayuan-wps\\mcp\\runtime\\sidecar-heartbeat.json（每 3 秒刷新）。',
+		'',
 	]
 	const out = path.join(releaseDir, `${DISPLAY_NAME}-v${version}-安装说明.txt`)
 	fs.writeFileSync(out, lines.join('\n'), 'utf8')

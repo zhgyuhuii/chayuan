@@ -4,6 +4,12 @@
 # ("Interrupted system call") is common when WPS holds addon files open and must not
 # abort the whole .pkg install (Installer error 112).
 set -u
+# pkgbuild 构建期会以「非 root + 本机文件系统」预执行本脚本做环境快照；真实安装
+# 才以 root 运行。非 root 直接成功退出：避免校验阶段误触开发机真实 jsaddons，
+# 并消除打包日志里的多条 "write: Permission denied" 噪音。
+if [[ "$(id -u)" != "0" ]]; then
+	exit 0
+fi
 INSTALL_ROOT="__INSTALL_ROOT__"
 META="$INSTALL_ROOT/install.json"
 if [[ ! -f "$META" ]]; then
@@ -115,7 +121,7 @@ for host, v in list(d.items()):
     names = {}
     for k, e in entries.items():
         n = e.get('name', '')
-        if n not in names or '6.0.0' in e.get('path', ''):
+        if n not in names or '__PKG_VERSION__' in e.get('path', ''):
             names[n] = (k, e)
     if len(entries) > len(names):
         nv = {}

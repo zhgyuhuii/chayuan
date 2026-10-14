@@ -1,4 +1,4 @@
-import { getApplication, hasMeaningfulSelectionText } from './documentActions.js'
+import { getApplication, hasMeaningfulSelectionText, readRangeValuesAsText } from './documentActions.js'
 
 const WD_COLLAPSE_END = 0
 const WD_COLLAPSE_START = 1
@@ -267,10 +267,12 @@ export function getSelectionContextSnapshot(options = {}) {
       let cols = 0
       try { rows = Number(used?.Rows?.Count || 0) } catch { /* ignore */ }
       try { cols = Number(used?.Columns?.Count || 0) } catch { /* ignore */ }
+      // 表格宿主选区：Range.Text 多单元格为 Null，走 Value 读取（单/多单元格通吃）
+      const workbookSelectionText = normalizeContextText(readRangeValuesAsText(getSelection()))
       return {
         kind: 'workbook',
         text: '',
-        selectionText: '',
+        selectionText: workbookSelectionText,
         currentParagraphText: '',
         previousParagraphText: '',
         nextParagraphText: '',
@@ -281,7 +283,10 @@ export function getSelectionContextSnapshot(options = {}) {
           totalPages: 0, wordCount: 0, characterCount: rows * cols,
           characterCountWithSpaces: 0, paragraphCount: 0, currentPage: 0
         },
-        position: { hasSelection: false, rangeStart: 0, rangeEnd: 0, paragraphIndex: 0, paragraphCount: 0, paragraphLabel: '' },
+        position: {
+          hasSelection: hasMeaningfulSelectionText(workbookSelectionText, 2),
+          rangeStart: 0, rangeEnd: 0, paragraphIndex: 0, paragraphCount: 0, paragraphLabel: ''
+        },
         formatting: {},
         hostContext: {
           type: 'et',

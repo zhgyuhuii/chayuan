@@ -45,7 +45,7 @@ mkdir -p "$PAYLOAD"
 cp -R "$STAGING/"* "$PAYLOAD/"
 
 mkdir -p "$SCRIPTS_DIR"
-sed "s|__INSTALL_ROOT__|/Library/Application Support/ChayuanWPS|g" \
+sed -e "s|__INSTALL_ROOT__|/Library/Application Support/ChayuanWPS|g" -e "s|__PKG_VERSION__|$VERSION|g" \
 	"$ROOT/scripts/macos/postinstall.template.sh" >"$SCRIPTS_DIR/postinstall"
 # 剥离可能的 UTF-8 BOM：BOM 会让首字节变成 ef bb bf，内核识别不了 #! shebang，
 # macOS 安装器执行 postinstall 失败 → 双击安装报「安装器遇到一个错误」。

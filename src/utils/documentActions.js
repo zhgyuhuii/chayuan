@@ -39,7 +39,18 @@ export function getSelectionRange() {
 
 export function getSelectedText() {
   const sel = getSelection()
-  return normalizeText(sel?.Text || '')
+  if (getActiveDocument()) return normalizeText(sel?.Text || '')
+  // 演示宿主：选区文本在 Selection.TextRange.Text（Writer 没有 TextRange）
+  try {
+    const slideText = normalizeText(sel?.TextRange?.Text || '')
+    if (slideText.trim()) return slideText
+  } catch (_) { /* 非演示宿主 */ }
+  // 表格宿主：Range.Text 仅单单元格有值（多单元格为 Null/抛错），多单元格读 Value
+  try {
+    const cellText = normalizeText(sel?.Text || '')
+    if (cellText.trim()) return cellText
+  } catch (_) { /* ignore */ }
+  return normalizeText(readRangeValuesAsText(sel))
 }
 
 export function hasMeaningfulSelectionText(text, minLength = 2) {
@@ -48,7 +59,189 @@ export function hasMeaningfulSelectionText(text, minLength = 2) {
 
 export function getDocumentText() {
   const doc = getActiveDocument()
-  return normalizeText(doc?.Content?.Text || '')
+  if (doc) return normalizeText(doc?.Content?.Text || '')
+  // 宿主感知：演示/表格宿主没有 ActiveDocument，旧实现恒返回空串，
+  // 导致助手技能在 PPT/表格里误报"当前文档为空"。逐项 try：部分宿主访问
+  // 非本宿主的活动对象属性会抛 COM 异常而非返回 undefined。
+  return normalizeText(collectPresentationText() || collectWorkbookText() || '')
+}
+
+// 演示宿主活动演示文稿；非演示宿主（含 Writer）返回 null。
+// 须先排除 ActiveDocument，避免未来宿主同时暴露多活动对象时误判。
+export function getActivePresentationHost() {
+  const app = getApplication()
+  if (!app) return null
+  let doc = null
+  try { doc = app.ActiveDocument || null } catch (_) { doc = null }
+  if (doc) return null
+  try { return app.ActivePresentation || null } catch (_) { return null }
+}
+
+let presentationTextCache = { text: null, at: 0 }
+const PRESENTATION_TEXT_CACHE_TTL_MS = 800
+
+export function invalidatePresentationTextCache() {
+  presentationTextCache = { text: null, at: 0 }
+}
+
+function collectPresentationText() {
+  const pres = getActivePresentationHost()
+  if (!pres) return ''
+  const now = Date.now()
+  if (presentationTextCache.text !== null && now - presentationTextCache.at < PRESENTATION_TEXT_CACHE_TTL_MS) {
+    return presentationTextCache.text
+  }
+  let slideCount = 0
+  try { slideCount = Number(pres.Slides?.Count || 0) } catch (_) { slideCount = 0 }
+  const pages = []
+  for (let i = 1; i <= slideCount; i++) {
+    let shapes = null
+    try { shapes = pres.Slides.Item(i).Shapes } catch (_) { shapes = null }
+    const shapeTexts = []
+    readPresentationShapeTree(shapes, shapeTexts, 0)
+    if (shapeTexts.length) pages.push(`【第${i}页】\n${shapeTexts.join('\n')}`)
+  }
+  const text = pages.join('\n\n')
+  presentationTextCache = { text, at: now }
+  return text
+}
+
+// 递归收集形状文本：普通形状读 TextFrame；表格逐单元格；组合形状下钻（限深防环）。
+function readPresentationShapeTree(shapes, out, depth) {
+  if (!shapes || depth > 2) return
+  let shapeCount = 0
+  try { shapeCount = Number(shapes.Count || 0) } catch (_) { shapeCount = 0 }
+  for (let j = 1; j <= shapeCount; j++) {
+    let shape = null
+    try { shape = shapes.Item(j) } catch (_) { continue }
+    readPresentationShapeText(shape, out, depth)
+  }
+}
+
+function readPresentationShapeText(shape, out, depth) {
+  if (!shape || depth > 3) return
+  let text = ''
+  try { text = String(shape?.TextFrame?.TextRange?.Text || '') } catch (_) { text = '' }
+  const cleaned = normalizeText(text).trim()
+  if (cleaned) out.push(cleaned)
+  let hasTable = 0
+  try { hasTable = Number(shape?.HasTable || 0) } catch (_) { hasTable = 0 }
+  if (hasTable !== 0) {
+    let table = null
+    try { table = shape.Table } catch (_) { table = null }
+    let rows = 0
+    let cols = 0
+    try { rows = Number(table?.Rows?.Count || 0) } catch (_) { rows = 0 }
+    try { cols = Number(table?.Columns?.Count || 0) } catch (_) { cols = 0 }
+    for (let r = 1; r <= rows; r++) {
+      const cells = []
+      for (let c = 1; c <= cols; c++) {
+        try { cells.push(String(table.Cell(r, c)?.Shape?.TextFrame?.TextRange?.Text || '').trim()) } catch (_) { cells.push('') }
+      }
+      const row = cells.filter(Boolean).join('\t')
+      if (row) out.push(row)
+    }
+  }
+  let groupCount = 0
+  try { groupCount = Number(shape?.GroupItems?.Count || 0) } catch (_) { groupCount = 0 }
+  if (groupCount > 0) {
+    for (let k = 1; k <= groupCount; k++) {
+      try { readPresentationShapeText(shape.GroupItems.Item(k), out, depth + 1) } catch (_) { /* 单个子形状失败跳过 */ }
+    }
+  }
+}
+
+// 表格宿主 Range → 文本。Range.Text 多单元格返回 Null，统一走 Value
+// （WPS JSAPI 里可能是方法也可能是属性）；单单元格 Value 是标量，其余是二维
+// 数组。规模封顶，防止超大选区拖垮调用方。
+export function readRangeValuesAsText(range) {
+  if (!range) return ''
+  try {
+    const rows = Number(range.Rows?.Count || 0)
+    const cols = Number(range.Columns?.Count || 0)
+    if (!rows || !cols || rows * cols > 400000) return ''
+    const value = typeof range.Value === 'function' ? range.Value() : range.Value
+    if (Array.isArray(value)) {
+      const lines = []
+      for (const row of value) {
+        if (!Array.isArray(row)) {
+          const cell = String(row ?? '').trim()
+          if (cell) lines.push(cell)
+          continue
+        }
+        const line = row.map(cell => String(cell ?? '').trim()).filter(Boolean).join('\t')
+        if (line.trim()) lines.push(line)
+      }
+      return lines.join('\n')
+    }
+    return String(value ?? '').trim()
+  } catch (_) {
+    return ''
+  }
+}
+
+// 表格宿主正文：活动工作表已用区域。
+function collectWorkbookText() {
+  let sheet = null
+  try { sheet = getApplication()?.ActiveWorkbook?.ActiveSheet || null } catch (_) { sheet = null }
+  if (!sheet) return ''
+  let used = null
+  try { used = sheet.UsedRange } catch (_) { used = null }
+  return readRangeValuesAsText(used)
+}
+
+// 演示宿主修订目标：每个有文本的形状一条，path 记录"页→形状→组合子级"写回路径。
+// 非演示宿主返回 null，调用方据此走 Writer 原流程；空演示文稿返回 []。
+export function collectPresentationShapeTargets(options = {}) {
+  const pres = getActivePresentationHost()
+  if (!pres) return null
+  const minChars = Math.max(1, Number(options.minChars || 1))
+  const targets = []
+  let slideCount = 0
+  try { slideCount = Number(pres.Slides?.Count || 0) } catch (_) { slideCount = 0 }
+  for (let i = 1; i <= slideCount; i++) {
+    let shapes = null
+    try { shapes = pres.Slides.Item(i).Shapes } catch (_) { shapes = null }
+    if (!shapes) continue
+    let shapeCount = 0
+    try { shapeCount = Number(shapes.Count || 0) } catch (_) { shapeCount = 0 }
+    for (let j = 1; j <= shapeCount; j++) {
+      try { collectShapeTargetsRecursive(shapes.Item(j), [i, j], targets, minChars, 0) } catch (_) { /* 单形状失败跳过 */ }
+    }
+  }
+  return targets
+}
+
+function collectShapeTargetsRecursive(shape, path, out, minChars, depth) {
+  if (!shape || depth > 3) return
+  let groupCount = 0
+  try { groupCount = Number(shape.GroupItems?.Count || 0) } catch (_) { groupCount = 0 }
+  if (groupCount > 0) {
+    for (let k = 1; k <= groupCount; k++) {
+      try { collectShapeTargetsRecursive(shape.GroupItems.Item(k), [...path, k], out, minChars, depth + 1) } catch (_) { /* ignore */ }
+    }
+    return
+  }
+  let text = ''
+  try { text = String(shape?.TextFrame?.TextRange?.Text || '') } catch (_) { text = '' }
+  const cleaned = normalizeText(text).trim()
+  if (cleaned.length >= minChars) {
+    out.push({ text: cleaned, slideIndex: path[0], shapeIndex: path[1], path })
+  }
+}
+
+export function writePresentationShapeText(path = [], text = '') {
+  const pres = getActivePresentationHost()
+  if (!pres || !Array.isArray(path) || path.length < 2) return false
+  try {
+    let shape = pres.Slides.Item(path[0]).Shapes.Item(path[1])
+    for (let d = 2; d < path.length; d++) shape = shape.GroupItems.Item(path[d])
+    shape.TextFrame.TextRange.Text = String(text || '')
+    invalidatePresentationTextCache()
+    return true
+  } catch (_) {
+    return false
+  }
 }
 
 export function resolveDocumentInput(sourceMode = 'selection-preferred') {

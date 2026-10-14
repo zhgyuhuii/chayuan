@@ -133,12 +133,18 @@ taskkill /F /IM ${SIDECAR_EXE_NAME} >> "%LOG%" 2>&1
 echo copying sidecar...>> "%LOG%"
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%" >> "%LOG%" 2>&1
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}" >> "%LOG%" 2>&1
-> "%sidecar_runtime%\\start-mcp.cmd" echo @echo off
->> "%sidecar_runtime%\\start-mcp.cmd" echo powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%%~dp0${SIDECAR_EXE_NAME}' -WindowStyle Hidden"
-rem HKCU Run points to the generated start-mcp.cmd (hidden launch); launching the exe
-rem directly would open a persistent console window at every logon
+rem Node fallback payload for Win7/8 (bun exe cannot run there): server.mjs + lib
+rem + the multi-OS start-mcp.cmd (try exe -> healthz -> node) copied from the addon
+copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\start-mcp.cmd" "%sidecar_runtime%\\start-mcp.cmd" >> "%LOG%" 2>&1
+copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\server.mjs" "%sidecar_runtime%\\server.mjs" >> "%LOG%" 2>&1
+xcopy /E /I /Y /Q "%destination_folder%\\${folder}\\mcp-sidecar\\lib" "%sidecar_runtime%\\lib\\" >> "%LOG%" 2>&1
+rem Watchdog: scheduled task runs start-mcp.cmd (hidden via vbs) every 2 minutes;
+rem silent no-op while healthz answers -- self-heals after crash / missed logon start
+copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\chayuan-mcp-watch.vbs" "%sidecar_runtime%\\chayuan-mcp-watch.vbs" >> "%LOG%" 2>&1
+schtasks /Create /F /TN ChayuanWpsMcpWatch /SC MINUTE /MO 2 /TR "wscript.exe \\"%sidecar_runtime%\\chayuan-mcp-watch.vbs\\"" >> "%LOG%" 2>&1
+rem HKCU Run points to start-mcp.cmd (hidden launch, node fallback for Win7/8)
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_runtime%\\start-mcp.cmd\\"" /f >> "%LOG%" 2>&1
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%sidecar_exe%' -WindowStyle Hidden"
+call "%sidecar_runtime%\\start-mcp.cmd" >> "%LOG%" 2>&1
 
 echo [%DATE% %TIME%] install ok>> "%LOG%"
 echo.

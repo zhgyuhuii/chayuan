@@ -1,18 +1,18 @@
 {
   "name": "chayuan",
-  "version": "6.0.0",
-  "addonFolder": "chayuan_6.0.0",
+  "version": "6.0.3",
+  "addonFolder": "chayuan_6.0.3",
   "addonType": "wps",
   "hostAddons": [
     {
       "name": "chayuan-et",
       "type": "et",
-      "addonFolder": "chayuan-et_6.0.0"
+      "addonFolder": "chayuan-et_6.0.3"
     },
     {
       "name": "chayuan-wpp",
       "type": "wpp",
-      "addonFolder": "chayuan-wpp_6.0.0"
+      "addonFolder": "chayuan-wpp_6.0.3"
     }
   ]
 }
