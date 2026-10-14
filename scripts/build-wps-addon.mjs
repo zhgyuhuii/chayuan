@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import { currentReleaseTriple, releaseArtifactFilename } from './lib/release-platform.mjs'
+import { ensureWinNodeRuntime } from './lib/win-node-runtime.mjs'
 import { findBun, rebuildSidecarBinaries } from './build-mcp-binary.mjs'
 
 const require = createRequire(import.meta.url)
@@ -180,6 +181,16 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 			}
 		} else {
 			console.warn(`[staging] 当前平台 sidecar 二进制缺失：mcp-sidecar/bin/${binName}（先跑 npm run mcp:build-binary；缺失时安装后回落 node server.mjs）`)
+		}
+		// Win7/8 无 bun 运行时：打包便携 Node 16 x64（离线开箱即用，无需用户装 Node）。
+		// start-mcp.cmd 的 node 回落优先用 mcp-sidecar/nodejs/node.exe，再退系统 PATH。
+		if (triple.platform === 'windows') {
+			try {
+				const nodeDir = ensureWinNodeRuntime(root)
+				fsEx.copySync(nodeDir, path.join(mcpDest, 'nodejs'))
+			} catch (e) {
+				console.warn(`[staging] Win7 便携 Node 运行时缺失：${e.message}（Win7 将回落系统 node）`)
+			}
 		}
 	}
   fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')

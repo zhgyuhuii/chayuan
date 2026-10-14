@@ -1,0 +1,3 @@
+# Windows 检出时 shell 脚本若带 CRLF，Linux/macOS 构建机上 bash 直接语法报错
+# （build-linux-deb.sh 在 VM 构建时曾因此失败），强制 LF。
+*.sh text eol=lf
