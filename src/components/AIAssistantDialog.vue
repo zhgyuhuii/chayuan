@@ -19213,7 +19213,12 @@ export default {
           note: hasBoundKnowledgeBase ? `kb:${unifiedLane || 'unknown'}` : String(primaryIntent?.kind || 'chat')
         })
         let routeKind = String(primaryIntent?.kind || 'chat')
-        if (unifiedLane === 'document_review' || unifiedLane === 'document_operation') routeKind = 'document-operation'
+        // 高置信直接能力优先于 unifiedLane 覆盖：附件感知模板路由等规则在
+        // inferPrimaryConversationIntentByRule 已定 wps-capability，但 unifiedPlan
+        // 的独立 lane 正则会把它改写回 assistant/chat（真机实证），这里加保险。
+        if (primaryIntent?.kind === 'wps-capability' && String(primaryIntent?.confidence || '').toLowerCase() === 'high') {
+          routeKind = 'wps-capability'
+        } else if (unifiedLane === 'document_review' || unifiedLane === 'document_operation') routeKind = 'document-operation'
         else if (unifiedLane === 'assistant_call') routeKind = 'assistant-task'
         else if (unifiedLane === 'wps_capability') routeKind = 'wps-capability'
         else if (unifiedLane === 'generated_output') routeKind = 'generated-output'
