@@ -5201,15 +5201,20 @@ export default {
       // isStreaming 周期性清算：所有回合/长任务上下文都已消失时自动落下流式标记，
       // 不让任何一条清理遗漏路径把 busy 钉死（settle 只在全部源为空时才动作，安全）
       try { this.settleGlobalStreamingFlag() } catch (_) { /* ignore */ }
-      // 诊断探针：scope 键 + 探测结果写 PluginStorage，wps_status 可带出（wps_status.scopeDebug）
+      // 诊断探针：scope 键 + 探测结果写 PluginStorage，wps_status 可带出（wps_status.scopeDebug）。
+      // 持久层健康（文件层目录可达性 + 回填计数）一并带出——真机排障"历史消失"一眼定位
       try {
+        const durable = describeHistoryFileStore()
         window.Application?.PluginStorage?.setItem('ai_chat_scope_debug', JSON.stringify({
           t: Date.now(),
           current: this.historyStorageScopeKey,
           docId: this.historyStorageDocId,
           busy: !!this.isWindowBusy,
           busyReasons: this.windowBusyReasons,
-          source: this.historyStorageSource
+          source: this.historyStorageSource,
+          historyFileStore: durable,
+          backfillAttempts: Number(this._backfillAttempts || 0),
+          localHistoryCount: (this.chatHistory || []).length
         }))
       } catch (_) { /* ignore */ }
     }, 1500)

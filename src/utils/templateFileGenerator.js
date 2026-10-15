@@ -69,13 +69,26 @@ function replaceTextsInSlideDoc(doc, replaces) {
       applied.push(find)
       continue
     }
-    // 模糊匹配（弱模型 find 常为缩写/去标点版本）：归一化包含 → 整节点替换
+    // 模糊匹配（弱模型 find 常为缩写/词序打乱）：两级——归一化包含 → 词元重合度
     const nFind = normText(find)
     if (nFind.length >= 4) {
-      const fuzzy = nodes.find(n => {
+      let fuzzy = nodes.find(n => {
         const nn = normText(n.textContent)
         return nn && (nn.includes(nFind) || (nFind.includes(nn) && nn.length >= 4))
       })
+      if (!fuzzy) {
+        // 词元重合度：find 的词元 ≥60% 出现在节点文本中（'lorem dolor' ⊂ 'lorem ipsum dolor sit'）
+        const findTokens = nFind.split(/[^a-z0-9\u4e00-\u9fa5]+/).filter(t => t.length >= 2)
+        if (findTokens.length >= 2) {
+          fuzzy = nodes.find(n => {
+            const nn = normText(n.textContent)
+            if (!nn) return false
+            let hits = 0
+            for (const tk of findTokens) if (nn.includes(tk)) hits++
+            return hits / findTokens.length >= 0.6
+          })
+        }
+      }
       if (fuzzy) {
         fuzzy.textContent = replaceTo
         applied.push(find + '(fuzzy)')
