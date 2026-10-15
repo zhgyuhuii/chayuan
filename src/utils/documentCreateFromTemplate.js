@@ -230,7 +230,11 @@ function openWithJsapi(path, kind) {
   throw new Error('当前环境不支持打开文档')
 }
 
-/** OS 级打开兜底：Windows 走 WScript.Shell；Mac/Linux 沙盒无法 spawn，请求 sidecar 代开 */
+/** OS 级打开（等同用户双击，唯一真机验证不崩的打开方式）；导出供交付环节复用 */
+export async function openFileViaOs(path) {
+  return openWithOs(path)
+}
+
 async function openWithOs(path) {
   if (typeof ActiveXObject !== 'undefined') {
     try {

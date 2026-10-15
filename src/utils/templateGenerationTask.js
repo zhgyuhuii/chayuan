@@ -605,13 +605,26 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   progress(taskId, 92, '正在保存生成文件…')
   const outBytes = await exportZipBytes(zip)
   const outPath = writeGeneratedPptx(outBytes)
+  // 自动打开结果（用户要求：生成文档自动在当前窗口打开，不要藏着）——
+  // OS 级打开是唯一真机验证不崩的方式；WPS 会切到该文档
+  let opened = false
+  if (outPath.ok) {
+    progress(taskId, 96, '正在打开生成结果…')
+    try {
+      const { openFileViaOs } = await import('./documentCreateFromTemplate.js')
+      const r = await openFileViaOs(outPath.path)
+      opened = !!r?.ok
+    } catch (e) {
+      console.warn('自动打开失败:', e?.message || e)
+    }
+  }
   progress(taskId, 99, '生成完成')
   const summary = [
     `已后台生成（未打开 WPS 窗口）：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
     `执行：改写 ${stats.edits} 处 / 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
     stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
     `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
-    '文件未自动打开——请在 WPS 中自行打开查看/另存。'
+    opened ? '已自动在 WPS 打开生成结果。' : '自动打开失败——请手动打开：' + (outPath.path || '')
   ].filter(Boolean).join('\n')
   return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true }
 }
