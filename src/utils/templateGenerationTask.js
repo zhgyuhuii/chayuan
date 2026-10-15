@@ -293,6 +293,8 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
         '规则（硬约束，违反视为失败）：',
         '1. 模板每一页的占位文案（Lorem ipsum、输入标题文字、点击输入、PART ONE 等）必须全部用真实内容替换——禁止保留任何占位文案。',
         '2. edit 的 find 必须逐字复制【模板画像】该页 texts 中的原文片段（优先整条 texts，不要自己缩写）；每页 replaces 至少 1 条。',
+        '2a. find 禁止只写「输入标题」等通用占位词——必须是该页独有的完整文案（≥8字）。',
+        '2b. replace 必须是纯净的新文案：禁止拼接模板占位原文（输入标题/请在此处/Lorem 等）、禁止用 | 分隔拼接多段、长度 10~80 字。',
         '3. 优先 edit 遍历已有页；pages 数组最多 14 项（页多则合并章节取舍）；只有页数不足需求时才 duplicate/add。',
         '4. 新文案必须来自【参考素材】的真实内容（数字、项目名、成果），禁止泛泛而谈。'
       ].join('\n')

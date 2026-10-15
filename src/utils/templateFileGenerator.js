@@ -55,23 +55,42 @@ function normText(t) {
   return String(t || '').toLowerCase().replace(NORM_RE, '')
 }
 
+const PLACEHOLDER_WORDS = /(输入标题|请在此处|单击此处|点击输入|点击此处|Lorem\s+ipsum|添加合适的文字|文字内容或复制粘贴|用简明扼要)/i
+
+/** 替换文案净化（2026-10-15 渲染实证根因）：GLM 叠加层曾产出
+ * 「旧占位+新标题+旧正文」拼接体与通用占位词 find，扩散污染多页。
+ * 规则：replace 含占位词/含 │ 拼接/过短(≤6字含中文除外) → 拒绝该条；
+ * find 归一化后 <4 字（纯通用词）→ 拒绝（防同一垃圾扩散多页）。 */
+function isBadReplace(replaceTo) {
+  const t = String(replaceTo || '')
+  if (!t.trim()) return true
+  if (PLACEHOLDER_WORDS.test(t)) return true
+  if ((t.match(/\|/g) || []).length >= 2) return true
+  const cjk = (t.match(/[\u4e00-\u9fa5]/g) || []).length
+  if (cjk > 0 && cjk < 6 && t.length < 12) return true
+  return false
+}
+
 function replaceTextsInSlideDoc(doc, replaces) {
   const applied = []
   const missed = []
+  const rejected = []
   const nodes = tags(doc, 'a:t')
   for (const rep of replaces) {
     const find = String(rep?.find || '')
-    const replaceTo = String(rep?.replace ?? rep?.replaceWith ?? '')
+    let replaceTo = String(rep?.replace ?? rep?.replaceWith ?? '')
     if (!find) continue
+    if (isBadReplace(replaceTo)) { rejected.push(find.slice(0, 12)); continue }
     const hit = nodes.find(n => (n.textContent || '').includes(find))
     if (hit) {
       hit.textContent = String(hit.textContent).replace(find, replaceTo)
       applied.push(find)
       continue
     }
+    if (rejected.length && rejected[rejected.length - 1] === find.slice(0, 12)) continue
     // 模糊匹配（弱模型 find 常为缩写/词序打乱）：两级——归一化包含 → 词元重合度
     const nFind = normText(find)
-    if (nFind.length >= 4) {
+    if (nFind.length >= 4 && !PLACEHOLDER_WORDS.test(find)) {
       let fuzzy = nodes.find(n => {
         const nn = normText(n.textContent)
         return nn && (nn.includes(nFind) || (nFind.includes(nn) && nn.length >= 4))
