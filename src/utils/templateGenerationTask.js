@@ -173,20 +173,32 @@ function loadDefaultChatId() {
 }
 
 function parseJsonLoose(raw) {
-  const text = String(raw || '').trim()
+  let text = String(raw || '').trim()
   if (!text) return null
   const block = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const candidate = block?.[1]?.trim() || text
-  try {
-    return JSON.parse(candidate)
-  } catch (_) {
-    const start = candidate.indexOf('{')
-    const end = candidate.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      try { return JSON.parse(candidate.slice(start, end + 1)) } catch (_) { return null }
-    }
-    return null
+  let candidate = block?.[1]?.trim() || text
+  const tryParse = (s) => {
+    try { return JSON.parse(s) } catch (_) { return null }
   }
+  let out = tryParse(candidate)
+  if (out) return out
+  // 抢修：截取首{到尾}，剥尾逗号，修常见瑕疵后再试
+  const start = candidate.indexOf('{')
+  const end = candidate.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    let body = candidate.slice(start, end + 1)
+    body = body.replace(/,\s*([}\]])/g, '$1')              // 尾逗号
+    body = body.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ') // 控制字符
+    out = tryParse(body)
+    if (out) return out
+    // 字符串内裸换行抢修：把 "..." 内部的换行转义
+    try {
+      const fixed = body.replace(/"((?:[^"\\]|\\.)*)"/gs, (m) => m.replace(/\n/g, '\\n').replace(/\r/g, ''))
+      out = tryParse(fixed)
+      if (out) return out
+    } catch (_) { /* 保底 */ }
+  }
+  return null
 }
 
 /** 清洗 prompt 文本：剥离 C0 控制字符（保留 \n\t\r）——模板 XML 文案常带 \x0b 等，
@@ -210,6 +222,7 @@ async function llmJson(modelArg, systemPrompt, userPrompt) {
     temperature: 0.3,
     timeoutMs: 180000,
     requestTimeoutMs: 180000,
+    max_tokens: 8192,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -218,6 +231,19 @@ async function llmJson(modelArg, systemPrompt, userPrompt) {
   let raw
   try {
     raw = await attempt()
+    if (!parseJsonLoose(raw)) {
+      // 模型输出非合法JSON（截断/格式瑕疵）→ 修复重问一次（附上次输出要求修正）
+      console.warn('llmJson 输出非JSON，修复重问')
+      const repaired = await chatCompletion({
+        providerId: model.providerId, modelId: model.modelId, temperature: 0,
+        timeoutMs: 180000, requestTimeoutMs: 180000, max_tokens: 8192,
+        messages: [
+          { role: 'system', content: '你只输出合法 JSON（无 markdown、无解释、字符串内换行用\\n转义）。' },
+          { role: 'user', content: '以下内容应当是一个JSON但格式有误，请输出修正后的完整合法JSON：\n' + String(raw).slice(0, 20000) }
+        ]
+      })
+      if (parseJsonLoose(repaired)) raw = repaired
+    }
   } catch (first) {
     // 自愈：配置类错误（未配置地址/密钥）→ 重新解析可用模型重试一次（不同上下文
     // 可能持有过期模型引用；真机曾出现"已配置却报未配置"）
@@ -267,7 +293,7 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
         '规则（硬约束，违反视为失败）：',
         '1. 模板每一页的占位文案（Lorem ipsum、输入标题文字、点击输入、PART ONE 等）必须全部用真实内容替换——禁止保留任何占位文案。',
         '2. edit 的 find 必须逐字复制【模板画像】该页 texts 中的原文片段（优先整条 texts，不要自己缩写）；每页 replaces 至少 1 条。',
-        '3. 优先 edit 遍历全部已有页；只有页数不足需求时才 duplicate/add。',
+        '3. 优先 edit 遍历已有页；pages 数组最多 14 项（页多则合并章节取舍）；只有页数不足需求时才 duplicate/add。',
         '4. 新文案必须来自【参考素材】的真实内容（数字、项目名、成果），禁止泛泛而谈。'
       ].join('\n')
     }
