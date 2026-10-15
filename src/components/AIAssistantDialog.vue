@@ -1463,17 +1463,7 @@
                           @input="msg.pendingTemplateContract.outlineText = $event.target.value"
                         ></textarea>
                       </label>
-                      <label class="assistant-inline-field">
-                        <span class="assistant-inline-field-label">交付路径（留空则手动保存）</span>
-                        <input
-                          type="text"
-                          class="assistant-inline-input"
-                          :value="msg.pendingTemplateContract.savePath"
-                          placeholder="/Users/xxx/Desktop/新文档.docx"
-                          :disabled="msg.pendingTemplateContract.status === 'applying'"
-                          @input="msg.pendingTemplateContract.savePath = $event.target.value"
-                        />
-                      </label>
+                      <div class="pending-tpl-note">内容将直接生成到打开的模板副本文档中（保存由你在文档里自行操作）</div>
                     </div>
                     <div
                       v-for="group in msg.pendingTemplateContract.groupedAspects"
@@ -12342,7 +12332,7 @@ export default {
       card.status = 'applying'
       card.statusMessage = '正在按契约执行模板生成…'
       this.saveHistory()
-      const params = { savePath: String(card.savePath || '').trim() }
+      const params = {}
       if (card.outlineText && outlineChanged(card.originalOutline, card.outlineText)) {
         params.editedOutline = String(card.outlineText).trim()
       }
@@ -25930,6 +25920,7 @@ export default {
   background: rgba(0,0,0,0.03); border-radius: 6px;
 }
 .pending-tpl-outline-field { display: block; }
+.pending-tpl-note { font-size: 12px; color: #888; margin: 4px 0 2px; }
 .pending-tpl-outline { width: 100%; min-height: 120px; resize: vertical; font-size: 12px; line-height: 1.5; }
 .pending-tpl-aspect-group { margin: 8px 0 4px; }
 .pending-tpl-aspect-group-label { font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
