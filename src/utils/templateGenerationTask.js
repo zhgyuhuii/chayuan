@@ -263,8 +263,12 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
         `【用户需求】${requirement}`,
         `【目标页数】${pageTarget > 0 ? pageTarget + ' 页（可按需 duplicate/add 调整）' : '由你按需求决定，优先复用模板已有页'}`,
         '',
-        '输出 JSON：{"pages":[{"action":"edit|duplicate|add","page":页码,"replaces":[{"find":"模板原文案片段(≥6字且唯一)","replace":"新文案"}],"title":"新页标题(add/duplicate时)","body":"新页正文(add时)"}]}',
-        '规则：edit 的 find 必须逐字取自该页模板原文案；add 仅在模板页型覆盖不了时使用；duplicate 用于模板已有页型可复用但原文案整体要换时。'
+        '输出 JSON：{"pages":[{"action":"edit|duplicate|add","page":页码,"replaces":[{"find":"模板原文案片段(≥4字且尽量整段)","replace":"新文案"}],"title":"新页标题(add/duplicate时)","body":"新页正文(add时)"}]}',
+        '规则（硬约束，违反视为失败）：',
+        '1. 模板每一页的占位文案（Lorem ipsum、输入标题文字、点击输入、PART ONE 等）必须全部用真实内容替换——禁止保留任何占位文案。',
+        '2. edit 的 find 必须逐字复制【模板画像】该页 texts 中的原文片段（优先整条 texts，不要自己缩写）；每页 replaces 至少 1 条。',
+        '3. 优先 edit 遍历全部已有页；只有页数不足需求时才 duplicate/add。',
+        '4. 新文案必须来自【参考素材】的真实内容（数字、项目名、成果），禁止泛泛而谈。'
       ].join('\n')
     }
   }
@@ -532,7 +536,7 @@ async function runQcPass(model, kind, { requirement, profileSummary, contractLin
       `【当前文档全文（截断）】\n${currentText}`,
       '',
       '输出：{"pass":布尔,"issues":[{"where":"位置描述","problem":"问题","fixFind":"需被替换的原文片段(文档中逐字存在,≥6字)","fixReplace":"修正后文本"}]}',
-      '规则：只报内容问题（缺失/跑题/语体不符/占位残留如「XX公司」「标题」），不报格式问题；fixFind 取不到时留空；pass=true 时 issues 为空数组。'
+      '规则：重点检查模板占位文案残留（Lorem ipsum、输入标题文字、点击输入您的文字、PART ONE/TWO/THREE/FOUR 等装饰性占位）——发现残留必须列为 issue 并给出 fixFind（逐字取残留原文）与 fixReplace（来自需求的真实内容）；同时检查内容缺失/跑题。fixFind 取不到时留空；全部干净才 pass=true。'
     ].join('\n')
   )
   return { judge: judge || { pass: true, issues: [] }, currentText }
@@ -578,9 +582,33 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   progress(taskId, 35, '正在后台按计划改写模板（不打开 WPS）…')
   const loaded = await loadTemplateZip(readTemplateBytes(sourceParams.__templatePath))
   if (!loaded.ok) throw new Error(loaded.error)
-  const zip = loaded.zip
-  const applied = await applySlidePlanToZip(zip, plan)
-  if (!applied.ok) throw new Error('文件级生成失败')
+  let zip = loaded.zip
+  let applied = await applySlidePlanToZip(zip, plan)
+  // 确定性核验：零有效改写=模型偷懒（真机：几乎纯复制）。带反馈重出一次计划
+  if ((applied.stats.edits + applied.stats.adds + applied.stats.duplicates) === 0 ||
+      (applied.stats.missedTexts.length > 0 && applied.stats.edits === 0)) {
+    progress(taskId, 45, '计划未产生有效改写，正在强制重规划…')
+    const retryPrompt = buildPlanPrompt('slide', {
+      profileSummary,
+      requirement,
+      pageTarget: Number(sourceParams.pageTarget) || 0,
+      toneFollow: true,
+      referenceContext: String(sourceParams.referenceContext || '').trim(),
+      contractLines: '',
+      userOutline: `上一次计划的 find 未命中模板原文（未命中清单：${(applied.stats.missedTexts || []).slice(0, 8).join('；')}）。请严格逐字复制每页 texts 原文作为 find 重新规划。`
+    })
+    const retryPlan = await llmJson(model, retryPrompt.system, retryPrompt.user)
+    if (retryPlan) {
+      const reloaded = await loadTemplateZip(readTemplateBytes(sourceParams.__templatePath))
+      if (reloaded.ok) {
+        applied = await applySlidePlanToZip(reloaded.zip, retryPlan)
+        zip = reloaded.zip
+      }
+    }
+    if ((applied.stats.edits + applied.stats.adds + applied.stats.duplicates) === 0) {
+      throw new Error('模型两次规划都未产生有效改写（find 未命中模板原文）。请尝试更换更强的对话模型后重试。')
+    }
+  }
   const stats = { ...applied.stats }
 
   const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
