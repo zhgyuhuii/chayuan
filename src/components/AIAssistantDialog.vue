@@ -18984,6 +18984,26 @@ export default {
           for (const a of this.attachments) await this.ensureAttachmentContent(a)
         } catch (_) { /* 解析失败不阻塞发送 */ }
       }
+      // 兜底：任何入口产生的文本类附件若缺内容（含 rawFile 但 content 空），发送前补读
+      if (Array.isArray(this.attachments)) {
+        for (const a of this.attachments) {
+          if (a && !a.isText && !String(a.content || '').trim() && a.rawFile instanceof File &&
+              isTextLikeAttachment(a.rawFile)) {
+            try {
+              const raw = await readBrowserFileAsText(a.rawFile)
+              if (String(raw || '').trim()) {
+                a.isText = true
+                a.truncated = raw.length > MAX_ATTACHMENT_TEXT_LENGTH
+                a.content = a.truncated
+                  ? raw.slice(0, Math.floor(MAX_ATTACHMENT_TEXT_LENGTH * 2 / 3))
+                    + `\n…[中段已压缩省略约 ${raw.length - MAX_ATTACHMENT_TEXT_LENGTH} 字]…\n`
+                    + raw.slice(-Math.ceil(MAX_ATTACHMENT_TEXT_LENGTH / 3))
+                  : raw
+              }
+            } catch (_) { /* 补读失败保持元信息 */ }
+          }
+        }
+      }
       // 发送前 scope 硬校准（治"多文档共用一份对话"）：轮询 sync 可能被 busy
       // 或焦点缺失延迟，用户此刻面对的是**当前活动文档**——发送必须绑定它。
       // 若发送时发现 scope 与活动文档不一致：先落盘滞留会话，再切换加载活动
