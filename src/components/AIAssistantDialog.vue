@@ -2798,7 +2798,7 @@ import {
   resolveDocumentScope,
   computeFallbackScopeKeys,
   isSameDocumentScopeChange
-} from './chat/docScope.js'
+} from '../utils/chat/docScope.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
 import {
   setWriteBaseline,
@@ -3018,11 +3018,13 @@ const REMOTE_TURN_STALE_MS = 10_000
 // （曾把 busy 钉死到 10 分钟硬上限：任务已完成但窗口位置菜单一直「任务执行中」）
 const REMOTE_TURN_STATE_MISSING_MS = 8_000
 // 会话容量预算（设计定稿 §2.7）：单文档 ≤200KB 且 ≤100 条消息（50 轮），
-// 全局 ≤30 个文档键 LRU。超限裁最旧，面板提示「更早的会话已清理」
+// 全局 LRU 键数与 sidecar 持久层 200 文件兜底对齐。曾为 30——身份漂移时代
+// 每次重开未保存文档都烧一个新键，30 槽很快把真实历史挤出内存副本（持久层
+// 副本不受此影响）；解析只读化后键不再漂移，放宽到 200 保险
 const SCOPE_BUDGET_BYTES = 200_000
 const SCOPE_BUDGET_MESSAGES = 100
 const SCOPE_LRU_KEY = 'ai_chat_scope_lru'
-const SCOPE_LRU_MAX = 30
+const SCOPE_LRU_MAX = 200
 const STORAGE_KEY_HISTORY_SCOPE_PREFIX = 'ai_assistant_chat_history_scope'
 const STORAGE_KEY_CURRENT_SCOPE_PREFIX = 'ai_assistant_current_chat_id_scope'
 const STORAGE_KEY_LEGACY_HISTORY_MIGRATED = 'ai_assistant_chat_history_legacy_migrated'
@@ -12214,6 +12216,32 @@ export default {
     },
     createPendingWpsCapabilityForm(capability, text = '', options = {}) {
       const currentSavePath = getCurrentDocumentSavePath() || ''
+      // 指令预填（2026-10-15 用户反馈：已告知模板/内容还让重填）：
+      // 从用户原话+附件推断答案填进字段——用户只需点「执行」。推断不出的才留空。
+      const prefillFromInstruction = (fields) => {
+        if (!['generate-from-template', 'new-document-from-template'].includes(capability?.capabilityKey)) return fields
+        const raw = String(text || '').trim()
+        const officeAttached = (Array.isArray(this.attachments) ? this.attachments : [])
+          .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
+        return fields.map(f => {
+          if (f.key === 'templateRef') {
+            // 优先级：原话中的文件名/「引号名」> 附件（有office附件时填"附件"）> 留空
+            const quoted = raw.match(/[「『"']([^」』"']{2,30})[」』"']/)
+            const fileNamed = raw.match(/([\w\u4e00-\u9fa5]{1,30}\.(?:docx|xlsx|xlsm|pptx|ppt|doc|xls|et|dps|aidocx))/i)
+            const inferred = (fileNamed && fileNamed[1]) || (quoted && quoted[1]) || (officeAttached ? '附件' : '')
+            if (inferred) return { ...f, value: inferred }
+          }
+          if (f.key === 'requirement') {
+            // 需求默认=用户原话（生成诉求本身就在这句话里）
+            if (raw) return { ...f, value: raw }
+          }
+          if (f.key === 'pageTarget') {
+            const m = raw.match(/(\d{1,2})\s*(?:页|张|p)/i)
+            if (m) return { ...f, value: Number(m[1]) }
+          }
+          return f
+        })
+      }
       const buildField = (field) => {
         const value = field.defaultResolver ? field.defaultResolver(text, options.context || {}) : (field.value ?? '')
         const nextField = {
@@ -12238,10 +12266,10 @@ export default {
         capabilityKey: capability?.capabilityKey || '',
         capabilityLabel: capability?.label || '',
         originalText: String(text || '').trim(),
-        fields: [
+        fields: prefillFromInstruction([
           ...((capability?.requiredParams || []).map(buildField)),
           ...((capability?.optionalParams || []).map(buildField))
-        ]
+        ])
       }
     },
     updatePendingWpsCapabilityField(message, fieldKey, value) {

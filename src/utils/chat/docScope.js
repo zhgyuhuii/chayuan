@@ -25,10 +25,26 @@ export function getActiveHostDocument(app) {
   return doc
 }
 
+export function fnv1a32(text) {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
 export function createScopedStorageSuffix(value) {
   const text = String(value || '').trim().toLowerCase()
   if (!text) return 'default'
-  return text.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'default'
+  const base = text.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'default'
+  // 非 ASCII（中文文件名——本产品主航道）曾被整体剔除：同目录下《A报告.docx》
+  // 与《B报告.docx》坍缩到同一键，历史互相串扰。含非 ASCII 的原文附加 8 位
+  // 指纹消歧；纯 ASCII 保持旧键逐字节不变（既存数据零迁移）
+  if (/[^\x00-\x7F]/.test(text)) {
+    return `${base.slice(0, 100)}_${fnv1a32(text).toString(36)}`
+  }
+  return base
 }
 
 /**
