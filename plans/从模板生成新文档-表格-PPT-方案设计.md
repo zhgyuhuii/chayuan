@@ -401,3 +401,13 @@ jsapi Open 失败 → sidecar 复制 → OS 级打开（同宿主，因同宿主
 | 备份 | 虚拟机内 `/tmp/uos-jsaddons-final-backup.tar.gz`（新构建+修复注册表，已恢复为当前态）、`/tmp/authaddin.json.bak`、`/tmp/jsaddinblockhost.ini.bak`；宿主机 `/tmp/jsaddons-backup-1014.tar.gz`（Mac 旧构建） |
 
 **UOS 解锁路径（二选一）**：① 在 VMware 窗口里看统信桌面的 ET 窗口——若察元AI ribbon 可见直接点「模板新建」测；若有信任弹窗点信任。② 在虚拟机桌面终端里自行启动 `wps`/`et`（复现 10月12 的交互式启动方式）→ agent 注册后本会话可远程驱动全部 E2E。
+
+### 真机测试 · 第六轮（2026-10-15 · UOS 官方 deb 安装 + 打包审计）
+
+**打包审计结论（回应"打包不正确"）**：五项产物逐一验证均正确——7z 内含三宿主 6.0.3 目录+新代码 chunk（documentCreateFromTemplate-x0RpfyJh.js）+新 sidecar 二进制；lib 完整（fetchPolyfill 在内）；版本元数据一致 6.0.3；Windows 载荷含新启动器（start-mcp.cmd/watch.vbs）；deb 解包验证三宿主+linux 二进制。今日提交的 postinstall sync_jsplugins 是自愈式重建，双平台 jsplugins 损坏源自更老版本安装器的追加写。
+
+**UOS 突破**：官方 `chayuan-6.0.3-linux-arm64.deb` 在虚拟机 `dpkg -i` 成功，且揭开此前手工同步失败的根因——**deb 安装路径是小写 `~/.local/share/kingsoft/wps/jsaddons`，Linux 区分大小写**，手工同步写的大写 `Kingsoft` 目录 WPS 根本不读。信任确认对话框（「确认允许 chayuan-et_6.0.3 运行？允许/拒绝」）已实证出现——WPS 能识别插件，仅差交互点击允许。
+
+**环境陷阱清单（自动化排障实录）**：① `/tmp` 是 tmpfs，虚拟机重启即清空测试文件（曾导致「文件无效」弹窗）② UOS 空闲自动休眠（已 `systemctl mask sleep/suspend/hibernate`）③ 锁屏需 `sudo loginctl unlock-sessions` ④ ffmpeg x11grab 截屏需匹配真实分辨率 1024x768 ⑤ VM 小内存跑 WPS+apt 易假死需硬重置。
+
+**剩余解锁（用户 3 次点击）**：VMware 窗口里统信桌面 → 打开 WPS 表格任意文件 → 对「chayuan-et_6.0.3 信任」弹窗点【允许】→ 出现察元AI ribbon 后告知，立即远程驱动 ET/WPP 写入 E2E 与生成全链路。
