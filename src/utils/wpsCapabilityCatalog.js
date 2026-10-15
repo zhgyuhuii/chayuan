@@ -582,10 +582,10 @@ export const WPS_CAPABILITIES = [
         key: 'planOnly',
         label: '执行方式',
         type: 'select',
-        options: ['直接生成', '先出计划确认'],
-        placeholder: '先出计划确认：生成改写计划供你过目，回复「确认执行」后再写入',
+        options: ['先出计划确认', '直接生成'],
+        placeholder: '默认先出改写计划（大纲/页计划）供你过目，确认后再写入；也可选直接生成',
         required: false,
-        defaultResolver: () => '直接生成'
+        defaultResolver: () => '先出计划确认'
       },
       {
         key: 'savePath',
