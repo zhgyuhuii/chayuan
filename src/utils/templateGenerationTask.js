@@ -663,8 +663,9 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   const detRes = await applySlidePlanToZip(zip, detPlan)
   const detStats = detRes.ok ? detRes.stats : { edits: 0, missedTexts: [] }
   let applied = await applySlidePlanToZip(zip, plan)
+  const buildStats = () => ({ edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, pages: applied.stats.pages, deterministicEdits: detStats.edits })
   // 确定性核验：零有效改写=模型偷懒（真机：几乎纯复制）。带反馈重出一次计划
-  if ((stats.edits + stats.adds + stats.duplicates) === 0) {
+  if ((buildStats().edits + buildStats().adds + buildStats().duplicates) === 0) {
     progress(taskId, 45, '计划未产生有效改写，正在强制重规划…')
     const retryPrompt = buildPlanPrompt('slide', {
       profileSummary,
@@ -683,11 +684,12 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
         zip = reloaded.zip
       }
     }
-    if ((stats.edits + stats.adds + stats.duplicates) === 0) {
+    const st = buildStats()
+    if ((st.edits + st.adds + st.duplicates) === 0) {
       throw new Error('改写层完全未生效（含确定性底稿），请反馈开发者。')
     }
   }
-  const stats = { edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, pages: applied.stats.pages, deterministicEdits: detStats.edits }
+  const stats = buildStats()
 
   const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
   for (let round = 1; round <= maxRounds; round++) {
