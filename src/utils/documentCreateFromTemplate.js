@@ -316,6 +316,24 @@ export async function createFromTemplate(source = {}) {
       return { ok: false, code: osResult.code, path: osResult.path, kind, error: '无法自动打开文档，请手动双击打开该文件后继续：' + copy.path }
     }
     viaOs = true
+    // 等副本真正成为活动对象（OS 打开是异步的：文档未就绪就执行批量 jsapi 会堵死
+    // WPS 主线程 → 卡死被强退，2026-10-15 真机）。按路径精确匹配，最长 15s。
+    const wantPath = String(copy.path).replace(/\\/g, '/').toLowerCase()
+    let matchedActive = false
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 750))
+      const act = getActiveObjectByKind(kind)
+      let fn = ''
+      try { fn = String(act?.FullName || '').replace(/\\/g, '/').toLowerCase() } catch (_) { fn = '' }
+      if (fn && (fn === wantPath || fn.endsWith(wantPath.split('/').pop()))) { matchedActive = true; break; }
+    }
+    if (!matchedActive) {
+      return { ok: false, code: 'ACTIVE_DOC_NOT_READY', path: copy.path, kind, error: '模板副本已打开但尚未成为活动文稿（可能仍在加载）。请在 WPS 中点开刚打开的副本窗口，然后重新点「确认执行」。' }
+    }
+    const active = getActiveObjectByKind(kind)
+    setNewFileMarkerAny(active, true)
+    try { ensureDocumentChatLinkId(active) } catch (_) { /* 非阻塞 */ }
+    return { ok: true, path: copy.path, name: resolved.name, kind, viaOs: true, obj: active }
   } else {
     try {
       obj = openWithJsapi(copy.path, kind)
