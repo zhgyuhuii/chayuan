@@ -189,7 +189,8 @@ function parseJsonLoose(raw) {
   }
 }
 
-async function llmJson(model, systemPrompt, userPrompt) {
+async function llmJson(modelArg, systemPrompt, userPrompt) {
+  let model = modelArg
   // 慢端点适配（2026-10-15 实测：agnes ping 14s；计划 prompt 长，默认超时会误报
   // 「模型服务暂时不可用」）——放宽到 180s，且瞬时失败自动重试 1 次
   const attempt = async () => chatCompletion({
@@ -207,8 +208,22 @@ async function llmJson(model, systemPrompt, userPrompt) {
   try {
     raw = await attempt()
   } catch (first) {
-    console.warn('llmJson 首次失败，1 次自动重试:', first?.message || first)
-    raw = await attempt()
+    // 自愈：配置类错误（未配置地址/密钥）→ 重新解析可用模型重试一次（不同上下文
+    // 可能持有过期模型引用；真机曾出现"已配置却报未配置"）
+    const msg = String(first?.message || '')
+    if (/未配置|API 地址|密钥/.test(msg)) {
+      const fresh = resolveChatModel()
+      if (fresh && (fresh.providerId !== model.providerId || fresh.modelId !== model.modelId)) {
+        console.warn('llmJson 配置错误，切换模型重试:', fresh.providerId, fresh.modelId)
+        model = fresh
+        raw = await attempt()
+      } else {
+        throw first
+      }
+    } else {
+      console.warn('llmJson 首次失败，1 次自动重试:', msg)
+      raw = await attempt()
+    }
   }
   return parseJsonLoose(raw)
 }
