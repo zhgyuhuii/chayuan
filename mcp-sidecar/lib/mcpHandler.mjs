@@ -487,6 +487,15 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
     }
 
     switch (name) {
+      // ── 模板生成管线：agentHub 派发到任意在线宿主 webview（宿主无关，文件级执行）──
+      case 'template_generate': {
+        try {
+          const result = await agentHub.callAgent('template.generate', args && typeof args === 'object' ? { ...args } : {}, { timeoutMs: 900_000 })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
       // ── 图像工具（三级生图）：侧车原生执行，无需 webview ──
       case 'image_search': {
         try {
