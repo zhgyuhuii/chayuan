@@ -188,15 +188,26 @@ function parseJsonLoose(raw) {
 }
 
 async function llmJson(model, systemPrompt, userPrompt) {
-  const raw = await chatCompletion({
+  // 慢端点适配（2026-10-15 实测：agnes ping 14s；计划 prompt 长，默认超时会误报
+  // 「模型服务暂时不可用」）——放宽到 180s，且瞬时失败自动重试 1 次
+  const attempt = async () => chatCompletion({
     providerId: model.providerId,
     modelId: model.modelId,
     temperature: 0.3,
+    timeoutMs: 180000,
+    requestTimeoutMs: 180000,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ]
   })
+  let raw
+  try {
+    raw = await attempt()
+  } catch (first) {
+    console.warn('llmJson 首次失败，1 次自动重试:', first?.message || first)
+    raw = await attempt()
+  }
   return parseJsonLoose(raw)
 }
 

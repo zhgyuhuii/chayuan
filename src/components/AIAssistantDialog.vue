@@ -4473,6 +4473,14 @@ export default {
       historyStorageScopeKey: '',
       historyStorageDocumentLinkId: '',
       historyStorageSource: '',
+      // 本进程内懒嵌入身份的文档（linkId → true）：身份未确认落盘（文件未保存）
+      // 前，resolve 不让 doc_ 键当锚点（活键恒为 path_，防"不保存关闭=历史孤儿"）。
+      // 消费时机：doc.Saved===true（保存落盘）或 WPS 重启（重启后身份只能来自
+      // 磁盘，doc_ 天然安全）
+      _docScopeHolds: {},
+      // 懒嵌时刻的来源 scopeKey（linkId → path_ 键）：身份落盘后 doc_ 接管时，
+      // 采纳迁移靠它找回另存/移动前旧路径键里的历史
+      _docScopeOrigins: {},
       historySavePersister: null,
       pendingHistorySavePayload: null,
       // 脏标记式保存：saveHistory 只置脏，序列化推迟到节流器真正写盘时（见 saveHistory）
@@ -5153,6 +5161,8 @@ export default {
         }
       } catch (_) { /* 忽略单次异常 */ }
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
+      // 自愈回填：sidecar/token 晚于面板就绪时，空历史靠这个节拍恢复
+      try { this.maybeRetryHistoryBackfill() } catch (_) { /* 忽略单次异常 */ }
       // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
       try { this.tryConsumeRibbonPrefillPrompt() } catch (_) { /* 忽略单次异常 */ }
       // 孤儿回合上下文回收：远程回合终态合并后 ctx 应已清；但若面板在回合
@@ -8674,16 +8684,29 @@ export default {
       // 现在解析绝不产生写副作用：身份存在（文件保存过）就跟随文件（doc_ 键），
       // 不存在就落到稳定键 path_/name_；身份改由发消息时懒嵌入
       // （embedDocumentChatIdentity），用户此后任意一次保存都让身份随文件落盘。
+      // hold（_docScopeHolds）：本进程内刚嵌入、尚未确认落盘的身份不当锚点——
+      // 否则历史全部搬进 doc_ 键后用户不保存关闭，重开即成孤儿（真机缺陷
+      // "关闭文档再打开历史不还原"）。活键在身份落盘确认前恒为 path_；落盘
+      // 确认（doc.Saved 或 WPS 重启）后 doc_ 接管，采纳迁移无缝并入历史。
       const doc = getActiveHostDocument(window.Application)
-      return resolveDocumentScope(doc)
+      const scope = resolveDocumentScope(doc)
+      if (scope.source === 'document-variable' && this._docScopeHolds?.[scope.documentLinkId]) {
+        return resolveDocumentScope(doc, { ignoreIdentity: true })
+      }
+      return scope
     },
     applyHistoryStorageScope(scopeInfo = {}) {
       const scopeKey = String(scopeInfo.scopeKey || 'no_active_document').trim() || 'no_active_document'
+      // scope 变化 = 回填目标变化：重置自愈重试预算（新键也要给足回填机会）
+      if (scopeKey !== this.historyStorageScopeKey) {
+        this._backfillAttempts = 0
+        this._lastBackfillAt = 0
+      }
       this.historyStorageScopeKey = scopeKey
       this.historyStorageDocumentLinkId = String(scopeInfo.documentLinkId || '').trim()
       this.historyStorageDocId = String(scopeInfo.docId || '').trim()
       this.historyStorageSource = String(scopeInfo.source || '').trim()
-      // 全局 LRU touch：记录本 scope 活跃时间，超 30 键时驱逐最久未用的会话
+      // 全局 LRU touch：记录本 scope 活跃时间，超 200 键时驱逐最久未用的会话
       this.touchScopeLru(scopeKey)
       return scopeKey
     },
@@ -8910,6 +8933,29 @@ export default {
         console.debug('session-store 回填失败:', e)
       }
     },
+    // 自愈回填（真机缺陷：挂载时的一次性回填若赶上 sidecar 未起/token 未播种，
+    // 空历史就永远空下去——"退出 WPS 重开历史消失"的直接通道之一）。
+    // scope 有效且历史为空期间按节拍重试（含持久层采纳探针），拿到数据或
+    // 超出预算即停。token/sidecar 就绪后首轮重试即恢复。
+    maybeRetryHistoryBackfill() {
+      const scopeKey = String(this.historyStorageScopeKey || '')
+      if (!scopeKey || scopeKey === 'no_active_document') return
+      if ((this.chatHistory || []).length > 0) {
+        this._backfillAttempts = 0
+        return
+      }
+      if (this.isStreaming || this._backfillInFlight) return
+      const attempts = Number(this._backfillAttempts || 0)
+      if (attempts >= 15) return
+      const now = Date.now()
+      if (now - Number(this._lastBackfillAt || 0) < 6000) return
+      this._backfillAttempts = attempts + 1
+      this._lastBackfillAt = now
+      this._backfillInFlight = true
+      Promise.resolve(this.backfillHistoryFromSessionStore())
+        .catch(() => { /* 回填失败静默，下一拍重试 */ })
+        .finally(() => { this._backfillInFlight = false })
+    },
     // 采纳探针键：按当前活动文档的 FullName/Name 展开身份优先级低位的旧键
     // （doc_←path_←name_，只向下探）。纯决策在 chat/docScope.js，可单测。
     computeFallbackScopeKeysForActiveDoc() {
@@ -8993,8 +9039,11 @@ export default {
     // 此前身份在面板挂载时就写——文档被动变脏（关闭弹保存框）、且用户不
     // 保存身份就丢（重开生成新身份 → scope 漂移 → 历史失联，真机缺陷根因）。
     // 现在聊天过的文档才有身份；用户此后任意一次保存都让身份随文件落盘，
-    // 从此另存/改名/拷贝历史跟随。嵌入后解析结果翻转为 doc_* 键：sync 的
-    // 同文档翻转路径会在 busy 解除后无缝迁移（绝不在回合进行中切键）。
+    // 从此另存/改名/拷贝历史跟随。
+    // 关键配套（_docScopeHolds）：刚嵌入的身份只活在内存，绝不让 doc_ 键在本
+    // 进程内立即接管——否则历史搬进 doc_ 后用户不保存关闭，重开即孤儿
+    // （真机缺陷："关闭文档再打开历史不还原"）。活键保持 path_ 直到 WPS
+    // 重启；重启后身份若在磁盘上（保存过）才由 doc_ 接管并采纳并入历史。
     embedDocumentChatIdentity() {
       const scopeKey = String(this.historyStorageScopeKey || '')
       if (!scopeKey || scopeKey === 'no_active_document') return
@@ -9002,7 +9051,14 @@ export default {
       const doc = getActiveHostDocument(window.Application)
       if (!doc) return
       // 载体不可写（只读文档等）返回 null：path_ 作用域本身跨重开稳定，可接受
-      try { ensureDocumentIdentity(doc) } catch (_) { /* 身份非阻塞 */ }
+      let linkId = null
+      try { linkId = ensureDocumentIdentity(doc) } catch (_) { /* 身份非阻塞 */ }
+      if (!linkId) return
+      // hold 按解析侧同款 docId 语义记（fullName||name||docvar:<id>）。
+      // 未保存文档保存后 FullName 出现 → hold 键失配 → doc_ 立即接管（此时
+      // 身份已确认落盘，接管安全）；其余情况 hold 到 WPS 重启为止
+      const docId = String(doc?.FullName || '').trim() || String(doc?.Name || '').trim() || `docvar:${linkId}`
+      if (docId) this._docScopeHolds[docId] = true
     },
     ensureHistorySavePersister() {
       if (this.historySavePersister) return this.historySavePersister

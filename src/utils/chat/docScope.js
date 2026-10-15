@@ -49,15 +49,21 @@ export function createScopedStorageSuffix(value) {
 
 /**
  * 只读解析文档会话作用域。无写副作用（身份写入只在发消息时懒嵌）。
+ * @param {{ignoreIdentity?: boolean}} options
+ *   ignoreIdentity：把文档内身份当不存在解析（回落 path_/name_）。面板用它实现
+ *   "身份未确认落盘前不当锚点"——本进程内刚嵌入的身份只活在内存，用户不保存
+ *   就关文档身份即丢，若让 doc_ 键立即接管，历史全在 doc_ 键下、重开即成孤儿
+ *   （真机缺陷："关闭文档再打开历史不还原"）。活键在 WPS 重启前恒为 path_；
+ *   重启后身份若来自磁盘（用户保存过）才启用 doc_ 并由采纳迁移并入历史。
  * @returns {{scopeKey:string, documentLinkId:string, docId:string, source:string, fullName:string, name:string}}
  */
-export function resolveDocumentScope(doc) {
+export function resolveDocumentScope(doc, { ignoreIdentity = false } = {}) {
   const fullName = String(doc?.FullName || '').trim()
   const name = String(doc?.Name || '').trim()
   // docId = 对话所属文档身份（远程回合执行侧校验"对话↔文档"绑定用）
   const docId = fullName || name
   let docLinkId = null
-  if (doc) {
+  if (doc && !ignoreIdentity) {
     try { docLinkId = readDocumentChatLinkId(doc) } catch (_) { /* 载体异常按缺失处理 */ }
   }
   if (docLinkId) {
