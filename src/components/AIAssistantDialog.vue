@@ -19180,7 +19180,25 @@ export default {
         }
 
         const routeStartedAt = Date.now()
-        const resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model, legacyTurnCtx)
+        let resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model, legacyTurnCtx)
+        // 终极保险（防御任何内层覆盖）：office 模板附件 + 生成文档类话术 → 无条件模板管线。
+        // 层层修复史（附件感知规则→lane覆盖→…）证明单层修复会被下一层改写，这里在最终出口兜底。
+        {
+          const hasOfficeTpl = (Array.isArray(this.attachments) ? this.attachments : [])
+            .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
+          const mediaOnly = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(String(text || ''))
+          if (hasOfficeTpl && !mediaOnly &&
+              /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(String(text || '')) &&
+              /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(String(text || '')) &&
+              String(resolvedPrimaryIntent?.kind || '') !== 'wps-capability') {
+            resolvedPrimaryIntent = {
+              ...resolvedPrimaryIntent,
+              kind: 'wps-capability',
+              confidence: 'high',
+              reason: '附件含 Office 模板且要求生成文档类内容，已强制路由模板生成管线。'
+            }
+          }
+        }
         if (legacyTurnCtx.cancelled) {
           // 用户在意图路由期点了停止:终结占位消息,不再进入任何链路
           this.stopAssistantLoadingProgress(assistantMsg)
