@@ -189,8 +189,19 @@ function parseJsonLoose(raw) {
   }
 }
 
+/** 清洗 prompt 文本：剥离 C0 控制字符（保留 \n\t\r）——模板 XML 文案常带 \x0b 等，
+ * 严格 JSON 端点（agnes/rust serde）会报 'missing field content' 类误导性错误 */
+function cleanPromptText(input, maxLen = 40000) {
+  const cleaned = String(input || '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned
+}
+
 async function llmJson(modelArg, systemPrompt, userPrompt) {
   let model = modelArg
+  systemPrompt = cleanPromptText(systemPrompt, 20000)
+  userPrompt = cleanPromptText(userPrompt, 40000)
+  if (!String(userPrompt || '').trim()) userPrompt = '(no content)'
   // 慢端点适配（2026-10-15 实测：agnes ping 14s；计划 prompt 长，默认超时会误报
   // 「模型服务暂时不可用」）——放宽到 180s，且瞬时失败自动重试 1 次
   const attempt = async () => chatCompletion({
