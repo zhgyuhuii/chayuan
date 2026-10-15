@@ -246,8 +246,8 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
       `【段落清单（序号. 文本）】\n${docParagraphs}`,
       `【用户需求】${requirement}`,
       '',
-      '输出 JSON：{"ops":[{"paragraphIndex":序号,"newText":"替换后的整段文本"}], "appends":[{"afterParagraphIndex":序号,"text":"新增段落文本","style":"可选,模板样式档案中的样式名"}]}',
-      '规则：op 的 newText 是该段完整新文本（标题段替换为完整标题，正文段替换为完整正文）；需要新增内容时用 appends；不改模板中的落款、页眉类固定文案。'
+      '输出 JSON：{"ops":[{"paragraphIndex":序号,"newText":"替换后的整段文本"}], "appends":[{"afterParagraphIndex":序号,"text":"新增段落文本","style":"可选,须逐字使用【模板画像】样式档案中列出的样式名"}]}',
+      '规则：op 的 newText 是该段完整新文本（标题段替换为完整标题，正文段替换为完整正文）；需要新增内容时用 appends，其 style 优先从样式档案的样式名中选择（如正文/Body Text）；不改模板中的落款、页眉类固定文案。'
     ].join('\n')
   }
 }
@@ -265,20 +265,89 @@ function collectDocParagraphs(doc) {
   return lines.join('\n').slice(0, 6000)
 }
 
+
+/**
+ * 正文基线捕获（2026-10-15 真机反馈：模板黑体/生成楷体）：
+ * 新增段落 InsertAfter 继承的是段落标记（Normal）字体，与模板正文实际字体无关。
+ * 基线 = 活文档正文段落里出现最多的 (NameFarEast, Size)——即"模板正文长什么样"。
+ * 空模板无正文 → 回退分析画像 docDefaults → 再回退 Normal 样式 → 都失败返回 null。
+ */
+function captureBodyFontBaseline(doc, analysisProfile) {
+  const votes = new Map()
+  try {
+    const total = Math.min(Number(doc.Paragraphs.Count || 0), 200)
+    for (let i = 1; i <= total; i++) {
+      let para
+      try { para = doc.Paragraphs.Item(i) } catch (_) { continue }
+      const text = String(para?.Range?.Text || '').split('\r').join(' ').split('\u0007').join('').trim()
+      if (text.length < 8) continue // 跳过标题/空段/短行，只要正文段
+      let font = null, size = null
+      try { font = para.Range.Font?.NameFarEast || para.Range.Font?.Name || null } catch (_) { font = null }
+      try { size = para.Range.Font?.Size || null } catch (_) { size = null }
+      if (!font) continue
+      const key = font + '|' + (size || '')
+      votes.set(key, (votes.get(key) || 0) + 1)
+    }
+  } catch (_) { /* 枚举失败走回退 */ }
+  let best = null
+  let bestCount = 0
+  for (const [key, count] of votes) {
+    if (count > bestCount) { bestCount = count; best = key }
+  }
+  if (best && bestCount >= 1) {
+    const [font, size] = best.split('|')
+    return { font, size: Number(size) || null }
+  }
+  // 回退1：文件级剖析 docDefaults（styles.xml）
+  const defaults = analysisProfile?.defaults?.run
+  if (defaults?.fonts?.eastAsia || defaults?.fonts?.ascii) {
+    return { font: defaults.fonts.eastAsia || defaults.fonts.ascii, size: defaults.sizePt || null }
+  }
+  // 回退2：Normal 样式
+  try {
+    const normal = doc.Styles.Item(-1) // wdStyleNormal
+    return { font: normal?.Font?.NameFarEast || normal?.Font?.Name || null, size: normal?.Font?.Size || null }
+  } catch (_) {
+    return null
+  }
+}
+
+function applyBodyBaselineToRange(range, baseline) {
+  if (!baseline?.font) return false
+  let applied = false
+  try { range.Font.NameFarEast = baseline.font; applied = true } catch (_) { /* 西文引擎无此属性 */ }
+  try { range.Font.Name = baseline.font; applied = true } catch (_) { /* 尽力而为 */ }
+  if (baseline.size) {
+    try { range.Font.Size = baseline.size } catch (_) { /* 字号保持 */ }
+  }
+  return applied
+}
+
 /** doc：按段落序号就地替换 / 锚点后追加（保留段落样式，Range.MoveEnd 排除段落标记） */
-function executeDocPlan(plan, doc, contract = null) {
-  const results = { replaced: 0, appended: 0, failed: 0 }
+function executeDocPlan(plan, doc, contract = null, analysisProfile = null) {
+  const results = { replaced: 0, appended: 0, failed: 0, fontBaselineApplied: 0 }
+  // 契约勾选「沿用字体字号」时：捕获模板正文基线，新增/空段替换后的文字强制对齐
+  const fontsOn = !contract || contract.aspects?.style?.fonts !== false
+  const baseline = fontsOn ? captureBodyFontBaseline(doc, analysisProfile) : null
   const writePara = (index, newText) => {
     try {
       const para = doc.Paragraphs.Item(Number(index))
       if (!para) return false
       const range = para.Range
+      const wasEmpty = !String(range.Text || '').split('\r').join(' ').split('\u0007').join('').replace(/\s/g, '').trim()
       let target = range
       try {
         target = doc.Range(range.Start, range.End)
         target.MoveEnd(1, -1) // wdCharacter，排除段落标记以保留段落样式
       } catch (_) { /* 退化：整段替换 */ }
       target.Text = String(newText)
+      // 原段落为空时新文字继承的是段落标记字体（常为 Normal=楷体而非模板正文）→ 套正文基线
+      if (wasEmpty && baseline) {
+        try {
+          const after = doc.Range(range.Start, range.Start + String(newText).length)
+          if (applyBodyBaselineToRange(after, baseline)) results.fontBaselineApplied++
+        } catch (_) { /* 定位失败保持 */ }
+      }
       return true
     } catch (e) {
       console.warn('executeDocPlan 段落替换失败:', index, e)
@@ -297,9 +366,11 @@ function executeDocPlan(plan, doc, contract = null) {
       insertRange.InsertAfter(String(op?.text || '') + '\r')
       // 命名样式套用（best-effort）：模板带样式档案时新增段优先套样式而非裸文本
       const styleName = String(op?.style || '').trim()
-      const fontsOn = !contract || contract.aspects?.style?.fonts !== false
       if (styleName && fontsOn) {
         try { insertRange.Style = styleName } catch (_) { /* 样式名不存在则保持默认 */ }
+      } else if (baseline) {
+        // 无样式指令：新段落默认继承 Normal（楷体问题根源）→ 强制对齐模板正文基线
+        if (applyBodyBaselineToRange(insertRange, baseline)) results.fontBaselineApplied++
       }
       results.appended++
     } catch (_) {
@@ -476,7 +547,7 @@ async function executePlanStages({ taskId, isCancelled, kind, requirement, profi
     const app = window.Application
     const doc = app?.ActiveDocument
     if (!doc) throw new Error('新文档未就绪')
-    return executeDocPlan(plan, doc, contract)
+    return executeDocPlan(plan, doc, contract, sourceParams.__analysisProfile || null)
   })
   if (isCancelled()) throw createCancelledError()
 
@@ -624,6 +695,7 @@ export async function runTemplateGenerationTask(params = {}) {
     const outlineText = formatPlanForConfirm(kind, plan, requirement)
     cachePlan({
       sourceParams: {
+        __analysisProfile: analysis?.profile || null,
         templateId: params.templateId,
         templateRef: params.templateRef,
         templatePath: params.templatePath,
@@ -675,7 +747,7 @@ export async function runTemplateGenerationTask(params = {}) {
     }
   }
 
-  return executePlanStages({ taskId, isCancelled, kind, requirement, profileSummary, plan, sourceParams: params, templateName: resolved.name })
+  return executePlanStages({ taskId, isCancelled, kind, requirement, profileSummary, plan, sourceParams: { ...params, __analysisProfile: analysis?.profile || null }, templateName: resolved.name })
 }
 
 /**
