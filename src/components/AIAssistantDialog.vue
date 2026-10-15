@@ -14641,7 +14641,6 @@ export default {
         attachments: (Array.isArray(turnCtx?.attachmentsSnapshot) && turnCtx.attachmentsSnapshot.length)
           ? turnCtx.attachmentsSnapshot
           : this.attachments
-        attachments: this.attachments
       }
       const localShortcut = resolveLocalIntentShortcut(text, {
         ...routeContext
