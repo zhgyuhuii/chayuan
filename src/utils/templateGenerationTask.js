@@ -138,18 +138,19 @@ function progress(taskId, percent, eventText, extraData = {}) {
 function resolveChatModel() {
   try {
     const flat = getFlatModelsFromSettings('chat')
+    // 候选逐个做「provider 真有 API 地址」校验（2026-10-15 真机：默认模型
+    // provider 缺地址 → chatCompletion 抛「未配置该模型的 API 地址」炸管线）
+    const usable = (m) => {
+      if (!m?.providerId || !m?.modelId) return false
+      try { return !!getChatApiConfigByProvider(m.providerId, m.modelId) } catch (_) { return false }
+    }
     const defaultId = String(loadDefaultChatId() || '').trim()
     const inFlat = defaultId ? flat.find(m => m.id === defaultId) : null
-    if (inFlat?.providerId && inFlat?.modelId) {
-      return { providerId: inFlat.providerId, modelId: inFlat.modelId }
-    }
+    if (usable(inFlat)) return { providerId: inFlat.providerId, modelId: inFlat.modelId }
     const parsed = defaultId ? parseModelCompositeId(defaultId) : null
-    if (parsed?.providerId && parsed?.modelId) {
-      const usable = !!getChatApiConfigByProvider(parsed.providerId, parsed.modelId)
-      if (usable) return { providerId: parsed.providerId, modelId: parsed.modelId }
-    }
-    // 最终兜底：flat 列表第一个可用对话模型
-    const first = flat.find(m => m?.providerId && m?.modelId)
+    if (parsed && usable(parsed)) return { providerId: parsed.providerId, modelId: parsed.modelId }
+    // 兜底：flat 列表第一个真正可用的对话模型（逐个校验，不再盲取第一个）
+    const first = flat.find(usable)
     if (first) return { providerId: first.providerId, modelId: first.modelId }
   } catch (e) {
     console.warn('resolveChatModel 失败:', e)
