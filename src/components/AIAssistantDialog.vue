@@ -2793,6 +2793,12 @@ node mcp-sidecar/server.mjs</pre>
 // jszip(~96KB)首屏用不到,仅在导出 zip 时才需要 → 改为按需动态 import,见 createGeneratedZipFile
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
 import { ensureDocumentChatLinkId as ensureDocumentIdentity } from '../utils/documentIdentity.js'
+import {
+  getActiveHostDocument,
+  resolveDocumentScope,
+  computeFallbackScopeKeys,
+  isSameDocumentScopeChange
+} from './chat/docScope.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
 import {
   setWriteBaseline,
@@ -3370,20 +3376,6 @@ function safeParsePluginJson(raw) {
   } catch (_) {
     return null
   }
-}
-
-function createScopedStorageSuffix(value) {
-  const text = String(value || '').trim().toLowerCase()
-  if (!text) return 'default'
-  return text.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120) || 'default'
-}
-
-function ensureDocumentChatLinkId(doc) {
-  // 三宿主文件内身份（T1b 实证：Writer=Variables / WPP=Tags / ET=Names 公式字面量）。
-  // 失败/无活动文档必须返回 ''（审查 P0-1）：随机回退会让轮询的 scopeKey 每拍
-  // 漂移——历史反复清空重挂 + sidecar 被随机键文件灌爆。'' 落到
-  // path_/no_active_document 稳定兜底（v5.1.5 语义）
-  return ensureDocumentIdentity(doc) || ''
 }
 
 function resolveTranslationTargetLanguage(text, fallback = '英文') {
@@ -8682,51 +8674,16 @@ export default {
       }
     },
     resolveHistoryStorageScope() {
-      // 宿主感知取活动对象：Writer=ActiveDocument，表格=ActiveWorkbook，演示=
-      // ActivePresentation。旧实现只认 ActiveDocument——表格/演示里恒为 null，
-      // 会话作用域退化为全局一个池（切文档对话不跟随，2026-09-30 VM 实测）。
-      // 注意逐项 try：部分宿主（Linux ET 实测）访问非本宿主的活动对象属性会
-      // 抛 COM 异常而非返回 undefined，链式短路访问会炸掉整个 resolve。
-      const app = window.Application
-      let doc = null
-      try { doc = app?.ActiveDocument || null } catch (_) { /* 非文字宿主 */ }
-      if (!doc) { try { doc = app?.ActiveWorkbook || null } catch (_) { /* 非表格宿主 */ } }
-      if (!doc) { try { doc = app?.ActivePresentation || null } catch (_) { /* 非演示宿主 */ } }
-      const docLinkId = ensureDocumentChatLinkId(doc)
-      const fullName = String(doc?.FullName || '').trim()
-      const name = String(doc?.Name || '').trim()
-      // docId = 对话所属文档身份（远程回合执行侧校验"对话↔文档"绑定用）
-      const docId = fullName || name
-      if (docLinkId) {
-        return {
-          scopeKey: `doc_${createScopedStorageSuffix(docLinkId)}`,
-          documentLinkId: docLinkId,
-          docId: docId || `docvar:${docLinkId}`,
-          source: 'document-variable'
-        }
-      }
-      if (fullName) {
-        return {
-          scopeKey: `path_${createScopedStorageSuffix(fullName)}`,
-          documentLinkId: '',
-          docId,
-          source: 'document-path'
-        }
-      }
-      if (name) {
-        return {
-          scopeKey: `name_${createScopedStorageSuffix(name)}`,
-          documentLinkId: '',
-          docId,
-          source: 'document-name'
-        }
-      }
-      return {
-        scopeKey: 'no_active_document',
-        documentLinkId: '',
-        docId: '',
-        source: 'fallback'
-      }
+      // 只读解析（决策逻辑在 chat/docScope.js 纯函数，可单测）：宿主感知取活动
+      // 对象（Writer=ActiveDocument，表格=ActiveWorkbook，演示=ActivePresentation）。
+      // 旧实现只认 ActiveDocument——表格/演示里恒为 null（2026-09-30 VM 实测）；
+      // 更旧的实现还在这条路径上【写入】文档身份——身份只活在内存，用户不保存
+      // 就关文档，重开即生成新身份、scope 键漂移、历史失联（真机缺陷根因）。
+      // 现在解析绝不产生写副作用：身份存在（文件保存过）就跟随文件（doc_ 键），
+      // 不存在就落到稳定键 path_/name_；身份改由发消息时懒嵌入
+      // （embedDocumentChatIdentity），用户此后任意一次保存都让身份随文件落盘。
+      const doc = getActiveHostDocument(window.Application)
+      return resolveDocumentScope(doc)
     },
     applyHistoryStorageScope(scopeInfo = {}) {
       const scopeKey = String(scopeInfo.scopeKey || 'no_active_document').trim() || 'no_active_document'
@@ -8765,17 +8722,23 @@ export default {
       // 文档的会话**——立即把 scope 元数据切到新文档并清空消息视图；新文档
       // 的历史加载推迟到 busy 解除后的下一次 sync。此处不做 saveHistory：
       // 旧会话属于旧 scope（发送硬校准已保证），乱 save 会把它写进新键。
+      // 例外——同文档身份升级翻转（发消息时懒嵌身份，path_→doc_，docId 不变，
+      // isSameDocumentScopeChange 判定）：消息对象引用必须活过整个回合，
+      // 此处既不清屏也不切键，推迟到 busy 解除后的空闲路径无缝迁移
+      // （save 旧键 → 采纳并入 → 载入 doc_ 键）。
       if (localBusy) {
         if (this.historyStorageScopeKey && nextScopeKey !== this.historyStorageScopeKey) {
-          this.applyHistoryStorageScope(nextScope)
-          this.chatHistory = []
-          this.currentChatId = null
-          // 记录待回填：busy 解除后的下一次 sync 必须补 loadHistory——
-          // 否则若 scope 不再变化，sync 走"相同键 return false"，被清空的
-          // 视图永远不回填、进行中任务也不显示（用户实测缺陷）
-          this._pendingScopeReload = nextScopeKey
-          this.initOpenChatTabsAfterLoad()
-          return true
+          const sameDocument = isSameDocumentScopeChange(nextScope, this.historyStorageDocId)
+          if (!sameDocument) {
+            this.applyHistoryStorageScope(nextScope)
+            this.chatHistory = []
+            this.currentChatId = null
+            // 记录待回填：busy 解除后的下一次 sync 必须补 loadHistory——
+            // 否则若 scope 不再变化，sync 走"相同键 return false"，被清空的
+            // 视图永远不回填、进行中任务也不显示（用户实测缺陷）
+            this._pendingScopeReload = nextScopeKey
+            this.initOpenChatTabsAfterLoad()
+          }
         }
         return false
       }
@@ -8841,11 +8804,24 @@ export default {
             storage?.removeItem(STORAGE_KEY_HISTORY)
             storage?.removeItem(STORAGE_KEY_CURRENT)
           }
-          // I1 懒迁移：内存 miss（重启/换机）→ sidecar 持久层回填 PluginStorage。
-          // 异步执行，回填后重挂载视图；sidecar 不可用保持原状（空历史）
-          if (!Array.isArray(parsed) || parsed.length === 0) {
-            this.backfillHistoryFromSessionStore()
+        }
+
+        // 采纳迁移（同步层）：当前 scope 无历史时，把同文档低优先级旧键的历史
+        // 并入当前键——活会话身份翻转（发消息懒嵌身份后 path_→doc_）的无缝迁移。
+        // 墓碑化源键，防"用户删光会话后被旧键复活"。
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          if (this.adoptFallbackScopeHistorySync()) {
+            parsed = safeParsePluginJson(storage?.getItem(storageKeys.history))
+            currentId = storage?.getItem(storageKeys.current)
           }
+        }
+
+        // I1 懒迁移：内存 miss（重启/换机）→ sidecar 持久层回填 PluginStorage。
+        // 异步执行，回填后重挂载视图；sidecar 不可用保持原状（空历史）。
+        // 回填 miss 时还会探持久层的低优先级旧键（采纳迁移异步层——升级搁浅的
+        // path_/name_ 历史只活在 sidecar 里的场景）。
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          this.backfillHistoryFromSessionStore()
         }
 
         this.chatHistory = Array.isArray(parsed)
@@ -8910,7 +8886,16 @@ export default {
       try {
         const scopeKey = this.historyStorageScopeKey || ''
         if (!scopeKey || scopeKey === 'no_active_document') return
-        const remote = await fetchSessionStore(scopeKey)
+        let remote = await fetchSessionStore(scopeKey)
+        // 采纳迁移（持久层）：本键在 sidecar 也无历史时，探同文档低优先级旧键
+        // （跨重启/升级搁浅场景——历史只活在 sidecar 的 path_/name_ 旧键里，
+        // PluginStorage 重启即空、同步层探不到）。命中即把旧键并入当前键。
+        if (!remote) {
+          const adopted = await this.adoptFallbackScopeHistoryFromSessionStore(scopeKey)
+          if (adopted) {
+            remote = await fetchSessionStore(scopeKey)
+          }
+        }
         if (!remote) return
         const storage = window.Application?.PluginStorage
         const storageKeys = this.getHistoryStorageKeys(scopeKey)
@@ -8932,6 +8917,100 @@ export default {
       } catch (e) {
         console.debug('session-store 回填失败:', e)
       }
+    },
+    // 采纳探针键：按当前活动文档的 FullName/Name 展开身份优先级低位的旧键
+    // （doc_←path_←name_，只向下探）。纯决策在 chat/docScope.js，可单测。
+    computeFallbackScopeKeysForActiveDoc() {
+      return computeFallbackScopeKeys(this.historyStorageScopeKey, this.activeDocNameProbe())
+    },
+    activeDocNameProbe() {
+      const doc = getActiveHostDocument(window.Application)
+      return {
+        fullName: String(doc?.FullName || '').trim(),
+        name: String(doc?.Name || '').trim()
+      }
+    },
+    // 采纳迁移（同步层）：PluginStorage 里的低优先级旧键有非空历史 → 并入当前键。
+    // 返回是否发生了迁移。场景：活会话身份翻转（首次发消息嵌入身份后）。
+    adoptFallbackScopeHistorySync() {
+      const scopeKey = String(this.historyStorageScopeKey || '')
+      if (!scopeKey || scopeKey === 'no_active_document') return false
+      const storage = window.Application?.PluginStorage
+      if (!storage) return false
+      for (const fallbackKey of this.computeFallbackScopeKeysForActiveDoc()) {
+        const sourceKeys = this.getHistoryStorageKeys(fallbackKey)
+        const raw = storage.getItem(sourceKeys.history)
+        const parsed = safeParsePluginJson(raw)
+        if (!Array.isArray(parsed) || parsed.length === 0) continue
+        return this.transplantAdoptedHistory(fallbackKey, {
+          historyJson: raw,
+          currentChatId: String(storage.getItem(sourceKeys.current) || '')
+        })
+      }
+      return false
+    },
+    // 采纳迁移（持久层）：sidecar 里的低优先级旧键有非空历史 → 并入当前键
+    // （本地 + 持久层双写），源键两侧都墓碑化。返回是否发生了迁移。
+    // 场景：跨重启/升级搁浅——PluginStorage 不持久化，旧历史只在 sidecar。
+    async adoptFallbackScopeHistoryFromSessionStore(scopeKey) {
+      const normalizedScope = String(scopeKey || '').trim()
+      if (!normalizedScope || normalizedScope === 'no_active_document') return false
+      // 竞态守卫（与回填 P1-3 同语义）：await 窗口内 scope 已切/视图非空则放弃
+      if (this.historyStorageScopeKey !== normalizedScope) return false
+      if ((this.chatHistory || []).length > 0) return false
+      for (const fallbackKey of this.computeFallbackScopeKeys(normalizedScope, this.activeDocNameProbe())) {
+        const remote = await fetchSessionStore(fallbackKey)
+        if (!remote || !remote.historyJson || remote.historyJson === '[]') continue
+        const remoteParsed = safeParsePluginJson(remote.historyJson)
+        if (!Array.isArray(remoteParsed) || remoteParsed.length === 0) continue
+        this.transplantAdoptedHistory(fallbackKey, {
+          historyJson: remote.historyJson,
+          currentChatId: String(remote.currentChatId || '')
+        })
+        return true
+      }
+      return false
+    },
+    // 迁移执行：源 scope 的历史并入当前 scope（PluginStorage + sidecar 双写），
+    // 源键墓碑化（置空 + 删当前指针 + 持久层写空）——防旧键复活已被用户
+    // 删除的会话。savedAt 取当下（写序保护：新不拒）。
+    transplantAdoptedHistory(sourceScopeKey, { historyJson, currentChatId } = {}) {
+      const destScopeKey = String(this.historyStorageScopeKey || '')
+      const payloadJson = String(historyJson || '')
+      if (!destScopeKey || destScopeKey === 'no_active_document') return false
+      if (!payloadJson || payloadJson === '[]') return false
+      if (sourceScopeKey === destScopeKey) return false
+      const storage = window.Application?.PluginStorage
+      const destKeys = this.getHistoryStorageKeys(destScopeKey)
+      const sourceKeys = this.getHistoryStorageKeys(sourceScopeKey)
+      const now = Date.now()
+      try {
+        storage?.setItem(destKeys.history, payloadJson)
+        if (currentChatId) {
+          storage?.setItem(destKeys.current, currentChatId)
+        }
+        storage?.setItem(sourceKeys.history, '[]')
+        storage?.removeItem(sourceKeys.current)
+      } catch (_) { /* 本地迁移失败即放弃，不动持久层 */ }
+      putSessionStore(sourceScopeKey, { historyJson: '[]', currentChatId: '', savedAt: now })
+      putSessionStore(destScopeKey, { historyJson: payloadJson, currentChatId: currentChatId || '', savedAt: now })
+      return true
+    },
+    // 懒嵌文档身份：会话真正落库（草稿转正）这一刻才把身份写进文档
+    // （Writer=Variables / WPP=Tags / ET=Names，幂等：已有即不写）。
+    // 此前身份在面板挂载时就写——文档被动变脏（关闭弹保存框）、且用户不
+    // 保存身份就丢（重开生成新身份 → scope 漂移 → 历史失联，真机缺陷根因）。
+    // 现在聊天过的文档才有身份；用户此后任意一次保存都让身份随文件落盘，
+    // 从此另存/改名/拷贝历史跟随。嵌入后解析结果翻转为 doc_* 键：sync 的
+    // 同文档翻转路径会在 busy 解除后无缝迁移（绝不在回合进行中切键）。
+    embedDocumentChatIdentity() {
+      const scopeKey = String(this.historyStorageScopeKey || '')
+      if (!scopeKey || scopeKey === 'no_active_document') return
+      if (this.historyStorageSource === 'document-variable') return
+      const doc = getActiveHostDocument(window.Application)
+      if (!doc) return
+      // 载体不可写（只读文档等）返回 null：path_ 作用域本身跨重开稳定，可接受
+      try { ensureDocumentIdentity(doc) } catch (_) { /* 身份非阻塞 */ }
     },
     ensureHistorySavePersister() {
       if (this.historySavePersister) return this.historySavePersister
@@ -18369,6 +18448,8 @@ export default {
     },
     ensureWritableChat(userContent) {
       const inputText = String(userContent || '').trim()
+      // 懒嵌文档身份：会话真正落库这一刻才写（幂等）。非阻塞，失败保持原 scope。
+      try { this.embedDocumentChatIdentity() } catch (_) { /* 身份非阻塞 */ }
       const existingChat = this.currentChat
       if (!existingChat) {
         this.newChat()
@@ -19149,8 +19230,21 @@ export default {
       await this.waitForUiCommit()
 
       try {
+        // 模板管线豁免（2026-10-15 终局修复）：Exclusive Lane 会吞掉一切意图路由，
+        // 但「模板生成」是能力确认卡流程，必须走主意图链路——命中模板路由条件时
+        // （模板/生成话术 或 携带office模板附件的生成请求）跳过 Exclusive Lane。
+        const templatePipelineClaimed = (() => {
+          const t = String(text || '')
+          if (routeWpsCapabilityByRule(t)) return true
+          const hasOfficeTpl = (Array.isArray(this.attachments) ? this.attachments : [])
+            .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
+          const mediaOnly = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(t)
+          return hasOfficeTpl && !mediaOnly
+            && /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(t)
+            && /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(t)
+        })()
         // Exclusive Lane: 文档智能体开启且 MCP 可用时，整轮只走 MCP，禁止再进意图/助手文档链路
-        if (this.mcpEnabled) {
+        if (this.mcpEnabled && !templatePipelineClaimed) {
           const health = await this.refreshMcpHealthBundle()
           if (health?.anyOk) {
             const mcpTurn = await this.runMcpExclusiveTurn({
