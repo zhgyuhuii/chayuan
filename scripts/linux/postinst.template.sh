@@ -189,11 +189,16 @@ if test -x "/opt/apps/cn.wps.wps-office-pro/files/bin/quickstartoffice"; then
 fi
 
 # Phase 2+: install MCP sidecar user autostart (best-effort; needs node)
+# 升级防呆（对齐 Windows 安装器 1472ded）：旧 sidecar 可能仍在运行，持有旧逻辑；
+# 先停旧进程再强拷贝，装完由 autostart 拉起新版，避免"装了新包跑旧 sidecar"。
 MCP_SRC="$INSTALL_ROOT/$ADDON_FOLDER/mcp-sidecar"
 if test -d "$MCP_SRC" && test -n "$TARGET_USER" && test "$TARGET_USER" != "root"; then
 	MCP_HOME="$USER_HOME/.config/chayuan-wps/mcp"
+	pkill -f "chayuan-wps/mcp/runtime/bin/chayuan-mcp" 2>/dev/null || true
+	sleep 1
 	mkdir -p "$MCP_HOME/runtime"
 	cp -a "$MCP_SRC/." "$MCP_HOME/runtime/" 2>/dev/null || true
+	cp -f "$MCP_SRC/bin/"chayuan-mcp-linux-* "$MCP_HOME/runtime/bin/" 2>/dev/null || true
 	# 确保 sidecar 单文件二进制可执行（cp 可能丢位）
 	if test -d "$MCP_HOME/runtime/bin"; then
 		chmod 0755 "$MCP_HOME/runtime/bin/"* 2>/dev/null || true
