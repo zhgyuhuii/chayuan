@@ -12214,6 +12214,23 @@ export default {
       const label = String(capability?.label || '本次操作').trim()
       return `系统已根据当前语义和文档上下文尽量预填 ${label} 所需参数。确认后会直接调用对应文档接口。`
     },
+    /** 模板类能力的指令推断（预填与直执行共用）：从原话+附件推断全部参数 */
+    inferTemplateParamsFromText(text = '') {
+      const raw = String(text || '').trim()
+      const officeAttached = (Array.isArray(this.attachments) ? this.attachments : [])
+        .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
+      const quoted = raw.match(/[「『"']([^」』"']{2,30})[」』"']/)
+      const fileNamed = raw.match(/([\w\u4e00-\u9fa5]{1,30}\.(?:docx|xlsx|xlsm|pptx|ppt|doc|xls|et|dps|aidocx))/i)
+      const normalizeRef = (v) => (/^附件\d*$/.test(String(v || '').trim()) ? '附件' : v)
+      let templateRef = normalizeRef((fileNamed && fileNamed[1]) || (quoted && quoted[1]) || '')
+      if (!templateRef && (officeAttached || /附件/.test(raw))) templateRef = '附件'
+      const pages = raw.match(/(\d{1,2})\s*(?:页|张|p)/i)
+      return {
+        templateRef,
+        requirement: raw,
+        pageTarget: pages ? Number(pages[1]) : 0
+      }
+    },
     createPendingWpsCapabilityForm(capability, text = '', options = {}) {
       const currentSavePath = getCurrentDocumentSavePath() || ''
       // 指令预填（2026-10-15 用户反馈：已告知模板/内容还让重填）：
@@ -12406,9 +12423,21 @@ export default {
         || /^(上传|附件)\d*$/.test(ref)
         || /模板(文档|文件)?$/.test(ref)
       if (!refIsVague) return {}
+      // 附件池三源：composer 现挂 + 本消息快照 + 向前最近的用户消息快照
+      // （参数卡挂在助手消息上，附件快照在其前一条用户消息里；composer 发送后已清空）
+      const priorUserAttachments = []
+      if (Array.isArray(this.currentMessages) && message) {
+        const idx = this.currentMessages.findIndex(m => m?.id === message.id)
+        for (let i = idx - 1; i >= 0 && priorUserAttachments.length === 0; i--) {
+          const prev = this.currentMessages[i]
+          const atts = prev?.role === 'user' ? prev?.messageMeta?.attachments : null
+          if (Array.isArray(atts) && atts.length) priorUserAttachments.push(...atts)
+        }
+      }
       const pools = [
         Array.isArray(this.attachments) ? this.attachments : [],
-        ((message && message.messageMeta && message.messageMeta.attachments) || [])
+        ((message && message.messageMeta && message.messageMeta.attachments) || []),
+        priorUserAttachments
       ]
       const templateItem = pools.flat().find(item =>
         item && item.rawFile instanceof File
@@ -19385,6 +19414,29 @@ export default {
         if (routeKind === 'wps-capability') {
           const wpsCapabilityRoute = await resolveWpsCapabilityRoute(text, model)
           if (wpsCapabilityRoute?.capabilityKey) {
+            // 模板生成：不弹参数表单，指令推断直接执行（用户指令：不要弹表单直接处理；
+            // 计划/契约确认卡仍在管线后段承担确认职责）
+            if (wpsCapabilityRoute.capabilityKey === 'generate-from-template') {
+              const inferred = this.inferTemplateParamsFromText(text)
+              if (inferred.templateRef) {
+                assistantMsg.content = '已识别模板生成请求，直接开始处理…'
+                assistantMsg.isLoading = false
+                this.stopAssistantLoadingProgress(assistantMsg)
+                this.saveHistory()
+                await this.runWpsCapabilityTaskFromMessage(assistantMsg, 'generate-from-template', {
+                  params: {
+                    templateRef: inferred.templateRef,
+                    requirement: inferred.requirement,
+                    pageTarget: inferred.pageTarget,
+                    toneFollow: '跟随模板文风',
+                    planOnly: '先出计划确认',
+                    savePath: ''
+                  },
+                  requirementText: text
+                })
+                return
+              }
+            }
             assistantMsg.content = '已识别到可直接执行的 察元AI操作，请确认参数后继续。'
             const capability = getCapabilityBusItem(wpsCapabilityRoute.capabilityKey) || getWpsCapabilityByKey(wpsCapabilityRoute.capabilityKey)
             assistantMsg.pendingWpsCapabilityForm = this.createPendingWpsCapabilityForm(capability, text, {
