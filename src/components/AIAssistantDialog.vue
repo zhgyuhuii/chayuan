@@ -1463,7 +1463,7 @@
                           @input="msg.pendingTemplateContract.outlineText = $event.target.value"
                         ></textarea>
                       </label>
-                      <div class="pending-tpl-note">内容将直接生成到打开的模板副本文档中（保存由你在文档里自行操作）</div>
+                      <div class="pending-tpl-note">{{ msg.pendingTemplateContract.kind === 'slide' ? '将在后台直接生成文件（不打开 WPS 窗口，完成后给出文件路径）' : '内容将直接生成到打开的模板副本文档中（保存由你在文档里自行操作）' }}</div>
                     </div>
                     <div
                       v-for="group in msg.pendingTemplateContract.groupedAspects"
@@ -2782,7 +2782,7 @@ node mcp-sidecar/server.mjs</pre>
 <script>
 // jszip(~96KB)首屏用不到,仅在导出 zip 时才需要 → 改为按需动态 import,见 createGeneratedZipFile
 import { chatCompletion, streamChatCompletion } from '../utils/chatApi.js'
-import { ensureDocumentChatLinkId as ensureDocumentIdentity } from '../utils/documentIdentity.js'
+import { ensureDocumentChatLinkId as ensureDocumentIdentity, readDocumentChatLinkId } from '../utils/documentIdentity.js'
 import {
   getActiveHostDocument,
   resolveDocumentScope,
@@ -5161,6 +5161,8 @@ export default {
         }
       } catch (_) { /* 忽略单次异常 */ }
       try { this.syncHistoryScopeWithActiveDocument() } catch (_) { /* 忽略单次异常 */ }
+      // 身份落盘确认（doc.Saved）：释放 hold，doc_ 键随后接管并采纳并入历史
+      try { this.consumeDurableIdentityHolds() } catch (_) { /* 忽略单次异常 */ }
       // 自愈回填：sidecar/token 晚于面板就绪时，空历史靠这个节拍恢复
       try { this.maybeRetryHistoryBackfill() } catch (_) { /* 忽略单次异常 */ }
       // ribbon 常驻助手按钮的预填通道：PluginStorage 单实例消息（已开面板也能收到）
@@ -8996,7 +8998,7 @@ export default {
       // 竞态守卫（与回填 P1-3 同语义）：await 窗口内 scope 已切/视图非空则放弃
       if (this.historyStorageScopeKey !== normalizedScope) return false
       if ((this.chatHistory || []).length > 0) return false
-      for (const fallbackKey of this.computeFallbackScopeKeys(normalizedScope, this.activeDocNameProbe())) {
+      for (const fallbackKey of this.computeFallbackScopeKeysForActiveDoc()) {
         const remote = await fetchSessionStore(fallbackKey)
         if (!remote || !remote.historyJson || remote.historyJson === '[]') continue
         const remoteParsed = safeParsePluginJson(remote.historyJson)
@@ -9040,10 +9042,10 @@ export default {
     // 保存身份就丢（重开生成新身份 → scope 漂移 → 历史失联，真机缺陷根因）。
     // 现在聊天过的文档才有身份；用户此后任意一次保存都让身份随文件落盘，
     // 从此另存/改名/拷贝历史跟随。
-    // 关键配套（_docScopeHolds）：刚嵌入的身份只活在内存，绝不让 doc_ 键在本
-    // 进程内立即接管——否则历史搬进 doc_ 后用户不保存关闭，重开即孤儿
-    // （真机缺陷："关闭文档再打开历史不还原"）。活键保持 path_ 直到 WPS
-    // 重启；重启后身份若在磁盘上（保存过）才由 doc_ 接管并采纳并入历史。
+    // 关键配套（_docScopeHolds）：刚嵌入的身份只活在内存，绝不让 doc_ 键立即
+    // 接管——否则历史搬进 doc_ 后用户不保存关闭，重开即孤儿（真机缺陷：
+    // "关闭文档再打开历史不还原"）。hold 按 linkId 记（另存后身份随文件走、
+    // docId/路径会变，linkId 是唯一不变量），doc.Saved 确认落盘后消费。
     embedDocumentChatIdentity() {
       const scopeKey = String(this.historyStorageScopeKey || '')
       if (!scopeKey || scopeKey === 'no_active_document') return
@@ -9054,11 +9056,42 @@ export default {
       let linkId = null
       try { linkId = ensureDocumentIdentity(doc) } catch (_) { /* 身份非阻塞 */ }
       if (!linkId) return
-      // hold 按解析侧同款 docId 语义记（fullName||name||docvar:<id>）。
-      // 未保存文档保存后 FullName 出现 → hold 键失配 → doc_ 立即接管（此时
-      // 身份已确认落盘，接管安全）；其余情况 hold 到 WPS 重启为止
-      const docId = String(doc?.FullName || '').trim() || String(doc?.Name || '').trim() || `docvar:${linkId}`
-      if (docId) this._docScopeHolds[docId] = true
+      if (!this._docScopeHolds[linkId]) this._docScopeHolds[linkId] = true
+      // 来源 scopeKey 只记一次（首嵌时刻的活键）：doc_ 接管后采纳迁移按它
+      // 找回旧路径键（覆盖另存/移动场景）
+      if (!this._docScopeOrigins[linkId]) this._docScopeOrigins[linkId] = scopeKey
+    },
+    // hold 消费：活动文档持有被 hold 的身份且 doc.Saved===true → 身份已确认
+    // 落盘，释放 hold。下一次 resolve 即启用 doc_ 键（采纳迁移随后并入历史）。
+    // 覆盖两类场景：嵌身份后用户保存（写身份必然置脏，Saved 翻 true=保存过）；
+    // 保存过的文档重开（新挂载的 doc 对象在无编辑时 Saved===true，身份来自磁盘）
+    consumeDurableIdentityHolds() {
+      const holds = this._docScopeHolds
+      if (!holds || !Object.keys(holds).length) return
+      const doc = getActiveHostDocument(window.Application)
+      if (!doc) return
+      let linkId = null
+      try { linkId = readDocumentChatLinkId(doc) } catch (_) { return }
+      if (!linkId || !holds[linkId]) return
+      let saved = false
+      try { saved = doc.Saved === true } catch (_) { saved = false }
+      if (saved) delete holds[linkId]
+    },
+    // 采纳探针键：当前活动文档的低优先级旧键（doc_←path_←name_，只向下探）
+    // + 本进程懒嵌时刻的来源键（另存/移动后 doc_ 接管时找回旧 path_ 历史）。
+    // 纯决策在 chat/docScope.js，可单测。
+    computeFallbackScopeKeysForActiveDoc() {
+      const probes = computeFallbackScopeKeys(this.historyStorageScopeKey, this.activeDocNameProbe())
+      const doc = getActiveHostDocument(window.Application)
+      let originKey = ''
+      if (doc) {
+        try { originKey = this._docScopeOrigins?.[readDocumentChatLinkId(doc)] || '' } catch (_) { /* 身份读取失败忽略 */ }
+      }
+      const current = String(this.historyStorageScopeKey || '')
+      for (const probe of [String(originKey || '').trim()]) {
+        if (probe && probe !== current && !probes.includes(probe)) probes.push(probe)
+      }
+      return probes
     },
     ensureHistorySavePersister() {
       if (this.historySavePersister) return this.historySavePersister
