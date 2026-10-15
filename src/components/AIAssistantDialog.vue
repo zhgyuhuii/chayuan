@@ -2879,7 +2879,7 @@ import { saveAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.j
 import { resolveWpsCapabilityRoute } from '../utils/wpsCapabilityRouter.js'
 import { getWpsCapabilityByKey } from '../utils/wpsCapabilityCatalog.js'
 import { startWpsCapabilityTask, stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
-import { materializeAttachmentToTemp } from '../utils/documentTemplates.js'
+import { materializeAttachmentToTemp, findTemplateByRef } from '../utils/documentTemplates.js'
 import { getCurrentDocumentSavePath } from '../utils/documentFileActions.js'
 import { canCreateDocumentBackup, createDocumentBackupRecord, restoreDocumentBackupRecordById } from '../utils/documentBackupStore.js'
 import { REPORT_TYPE_OPTIONS, getReportTypeLabel, createDefaultReportSettings, normalizeReportSettings } from '../utils/reportSettings.js'
@@ -3038,7 +3038,8 @@ const DOCUMENT_RELOCATION_TRIGGER_PATTERN = /(移动到|移动至|移到|移至|
 const DOCUMENT_REVISION_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|改写|润色|优化|检查|查查|校对|审校|筛查).{0,40}(错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题|文字|表述|描述|文章|文档|内容|书写|文笔)|(?:错别字|病句|语法|标点|歧义|不清|不明确|不准确|不正确|有误|错误|问题).{0,24}(修正|修改|改正|纠正|校正|修订|改写|润色|优化|检查|校对|审校)|更正式|更通顺|统一术语|统一称谓|统一简称|(?:书写|文笔|措辞|用词).{0,32}(检查|校对|审校|筛查)|(?:检查|校对|审校|筛查).{0,32}(书写|文笔|措辞|用词)/
 const DOCUMENT_OPERATION_ROUTER_TRIGGER_PATTERN = /(修正|修改|改正|纠正|校正|修订|润色|优化|删除|替换|移动|复制|批注|批示|评论|导出|提取|翻译|总结|分析|格式|加粗|标红|统一术语|歧义|错误|问题|文章|文档|全文|段落|表格|图片|批注|扩展|扩充|展开|丰富|续写|扩写|补充|延伸|细化|章节|详细|脱密|脱敏|涉密|去标识|敏感词|占位符|密码复原|复原原文)/
 const MAX_ATTACHMENT_COUNT = 5
-const MAX_ATTACHMENT_FILE_SIZE = 5 * 1024 * 1024
+// 附件大小不设限（用户决策）：选中仅标记引用，办公文档延迟到发送时按用途提取（采样压缩）
+const OFFICE_ATTACHMENT_PATTERN = /\.(aidocx|docx|doc|dotx|xlsx|xlsm|xls|et|ett|pptx|ppsx|ppt|dps|potx)$/i
 const MAX_ATTACHMENT_TEXT_LENGTH = 12000
 const DIRECT_DOCUMENT_CHAR_LIMIT = 12000
 const STYLE_COLOR_VALUE_PATTERN = '(?:#[0-9a-fA-F]{6}|黑色|白色|红色|蓝色|绿色|黄色|橙色|紫色|灰色|黑|白|红|蓝|绿|黄|橙|紫|灰)'
@@ -12116,16 +12117,67 @@ export default {
       return params
     },
     /**
-     * 模板类能力的附件直连：模板名留空或为指代词（这个/附件…）时，
+     * 模板类能力的附件直连：模板名在库中无匹配（含「上传的模板文档」等模糊指代、留空）时，
      * 取消息/composer 中第一个模板格式附件落盘为临时模板文件。
      * 只落盘不登记——入库由用户「存为模板」显式决定（用后询问）。
      */
+    /**
+     * 延迟提取：「选中即引用」的办公附件在发送时按用途解析一次并缓存。
+     * docx/aidocx → mammoth 纯文本；xlsx/xls/et → SheetJS CSV 化；超预算走头尾采样压缩。
+     */
+    async ensureAttachmentContent(item) {
+      if (!item?.pendingLazy || !(item.rawFile instanceof File)) return item
+      if (item.isText && String(item.content || '').trim()) return item
+      try {
+        const ext = (String(item.name || '').split('.').pop() || '').toLowerCase()
+        const buffer = await item.rawFile.arrayBuffer()
+        let rawText = ''
+        if (ext === 'docx' || ext === 'aidocx') {
+          const mod = await import('mammoth')
+          const extract = mod.extractRawText || mod.default?.extractRawText
+          const r = await extract({ arrayBuffer: buffer })
+          rawText = String(r?.value || '')
+          item.parsedKind = 'docx'
+        } else if (['xlsx', 'xlsm', 'xls', 'et'].includes(ext)) {
+          const XLSX = await import('xlsx')
+          const wb = XLSX.read(buffer, { type: 'array' })
+          rawText = wb.SheetNames.map(n => `# ${n}\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n')
+          item.parsedKind = 'xlsx'
+        } else {
+          // pptx/dps 等暂无文本解析器：仅元信息（模板用途使用原始字节，不受影响）
+          item.pendingLazy = false
+          return item
+        }
+        rawText = rawText.trim()
+        item.isText = true
+        item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
+        if (item.truncated) {
+          const head = Math.floor(MAX_ATTACHMENT_TEXT_LENGTH * 2 / 3)
+          item.content = rawText.slice(0, head)
+            + `\n…[中段已压缩省略约 ${rawText.length - MAX_ATTACHMENT_TEXT_LENGTH} 字]…\n`
+            + rawText.slice(-(MAX_ATTACHMENT_TEXT_LENGTH - head))
+        } else {
+          item.content = rawText
+        }
+      } catch (e) {
+        console.warn('延迟提取附件内容失败:', e)
+        item.content = `已接收文件：${item.name}（内容解析失败）`
+      } finally {
+        item.pendingLazy = false
+      }
+      return item
+    },
+
     async resolveTemplateAttachmentParams(message, params = {}) {
       const ref = String(params.templateRef || '').trim()
-      const refIsPlaceholder = !ref
+      // 库里能命中就不动（显式库名引用优先于附件）
+      if (ref && findTemplateByRef(ref)) return {}
+      const refIsVague = !ref
         || ref === '空白'
-        || /^(这个|该|此|附件|上传|刚才)(里的|中的|上传的)?模板?$/.test(ref)
-      if (!refIsPlaceholder) return {}
+        || /^(这个|该|此|附件|上传|刚才|根据)(里的|中的|上传的|的)?(模板)?(文档)?$/.test(ref)
+        || /^(上传|附件)/.test(ref)
+        || /模板(文档|文件)?$/.test(ref)
+      if (!refIsVague) return {}
       const pools = [
         Array.isArray(this.attachments) ? this.attachments : [],
         ((message && message.messageMeta && message.messageMeta.attachments) || [])
@@ -12907,10 +12959,6 @@ export default {
       const acceptedFiles = files.slice(0, remainingCount)
       const nextAttachments = []
       for (const file of acceptedFiles) {
-        if (file.size > MAX_ATTACHMENT_FILE_SIZE) {
-          inAppAlert(`文件“${file.name}”超过 ${formatAttachmentSize(MAX_ATTACHMENT_FILE_SIZE)}，暂不支持添加`)
-          continue
-        }
         const item = {
           id: createAttachmentId(),
           name: file.name || '未命名文件',
@@ -12926,12 +12974,25 @@ export default {
           // 历史持久化走 JSON 序列化，File 会自然退化为 {}，不产生影响
           rawFile: file
         }
-        if (isTextLikeAttachment(file)) {
+        if (OFFICE_ATTACHMENT_PATTERN.test(String(file.name || ''))) {
+          // 办公文档：选中仅登记引用（rawFile），解析延迟到发送时按用途进行——
+          // 模板用途直接用字节落盘，参考/样例用途在发送时提取+压缩采样
+          item.pendingLazy = true
+        } else if (isTextLikeAttachment(file)) {
           try {
             const rawText = await readBrowserFileAsText(file)
             item.isText = true
             item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
-            item.content = rawText.slice(0, MAX_ATTACHMENT_TEXT_LENGTH)
+            // 超 token 预算走压缩采样（头 2/3 + 尾 1/3），保留更多结构信息而非纯头部截断
+            if (item.truncated) {
+              const head = Math.floor(MAX_ATTACHMENT_TEXT_LENGTH * 2 / 3)
+              const tail = MAX_ATTACHMENT_TEXT_LENGTH - head
+              item.content = rawText.slice(0, head)
+                + `\n…[中段已压缩省略约 ${rawText.length - MAX_ATTACHMENT_TEXT_LENGTH} 字]…\n`
+                + rawText.slice(-tail)
+            } else {
+              item.content = rawText
+            }
           } catch (error) {
             console.debug('读取附件文本失败:', error)
           }
@@ -12943,7 +13004,14 @@ export default {
               item.isText = true
               item.parsedKind = String(extracted?.kind || '').trim()
               item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
-              item.content = rawText.slice(0, MAX_ATTACHMENT_TEXT_LENGTH)
+              if (item.truncated) {
+                const head = Math.floor(MAX_ATTACHMENT_TEXT_LENGTH * 2 / 3)
+                item.content = rawText.slice(0, head)
+                  + `\n…[中段已压缩省略约 ${rawText.length - MAX_ATTACHMENT_TEXT_LENGTH} 字]…\n`
+                  + rawText.slice(-(MAX_ATTACHMENT_TEXT_LENGTH - head))
+              } else {
+                item.content = rawText
+              }
             }
           } catch (error) {
             console.debug('提取结构化附件文本失败:', error)
@@ -12963,7 +13031,14 @@ export default {
             if (rawText) {
               item.isText = true
               item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
-              item.content = rawText.slice(0, MAX_ATTACHMENT_TEXT_LENGTH)
+              if (item.truncated) {
+                const head = Math.floor(MAX_ATTACHMENT_TEXT_LENGTH * 2 / 3)
+                item.content = rawText.slice(0, head)
+                  + `\n…[中段已压缩省略约 ${rawText.length - MAX_ATTACHMENT_TEXT_LENGTH} 字]…\n`
+                  + rawText.slice(-(MAX_ATTACHMENT_TEXT_LENGTH - head))
+              } else {
+                item.content = rawText
+              }
             } else {
               item.isText = true
               item.truncated = false
@@ -18742,6 +18817,12 @@ export default {
     },
     async sendMessage() {
       if (this.dockSwitching) return
+      // 「选中即引用」：发送时按用途延迟解析办公附件（解析一次并缓存到 content）
+      if (Array.isArray(this.attachments) && this.attachments.some(a => a?.pendingLazy)) {
+        try {
+          for (const a of this.attachments) await this.ensureAttachmentContent(a)
+        } catch (_) { /* 解析失败不阻塞发送 */ }
+      }
       // 发送前 scope 硬校准（治"多文档共用一份对话"）：轮询 sync 可能被 busy
       // 或焦点缺失延迟，用户此刻面对的是**当前活动文档**——发送必须绑定它。
       // 若发送时发现 scope 与活动文档不一致：先落盘滞留会话，再切换加载活动

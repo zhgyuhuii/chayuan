@@ -625,10 +625,85 @@ export function ensureBlankTemplateFile(kind) {
   }
 }
 
+/** 模板扩展名（含点），目录枚举时过滤候选 */
+const TEMPLATE_FILE_RE = /\.(aidocx|docx|doc|dotx|xlsx|xlsm|xls|et|ett|pptx|ppsx|ppt|dps|potx)$/i
+
 /**
- * 统一解析模板来源：模板库 id / 库名引用 / 任意路径 / 空白
+ * 目录引用解析：ref 指向真实目录时枚举其中模板文件。
+ * 支持口语化引用：「桌面」「模板」「桌面/模板」「模板文件夹」（自动探测 ~/Desktop/<ref> 等位置，
+ * 并尝试「模板文件夹」→「模板」别名）。仅命中一个模板文件时直接返回；多个则返回候选列表。
+ */
+function resolveTemplateDir(dirRef) {
+  try {
+    const fs = window.Application?.FileSystem
+    if (!fs?.readdirSync) return { ok: false, error: 'DIR unsupported' }
+    let home = ''
+    try {
+      home = String(window.Application?.Env?.GetHomePath?.() || '')
+        .replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
+    } catch (_) { home = '' }
+    const raw = String(dirRef || '').trim().replace(/^file:\/\//i, '').replace(/\\/g, '/')
+    const candidates = []
+    if (raw.startsWith('/') || /^[A-Za-z]:\//.test(raw)) candidates.push(raw)
+    else if (home) candidates.push(`${home}/Desktop/${raw}`, `${home}/Documents/${raw}`, `${home}/${raw}`)
+    // 口语别名：模板文件夹 → 模板
+    const expanded = []
+    for (const c of candidates) {
+      expanded.push(c)
+      if (/模板文件夹$/.test(c)) expanded.push(c.replace(/模板文件夹$/, '模板'))
+    }
+    for (const dir of expanded) {
+      let names = []
+      try { names = fs.readdirSync(isWin ? dir.replace(/\//g, '\\') : dir) || [] } catch (_) { continue }
+      const hits = names.filter(n => TEMPLATE_FILE_RE.test(n))
+      if (!hits.length) continue
+      if (hits.length === 1) {
+        const p = `${dir}/${hits[0]}`
+        return { ok: true, path: p, name: hits[0].replace(/\.[^.]+$/, ''), kind: normalizeTemplateKind(null, p) }
+      }
+      return { ok: false, error: `目录「${dir}」下有多个模板：${hits.join('、')}。请指定具体文件名或直接上传附件`, candidates: hits }
+    }
+    return { ok: false, error: 'DIR not found' }
+  } catch (e) {
+    return { ok: false, error: e?.message || 'DIR error' }
+  }
+}
+
+/**
+ * 裸文件名查找：在桌面/模板/文档/下载等常见目录中探测同名模板文件
+ * （用户说「用 软件设计模式.pptx 生成」这类场景——文件在桌面或模板文件夹里但没给全路径）
+ */
+function findTemplateFileByBareName(filename) {
+  try {
+    const fs = window.Application?.FileSystem
+    if (!fs?.readdirSync) return null
+    let home = ''
+    try {
+      home = String(window.Application?.Env?.GetHomePath?.() || '')
+        .replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
+    } catch (_) { home = '' }
+    const dirs = home
+      ? [`${home}/Desktop`, `${home}/Desktop/模板`, `${home}/Desktop/模板文件夹`, `${home}/Documents`, `${home}/Downloads`]
+      : []
+    for (const dir of dirs) {
+      let names = []
+      try { names = fs.readdirSync(isWin ? dir.replace(/\//g, '\\') : dir) || [] } catch (_) { continue }
+      const hit = names.find(n => n.toLowerCase() === String(filename).toLowerCase())
+      if (hit) {
+        const p = `${dir}/${hit}`
+        return { ok: true, path: p, name: hit.replace(/\.[^.]+$/, ''), kind: normalizeTemplateKind(null, p) }
+      }
+    }
+    return null
+  } catch (_) {
+    return null
+  }
+}
+
+/**
+ * 统一解析模板来源：模板库 id / 库名引用 / 目录或文件路径 / 空白
  * @param {{templateId?:string, templateRef?:string, templatePath?:string, blank?:boolean|string, kind?:string}} source
- * @returns {{ok:boolean, path?:string, name?:string, kind?:string, error?:string}}
+ * @returns {{ok:boolean, path?:string, name?:string, kind?:string, error?:string, candidates?:string[]}}
  */
 export function resolveTemplateSource(source = {}) {
   if (source.blank) {
@@ -643,9 +718,30 @@ export function resolveTemplateSource(source = {}) {
     return { ok: true, path: t.path, name: t.name, kind: t.kind }
   }
   if (source.templateRef) {
-    const t = findTemplateByRef(source.templateRef, { kind: source.kind || null })
-    if (!t) return { ok: false, error: `模板库中未找到「${source.templateRef}」` }
-    return { ok: true, path: t.path, name: t.name, kind: t.kind }
+    const ref = String(source.templateRef).trim()
+    // 1) 库名/模糊匹配
+    const t = findTemplateByRef(ref, { kind: source.kind || null })
+    if (t) return { ok: true, path: t.path, name: t.name, kind: t.kind }
+    // 2) 裸文件名：在桌面/模板等常见目录探测同名文件
+    if (TEMPLATE_FILE_RE.test(ref) && !/[\\/]/.test(ref)) {
+      const bare = findTemplateFileByBareName(ref)
+      if (bare) return bare
+    }
+    // 3) 目录引用（「桌面/模板」「模板文件夹」这类口语指代）
+    if (!TEMPLATE_FILE_RE.test(ref)) {
+      const dir = resolveTemplateDir(ref)
+      if (dir.ok) return dir
+      if (dir.candidates?.length) return dir // 目录存在但多候选：错误信息带候选
+    }
+    // 4) 完整文件路径
+    if (/[\\/]/.test(ref) || /^[A-Za-z]:/.test(ref)) {
+      const normalized = ref.replace(/^file:\/\//i, '')
+      if (kindFromFileExtension(normalized)) {
+        return { ok: true, path: normalized, name: (normalized.split(/[/\\]/).pop() || '模板').replace(/\.[^.]+$/, ''), kind: normalizeTemplateKind(source.kind, normalized) }
+      }
+      return { ok: false, error: '无法识别的模板格式（支持 docx/xlsx/pptx 系）：' + ref }
+    }
+    return { ok: false, error: `模板库中未找到「${ref}」。可直接上传模板附件、给出完整路径或文件夹，或先用「存为模板」入库` }
   }
   if (source.templatePath) {
     const normalized = String(source.templatePath).trim().replace(/^file:\/\//i, '')
