@@ -50,6 +50,11 @@ function slideNum(name) {
  * 在单页 XML 上执行文本替换；find 需逐字命中单个 <a:t> 节点。
  * @returns {{applied:number, missed:string[]}}
  */
+const NORM_RE = /[\s\u3000，。、；：""''（）()【】\[\],.:;?!'"!！？—-]/g
+function normText(t) {
+  return String(t || '').toLowerCase().replace(NORM_RE, '')
+}
+
 function replaceTextsInSlideDoc(doc, replaces) {
   const applied = []
   const missed = []
@@ -62,9 +67,22 @@ function replaceTextsInSlideDoc(doc, replaces) {
     if (hit) {
       hit.textContent = String(hit.textContent).replace(find, replaceTo)
       applied.push(find)
-    } else {
-      missed.push(find)
+      continue
     }
+    // 模糊匹配（弱模型 find 常为缩写/去标点版本）：归一化包含 → 整节点替换
+    const nFind = normText(find)
+    if (nFind.length >= 4) {
+      const fuzzy = nodes.find(n => {
+        const nn = normText(n.textContent)
+        return nn && (nn.includes(nFind) || (nFind.includes(nn) && nn.length >= 4))
+      })
+      if (fuzzy) {
+        fuzzy.textContent = replaceTo
+        applied.push(find + '(fuzzy)')
+        continue
+      }
+    }
+    missed.push(find)
   }
   return { applied: applied.length, missed }
 }

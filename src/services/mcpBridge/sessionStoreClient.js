@@ -140,7 +140,11 @@ export async function fetchSessionStore(scopeKey) {
     if (!data || data.exists !== true) return null
     const historyJson = String(data.historyJson || '[]')
     if (!historyJson || historyJson === '[]') return null
-    return { historyJson, currentChatId: String(data.currentChatId || '') }
+    return {
+      historyJson,
+      currentChatId: String(data.currentChatId || ''),
+      savedAt: Number(data.savedAt || 0)
+    }
   } catch (_) {
     return null
   }

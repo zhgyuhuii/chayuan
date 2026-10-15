@@ -2790,6 +2790,7 @@ import {
   isSameDocumentScopeChange
 } from '../utils/chat/docScope.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
+import { putHistoryFile, fetchHistoryFile, describeHistoryFileStore } from '../utils/chat/historyFileStore.js'
 import {
   setWriteBaseline,
   getWriteBaseline,
@@ -8889,28 +8890,52 @@ export default {
       } else {
         storage?.removeItem(payload.storageKeys.current)
       }
-      // I1 写穿：PluginStorage 落盘后同步 sidecar 持久层（fire-and-forget，
-      // sidecar 不可用静默降级）。scopeKey 一律取 payload 自带值（构建时刻的
-      // 键）——取"写时刻"的当前 scope 会在节流器跨 scope 重放陈旧 payload 时
-      // 把 A 文档历史写进 B 文档的键（审查 P1-2）
+      // I1 写穿：PluginStorage 落盘后同步双持久层（fire-and-forget，各自失败
+      // 静默降级）。scopeKey 一律取 payload 自带值（构建时刻的键）——取"写时刻"
+      // 的当前 scope 会在节流器跨 scope 重放陈旧 payload 时把 A 文档历史写进
+      // B 文档的键（审查 P1-2）。
+      // 双层冗余（真机缺陷"退出 WPS 历史消失"终局修复）：sidecar 走 127.0.0.1
+      // 环回 fetch——jsaddons 安全层拉黑环回（真机实证）/sidecar 未起/token 缺失
+      // 任一命中它就失效；文件层经 Application.FileSystem 直写用户数据目录
+      // （与模板库落盘同款 API，不经网络，三个故障面全部绕开）。
       if (!payload.scopeKey) return
+      const savedAt = Date.now()
       putSessionStore(payload.scopeKey, {
         historyJson: payload.historyJson || '[]',
         currentChatId: payload.currentChatId || ''
       })
+      putHistoryFile(payload.scopeKey, {
+        historyJson: payload.historyJson || '[]',
+        currentChatId: payload.currentChatId || '',
+        savedAt
+      })
+    },
+    // 双持久层合并回读：sidecar 与文件层并行取回，savedAt 新者胜（双层都在
+    // 写穿，正常应一致；仅一侧幸存时用幸存者）。无 token/环回被拉黑不再致命。
+    async fetchDurableSessionStore(scopeKey) {
+      const results = await Promise.all([
+        fetchSessionStore(scopeKey).catch(() => null),
+        fetchHistoryFile(scopeKey).catch(() => null)
+      ])
+      const pick = (item) => (item && item.historyJson && item.historyJson !== '[]' ? item : null)
+      const [sidecar, file] = results.map(pick)
+      if (sidecar && file) {
+        return Number(file.savedAt || 0) > Number(sidecar.savedAt || 0) ? file : sidecar
+      }
+      return sidecar || file
     },
     async backfillHistoryFromSessionStore() {
       try {
         const scopeKey = this.historyStorageScopeKey || ''
         if (!scopeKey || scopeKey === 'no_active_document') return
-        let remote = await fetchSessionStore(scopeKey)
-        // 采纳迁移（持久层）：本键在 sidecar 也无历史时，探同文档低优先级旧键
-        // （跨重启/升级搁浅场景——历史只活在 sidecar 的 path_/name_ 旧键里，
+        let remote = await this.fetchDurableSessionStore(scopeKey)
+        // 采纳迁移（持久层）：本键在持久层也无历史时，探同文档低优先级旧键
+        // （跨重启/升级搁浅场景——历史只活在持久层的 path_/name_ 旧键里，
         // PluginStorage 重启即空、同步层探不到）。命中即把旧键并入当前键。
         if (!remote) {
           const adopted = await this.adoptFallbackScopeHistoryFromSessionStore(scopeKey)
           if (adopted) {
-            remote = await fetchSessionStore(scopeKey)
+            remote = await this.fetchDurableSessionStore(scopeKey)
           }
         }
         if (!remote) return
@@ -8958,11 +8983,6 @@ export default {
         .catch(() => { /* 回填失败静默，下一拍重试 */ })
         .finally(() => { this._backfillInFlight = false })
     },
-    // 采纳探针键：按当前活动文档的 FullName/Name 展开身份优先级低位的旧键
-    // （doc_←path_←name_，只向下探）。纯决策在 chat/docScope.js，可单测。
-    computeFallbackScopeKeysForActiveDoc() {
-      return computeFallbackScopeKeys(this.historyStorageScopeKey, this.activeDocNameProbe())
-    },
     activeDocNameProbe() {
       const doc = getActiveHostDocument(window.Application)
       return {
@@ -8999,7 +9019,7 @@ export default {
       if (this.historyStorageScopeKey !== normalizedScope) return false
       if ((this.chatHistory || []).length > 0) return false
       for (const fallbackKey of this.computeFallbackScopeKeysForActiveDoc()) {
-        const remote = await fetchSessionStore(fallbackKey)
+        const remote = await this.fetchDurableSessionStore(fallbackKey)
         if (!remote || !remote.historyJson || remote.historyJson === '[]') continue
         const remoteParsed = safeParsePluginJson(remote.historyJson)
         if (!Array.isArray(remoteParsed) || remoteParsed.length === 0) continue
@@ -9011,8 +9031,8 @@ export default {
       }
       return false
     },
-    // 迁移执行：源 scope 的历史并入当前 scope（PluginStorage + sidecar 双写），
-    // 源键墓碑化（置空 + 删当前指针 + 持久层写空）——防旧键复活已被用户
+    // 迁移执行：源 scope 的历史并入当前 scope（PluginStorage + 双持久层写），
+    // 源键两侧墓碑化（置空 + 删当前指针 + 持久层写空）——防旧键复活已被用户
     // 删除的会话。savedAt 取当下（写序保护：新不拒）。
     transplantAdoptedHistory(sourceScopeKey, { historyJson, currentChatId } = {}) {
       const destScopeKey = String(this.historyStorageScopeKey || '')
@@ -9034,6 +9054,8 @@ export default {
       } catch (_) { /* 本地迁移失败即放弃，不动持久层 */ }
       putSessionStore(sourceScopeKey, { historyJson: '[]', currentChatId: '', savedAt: now })
       putSessionStore(destScopeKey, { historyJson: payloadJson, currentChatId: currentChatId || '', savedAt: now })
+      putHistoryFile(sourceScopeKey, { historyJson: '[]', currentChatId: '', savedAt: now })
+      putHistoryFile(destScopeKey, { historyJson: payloadJson, currentChatId: currentChatId || '', savedAt: now })
       return true
     },
     // 懒嵌文档身份：会话真正落库（草稿转正）这一刻才把身份写进文档

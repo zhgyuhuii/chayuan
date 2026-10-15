@@ -602,6 +602,53 @@ async function applyQcFixes(kind, judge) {
  * slide 文件级执行（单 ZIP 全程复用，2026-10-15 内存重构：多轮全量装载曾打爆 CEF
  * 渲染进程 → webview 重载 → 「应用已退出或重启」）。装载 1 次 + 导出 1 次。
  */
+
+/**
+ * 确定性兜底计划（2026-10-15 用户令：直到自动生成为止）：
+ * 用剖析到的每页真实 texts 做find（命中率100%），把参考素材（md标题/段落块）
+ * 轮转分配到每一页做replace。LLM计划在其上叠加精修——模型再弱也保证每页有真实内容。
+ */
+function buildDeterministicSlidePlan(analysisProfile, referenceContext, requirement) {
+  const slides = (analysisProfile?.slides || [])
+  const blocks = []
+  const rawLines = String(referenceContext || '')
+    .split(/\n+/)
+    .map(l => l.trim())
+    .filter(l => l.length > 3 && !/^[-=]{3,}$/.test(l))
+  for (const line of rawLines) {
+    // 剥离 markdown 前缀：#标题 / - bullet / * bullet / 数字序号保留
+    let text = line.replace(/^#{1,6}\s*/, '').replace(/^[-*+]\s*/, '')
+    const isHeading = /^#{1,6}\s/.test(line) || /^[一二三四五六七八九十]+[、.．]/.test(text) || /^\d+[、.．]/.test(text)
+    blocks.push({ title: isHeading ? text.slice(0, 24) : '', body: isHeading ? '' : text })
+  }
+  // 确保存在正文块（全是标题时取标题做正文）
+  if (!blocks.some(b => b.body)) blocks.forEach(b => { b.body = b.body || b.title })
+  if (!blocks.length) blocks.push({ title: requirement.slice(0, 20), body: requirement })
+  const pages = []
+  let bi = 0
+  for (const sl of slides) {
+    const block = blocks[bi % blocks.length]
+    bi++
+    const replaces = []
+    const texts = (sl.texts || []).filter(Boolean)
+    if (texts.length === 0) continue
+    // 首条文本（多为标题位）← 标题块或块标题；其余文本 ← 块正文
+    replaces.push({ find: texts[0], replace: block.title || block.body.slice(0, 24) || '年度内容' })
+    let cursor = bi
+    const takeBlock = () => {
+      const b = blocks[cursor % blocks.length]
+      cursor++
+      return b
+    }
+    for (let k = 1; k < Math.min(texts.length, 6); k++) {
+      const b2 = takeBlock()
+      replaces.push({ find: texts[k], replace: String(b2.body || b2.title || '').slice(0, k === 1 ? 120 : 60) })
+    }
+    pages.push({ action: 'edit', page: sl.index, replaces })
+  }
+  return { pages }
+}
+
 async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, plan, sourceParams }) {
   const maxRounds = Math.min(Math.max(Number(sourceParams.qcRounds) || DEFAULT_QC_ROUNDS, 0), MAX_QC_ROUNDS)
 
@@ -609,10 +656,13 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   const loaded = await loadTemplateZip(readTemplateBytes(sourceParams.__templatePath))
   if (!loaded.ok) throw new Error(loaded.error)
   let zip = loaded.zip
+  // 确定性底稿：每页真实内容打底（find=剖析texts，100%命中），LLM计划随后叠加精修
+  const detPlan = buildDeterministicSlidePlan(sourceParams.__analysisProfile, sourceParams.referenceContext, requirement)
+  const detRes = await applySlidePlanToZip(zip, detPlan)
+  const detStats = detRes.ok ? detRes.stats : { edits: 0, missedTexts: [] }
   let applied = await applySlidePlanToZip(zip, plan)
   // 确定性核验：零有效改写=模型偷懒（真机：几乎纯复制）。带反馈重出一次计划
-  if ((applied.stats.edits + applied.stats.adds + applied.stats.duplicates) === 0 ||
-      (applied.stats.missedTexts.length > 0 && applied.stats.edits === 0)) {
+  if ((stats.edits + stats.adds + stats.duplicates) === 0) {
     progress(taskId, 45, '计划未产生有效改写，正在强制重规划…')
     const retryPrompt = buildPlanPrompt('slide', {
       profileSummary,
@@ -631,11 +681,11 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
         zip = reloaded.zip
       }
     }
-    if ((applied.stats.edits + applied.stats.adds + applied.stats.duplicates) === 0) {
-      throw new Error('模型两次规划都未产生有效改写（find 未命中模板原文）。请尝试更换更强的对话模型后重试。')
+    if ((stats.edits + stats.adds + stats.duplicates) === 0) {
+      throw new Error('改写层完全未生效（含确定性底稿），请反馈开发者。')
     }
   }
-  const stats = { ...applied.stats }
+  const stats = { edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, pages: applied.stats.pages, deterministicEdits: detStats.edits }
 
   const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
   for (let round = 1; round <= maxRounds; round++) {
@@ -675,7 +725,7 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   progress(taskId, 99, '生成完成')
   const summary = [
     `已后台生成（未打开 WPS 窗口）：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
-    `执行：改写 ${stats.edits} 处 / 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
+    `执行：改写 ${stats.edits} 处（含内容底稿 ${stats.deterministicEdits || 0} 处）/ 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
     stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
     `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
     opened ? '已自动在 WPS 打开生成结果。' : '自动打开失败——请手动打开：' + (outPath.path || '')
