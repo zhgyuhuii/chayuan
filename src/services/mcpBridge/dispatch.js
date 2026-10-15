@@ -108,6 +108,7 @@ import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presenta
 import { runVarsProbe } from './varsProbe.js'
 import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 import { getHostActiveObjectId } from './hostDispatch.js'
+import { runTemplateGenerationTask } from '../utils/templateGenerationTask.js'
 
 // 聊天回合托管（AI助手对话跟随文档）：懒加载——只有 ribbon 基座真正接到 chat.*
 // job 时才拉取模块（连带 orchestrator/agent-core 的 chunk），其它 webview 零开销
@@ -661,6 +662,18 @@ async function dispatchMcpJobInner(method, params) {
       return handleDocumentInsert(params)
     case 'document.apply_ops':
       return handleDocumentApplyOps(params)
+    // 模板生成管线（2026-10-15）：宿主无关（文件级执行），任意在线 webview 可跑。
+    // 长任务（LLM 计划+QC 1-3 分钟），经 agentHub 长轮询异步派发。
+    case 'template.generate':
+      return runTemplateGenerationTask({
+        templatePath: String(params.templatePath || '').trim(),
+        requirement: String(params.requirement || '').trim(),
+        referenceContext: String(params.referenceContext || '').trim(),
+        pageTarget: Number(params.pageTarget) || 0,
+        toneFollow: params.toneFollow !== false,
+        qcRounds: Number(params.qcRounds) || undefined,
+        planOnly: false
+      })
     case 'document.new':
       return handleDocumentNew(params)
     case 'document.save':

@@ -39,6 +39,7 @@ function targetForMethod(method) {
   const m = String(method || '')
   if (m.startsWith('spreadsheet.')) return 'et'
   if (m.startsWith('presentation.')) return 'wpp'
+  if (m.startsWith('template.')) return 'any' // 模板生成管线：宿主无关（文件级执行）
   if (m === 'wps.status' || m.startsWith('assistants.') || m.startsWith('kb.')) return 'any'
   return 'wps'
 }

@@ -1576,7 +1576,31 @@ const IMAGE_TOOLS = [
   })
 ]
 
+const TEMPLATE_TOOLS = [
+  tool({
+    name: 'template_generate',
+    description: [
+      'WHAT: 按用户提供的模板文件（pptx/docx）+ 参考素材（md/txt），后台生成同框架新文档（不打开 WPS 窗口，纯文件级：剖析模板框架→LLM 计划→逐页/逐段填充→质检→落盘）。宿主无关——任何在线宿主的 webview 都能执行。',
+      'WHEN: 用户要求按模板生成 PPT/文档并提供模板路径与内容素材。',
+      'HOW: {"templatePath":"/abs/path/模板.pptx","requirement":"生成年度总结","referenceContext":"素材文本"}. 返回生成文件路径与执行/质检统计。',
+      'NOT: 不是格式转换；不修改原模板文件（输出为新文件）。'
+    ].join(' '),
+    inputSchema: {
+      type: 'object',
+      required: ['templatePath', 'requirement'],
+      properties: {
+        templatePath: { type: 'string', description: '模板文件绝对路径（pptx/docx）' },
+        requirement: { type: 'string', description: '生成需求（主题/要点/受众）' },
+        referenceContext: { type: 'string', description: '参考素材文本（总结/数据/计划等，作为内容事实来源）' },
+        pageTarget: { type: 'number', description: '目标页数（PPT 可选）' },
+        qcRounds: { type: 'number', description: '质检轮次 0-3（默认 2）' }
+      }
+    }
+  })
+]
+
 export const TOOLS = [
+  ...TEMPLATE_TOOLS,
   ...CORE_TOOLS.filter((t) => !REPLACED_FINE_GRAINED.has(t.name)),
   ...AGGREGATE_TOOLS,
   ...IMAGE_TOOLS
