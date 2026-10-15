@@ -2876,7 +2876,7 @@ import { isRecognizableMultimodalAttachment, recognizeMultimodalAttachment } fro
 import { getRandomWelcomePrompt } from '../utils/aiAssistantWelcomePrompts.js'
 import { buildRandomAssistantSelfIntro, isAssistantIdentityQuestion, resolveAssistantLocalFaq } from '../utils/aiAssistantSelfIntro.js'
 import { saveAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.js'
-import { resolveWpsCapabilityRoute } from '../utils/wpsCapabilityRouter.js'
+import { resolveWpsCapabilityRoute, routeWpsCapabilityByRule } from '../utils/wpsCapabilityRouter.js'
 import { getWpsCapabilityByKey } from '../utils/wpsCapabilityCatalog.js'
 import { startWpsCapabilityTask, stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
 import { materializeAttachmentToTemp, findTemplateByRef } from '../utils/documentTemplates.js'
@@ -14086,6 +14086,16 @@ export default {
           kind: 'chat',
           confidence: 'low',
           reason: '未提供有效请求内容，默认按普通对话处理。'
+        }
+      }
+      // 察元AI直接能力（保存/加密/模板生成…）优先于一切创作类判断：
+      // 「根据模板生成一篇文章」同时也是创作请求，但必须走能力确认卡（模板来源/交付路径）
+      const capabilityRoute = routeWpsCapabilityByRule(normalized)
+      if (capabilityRoute) {
+        return {
+          kind: 'wps-capability',
+          confidence: capabilityRoute.confidence || 'high',
+          reason: capabilityRoute.reason || '请求更像直接调用 察元AI能力。'
         }
       }
       if (isPromptOnlyCreationRequest(normalized)) {

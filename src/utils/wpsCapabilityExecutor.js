@@ -148,10 +148,19 @@ export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
   if (capabilityKey === 'generate-from-template') {
     const ref = String(params.templateRef || '').trim()
     const explicitPath = String(params.templatePath || '').trim()
+    // 「以当前文档为模板」兜底：未给来源且当前打开了已保存文档 → 用它的 FullName
+    let activeDocPath = ''
+    if (!explicitPath && !ref && !params.templateId) {
+      try {
+        const app = window.Application
+        const active = app?.ActiveDocument || app?.ActiveWorkbook || app?.ActivePresentation
+        activeDocPath = String(active?.FullName || '').trim()
+      } catch (_) { activeDocPath = '' }
+    }
     const pathLike = /[\\/]/.test(ref)
     return runTemplateGenerationTask({
-      templatePath: explicitPath || (pathLike ? ref : undefined),
-      templateRef: explicitPath ? undefined : (pathLike ? undefined : (ref || undefined)),
+      templatePath: explicitPath || activeDocPath || (pathLike ? ref : undefined),
+      templateRef: (explicitPath || activeDocPath) ? undefined : (pathLike ? undefined : (ref || undefined)),
       templateId: params.templateId,
       requirement: params.requirement,
       pageTarget: Number(params.pageTarget) || 0,
