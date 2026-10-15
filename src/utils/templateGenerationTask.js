@@ -654,6 +654,10 @@ export async function runTemplateGenerationTask(params = {}) {
 
   // ① 剖析（未开副本，失败即止）
   progress(taskId, 8, '正在剖析模板…')
+  // 附件指代但没有附件可用 → 给出可操作引导（区分于"库中未找到"的误导）
+  if (!params.templatePath && /^附件\d*$/.test(String(params.templateRef || '').trim())) {
+    throw new Error('指令指向模板附件，但当前没有已上传的附件——请先在对话框输入框点 📎 上传模板文件（面板重开后附件不保留，需重新上传），再发送本指令；或改用模板文件名/完整路径。')
+  }
   const resolved = resolveTemplateSource(params)
   if (!resolved.ok) throw new Error(resolved.error || '模板来源无效')
   const kind = normalizeTemplateKind(resolved.kind, resolved.path)

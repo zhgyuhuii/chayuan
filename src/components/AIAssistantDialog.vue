@@ -12228,7 +12228,12 @@ export default {
             // 优先级：原话中的文件名/「引号名」> 附件（有office附件时填"附件"）> 留空
             const quoted = raw.match(/[「『"']([^」』"']{2,30})[」』"']/)
             const fileNamed = raw.match(/([\w\u4e00-\u9fa5]{1,30}\.(?:docx|xlsx|xlsm|pptx|ppt|doc|xls|et|dps|aidocx))/i)
-            const inferred = (fileNamed && fileNamed[1]) || (quoted && quoted[1]) || (officeAttached ? '附件' : '')
+            // 「附件N」类指代一律归一为「附件」（走附件注入通道，而不是当成模板库名）
+            const normalizeRef = (v) => (/^附件\d*$/.test(String(v || '').trim()) ? '附件' : v)
+            let inferred = normalizeRef((fileNamed && fileNamed[1]) || (quoted && quoted[1]) || '')
+            if (!inferred) inferred = officeAttached ? '附件' : ''
+            // 没附件却指代附件：预填「附件」并让执行器给出明确引导（比留空更接近用户意图）
+            if (!inferred && /附件/.test(raw)) inferred = '附件'
             if (inferred) return { ...f, value: inferred }
           }
           if (f.key === 'requirement') {
@@ -12398,7 +12403,7 @@ export default {
       const refIsVague = !ref
         || ref === '空白'
         || /^(这个|该|此|附件|上传|刚才|根据)(里的|中的|上传的|的)?(模板)?(文档)?$/.test(ref)
-        || /^(上传|附件)/.test(ref)
+        || /^(上传|附件)\d*$/.test(ref)
         || /模板(文档|文件)?$/.test(ref)
       if (!refIsVague) return {}
       const pools = [
