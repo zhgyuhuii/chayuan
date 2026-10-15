@@ -1444,6 +1444,81 @@
                       {{ $cdt(msg.pendingWpsCapabilityForm.statusMessage) }}
                     </div>
                   </div>
+                  <div v-if="msg.pendingTemplateContract" class="message-confirm-card" :class="`is-${msg.pendingTemplateContract.status || 'pending'}`">
+                    <div class="message-confirm-summary">
+                      模板「{{ msg.pendingTemplateContract.templateName }}」剖析与改写计划已生成，请确认后执行
+                    </div>
+                    <details class="pending-tpl-profile">
+                      <summary class="message-confirm-prompt">模板画像（剖析结果）</summary>
+                      <pre class="pending-tpl-profile-text">{{ msg.pendingTemplateContract.profileSummary }}</pre>
+                    </details>
+                    <div class="assistant-inline-form">
+                      <label class="assistant-inline-field pending-tpl-outline-field">
+                        <span class="assistant-inline-field-label">大纲（可修改，确认后按新大纲生成）</span>
+                        <textarea
+                          class="assistant-inline-input pending-tpl-outline"
+                          rows="7"
+                          :value="msg.pendingTemplateContract.outlineText"
+                          :disabled="msg.pendingTemplateContract.status === 'applying'"
+                          @input="msg.pendingTemplateContract.outlineText = $event.target.value"
+                        ></textarea>
+                      </label>
+                      <label class="assistant-inline-field">
+                        <span class="assistant-inline-field-label">交付路径（留空则手动保存）</span>
+                        <input
+                          type="text"
+                          class="assistant-inline-input"
+                          :value="msg.pendingTemplateContract.savePath"
+                          placeholder="/Users/xxx/Desktop/新文档.docx"
+                          :disabled="msg.pendingTemplateContract.status === 'applying'"
+                          @input="msg.pendingTemplateContract.savePath = $event.target.value"
+                        />
+                      </label>
+                    </div>
+                    <div
+                      v-for="group in msg.pendingTemplateContract.groupedAspects"
+                      :key="`tpl-aspect-group-${group.label}`"
+                      class="pending-tpl-aspect-group"
+                    >
+                      <div class="pending-tpl-aspect-group-label">{{ $cdt(group.label) }}</div>
+                      <label
+                        v-for="item in group.items"
+                        :key="`tpl-aspect-${item.key}`"
+                        class="pending-tpl-aspect"
+                        :class="{ 'is-on': item.checked }"
+                        :title="item.hint"
+                      >
+                        <input
+                          type="checkbox"
+                          :checked="item.checked"
+                          :disabled="msg.pendingTemplateContract.status === 'applying'"
+                          @change="toggleTemplateContractAspect(msg, item.key)"
+                        />
+                        <span>{{ $cdt(item.label) }}</span>
+                      </label>
+                    </div>
+                    <div class="message-confirm-actions">
+                      <button
+                        type="button"
+                        class="message-confirm-btn primary"
+                        :disabled="msg.pendingTemplateContract.status === 'applying'"
+                        @click.stop="confirmPendingTemplateContract(msg)"
+                      >
+                        {{ msg.pendingTemplateContract.status === 'applying' ? '执行中...' : '确认执行' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="message-confirm-btn"
+                        :disabled="msg.pendingTemplateContract.status === 'applying'"
+                        @click.stop="cancelPendingTemplateContract(msg)"
+                      >
+                        取消
+                      </button>
+                    </div>
+                    <div v-if="msg.pendingTemplateContract.statusMessage" class="message-confirm-status">
+                      {{ $cdt(msg.pendingTemplateContract.statusMessage) }}
+                    </div>
+                  </div>
                   <div v-if="msg.pendingAssistantIntentChoice" class="message-confirm-card" :class="`is-${msg.pendingAssistantIntentChoice.status || 'pending'}`" @mouseenter="pausePendingAutoContinue(msg, 'pendingAssistantIntentChoice')" @mouseleave="resumePendingAssistantIntentChoiceAutoContinue(msg)" @focusin="handlePendingAutoContinueFocusIn(msg, 'pendingAssistantIntentChoice')" @focusout="handlePendingAutoContinueFocusOut(msg, 'pendingAssistantIntentChoice', $event)">
                     <div class="message-confirm-summary">
                       {{ $cdt(msg.pendingAssistantIntentChoice.summaryText) }}
@@ -2880,6 +2955,8 @@ import { resolveWpsCapabilityRoute, routeWpsCapabilityByRule } from '../utils/wp
 import { getWpsCapabilityByKey } from '../utils/wpsCapabilityCatalog.js'
 import { startWpsCapabilityTask, stopWpsCapabilityTask } from '../utils/wpsCapabilityExecutor.js'
 import { materializeAttachmentToTemp, findTemplateByRef } from '../utils/documentTemplates.js'
+import { discardTemplatePlan } from '../utils/templateGenerationTask.js'
+import { outlineChanged } from '../utils/templateContract.js'
 import { getCurrentDocumentSavePath } from '../utils/documentFileActions.js'
 import { canCreateDocumentBackup, createDocumentBackupRecord, restoreDocumentBackupRecordById } from '../utils/documentBackupStore.js'
 import { REPORT_TYPE_OPTIONS, getReportTypeLabel, createDefaultReportSettings, normalizeReportSettings } from '../utils/reportSettings.js'
@@ -12121,6 +12198,45 @@ export default {
      * 取消息/composer 中第一个模板格式附件落盘为临时模板文件。
      * 只落盘不登记——入库由用户「存为模板」显式决定（用后询问）。
      */
+    toggleTemplateContractAspect(message, key) {
+      const card = message?.pendingTemplateContract
+      if (!card || card.status === 'applying') return
+      for (const group of card.groupedAspects || []) {
+        const item = (group.items || []).find(i => i.key === key)
+        if (item) { item.checked = !item.checked; break }
+      }
+      this.saveHistory()
+    },
+    async confirmPendingTemplateContract(message) {
+      const card = message?.pendingTemplateContract
+      if (!card || card.status === 'applying') return
+      card.status = 'applying'
+      card.statusMessage = '正在按契约执行模板生成…'
+      this.saveHistory()
+      const params = { savePath: String(card.savePath || '').trim() }
+      if (card.outlineText && outlineChanged(card.originalOutline, card.outlineText)) {
+        params.editedOutline = String(card.outlineText).trim()
+      }
+      for (const group of card.groupedAspects || []) {
+        for (const item of group.items || []) params[item.key] = item.checked
+      }
+      try {
+        await this.runWpsCapabilityTaskFromMessage(message, 'execute-template-plan', {
+          params,
+          requirementText: '执行模板生成计划'
+        })
+        message.pendingTemplateContract = null
+      } catch (e) {
+        card.status = 'pending'
+        card.statusMessage = e?.message || '执行失败，请重试'
+      }
+      this.saveHistory()
+    },
+    cancelPendingTemplateContract(message) {
+      message.pendingTemplateContract = null
+      try { discardTemplatePlan() } catch (_) { /* 缓存清理 best-effort */ }
+      this.saveHistory()
+    },
     /**
      * 延迟提取：「选中即引用」的办公附件在发送时按用途解析一次并缓存。
      * docx/aidocx → mammoth 纯文本；xlsx/xls/et → SheetJS CSV 化；超预算走头尾采样压缩。
@@ -12230,7 +12346,15 @@ export default {
       }
       this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 察元AI操作“${taskTitle}”。`)
       this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
-      promise.catch((error) => {
+      promise.then((result) => {
+        // v1.4 单卡：planOnly 结果（剖析+计划+契约默认）挂为结构化确认卡
+        if (result?.planOnly && result?.cardModel) {
+          message.pendingTemplateContract = { ...result.cardModel, originalOutline: result.cardModel.outlineText, status: 'pending', statusMessage: '' }
+          message.isLoading = false
+          this.saveHistory()
+          this.$nextTick(() => this.scrollToBottom())
+        }
+      }).catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('WPS capability task failed:', error)
       })
@@ -25542,4 +25666,18 @@ export default {
 .btn-modal-confirm:hover {
   background: #0284c7;
 }
+
+.pending-tpl-profile { margin: 6px 0; }
+.pending-tpl-profile summary { cursor: pointer; font-size: 12px; color: #666; }
+.pending-tpl-profile-text {
+  margin: 6px 0 0; padding: 8px; max-height: 160px; overflow: auto;
+  font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+  background: rgba(0,0,0,0.03); border-radius: 6px;
+}
+.pending-tpl-outline-field { display: block; }
+.pending-tpl-outline { width: 100%; min-height: 120px; resize: vertical; font-size: 12px; line-height: 1.5; }
+.pending-tpl-aspect-group { margin: 8px 0 4px; }
+.pending-tpl-aspect-group-label { font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.pending-tpl-aspect { display: inline-flex; align-items: center; gap: 4px; margin: 0 12px 6px 0; font-size: 13px; cursor: pointer; }
+.pending-tpl-aspect input[type='checkbox'] { cursor: pointer; }
 </style>

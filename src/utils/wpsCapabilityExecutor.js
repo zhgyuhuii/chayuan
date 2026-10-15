@@ -173,10 +173,16 @@ export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
     })
   }
   if (capabilityKey === 'execute-template-plan') {
+    // 契约扁平键（asp_*）与大纲编辑透传（v1.4 #4：executor 只做通道，组装在管线内）
+    const passthrough = {}
+    for (const [k, v] of Object.entries(params)) {
+      if (k.startsWith('asp_') || k === 'editedOutline') passthrough[k] = v
+    }
     return runTemplatePlanExecution({
       savePath: params.savePath,
       __taskId: params.__taskId,
-      __isCancelled: params.__isCancelled
+      __isCancelled: params.__isCancelled,
+      ...passthrough
     })
   }
   if (capabilityKey === 'save-current-as-template') {

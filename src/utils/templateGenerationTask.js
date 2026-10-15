@@ -14,7 +14,8 @@ import { chatCompletion, getChatApiConfigByProvider } from './chatApi.js'
 import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSettings.js'
 import { normalizeTemplateKind, resolveTemplateSource } from './documentTemplates.js'
 import { createFromTemplate, deliverActiveDocument, assertSameHostKind } from './documentCreateFromTemplate.js'
-import { analyzeTemplateFile, summarizeProfile } from './templateStyleReader.js'
+import { analyzeTemplateFile, summarizeProfile, readTemplateBytes } from './templateStyleReader.js'
+import { smartDefaults, assembleContract, contractToPromptLines, outlineChanged, cardAspectsForKind, flatKeyFor } from './templateContract.js'
 import { checkDeckGeometry } from './pptGeometryChecker.js'
 import { getDocumentText } from './documentActions.js'
 import { handleSpreadsheetAction } from '../services/mcpBridge/spreadsheetDispatch.js'
@@ -44,6 +45,67 @@ export function peekLastTemplatePlan() {
 function cachePlan(entry) {
   lastPlanCache = { ...entry, createdAt: Date.now() }
 }
+
+/** 卡片「取消」：清掉待执行计划（确认按钮走 execute-template-plan） */
+export function discardTemplatePlan() {
+  lastPlanCache = null
+}
+
+// ── hash 偏好记忆（v1.4 P0b：按内容 hash 存勾选偏好，同模板下次预填）──
+
+const PREF_STORE_KEY = 'chayuan_tpl_aspect_prefs'
+const PREF_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+async function fileContentHash(path) {
+  try {
+    const bytes = readTemplateBytes(path)
+    const digest = await crypto?.subtle?.digest?.('SHA-256', bytes).catch(() => null)
+    if (digest) return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24)
+  } catch (_) { /* 回退 FNV */ }
+  // FNV-1a 32bit 回退（非 secure context 时 crypto.subtle 不可用）
+  try {
+    const bytes = new Uint8Array(readTemplateBytes(path))
+    let h = 0x811c9dc5
+    for (let i = 0; i < bytes.length; i++) { h ^= bytes[i]; h = Math.imul(h, 0x01000193) >>> 0 }
+    return 'fnv_' + h.toString(16)
+  } catch (_) {
+    return null
+  }
+}
+
+function loadAspectPrefs() {
+  try {
+    const raw = (typeof localStorage !== 'undefined' && localStorage.getItem(PREF_STORE_KEY)) ||
+      window.Application?.PluginStorage?.getItem(PREF_STORE_KEY)
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (_) {
+    return {}
+  }
+}
+
+function saveAspectPrefsKey(hashKey, fields) {
+  try {
+    const all = loadAspectPrefs()
+    all[hashKey] = { fields, savedAt: Date.now() }
+    const json = JSON.stringify(all)
+    if (typeof localStorage !== 'undefined') localStorage.setItem(PREF_STORE_KEY, json)
+    try { window.Application?.PluginStorage?.setItem(PREF_STORE_KEY, json) } catch (_) { /* 双通道 best-effort */ }
+  } catch (e) {
+    console.warn('saveAspectPrefs 失败:', e)
+  }
+}
+
+function prefsForHash(hashKey) {
+  if (!hashKey) return null
+  const entry = loadAspectPrefs()[hashKey]
+  if (!entry?.fields) return null
+  if (Date.now() - Number(entry.savedAt || 0) > PREF_TTL_MS) return null
+  return entry.fields
+}
+
+/** 计划影响勾选项（变更需重规划——影响大纲/组织方式，纯样式项不需） */
+const PLAN_AFFECTING_LEAVES = ['structure.skeleton', 'layout.pageRoles', 'copy.toneFollow', 'content.sampleAsReference']
 
 function createCancelledError() {
   const err = new Error('任务已停止')
@@ -139,7 +201,7 @@ async function llmJson(model, systemPrompt, userPrompt) {
 
 // ── 各类型计划 prompt 与执行器 ──
 
-function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFollow, docParagraphs }) {
+function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFollow, docParagraphs, contractLines = '', userOutline = '' }) {
   const toneRule = toneFollow === false
     ? '文风：按用户需求自由撰写，不必模仿模板原文案风格。'
     : '文风：跟随模板原文案的语体风格（正式/营销/学术等以原文为准）。'
@@ -147,8 +209,10 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
     '你是文档模板改写规划器。基于给定模板画像与用户需求，输出「就地改写」计划 JSON，不要输出解释。',
     '铁律：只在模板副本上就地改内容，样式由 WPS 原生保留，计划不得涉及字体颜色等格式指令。',
     toneRule,
+    contractLines || '',
+    userOutline ? `【用户改定大纲（以此为准重新映射）】\n${userOutline}` : '',
     '只输出合法 JSON。'
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 
   if (kind === 'slide') {
     return {
@@ -202,7 +266,7 @@ function collectDocParagraphs(doc) {
 }
 
 /** doc：按段落序号就地替换 / 锚点后追加（保留段落样式，Range.MoveEnd 排除段落标记） */
-function executeDocPlan(plan, doc) {
+function executeDocPlan(plan, doc, contract = null) {
   const results = { replaced: 0, appended: 0, failed: 0 }
   const writePara = (index, newText) => {
     try {
@@ -233,7 +297,8 @@ function executeDocPlan(plan, doc) {
       insertRange.InsertAfter(String(op?.text || '') + '\r')
       // 命名样式套用（best-effort）：模板带样式档案时新增段优先套样式而非裸文本
       const styleName = String(op?.style || '').trim()
-      if (styleName) {
+      const fontsOn = !contract || contract.aspects?.style?.fonts !== false
+      if (styleName && fontsOn) {
         try { insertRange.Style = styleName } catch (_) { /* 样式名不存在则保持默认 */ }
       }
       results.appended++
@@ -344,13 +409,14 @@ async function executeSlidePlan(plan) {
 
 // ── 质检 ──
 
-async function runQcPass(model, kind, { requirement, profileSummary }) {
+async function runQcPass(model, kind, { requirement, profileSummary, contractLines = '' }) {
   const currentText = String(getDocumentText() || '').slice(0, TEXT_SAMPLE_LIMIT)
   const judge = await llmJson(
     '你是文档质检员。对照用户需求审查生成结果，只输出合法 JSON。',
     [
       `【用户需求】${requirement}`,
       `【模板画像摘要】\n${profileSummary.slice(0, 800)}`,
+      contractLines || '',
       `【当前文档全文（截断）】\n${currentText}`,
       '',
       '输出：{"pass":布尔,"issues":[{"where":"位置描述","problem":"问题","fixFind":"需被替换的原文片段(文档中逐字存在,≥6字)","fixReplace":"修正后文本"}]}',
@@ -390,7 +456,7 @@ async function applyQcFixes(kind, judge) {
 
 // ── 执行阶段（③开副本 → ④填充 → ⑤质检 → ⑥交付），计划与续跑共用 ──
 
-async function executePlanStages({ taskId, isCancelled, kind, requirement, profileSummary, plan, sourceParams, templateName = '' }) {
+async function executePlanStages({ taskId, isCancelled, kind, requirement, profileSummary, plan, sourceParams, templateName = '', contract = null }) {
   const model = resolveChatModel()
   if (!model) throw new Error('未配置对话模型，请先在设置中配置模型')
 
@@ -410,7 +476,7 @@ async function executePlanStages({ taskId, isCancelled, kind, requirement, profi
     const app = window.Application
     const doc = app?.ActiveDocument
     if (!doc) throw new Error('新文档未就绪')
-    return executeDocPlan(plan, doc)
+    return executeDocPlan(plan, doc, contract)
   })
   if (isCancelled()) throw createCancelledError()
 
@@ -420,7 +486,8 @@ async function executePlanStages({ taskId, isCancelled, kind, requirement, profi
   for (let round = 1; round <= maxRounds; round++) {
     progress(taskId, 50 + Math.round(35 * round / (maxRounds + 1)), `第 ${round}/${maxRounds} 轮质检…`)
     if (isCancelled()) throw createCancelledError()
-    const { judge } = await runQcPass(model, kind, { requirement, profileSummary })
+    const contractLines = contract ? contractToPromptLines(contract) : ''
+    const { judge } = await runQcPass(model, kind, { requirement, profileSummary, contractLines })
     qcReport.rounds = round
     if (kind === 'slide') {
       try {
@@ -542,8 +609,19 @@ export async function runTemplateGenerationTask(params = {}) {
   if (!plan) throw new Error('改写计划生成失败（模型未返回有效 JSON），请重试或更换模型')
   if (isCancelled()) throw createCancelledError()
 
-  // 两段式：planOnly=true 时只出计划并存缓存，等用户「确认执行」
+  // 两段式（v1.4 单卡）：planOnly=true 出计划+契约卡片模型，确认卡直接渲染缓存
   if (params.planOnly === true || String(params.planOnly) === 'true') {
+    // 智能默认（v1.3 #3）+ hash 偏好预填（v1.4 P0b）
+    const defaults = smartDefaults(kind, analysis)
+    const hashKey = await fileContentHash(resolved.path)
+    const prefs = prefsForHash(hashKey)
+    if (prefs) Object.assign(defaults, prefs)
+    let triggerDocId = ''
+    try {
+      const app = window.Application
+      triggerDocId = String(app?.ActiveDocument?.FullName || app?.ActiveWorkbook?.FullName || app?.ActivePresentation?.FullName || '').trim()
+    } catch (_) { triggerDocId = '' }
+    const outlineText = formatPlanForConfirm(kind, plan, requirement)
     cachePlan({
       sourceParams: {
         templateId: params.templateId,
@@ -559,13 +637,41 @@ export async function runTemplateGenerationTask(params = {}) {
       plan,
       profileSummary,
       requirement,
-      templateName: resolved.name
+      templateName: resolved.name,
+      templatePath: resolved.path,
+      contractDefaults: defaults,
+      hashKey,
+      triggerDocId,
+      outlineText
     })
     progress(taskId, 60, '计划已生成，等待确认')
+    // 单卡模型（v1.4 #2：计划先行的确认卡，由 AIAssistantDialog 渲染）
+    const grouped = []
+    for (const def of cardAspectsForKind(kind)) {
+      let g = grouped.find(x => x.label === def.group)
+      if (!g) { g = { label: def.group, items: [] }; grouped.push(g) }
+      g.items.push({
+        key: flatKeyFor(kind, def.leaf),
+        label: def.label,
+        hint: def.hint || '',
+        checked: defaults[flatKeyFor(kind, def.leaf)] !== false
+      })
+    }
     return {
       ok: true,
       planOnly: true,
-      message: formatPlanForConfirm(kind, plan, requirement) + `\n（基于模板「${resolved.name}」）`
+      templateName: resolved.name,
+      kind,
+      cardModel: {
+        templateName: resolved.name,
+        kind,
+        outlineText,
+        groupedAspects: grouped,
+        toneFollow: defaults[flatKeyFor(kind, 'copy.toneFollow')] !== false,
+        savePath: String(params.savePath || ''),
+        profileSummary: profileSummary.slice(0, 1200)
+      },
+      message: `模板「${resolved.name}」剖析与改写计划已生成，请在下方确认要素后执行。`
     }
   }
 
@@ -573,29 +679,98 @@ export async function runTemplateGenerationTask(params = {}) {
 }
 
 /**
- * 两段式第二段：执行「确认执行」时取回缓存的计划并写入文档。
- * @param {{savePath?:string, __taskId?:string, __isCancelled?:Function}} params
+ * 两段式第二段（v1.4 单卡确认）：组装契约 → 过期失效检查 →（大纲/契约变更时）重规划
+ * → 执行 → 保存勾选偏好。确认卡与「确认执行」语义共用本入口。
+ * @param {{savePath?:string, editedOutline?:string, __taskId?:string, __isCancelled?:Function,
+ *          [asp_key:string]: boolean}} params - 含 asp_<kind>_<aspect> 扁平勾选键
  */
 export async function runTemplatePlanExecution(params = {}) {
   const cached = peekLastTemplatePlan()
   if (!cached) {
-    throw new Error('没有待执行的模板生成计划。请先用「从模板生成文档」生成计划（可勾选「先出计划确认」）。')
+    throw new Error('没有待执行的模板生成计划。请先用「从模板生成文档」生成计划。')
   }
   const taskId = params.__taskId || ''
   const isCancelled = () => { try { return !!(params.__isCancelled?.()) } catch (_) { return false } }
+
+  // 过期失效（v1.4 #5）：确认时活动文档 ≠ 触发时 → 计划作废，防开错副本上下文
+  if (cached.triggerDocId) {
+    let currentDocId = ''
+    try {
+      const app = window.Application
+      currentDocId = String(app?.ActiveDocument?.FullName || app?.ActiveWorkbook?.FullName || app?.ActivePresentation?.FullName || '').trim()
+    } catch (_) { currentDocId = '' }
+    if (currentDocId && currentDocId !== cached.triggerDocId) {
+      lastPlanCache = null
+      throw new Error('活动文档已切换，计划已失效。请基于当前文档重新发起模板生成。')
+    }
+  }
+
+  // 契约组装（v1.4 #4：扁平键 → 嵌套；缺省回退缓存里的智能默认）
+  const contract = assembleContract(params, cached.kind, cached.contractDefaults || {})
+
+  // 保存勾选偏好（hash 记忆，下次同模板预填）
+  if (cached.hashKey) {
+    const fields = {}
+    for (const def of cardAspectsForKind(cached.kind)) {
+      const key = flatKeyFor(cached.kind, def.leaf)
+      fields[key] = params[key] !== undefined ? params[key] === true || params[key] === 'true'
+        : (cached.contractDefaults?.[key] !== false)
+    }
+    saveAspectPrefsKey(cached.hashKey, fields)
+  }
+
+  // 重规划判定：用户改了大纲，或计划影响项勾选与默认不一致
+  const editedOutline = String(params.editedOutline || '').trim()
+  const outlineEdited = editedOutline && outlineChanged(cached.outlineText, editedOutline)
+  let contractChanged = false
+  for (const leaf of PLAN_AFFECTING_LEAVES) {
+    const key = flatKeyFor(cached.kind, leaf)
+    const now = params[key] !== undefined ? (params[key] === true || params[key] === 'true') : (cached.contractDefaults?.[key] !== false)
+    const before = cached.contractDefaults?.[key] !== false
+    if (now !== before) { contractChanged = true; break }
+  }
+
+  let plan = cached.plan
+  let profileSummary = cached.profileSummary
+  let toneFollow = contract.aspects?.copy?.toneFollow !== false
+  if (outlineEdited || contractChanged) {
+    progress(taskId, 25, outlineEdited ? '大纲已修改，正在按新大纲重新规划…' : '要素已调整，正在重新规划…')
+    const model = resolveChatModel()
+    if (!model) throw new Error('未配置对话模型，请先在设置中配置模型')
+    let docParagraphs = ''
+    if (cached.kind === 'doc') {
+      const app = window.Application
+      if (app?.ActiveDocument) docParagraphs = collectDocParagraphs(app.ActiveDocument)
+    }
+    const prompt = buildPlanPrompt(cached.kind, {
+      profileSummary,
+      requirement: cached.requirement,
+      pageTarget: Number(cached.sourceParams.pageTarget) || 0,
+      toneFollow,
+      docParagraphs,
+      contractLines: contractToPromptLines(contract),
+      userOutline: outlineEdited ? editedOutline : ''
+    })
+    plan = await llmJson(model, prompt.system, prompt.user)
+    if (!plan) throw new Error('按新大纲重新规划失败（模型未返回有效 JSON），请重试或更换模型')
+    if (isCancelled()) throw createCancelledError()
+  }
+
   const sourceParams = {
     ...cached.sourceParams,
-    savePath: String(params.savePath || '').trim() || cached.sourceParams.savePath
+    savePath: String(params.savePath || '').trim() || cached.sourceParams.savePath,
+    toneFollow
   }
   const result = await executePlanStages({
     taskId,
     isCancelled,
     kind: cached.kind,
     requirement: cached.requirement,
-    profileSummary: cached.profileSummary,
-    plan: cached.plan,
+    profileSummary,
+    plan,
     sourceParams,
-    templateName: cached.templateName
+    templateName: cached.templateName,
+    contract
   })
   // 执行成功后清除缓存，防重复执行
   lastPlanCache = null
