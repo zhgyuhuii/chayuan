@@ -43,7 +43,7 @@ if not defined SKIP_EXE if exist "%EXE%" (
 
 rem 2) node fallback (Node 16 x64 recommended on Win7; 14.18+ works, fetch polyfilled)
 if not exist "%NODE_EXE%" (
-  echo [%DATE% %TIME%] ERROR: binary incompatible and no Node.js found (neither bundled nodejs\node.exe nor node on PATH).>> "%LOG%"
+  echo [%DATE% %TIME%] ERROR: binary incompatible and no Node.js found - neither bundled nodejs\node.exe nor node on PATH.>> "%LOG%"
   endlocal
   echo [chayuan-mcp] ERROR: no Node.js runtime found. The installer should bundle nodejs\node.exe next to this script.
   exit /b 1
