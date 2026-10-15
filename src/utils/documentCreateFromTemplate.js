@@ -171,7 +171,43 @@ export function getActiveObjectByKind(kind) {
   }
 }
 
+/**
+ * 已打开守卫（2026-10-15 真机崩溃教训）：jsapi Open 一个已在 WPS 打开的同路径文档
+ * 会触发 ksojscore EXC_BAD_ACCESS 崩溃（SIGBUS，崩溃报告 122137.ips 实证）。
+ * 命中已打开 → 直接激活该文档并返回，绝不重复 Open。
+ */
+function findOpenDocumentByPath(path, kind) {
+  const app = window.Application
+  const resolved = normalizeTemplateKind(kind)
+  const target = String(path || '').replace(/\\/g, '/').toLowerCase()
+  try {
+    if (resolved === 'sheet') {
+      const n = Number(app.Workbooks.Count || 0)
+      for (let i = 1; i <= n; i++) {
+        const wb = app.Workbooks.Item(i)
+        if (String(wb.FullName || '').replace(/\\/g, '/').toLowerCase() === target) return wb
+      }
+    } else if (resolved === 'slide') {
+      const n = Number(app.Presentations.Count || 0)
+      for (let i = 1; i <= n; i++) {
+        const pr = app.Presentations.Item(i)
+        if (String(pr.FullName || '').replace(/\\/g, '/').toLowerCase() === target) return pr
+      }
+    } else {
+      const n = Number(app.Documents.Count || 0)
+      for (let i = 1; i <= n; i++) {
+        const dc = app.Documents.Item(i)
+        if (String(dc.FullName || '').replace(/\\/g, '/').toLowerCase() === target) return dc
+      }
+    }
+  } catch (_) { /* 枚举失败按未打开处理 */ }
+  return null
+}
+
 function openWithJsapi(path, kind) {
+  // 已打开守卫：命中即激活返回（调用方据非空对象跳过 Open）
+  const already = findOpenDocumentByPath(path, kind)
+  if (already) return already
   const app = window.Application
   const resolved = normalizeTemplateKind(kind)
   if (resolved === 'sheet') {
@@ -259,6 +295,12 @@ export async function createFromTemplate(source = {}) {
   // 打开前活动对象快照：异步打开（OpenFromUrl）失败时会轮询到「前一个」文档，
   // 若活动对象未变化则绝不能标记（否则会把用户现有文档误标为新建未保存）
   const beforeObj = getActiveObjectByKind(kind)
+  // 副本路径已被打开（重复运行场景）→ 直接激活复用，绝不二次 Open（ksojscore 崩溃防线）
+  const alreadyOpen = findOpenDocumentByPath(copy.path, kind)
+  if (alreadyOpen) {
+    try { ensureDocumentChatLinkId(alreadyOpen) } catch (_) { /* 非阻塞 */ }
+    return { ok: true, path: copy.path, name: resolved.name, kind, viaOs: false, reused: true, obj: alreadyOpen }
+  }
   let viaOs = false
   let obj = null
   try {
