@@ -12495,9 +12495,15 @@ export default {
         total: 3
       }
       this.appendDocumentRevisionDetail(message.activeWpsCapabilityRun, `已启动 察元AI操作“${taskTitle}”。`)
-      this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
-      promise.then((result) => {
+      // 模板生成：不弹任务进度窗口（用户指令）——消息内 activeWpsCapabilityRun 已实时展示；
+      // 计划就绪后的契约确认卡也在消息里，弹窗反而遮挡
+      if (capabilityKey !== 'generate-from-template' && capabilityKey !== 'execute-template-plan') {
+        this.openDialogRoute('/task-progress-dialog', { taskId }, taskTitle, 560, 600, true)
+      }
+      promise.then((raw) => {
         // v1.4 单卡：planOnly 结果（剖析+计划+契约默认）挂为结构化确认卡
+        // executeWpsCapabilityTask 返回 {taskId, result, message} 外壳——需解包
+        const result = raw?.result?.planOnly ? raw.result : raw
         if (result?.planOnly && result?.cardModel) {
           message.pendingTemplateContract = { ...result.cardModel, originalOutline: result.cardModel.outlineText, status: 'pending', statusMessage: '' }
           message.isLoading = false
