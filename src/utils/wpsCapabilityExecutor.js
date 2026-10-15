@@ -163,6 +163,7 @@ export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
       templateRef: (explicitPath || activeDocPath) ? undefined : (pathLike ? undefined : (ref || undefined)),
       templateId: params.templateId,
       requirement: params.requirement,
+      referenceContext: params.referenceContext || '',
       pageTarget: Number(params.pageTarget) || 0,
       toneFollow: params.toneFollow !== '自由发挥',
       planOnly: params.planOnly === '先出计划确认' || params.planOnly === true,

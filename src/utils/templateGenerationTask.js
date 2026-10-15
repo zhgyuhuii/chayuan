@@ -201,7 +201,7 @@ async function llmJson(model, systemPrompt, userPrompt) {
 
 // ── 各类型计划 prompt 与执行器 ──
 
-function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFollow, docParagraphs, contractLines = '', userOutline = '' }) {
+function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFollow, docParagraphs, contractLines = '', userOutline = '', referenceContext = '' }) {
   const toneRule = toneFollow === false
     ? '文风：按用户需求自由撰写，不必模仿模板原文案风格。'
     : '文风：跟随模板原文案的语体风格（正式/营销/学术等以原文为准）。'
@@ -209,6 +209,7 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
     '你是文档模板改写规划器。基于给定模板画像与用户需求，输出「就地改写」计划 JSON，不要输出解释。',
     '铁律：只在模板副本上就地改内容，样式由 WPS 原生保留，计划不得涉及字体颜色等格式指令。',
     toneRule,
+    referenceContext ? `【参考素材（用户附件内容，生成内容的事实来源）】\n${referenceContext}` : '',
     contractLines || '',
     userOutline ? `【用户改定大纲（以此为准重新映射）】\n${userOutline}` : '',
     '只输出合法 JSON。'
@@ -674,7 +675,8 @@ export async function runTemplateGenerationTask(params = {}) {
     requirement,
     pageTarget: Number(params.pageTarget) || 0,
     toneFollow: params.toneFollow !== false,
-    docParagraphs
+    docParagraphs,
+    referenceContext: String(params.referenceContext || '').trim()
   })
   const plan = await llmJson(model, prompt.system, prompt.user)
   if (!plan) throw new Error('改写计划生成失败（模型未返回有效 JSON），请重试或更换模型')
@@ -696,6 +698,7 @@ export async function runTemplateGenerationTask(params = {}) {
     cachePlan({
       sourceParams: {
         __analysisProfile: analysis?.profile || null,
+        referenceContext: String(params.referenceContext || '').trim(),
         templateId: params.templateId,
         templateRef: params.templateRef,
         templatePath: params.templatePath,
@@ -817,6 +820,7 @@ export async function runTemplatePlanExecution(params = {}) {
     const prompt = buildPlanPrompt(cached.kind, {
       profileSummary,
       requirement: cached.requirement,
+      referenceContext: String(cached.sourceParams.referenceContext || '').trim(),
       pageTarget: Number(cached.sourceParams.pageTarget) || 0,
       toneFollow,
       docParagraphs,

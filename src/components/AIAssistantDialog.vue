@@ -12308,7 +12308,16 @@ export default {
         console.warn('模板附件落盘失败:', materialized.error)
         return {}
       }
-      return { templatePath: materialized.path, templateRef: '' }
+      // 参考素材（v1.2 §七 最小实现）：除模板附件外的文本类附件内容一并带给生成管线
+      const refParts = []
+      for (const item of pools.flat()) {
+        if (!item || item === templateItem) continue
+        const content = String(item.content || '').trim()
+        if (item.isText && content) {
+          refParts.push(`【附件：${item.name}】\n${content.slice(0, 3000)}`)
+        }
+      }
+      return { templatePath: materialized.path, templateRef: '', referenceContext: refParts.length ? refParts.join('\n\n').slice(0, 6000) : '' }
     },
     async runWpsCapabilityTaskFromMessage(message, capabilityKey, options = {}) {
       const capability = getCapabilityBusItem(capabilityKey) || getWpsCapabilityByKey(capabilityKey)
@@ -14211,6 +14220,23 @@ export default {
           kind: 'chat',
           confidence: 'low',
           reason: '未提供有效请求内容，默认按普通对话处理。'
+        }
+      }
+      // 附件感知模板路由（2026-10-15 真机反馈）：附件里有 office 模板类文件时，
+      // 用户说「根据附件/上传的…生成PPT/文档/表格」即使没说「模板」二字，
+      // 也应走模板生成管线——否则落到 chat，模型只能反复追问附件细节。
+      {
+        const hasOfficeTemplateAttachment = (Array.isArray(this.attachments) ? this.attachments : [])
+          .some(item => item && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(item.name || '')))
+        const mediaOnlyRequest = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(normalized)
+        if (hasOfficeTemplateAttachment && !mediaOnlyRequest &&
+            /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(normalized) &&
+            /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(normalized)) {
+          return {
+            kind: 'wps-capability',
+            confidence: 'high',
+            reason: '用户携带 Office 模板类附件并要求生成文档/表格/演示，命中模板生成管线。'
+          }
         }
       }
       // 察元AI直接能力（保存/加密/模板生成…）优先于一切创作类判断：
