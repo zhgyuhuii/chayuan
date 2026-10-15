@@ -12351,6 +12351,7 @@ export default {
         if (result?.planOnly && result?.cardModel) {
           message.pendingTemplateContract = { ...result.cardModel, originalOutline: result.cardModel.outlineText, status: 'pending', statusMessage: '' }
           message.isLoading = false
+          message.content = result.message || '计划已生成，请在下方确认要素后执行。'
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
         }
