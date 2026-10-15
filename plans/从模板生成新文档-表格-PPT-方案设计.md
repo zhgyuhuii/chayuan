@@ -347,3 +347,57 @@ jsapi Open 失败 → sidecar 复制 → OS 级打开（同宿主，因同宿主
 | ET/WPP 宿主 Workbooks.Open/Presentations.Open | ⏳ 需交互验证（无 MCP workbook/presentation 级 open 工具，需在 ET/WPP 宿主 UI 中点「模板新建」） |
 | 聊天意图→确认卡→生成管线 | ⏳ 需配置对话模型后在 WPS 聊天框输入「用XX模板生成YY」交互验证 |
 | 遗留环境 | 测试后 WPS 保持运行（selftest 设计如此）；/tmp/chayuan_e2e_blank.docx 为测试产物可删 |
+
+### 真机测试 · 第二轮（2026-10-14 晚，新端点部署后）
+
+| 项 | 结果 |
+|----|------|
+| 二进制重建+部署 | ✅ bun 编译 macos-arm64 → 替换 `~/.config/chayuan-wps/mcp/runtime/bin/`（旧件备份 .bak-1014）→ launchd kickstart 重启，uptime 4s、2 agent 自动重连 |
+| `/open-local-file` 认证 | ✅ 无 token 401 / 正确 token 通过（`x-chayuan-token` 与 webview 存储键 `chayuan_mcp_token` 对齐验证） |
+| `/open-local-file` 三态 | ✅ FILE_NOT_FOUND / EXTENSION_NOT_ALLOWED(.txt 拦截) / ok:true（docx、xlsx、pptx 三种真实文件均 OS 级打开成功） |
+| OS 打开→活动文档绑定 | ✅ 打开后 `document_get_text` 返回该文档（viaOs 兜底的绑定前提成立） |
+| 写回守卫（既有机制） | ✅ 活动文档切换后 `document_insert/ensure_open/activate` 全部被 DOCUMENT_MODIFIED_SINCE_BASELINE 正确拦截——保护行为符合设计（注意：多标签churn下需干净窗口才能写回，非本次功能缺陷；模板管线不走该 MCP 基线机制） |
+| ET/WPP 宿主 agent | ⛔ 未注册（`spreadsheet`/`presentation` 均 agent offline）——Mac 统一窗口下组件级 webview 需插件对 et/wpp 宿主启用后重开窗口，**仍为人工验证项** |
+| 聊天意图→确认卡→管线 | ⏳ 需配置对话模型 + UI 交互（确认卡点击），人工验证 |
+
+### 真机测试 · 第三轮（2026-10-14 晚，ET/WPP 注册排障）
+
+**排障结论链**（每一环都已实证）：
+1. 本机存在两处 jsaddons：`~/Library/Application Support/Kingsoft/wps/jsaddons`（可读写，内含 chayuan-et/wpp_6.0.0 三宿主包）与 **TCC 沙盒容器** `~/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons`（真正生效的注册表，dev-debug.mjs:62 与 wpsjs 源码 debug_publish.js:408 均指向它；本会话 shell 无 Full Disk Access，读写均 EPERM）。
+2. **发现存量 bug**：Application Support 的 `jsplugins.xml` 开头有 8 个游离 `<jsplugins>` 标签（重复追加写导致）——已修复为合法结构。⚠️ 需排查安装器/调试脚本谁在追加写。
+3. `wpsjs debug` 与容器写入：本会话运行报 EPERM（Morning 时段的 agent 来自用户环境既有的 vite dev server + 容器内 dev 注册）。
+4. 已恢复：vite dev server 已在 3889 拉起（伺服含新代码的构建，/et/ /wpp/ ribbon 中间件 200）；WPS 已重启。
+5. 剩余阻塞：WPS 重启后仍 0 agent——容器注册表内容需用户在**自己的终端**（有 TCC 授权）执行 `npm run dev:debug` 重建三宿主调试注册后重启 WPS；完成后本会话可继续驱动 MCP E2E。
+
+**环境变更披露**：sidecar 二进制已替换（备份 `.bak-1014`）；测试期间多次重启 WPS（重启前经 lsof 确认仅本会话测试文件在开）；vite 3889 后台运行（日志 /tmp/vite-3889.log）；/tmp 下若干 chayuan_* 测试文件。
+
+### 功能测试矩阵（2026-10-14 晚 · 第四轮）
+
+| 测试项 | 代码路径 | 真机状态 |
+|--------|----------|----------|
+| doc 全文感知 | `getDocumentText`（宿主感知：Writer=Content.Text / WPP=collectPresentationText / ET=collectWorkbookText） | ✅ 真机（document_get_text 返回真实文档） |
+| 选区感知 | `getSelectedText`（Writer=Selection.Text / WPP=TextRange.Text / ET=Range.Value→readRangeValuesAsText） | 🔒 代码核验✓，真机需 agent（TCC 阻塞） |
+| 当前页/当前段 | documentContext 快照 currentPage / 段落级 ops（pipeline 的 paragraphIndex 粒度）+ document_list_paragraphs | 🔒 同上 |
+| sheet 写入（ET 宿主） | range_write 只写值不动格式 | 🔒 同上（agent offline 实证） |
+| slide 写入（WPP 宿主） | slide_add/text_replace/status | 🔒 同上 |
+| 生成管线 E2E | 剖析→计划→执行→质检→交付 | ⏳ 需对话模型+确认卡 UI |
+| Win7 兼容 | 构建产物 **es2018 零高版本残留**（本次扫描实证）；sidecar 纯 Node 内置+fetchPolyfill（Node 14.18+ 回退路径 start-mcp.cmd）；openFileWithOs Win 分支 cmd start 兼容 | ✅ 静态验证通过；真机 Win7 缺环境 |
+| UOS 兼容 | linux-x64/arm64 二进制**本机编译成功**；openFileWithOs Linux 分支 xdg-open；发版流水线含 .deb | ⚠️ 本机**无统信虚拟机**（仅 Ubuntu ARM×2 无凭据、无 Docker），待 UOS 环境 |
+
+**解锁条件（一条命令）**：用户终端执行 `npm run dev:debug` → 三宿主 agent 上线 → 🔒 项全部可自动化跑完。
+
+### 真机测试 · 第五轮（2026-10-14 晚 · 统信 UOS 虚拟机）
+
+环境：VMware Fusion「统信系统ARM」虚拟机（UnionTech OS Desktop aarch64，glibc 2.28）+ WPS Linux 12.1.2.28080 三件套（wps/et/wpp）+ 三宿主插件目录（10月12 安装，10月12-13 有真实使用审计记录）。
+
+| 项 | 结果 |
+|----|------|
+| 新 sidecar 二进制（linux-arm64，含全部新功能） | ✅ 真统信运行成功（glibc 2.28 兼容；单例锁正常） |
+| `/open-local-file` 四态 E2E | ✅ 无token 401 / FILE_NOT_FOUND / EXTENSION_NOT_ALLOWED / 真实 docx ok:true 全过 |
+| 新构建同步进虚拟机 jsaddons | ✅ et/wpp/wps 三包新代码+新 ribbon 就位（HOST_KIND_MISMATCH/TemplateNew 特征验证） |
+| 插件 webview 注册 | ⛔ ssh 拉起的 WPS（et/wps 均试）webview 不初始化、零 HTTP 接触——**10月12 交互式桌面使用时是好的**，差异指向会话上下文或首次加载信任交互 |
+| 排障中发现的存量环境 bug | ① 两台机器（Mac+UOS）的 `jsplugins.xml` 均存在游离 `<jsplugins>` 标签损坏（安装器/调试脚本重复追加写，双平台实锤）② UOS `jsaddinblockhost.ini` 有 2 条崩溃拉黑记录（已清空） |
+| 已做修复 | 注册表重建（双文件）、拉黑名单清空、authaddin 信任缓存恢复；Mac 侧旧构建回滚对照实验证明 0 agent 与新构建无关 |
+| 备份 | 虚拟机内 `/tmp/uos-jsaddons-final-backup.tar.gz`（新构建+修复注册表，已恢复为当前态）、`/tmp/authaddin.json.bak`、`/tmp/jsaddinblockhost.ini.bak`；宿主机 `/tmp/jsaddons-backup-1014.tar.gz`（Mac 旧构建） |
+
+**UOS 解锁路径（二选一）**：① 在 VMware 窗口里看统信桌面的 ET 窗口——若察元AI ribbon 可见直接点「模板新建」测；若有信任弹窗点信任。② 在虚拟机桌面终端里自行启动 `wps`/`et`（复现 10月12 的交互式启动方式）→ agent 注册后本会话可远程驱动全部 E2E。
