@@ -15,7 +15,7 @@ import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSetting
 import { normalizeTemplateKind, resolveTemplateSource } from './documentTemplates.js'
 import { createFromTemplate, deliverActiveDocument, assertSameHostKind } from './documentCreateFromTemplate.js'
 import { analyzeTemplateFile, summarizeProfile, readTemplateBytes } from './templateStyleReader.js'
-import { applySlidePlanToPptx, fixSlideTextsAtFileLevel } from './templateFileGenerator.js'
+import { loadTemplateZip, applySlidePlanToZip, collectSlideTextsFromZip, fixSlideTextsInZip, exportZipBytes } from './templateFileGenerator.js'
 import { getEffectiveDataDir, pathJoin, ensureDir } from './dataPathSettings.js'
 import { smartDefaults, assembleContract, contractToPromptLines, outlineChanged, cardAspectsForKind, flatKeyFor } from './templateContract.js'
 import { checkDeckGeometry } from './pptGeometryChecker.js'
@@ -543,34 +543,25 @@ async function applyQcFixes(kind, judge) {
 // ── 执行阶段（③开副本 → ④填充 → ⑤质检 → ⑥交付），计划与续跑共用 ──
 
 /**
- * slide 文件级执行：计划 → ZIP 级改写 → 落盘 → 语义质检（文件级读回）→ 修正 → 交付路径。
- * 不触碰任何 WPS 窗口（用户要求：后台读取和处理，不要在 WPS 中打开模板）。
+ * slide 文件级执行（单 ZIP 全程复用，2026-10-15 内存重构：多轮全量装载曾打爆 CEF
+ * 渲染进程 → webview 重载 → 「应用已退出或重启」）。装载 1 次 + 导出 1 次。
  */
 async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, plan, sourceParams }) {
-  const contractLines = '' // 文件级契约行在计划期已注入；QC 期以需求为准
   const maxRounds = Math.min(Math.max(Number(sourceParams.qcRounds) || DEFAULT_QC_ROUNDS, 0), MAX_QC_ROUNDS)
 
   progress(taskId, 35, '正在后台按计划改写模板（不打开 WPS）…')
-  let bytes
-  try {
-    bytes = readTemplateBytes(sourceParams.__templatePath)
-  } catch (e) {
-    throw new Error('读取模板文件失败：' + (e?.message || e))
-  }
-  const contractObj = sourceParams.__contract || null
-  const first = await applySlidePlanToPptx(bytes, plan)
-  if (!first.ok) throw new Error(first.error || '文件级生成失败')
-  let currentBytes = first.bytes
-  const stats = { ...first.stats }
+  const loaded = await loadTemplateZip(readTemplateBytes(sourceParams.__templatePath))
+  if (!loaded.ok) throw new Error(loaded.error)
+  const zip = loaded.zip
+  const applied = await applySlidePlanToZip(zip, plan)
+  if (!applied.ok) throw new Error('文件级生成失败')
+  const stats = { ...applied.stats }
 
-  // QC 循环（语义审：从生成文件读回全部文案）
   const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
   for (let round = 1; round <= maxRounds; round++) {
     progress(taskId, 55 + Math.round(25 * round / (maxRounds + 1)), `第 ${round}/${maxRounds} 轮质检（文件级）…`)
     if (isCancelled()) throw createCancelledError()
-    const ab = currentBytes
-    const reread = await analyzeTemplateFile({ arrayBuffer: ab, kind: 'slide' })
-    const slideTexts = (reread?.profile?.slides || []).map(sl => (sl.texts || []).join(' | ')).join('\n')
+    const slideTexts = await collectSlideTextsFromZip(zip) // 同一 zip 直取，零二次装载
     const { judge } = await runQcPass(model, 'slide', { requirement, profileSummary, textOverride: slideTexts })
     qcReport.rounds = round
     if (judge?.pass !== false) { qcReport.passed = true; break }
@@ -579,21 +570,21 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
     if (round === maxRounds) break
     const fixes = (judge?.issues || []).filter(i => i?.fixFind && i?.fixReplace)
     if (fixes.length) {
-      const fixed = await fixSlideTextsAtFileLevel(currentBytes, fixes)
-      if (fixed.ok) { currentBytes = fixed.bytes; qcReport.fixApplied += fixed.applied }
+      const fixed = await fixSlideTextsInZip(zip, fixes)
+      qcReport.fixApplied += fixed.applied
     }
-    if (qcReport.fixApplied === 0 && round > 1) break
+    if (qcReport.fixApplied === 0) break
   }
 
-  // 落盘交付
   progress(taskId, 92, '正在保存生成文件…')
-  const outPath = writeGeneratedPptx(currentBytes)
+  const outBytes = await exportZipBytes(zip)
+  const outPath = writeGeneratedPptx(outBytes)
   progress(taskId, 99, '生成完成')
   const summary = [
-    `已后台生成（未打开 WPS 窗口）：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '，内容未落盘）'}`,
+    `已后台生成（未打开 WPS 窗口）：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
     `执行：改写 ${stats.edits} 处 / 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
-    stats.missedTexts?.length ? `未命中的模板原文（${stats.missedTexts.length} 处，计划 find 与模板文本不一致，已跳过）` : '',
-    `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限，仍有未处理项'}`,
+    stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
+    `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
     '文件未自动打开——请在 WPS 中自行打开查看/另存。'
   ].filter(Boolean).join('\n')
   return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true }

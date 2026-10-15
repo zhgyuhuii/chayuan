@@ -216,3 +216,120 @@ export async function fixSlideTextsAtFileLevel(templateBytes, fixes) {
     return { ok: false, bytes: templateBytes, applied: 0 }
   }
 }
+
+// ── 单次装载 API（2026-10-15 内存优化：执行链复用同一 ZIP，避免多次全量装载打爆 CEF）──
+
+export async function loadTemplateZip(templateBytes) {
+  const JSZip = await loadZipLib()
+  try {
+    return { ok: true, zip: await JSZip.loadAsync(templateBytes) }
+  } catch (e) {
+    return { ok: false, error: '模板不是有效的 pptx：' + (e?.message || e) }
+  }
+}
+
+export async function applySlidePlanToZip(zip, plan) {
+  // 与 applySlidePlanToPptx 相同逻辑，但作用在已装载的 zip 上且不导出字节
+  const stats = { edits: 0, duplicates: 0, adds: 0, missedTexts: [], pages: 0 }
+  let ctText = await zip.file('[Content_Types].xml').async('string')
+  let presText = await zip.file('ppt/presentation.xml').async('string')
+  let nextSlide = 1
+  for (const name of Object.keys(zip.files)) {
+    const n = slideNum(name)
+    if (n >= nextSlide) nextSlide = n + 1
+  }
+  for (const page of Array.isArray(plan?.pages) ? plan.pages : []) {
+    const action = String(page?.action || 'edit').toLowerCase()
+    if (action === 'edit') {
+      const num = Number(page?.page) || 1
+      const file = zip.file(`ppt/slides/slide${num}.xml`)
+      if (!file) { stats.missedTexts.push(`第${num}页不存在`); continue }
+      const doc = xmlOf(await file.async('string'))
+      const r = replaceTextsInSlideDoc(doc, page?.replaces || [])
+      stats.edits += r.applied; stats.missedTexts.push(...r.missed)
+      zip.file(`ppt/slides/slide${num}.xml`, textOf(doc))
+    } else if (action === 'duplicate' || action === 'add') {
+      const srcNum = action === 'duplicate' ? (Number(page?.page) || 1) : pickContentSlideNum(zip)
+      const srcFile = zip.file(`ppt/slides/slide${srcNum}.xml`)
+      if (!srcFile) { stats.missedTexts.push(`克隆源页不存在：slide${srcNum}`); continue }
+      let xml = await srcFile.async('string')
+      const srcRelsFile = zip.file(`ppt/slides/_rels/slide${srcNum}.xml.rels`)
+      let relsText = srcRelsFile ? await srcRelsFile.async('string') : '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+      relsText = relsText.replace(/<Relationship [^>]*notesSlide[^>]*\/>/g, '')
+      zip.file(`ppt/slides/_rels/slide${nextSlide}.xml.rels`, relsText)
+      const replaces = action === 'add'
+        ? [
+            page?.title ? { find: pickNthText(xml, 0), replace: page.title } : null,
+            page?.body ? { find: pickNthText(xml, 1), replace: page.body } : null
+          ].filter(r => r && r.find)
+        : (page?.replaces || [])
+      if (replaces.length) {
+        const doc = xmlOf(xml)
+        const r = replaceTextsInSlideDoc(doc, replaces)
+        stats.edits += r.applied; stats.missedTexts.push(...r.missed)
+        xml = textOf(doc)
+      }
+      zip.file(`ppt/slides/slide${nextSlide}.xml`, xml)
+      ctText = ctText.replace('</Types>',
+        `<Override PartName="/ppt/slides/slide${nextSlide}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`)
+      const rid = `rIdSld${nextSlide}_${Date.now().toString(36)}`
+      presText = presText.replace('</p:sldIdLst>', `<p:sldId id="${256 + nextSlide}" r:id="${rid}"/></p:sldIdLst>`)
+      const presRelsPath = 'ppt/_rels/presentation.xml.rels'
+      let presRels = await zip.file(presRelsPath).async('string')
+      presRels = presRels.replace('</Relationships>',
+        `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${nextSlide}.xml"/></Relationships>`)
+      zip.file(presRelsPath, presRels)
+      if (action === 'add') stats.adds++; else stats.duplicates++
+      nextSlide++
+    }
+  }
+  zip.file('[Content_Types].xml', ctText)
+  zip.file('ppt/presentation.xml', presText)
+  stats.pages = nextSlide - 1
+  return { ok: true, stats }
+}
+
+/** 从 zip 直取全部页文案（QC 读回，零二次装载） */
+export async function collectSlideTextsFromZip(zip) {
+  const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNum(a) - slideNum(b))
+  const parts = []
+  for (const name of names) {
+    const doc = xmlOf(await zip.file(name).async('string'))
+    const texts = tags(doc, 'a:t').map(n => String(n.textContent || '').trim()).filter(Boolean)
+    parts.push(texts.join(' | '))
+  }
+  return parts.join('\n')
+}
+
+/** QC 修正直接作用于同一 zip */
+export async function fixSlideTextsInZip(zip, fixes) {
+  let applied = 0
+  for (const fix of Array.isArray(fixes) ? fixes : []) {
+    const find = String(fix?.fixFind || fix?.find || '')
+    const replaceTo = String(fix?.fixReplace ?? fix?.replace ?? '')
+    if (!find) continue
+    const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNum(a) - slideNum(b))
+    for (const name of names) {
+      const doc = xmlOf(await zip.file(name).async('string'))
+      const hit = tags(doc, 'a:t').find(n => (n.textContent || '').includes(find))
+      if (hit) {
+        hit.textContent = String(hit.textContent).replace(find, replaceTo)
+        zip.file(name, textOf(doc))
+        applied++
+        break
+      }
+    }
+  }
+  return { applied }
+}
+
+export async function exportZipBytes(zip) {
+  return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
+}
+
+/** 取第 n 个非空 <a:t> 文本（add 页 title/body 定位用，直接吃 xml 字符串避免二次 parse） */
+function pickNthText(xmlString, index) {
+  const doc = xmlOf(xmlString)
+  const filtered = tags(doc, 'a:t').filter(n => String(n.textContent || '').trim())
+  return filtered[index] ? String(filtered[index].textContent).trim() : ''
+}
