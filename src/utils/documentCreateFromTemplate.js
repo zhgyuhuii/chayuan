@@ -301,17 +301,32 @@ export async function createFromTemplate(source = {}) {
     try { ensureDocumentChatLinkId(alreadyOpen) } catch (_) { /* 非阻塞 */ }
     return { ok: true, path: copy.path, name: resolved.name, kind, viaOs: false, reused: true, obj: alreadyOpen }
   }
+  // jsapi 打开禁用清单（真机崩溃实证，与 Documents.Add 同族 ksojscore SIGBUS）：
+  // - slide：Presentations.Open 于 2026-10-15 16:50 崩溃报告实锤（jswppapi 栈帧）
+  // - sheet：Workbooks.Open 未验证，按同族风险预防性禁用（Mac）
+  // doc 的 Documents.Open 全程稳定，保留 jsapi 优先。
+  const resolvedKindForPolicy = normalizeTemplateKind(kind)
+  const isMac = /Mac/i.test(String(navigator?.platform || navigator?.userAgent || ''))
+  const jsapiOpenForbidden = resolvedKindForPolicy === 'slide' || (resolvedKindForPolicy === 'sheet' && isMac)
   let viaOs = false
   let obj = null
-  try {
-    obj = openWithJsapi(copy.path, kind)
-  } catch (e) {
-    console.warn('jsapi 打开失败，尝试 OS 级打开:', e?.message || e)
+  if (jsapiOpenForbidden) {
     const osResult = await openWithOs(copy.path)
     if (!osResult.ok) {
       return { ok: false, code: osResult.code, path: osResult.path, kind, error: '无法自动打开文档，请手动双击打开该文件后继续：' + copy.path }
     }
     viaOs = true
+  } else {
+    try {
+      obj = openWithJsapi(copy.path, kind)
+    } catch (e) {
+      console.warn('jsapi 打开失败，尝试 OS 级打开:', e?.message || e)
+      const osResult = await openWithOs(copy.path)
+      if (!osResult.ok) {
+        return { ok: false, code: osResult.code, path: osResult.path, kind, error: '无法自动打开文档，请手动双击打开该文件后继续：' + copy.path }
+      }
+      viaOs = true
+    }
   }
 
   // 3. 等待活动对象并补标记 + 会话身份
