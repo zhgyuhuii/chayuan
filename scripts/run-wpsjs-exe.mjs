@@ -138,6 +138,8 @@ rem + the multi-OS start-mcp.cmd (try exe -> healthz -> node) copied from the ad
 copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\start-mcp.cmd" "%sidecar_runtime%\\start-mcp.cmd" >> "%LOG%" 2>&1
 copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\server.mjs" "%sidecar_runtime%\\server.mjs" >> "%LOG%" 2>&1
 xcopy /E /I /Y /Q "%destination_folder%\\${folder}\\mcp-sidecar\\lib" "%sidecar_runtime%\\lib\\" >> "%LOG%" 2>&1
+rem Bundled portable Node runtime (Win7/8 offline out-of-the-box node fallback)
+if exist "%destination_folder%\\${folder}\\mcp-sidecar\\nodejs" xcopy /E /I /Y /Q "%destination_folder%\\${folder}\\mcp-sidecar\\nodejs" "%sidecar_runtime%\\nodejs\\" >> "%LOG%" 2>&1
 rem Watchdog: scheduled task runs start-mcp.cmd (hidden via vbs) every 2 minutes;
 rem silent no-op while healthz answers -- self-heals after crash / missed logon start
 copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\chayuan-mcp-watch.vbs" "%sidecar_runtime%\\chayuan-mcp-watch.vbs" >> "%LOG%" 2>&1

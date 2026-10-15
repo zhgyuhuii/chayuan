@@ -59,3 +59,7 @@ release/.mac-scripts
 artifacts/e2e-180/
 artifacts/e2e-v2/shots/
 .deploy-staging/
+
+# Win7 portable node runtime (downloaded at build time, bundled into the SFX)
+mcp-sidecar/.node-runtime/
+mcp-sidecar/nodejs/

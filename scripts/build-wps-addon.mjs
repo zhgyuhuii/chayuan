@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
 import { currentReleaseTriple, releaseArtifactFilename } from './lib/release-platform.mjs'
+import { ensureWinNodeRuntime } from './lib/win-node-runtime.mjs'
 import { findBun, rebuildSidecarBinaries } from './build-mcp-binary.mjs'
 
 const require = createRequire(import.meta.url)
@@ -161,12 +162,17 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 	if (fs.existsSync(mcpSidecarSrc)) {
 		const mcpDest = path.join(nested, 'mcp-sidecar')
 		const sep = path.sep
-		fsEx.copySync(mcpSidecarSrc, mcpDest, {
-			filter: (src) =>
-				!src.includes(`${sep}node_modules${sep}`) &&
-				!src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`) &&
-				!src.includes(`${sep}build${sep}`) && !src.endsWith(`${sep}build`)
-		})
+			fsEx.copySync(mcpSidecarSrc, mcpDest, {
+				filter: (src) =>
+					!src.includes(`${sep}node_modules${sep}`) &&
+					!src.includes(`${sep}bin${sep}`) && !src.endsWith(`${sep}bin`) &&
+					!src.includes(`${sep}build${sep}`) && !src.endsWith(`${sep}build`) &&
+					// nodejs/（完整官方 zip 解压）与 .node-runtime/（zip 缓存）不随整树进包：
+					// install_tools.bat 含 iex+WebClient.DownloadString 下载执行一行流，
+					// 火绒等启发式必报 PS.NetLoader；Windows 下方单独只拷 node.exe。
+					!src.includes(`${sep}nodejs${sep}`) && !src.endsWith(`${sep}nodejs`) &&
+					!src.includes(`${sep}.node-runtime${sep}`) && !src.endsWith(`${sep}.node-runtime`)
+			})
 		// 仅暂存当前构建平台的 sidecar 二进制；autostart 据此启动，缺失时安装后回落 node server.mjs
 		const triple = currentReleaseTriple()
 		const binName = `chayuan-mcp-${triple.platform}-${triple.arch}${triple.platform === 'windows' ? '.exe' : ''}`
@@ -180,6 +186,21 @@ function writeInstallStaging(distDir, releaseRoot, pkg, options = {}) {
 			}
 		} else {
 			console.warn(`[staging] 当前平台 sidecar 二进制缺失：mcp-sidecar/bin/${binName}（先跑 npm run mcp:build-binary；缺失时安装后回落 node server.mjs）`)
+		}
+		// Win7/8 无 bun 运行时：打包便携 Node 16 x64（离线开箱即用，无需用户装 Node）。
+		// start-mcp.cmd 的 node 回落优先用 mcp-sidecar/nodejs/node.exe，再退系统 PATH。
+		if (triple.platform === 'windows') {
+			try {
+				const nodeDir = ensureWinNodeRuntime(root)
+				// 只随包 node.exe（server.mjs 的全部依赖）：官方 zip 其余内容
+				// （install_tools.bat/npm/corepack）运行时用不到，且 install_tools.bat 会触发杀软报毒。
+				const nodeDest = path.join(mcpDest, 'nodejs')
+				fsEx.removeSync(nodeDest)
+				fsEx.ensureDirSync(nodeDest)
+				fsEx.copySync(path.join(nodeDir, 'node.exe'), path.join(nodeDest, 'node.exe'))
+			} catch (e) {
+				console.warn(`[staging] Win7 便携 Node 运行时缺失：${e.message}（Win7 将回落系统 node）`)
+			}
 		}
 	}
   fs.writeFileSync(path.join(staging, 'publish.xml'), publishXmlForPkg(pkg, options), 'utf8')
