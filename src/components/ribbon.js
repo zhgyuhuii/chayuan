@@ -56,18 +56,7 @@ import { ensureCapability } from '../utils/license/capabilityGate.js'
 function resolveRibbonIconUrl(raw) {
 	const s = String(raw ?? '').trim()
 	if (!s) return s
-	if (/^(data:|file:)/i.test(s)) return s
-	if (/^(https?:\/\/)/i.test(s)) return s
-	// dev:debug 在线模式：WPS 解析相对路径 images/xxx.svg 基于 jspluginonline url
-	// 前缀（/et/ /wpp/）→ 404 → '?' 图标。返回绝对 file:// 路径指向项目 public/ 下的
-	// 实际文件，WPS 直接读磁盘（生产 jsaddons 模式走旧相对路径不受影响）。
-	try {
-		if (window.location?.origin?.includes('127.0.0.1:3889')) {
-			// dev 模式：项目根可从 vite 伺服的已知文件路径反推
-			const devRoot = '/Users/zyh/work/chayuan-wps/public'
-			return 'file://' + devRoot + '/' + s.replace(/^\/+/, '')
-		}
-	} catch (_) { /* ignore */ }
+	if (/^(data:|file:|https?:\/\/)/i.test(s)) return s
 	return s.replace(/^\/+/, '')
 }
 function OnAddinLoad(ribbonUI) {
@@ -2136,7 +2125,7 @@ function deleteColumnsContainingText() {
 
 // 判断段落是否像表格/图题注或标签（表1、Table 1、图1、表、图 等），用于按位置匹配时识别
 function isCaptionOrLabelLike(rawText) {
-  const t = (rawText || '').replace(/[\r\n\t \u00A0]+/g, ' ').trim()
+  const t = (rawText || '').replace(/[\r\n	 \u00A0]+/g, ' ').trim()
   if (t.length > 120) return false
   if (!t) return false
   const labelNum = /^(表|图|Table|Figure|附表|附图)(\s*[\d\-\.]+)?(\s+.*)?\s*$/i
@@ -2146,7 +2135,7 @@ function isCaptionOrLabelLike(rawText) {
 
 // 仅表格题注/标签（表、Table、附表），用于全文档模式回退，避免误删图题注
 function isTableCaptionOrLabelLike(rawText) {
-  const t = (rawText || '').replace(/[\r\n\t \u00A0]+/g, ' ').trim()
+  const t = (rawText || '').replace(/[\r\n	 \u00A0]+/g, ' ').trim()
   if (t.length > 120) return false
   if (!t) return false
   const labelNum = /^(表|Table|附表)\s*[\d\-\.]+(\s+.*|\S.*)?\s*$/i
@@ -2156,7 +2145,7 @@ function isTableCaptionOrLabelLike(rawText) {
 
 // 是否为第 N 个表格的题注（自上而下编号），允许无空格
 function isTableCaptionWithIndex(rawText, index) {
-  const t = (rawText || '').replace(/[\r\n\t \u00A0]+/g, ' ').trim()
+  const t = (rawText || '').replace(/[\r\n	 \u00A0]+/g, ' ').trim()
   if (!t) return false
   if (t.length > 120) return false
   const n = String(index)
@@ -2166,7 +2155,7 @@ function isTableCaptionWithIndex(rawText, index) {
 
 // 仅图像题注/标签（图、Figure、附图），用于全文档模式回退，避免误删表题注
 function isImageCaptionOrLabelLike(rawText) {
-  const t = (rawText || '').replace(/[\r\n\t \u00A0]+/g, ' ').trim()
+  const t = (rawText || '').replace(/[\r\n	 \u00A0]+/g, ' ').trim()
   if (t.length > 120) return false
   if (!t) return false
   const labelNum = /^(图|Figure|附图)\s*[\d\-\.]+(\s+.*|\S.*)?\s*$/i
@@ -2176,7 +2165,7 @@ function isImageCaptionOrLabelLike(rawText) {
 
 // 是否为第 N 个图像的题注（自上而下编号），允许无空格
 function isImageCaptionWithIndex(rawText, index) {
-  const t = (rawText || '').replace(/[\r\n\t \u00A0]+/g, ' ').trim()
+  const t = (rawText || '').replace(/[\r\n	 \u00A0]+/g, ' ').trim()
   if (!t) return false
   if (t.length > 120) return false
   const n = String(index)
@@ -2649,7 +2638,7 @@ function deleteAllBlankRows() {
 
         const raw = para.Range.Text || ''
         // 去除段落符、换行、制表符、空格等，判断是否为空
-        const trimmed = raw.replace(/[\r\n\t \u00A0]+/g, '')
+        const trimmed = raw.replace(/[\r\n	 \u00A0]+/g, '')
         if (trimmed.length === 0) {
           para.Range.Delete()
           deletedCount++
@@ -4086,24 +4075,9 @@ function getRibbonImageRelative(control) {
 
 function GetImage(control) {
 	const rel = getRibbonImageRelative(control)
-	const toDataUri = (raw) => 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(raw)))
-	// ① dev:debug 本机模式：origin 3889 → 读项目 public/ 下 SVG → base64
-	try {
-		if (String(window.location?.origin || '').includes(':3889')) {
-			const devRoot = '/Users/zyh/work/chayuan-wps/public'
-			const raw = window.Application?.FileSystem?.readFileString?.(devRoot + '/' + rel)
-			if (raw) return toDataUri(raw)
-		}
-	} catch (_) { /* ignore */ }
-	// ② 离线 jsaddons 模式（UOS/Linux/Windows 离线包）：webview location 即插件目录内
-	//    file:// 路径 → 同层 images/ 相对读取 → base64（覆盖 UOS 虚拟机等全部离线场景）
-	try {
-		const base = new URL('.', window.location.href).href
-		const abs = decodeURIComponent(new URL(rel, base).href).replace(/^file:\/\//, '')
-		const raw = window.Application?.FileSystem?.readFileString?.(abs)
-		if (raw) return toDataUri(raw)
-	} catch (_) { /* ignore */ }
-	return resolveRibbonIconUrl(rel)
+	// 最简离线模式：直接返回相对路径（与 v6.0.0 原始行为一致）
+	// WPS 从插件 jsaddons 目录解析 images/xxx.svg
+	return rel
 }
 function OnGetEnabled(control) {
   const eleId = control.Id

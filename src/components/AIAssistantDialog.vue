@@ -19411,7 +19411,9 @@ export default {
         const templatePipelineClaimed = (() => {
           const t = String(text || '')
           if (routeWpsCapabilityByRule(t)) return true
-          const hasOfficeTpl = (Array.isArray(this.attachments) ? this.attachments : [])
+          // 必须用 attachmentsSnapshot：此时 composer 附件已被 prepareOutgoingMessages 清空
+          const atts = (Array.isArray(attachmentsSnapshot) && attachmentsSnapshot.length) ? attachmentsSnapshot : this.attachments
+          const hasOfficeTpl = (Array.isArray(atts) ? atts : [])
             .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
           const mediaOnly = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(t)
           return hasOfficeTpl && !mediaOnly
