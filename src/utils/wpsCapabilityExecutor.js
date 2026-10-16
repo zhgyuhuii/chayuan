@@ -558,7 +558,15 @@ export async function executeWpsCapabilityTask(options = {}) {
       message: successMessage
     }
   } catch (error) {
-    const failedText = error?.message || String(error)
+    let failedText = error?.message || String(error)
+    // 诊断堆栈（前 3 帧）：定位「Unexpected end of JSON input」这类低信息错误的真实崩点
+    if (error?.stack && error?.code !== 'TASK_CANCELLED') {
+      const frames = String(error.stack).split('\n').slice(1, 4)
+        .map(l => l.trim().replace(/^at\s+/, ''))
+        .map(l => l.replace(/\?[^)]*\)/, ')').replace(/https?:\/\/[^/]+\//, '').replace(/file:\/\/\/[^ ]*\//, ''))
+        .filter(Boolean)
+      if (frames.length) failedText += ` 〔${frames.join(' ← ')}〕`
+    }
     appendCapabilityAuditRecord({
       namespace: 'wps',
       capabilityKey,
