@@ -3018,6 +3018,11 @@ const SCOPE_LRU_KEY = 'ai_chat_scope_lru'
 const SCOPE_LRU_MAX = 200
 const STORAGE_KEY_HISTORY_SCOPE_PREFIX = 'ai_assistant_chat_history_scope'
 const STORAGE_KEY_CURRENT_SCOPE_PREFIX = 'ai_assistant_current_chat_id_scope'
+// 跨文档对话交接（2026-10-16 用户令：生成完成后关闭原文档、打开新文档——原对话要跟过来）：
+// 模板生成收尾时写入当前会话快照（全局键，所有文档窗格共享）；新文档窗格挂载发现本
+// 作用域为空且存在新鲜交接（15 分钟内、来自其他文档）→ 过继为本作用域当前会话
+const STORAGE_KEY_CHAT_HANDOFF = 'ai_assistant_chat_handoff_v1'
+const CHAT_HANDOFF_TTL_MS = 15 * 60 * 1000
 const STORAGE_KEY_LEGACY_HISTORY_MIGRATED = 'ai_assistant_chat_history_legacy_migrated'
 const STORAGE_KEY_SELECTED_ID = 'ai_assistant_selected_model_id'
 const STORAGE_KEY_SELECTED_CONTENT = 'assistant_selected_content'
@@ -8839,6 +8844,38 @@ export default {
           }
         }
 
+        // 跨文档对话交接：生成管线关闭原文档、打开新文档后，新窗格的本作用域为空——
+        // 若存在新鲜交接快照（15 分钟内、来自其他文档的模板生成会话）→ 过继为当前会话
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          const handed = this.consumeChatHandoff(storage, storageKeys)
+          if (handed) {
+            parsed = [handed]
+            currentId = handed.id
+          } else {
+            // 时序竞争：交接快照由原窗格在任务收尾时写入，可能晚于本窗格挂载——延迟补查
+            const scheduledScope = String(this.historyStorageScopeKey || '').trim()
+            let tries = 0
+            clearTimeout(this._handoffRecheckTimer)
+            const recheckHandoff = () => {
+              tries++
+              if (String(this.historyStorageScopeKey || '').trim() !== scheduledScope) return
+              if (Array.isArray(this.chatHistory) && this.chatHistory.length > 0) return
+              const storage2 = window.Application?.PluginStorage
+              if (!storage2) return
+              const handoff2 = this.consumeChatHandoff(storage2)
+              if (handoff2) {
+                this.chatHistory = [handoff2]
+                this.currentChatId = handoff2.id
+                this.saveHistory({ skipScopeResolve: true, immediate: true })
+                this.initOpenChatTabsAfterLoad()
+              } else if (tries < 5) {
+                this._handoffRecheckTimer = setTimeout(recheckHandoff, 3000)
+              }
+            }
+            this._handoffRecheckTimer = setTimeout(recheckHandoff, 3000)
+          }
+        }
+
         // I1 懒迁移：内存 miss（重启/换机）→ sidecar 持久层回填 PluginStorage。
         // 异步执行，回填后重挂载视图；sidecar 不可用保持原状（空历史）。
         // 回填 miss 时还会探持久层的低优先级旧键（采纳迁移异步层——升级搁浅的
@@ -8862,6 +8899,55 @@ export default {
         this.resumeRemoteMcpTurnsAfterLoad()
       } catch (e) {
         console.warn('加载对话历史失败:', e)
+      }
+    },
+    /** 模板生成收尾：把当前会话快照写入全局交接键（新文档窗格挂载时过继） */
+    writeChatHandoff() {
+      try {
+        const storage = window.Application?.PluginStorage
+        if (!storage) return
+        const current = this.chatHistory.find(c => c.id === this.currentChatId) || this.chatHistory[0]
+        if (!current || !Array.isArray(current.messages) || current.messages.length === 0) return
+        const payload = {
+          at: Date.now(),
+          fromScopeKey: String(this.historyStorageScopeKey || '').trim(),
+          chat: this.normalizeChatRecord({
+            ...current,
+            title: current.title || '模板生成会话',
+            // eslint-disable-next-line no-unused-vars
+            messages: current.messages.map(({ _renderedHtml, _renderedContent, mcpStreamingText, ...m }) => m)
+          })
+        }
+        storage.setItem(STORAGE_KEY_CHAT_HANDOFF, JSON.stringify(payload))
+      } catch (e) {
+        console.warn('写入对话交接快照失败:', e)
+      }
+    },
+    /** 新文档窗格挂载、本作用域无历史时：消费新鲜的交接快照（一次性，来自其他文档才过继） */
+    consumeChatHandoff(storage) {
+      try {
+        if (!storage) return null
+        const raw = storage.getItem(STORAGE_KEY_CHAT_HANDOFF)
+        if (!raw) return null
+        const payload = safeParsePluginJson(raw)
+        if (!payload?.chat) return null
+        if (Date.now() - Number(payload.at || 0) > CHAT_HANDOFF_TTL_MS) {
+          storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+          return null
+        }
+        const fromScope = String(payload.fromScopeKey || '').trim()
+        const currentScope = String(this.historyStorageScopeKey || '').trim()
+        if (fromScope && fromScope === currentScope) {
+          storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+          return null
+        }
+        const adopted = this.normalizeChatRecord(payload.chat)
+        if (!adopted?.id) return null
+        storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+        return adopted
+      } catch (e) {
+        console.warn('读取对话交接快照失败:', e)
+        return null
       }
     },
     buildHistorySavePayload(options = {}) {
@@ -12617,9 +12703,17 @@ export default {
           this.saveHistory()
           this.$nextTick(() => this.scrollToBottom())
         }
+        // 模板生成收尾：写入跨文档交接快照——生成完成后原文档会被关闭，
+        // 新文档窗格挂载时据此过继本会话（用户令：原对话要跟到新文档）
+        if (capabilityKey === 'generate-from-template' || capabilityKey === 'execute-template-plan') {
+          this.writeChatHandoff()
+        }
       }).catch((error) => {
         if (error?.code === 'TASK_CANCELLED') return
         console.warn('WPS capability task failed:', error)
+        if (capabilityKey === 'generate-from-template' || capabilityKey === 'execute-template-plan') {
+          this.writeChatHandoff()
+        }
       })
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
