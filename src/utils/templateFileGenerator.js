@@ -83,7 +83,9 @@ function replaceTextsInSlideDoc(doc, replaces) {
     if (isBadReplace(replaceTo)) { rejected.push(find.slice(0, 12)); continue }
     const hit = nodes.find(n => (n.textContent || '').includes(find))
     if (hit) {
-      hit.textContent = String(hit.textContent).replace(find, replaceTo)
+      // 整节点替换（2026-10-16 真机：子串替换留残留→新旧内容混合乱糟糟）
+      // find 用于定位节点，replace 直接成为该节点全部文本
+      hit.textContent = replaceTo
       applied.push(find)
       continue
     }
@@ -382,4 +384,46 @@ function pickNthText(xmlString, index) {
   const doc = xmlOf(xmlString)
   const filtered = tags(doc, 'a:t').filter(n => String(n.textContent || '').trim())
   return filtered[index] ? String(filtered[index].textContent).trim() : ''
+}
+
+/**
+ * 占位清扫器（2026-10-16 真机：确定性底稿遗漏的占位文本导致"乱糟糟"）：
+ * 计划执行完后扫描全部幻灯片，把剩余的 Lorem/输入标题/点击输入 等占位
+ * 全部替换为参考素材内容（轮转分配）。确保零占位残留。
+ */
+export async function sweepPlaceholders(zip, referenceContext) {
+  const PLACEHOLDER_RE = /^(?:Lorem\s+ipsum.*|LOREM\s+IPSUM.*|输入标题.*|点击输入.*|请在此处.*|单击此处.*|添加合适的文字.*|用简明扼要.*|文字内容或复制.*|PART\s+(?:ONE|TWO|THREE|FOUR|FIVE|SIX)|\d{1,2}\.\d?\s*$| consectetuer.*|adipiscing.*|dolor sit.*|amet.*|\.*\s*$)/i
+  const SHORT_MEANINGFUL_MIN = 4 // 少于4字的非占位文本跳过（如 "01."）
+
+  // 参考素材行
+  const refLines = String(referenceContext || '')
+    .split(/\n+/)
+    .map(l => l.trim().replace(/^#{1,6}\s*/, '').replace(/^[-*+]\s*/, ''))
+    .filter(l => l.length > 4)
+  if (!refLines.length) return { swept: 0 }
+
+  const names = Object.keys(zip.files)
+    .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+    .sort((a, b) => slideNum(a) - slideNum(b))
+
+  let swept = 0
+  let refIdx = 0
+  for (const name of names) {
+    const doc = xmlOf(await zip.file(name).async('string'))
+    const nodes = tags(doc, 'a:t')
+    let slideChanged = false
+    for (const node of nodes) {
+      const txt = String(node.textContent || '').trim()
+      if (!txt) continue
+      if (txt.length < SHORT_MEANINGFUL_MIN) continue // "01." 等编号保留
+      if (PLACEHOLDER_RE.test(txt)) {
+        node.textContent = refLines[refIdx % refLines.length].slice(0, 80)
+        refIdx++
+        swept++
+        slideChanged = true
+      }
+    }
+    if (slideChanged) zip.file(name, textOf(doc))
+  }
+  return { swept }
 }

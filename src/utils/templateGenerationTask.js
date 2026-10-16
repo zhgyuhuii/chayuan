@@ -664,6 +664,13 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   const detStats = detRes.ok ? detRes.stats : { edits: 0, missedTexts: [] }
   let applied = await applySlidePlanToZip(zip, plan)
   const buildStats = () => ({ edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, pages: applied.stats.pages, deterministicEdits: detStats.edits })
+  // 占位清扫（2026-10-16）：底稿/LLM遗漏的占位文本全部替换——零残留
+  try {
+    const { sweepPlaceholders } = await import('./templateFileGenerator.js')
+    const sweep = await sweepPlaceholders(zip, sourceParams.referenceContext)
+    if (sweep.swept > 0) console.log('占位清扫:', sweep.swept, '处')
+  } catch (e) { console.warn('清扫失败:', e?.message) }
+
   // 确定性核验：零有效改写=模型偷懒（真机：几乎纯复制）。带反馈重出一次计划
   if ((buildStats().edits + buildStats().adds + buildStats().duplicates) === 0) {
     progress(taskId, 45, '计划未产生有效改写，正在强制重规划…')
