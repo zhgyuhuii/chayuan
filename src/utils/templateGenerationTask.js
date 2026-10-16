@@ -724,17 +724,29 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
       break
     }
     qcReport.rounds = round
-    qcReport.dims.content = judge?.pass !== false
-    if (judge?.pass !== false) { qcReport.passed = true; break }
-    qcReport.passed = false
-    qcReport.issues.push(...(Array.isArray(judge?.issues) ? judge.issues : []))
-    if (round === maxRounds) break
-    const fixes = (judge?.issues || []).filter(i => i?.fixFind && i?.fixReplace)
-    if (fixes.length) {
-      const fixed = await fixSlideTextsInZip(zip, fixes)
-      qcReport.fixApplied += fixed.applied
+    // 占位残留以机器审计为权威（LLM 常把装饰/水印/模板站文本误报为占位）；LLM issue 仅保留
+    // fixFind 能在成品文本中逐字落地的——落不了地的修不了，也不采信为 fail 依据
+    const judgeFailed = judge?.pass === false
+    const rawIssues = judgeFailed ? (Array.isArray(judge?.issues) ? judge.issues : []) : []
+    const applicable = rawIssues.filter(i => i?.fixFind && i?.fixReplace && slideTexts.includes(String(i.fixFind)))
+    if (judgeFailed && applicable.length === 0 && qcReport.dims.placeholder && qcReport.dims.overflow && qcReport.dims.fonts) {
+      qcReport.dims.content = true
+      qcReport.passed = true
+      if (rawIssues.length) qcReport.issues.push({ where: 'LLM 审查', problem: `${rawIssues.length} 条 issue 的 fixFind 未在成品中逐字命中（疑似误报装饰/水印），按机器审计结论放行` })
+      break
     }
-    if (qcReport.fixApplied === 0) break
+    qcReport.dims.content = !judgeFailed
+    if (!judgeFailed) { qcReport.passed = true; break }
+    qcReport.passed = false
+    qcReport.issues.push(...applicable)
+    if (round === maxRounds) break
+    let roundFixed = 0
+    if (applicable.length) {
+      const fixed = await fixSlideTextsInZip(zip, applicable)
+      roundFixed = fixed.applied
+      qcReport.fixApplied += roundFixed
+    }
+    if (roundFixed === 0) break
   }
 
   progress(taskId, 92, '正在保存生成文件…')

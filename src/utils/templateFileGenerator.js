@@ -95,9 +95,15 @@ function replaceShapeText(doc, shapeIndex, newText) {
   if (shapeIndex >= spElements.length) return false
   const tNodes = tags(spElements[shapeIndex], 'a:t')
   if (!tNodes.length) return false
-  tNodes[0].textContent = newText
-  for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+  writeShapeTextPrimary(tNodes, newText)
   return true
+}
+
+/** 兼容入口：按形状节点整形状替换（内部走主 run 写入） */
+function replaceWholeShapeText(sp, hitNode, newText) {
+  const tNodes = sp ? tags(sp, 'a:t') : []
+  if (!tNodes.length) { hitNode.textContent = newText; return }
+  writeShapeTextPrimary(tNodes, newText)
 }
 
 /** 按占位符类型查找形状索引（title/ctrTitle/body/subTitle 等） */
@@ -142,12 +148,39 @@ function ownerShape(node) {
   return null
 }
 
-/** 整形状替换：首 a:t 写入新文、其余清空——杜绝同形状多 run 旧新混杂 */
-function replaceWholeShapeText(sp, hitNode, newText) {
-  const tNodes = sp ? tags(sp, 'a:t') : []
-  if (!tNodes.length) { hitNode.textContent = newText; return }
-  tNodes[0].textContent = newText
-  for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+/** 中文长度（选主 run 用：模板中文 run 的 rPr 才带正确的东亚字体） */
+function cjkLenOf(t) {
+  let n = 0
+  for (const ch of String(t || '')) {
+    if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F]/.test(ch)) n++
+  }
+  return n
+}
+
+/**
+ * 选主 run（2026-10-16 用户反馈：字体与模板不一致）：整形状替换把新文字写进首 run，
+ * 而首 run 常是英文装饰字体（如 LOGO 的 Open Sans），中文新文字便套错字体。
+ * 改为写入「含中文最长」的 run——新文字继承模板中文排版字体；无中文 run 时取最长 run。
+ */
+function pickPrimaryRunIndex(tNodes) {
+  let best = 0
+  let bestScore = -1
+  for (let i = 0; i < tNodes.length; i++) {
+    const t = String(tNodes[i]?.textContent || '')
+    const score = cjkLenOf(t) * 10 + t.trim().length
+    if (score > bestScore) {
+      bestScore = score
+      best = i
+    }
+  }
+  return best
+}
+
+/** 整形状替换统一入口：新文字写入主 run（继承其字体/加粗/颜色），其余 run 清空 */
+function writeShapeTextPrimary(tNodes, newText) {
+  if (!tNodes || !tNodes.length) return
+  const idx = pickPrimaryRunIndex(tNodes)
+  for (let i = 0; i < tNodes.length; i++) tNodes[i].textContent = i === idx ? newText : ''
 }
 
 function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
@@ -169,8 +202,7 @@ function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
       if (sp && sameText) {
         const tNodes = tags(sp, 'a:t')
         if (tNodes.length) {
-          tNodes[0].textContent = replaceTo
-          for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+          writeShapeTextPrimary(tNodes, replaceTo)
           applied.push(find || `#${idx}`)
           continue
         }
@@ -204,8 +236,7 @@ function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
         if (!tNodes.length) continue
         const combined = normText(tNodes.map(n => n.textContent || '').join(''))
         if (combined && (combined.includes(nFind) || (nFind.length >= 8 && combined.length >= 6 && nFind.includes(combined)))) {
-          tNodes[0].textContent = replaceTo
-          for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+          writeShapeTextPrimary(tNodes, replaceTo)
           applied.push(find + '(shape)')
           shapeHit = true
           break
@@ -567,8 +598,7 @@ export async function fitOverflowTextsInZip(zip, overflows) {
       }
       const trimmed = fitTrim(full, end)
       if (trimmed === full) continue
-      tNodes[0].textContent = trimmed
-      for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+      writeShapeTextPrimary(tNodes, trimmed)
       applied++
       changed = true
     }
@@ -667,8 +697,7 @@ export async function sweepPlaceholders(zip, referenceContext) {
         return txt.length >= SHORT_MEANINGFUL_MIN && PLACEHOLDER_RE.test(txt)
       })
       if (!hit) continue
-      tNodes[0].textContent = refLines[refIdx % refLines.length].slice(0, 80)
-      for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+      writeShapeTextPrimary(tNodes, refLines[refIdx % refLines.length].slice(0, 80))
       refIdx++
       swept++
       slideChanged = true
