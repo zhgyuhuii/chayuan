@@ -684,65 +684,67 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   progress(taskId, 92, '正在保存生成文件…')
   const outBytes = await exportZipBytes(zip)
   const outPath = writeGeneratedPptx(outBytes)
-  // 交付（2026-10-16 用户令）：当前窗口开着空白演示文稿 → 生成页经 jsapi InsertFromFile
-  // 插入该文稿（原地填充，不新开窗口），并删掉原有空白页；没有合适宿主 → OS 级打开产物。
-  // 插页会连同版式/母版引用一起拷贝；任何失败回退 OS 打开，不阻断交付。
+  // 交付（2026-10-16 真机二次修正）：InsertFromFile 会把目标文稿的默认母版套到插入页上，
+  // 模板背景/版式丢失（用户实测：内容在、设计没了）。产物文件是模板字节级拷贝、母版完整，
+  // 因此改为：当前窗口是「真空白」未命名文稿 → 标记已存免弹窗后关闭 → OS 打开产物，
+  // 生成文档顶替空白文稿的窗口位置；其余情况直接 OS 打开产物。
   let opened = false
-  let filled = 0
+  let replacedBlank = false
   if (outPath.ok) {
     progress(taskId, 95, '正在交付生成结果…')
-    const fill = fillActiveBlankPresentation(outPath.path)
-    if (fill.ok) {
-      filled = fill.filled
-    } else {
-      try {
-        const { openFileViaOs } = await import('./documentCreateFromTemplate.js')
-        const r = await openFileViaOs(outPath.path)
-        opened = !!r?.ok
-      } catch (e) {
-        console.warn('自动打开失败:', e?.message || e)
-      }
+    const closed = closeActiveBlankPresentation()
+    replacedBlank = closed.ok
+    try {
+      const { openFileViaOs } = await import('./documentCreateFromTemplate.js')
+      const r = await openFileViaOs(outPath.path)
+      opened = !!r?.ok
+    } catch (e) {
+      console.warn('自动打开失败:', e?.message || e)
     }
   }
   progress(taskId, 99, '生成完成')
   const summary = [
-    filled
-      ? `已在当前演示文稿填充生成内容（${filled} 页，未保存；产物备份：${outPath.ok ? outPath.path : '保存失败'}）`
-      : `已后台生成：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
+    `已后台生成：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
     `执行：改写 ${stats.edits} 处（含内容底稿 ${stats.deterministicEdits || 0} 处）/ 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
     stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
     stats.rejected ? `拒收异常替换 ${stats.rejected} 处` : '',
     `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
-    filled ? '请检查后自行保存（Ctrl/Cmd+S）。' : opened ? '已自动在 WPS 打开生成结果。' : '自动打开失败——请手动打开：' + (outPath.path || '')
+    opened ? (replacedBlank ? '原空白文稿已关闭，生成结果已带完整模板设计打开。' : '已自动在 WPS 打开生成结果。') : '自动打开失败——请手动打开：' + (outPath.path || '')
   ].filter(Boolean).join('\n')
-  return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true, filledIntoActive: filled > 0 }
+  return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true, replacedBlank }
 }
 
 /**
- * 把生成的 pptx 插入「当前打开的空白演示文稿」（用户令：在当前窗口原地生成，不要另开窗口）。
- * 判定空白：未命名（演示文稿N/Untitled/PresentationN/未命名）且页数 ≤ 1。
- * 返回 { ok, filled } —— filled 为插入的页数；不可插入时 ok:false 交由调用方回退。
+ * 关闭「真空白」的未命名演示文稿，为产物腾出当前窗口（不弹保存框）。
+ * 判定：未命名（演示文稿N/Untitled/PresentationN/未命名）+ 页数 ≤1 + 该页无实质文本
+ * ——三者全满足才关，防误关用户已输入内容的文稿。
  */
-function fillActiveBlankPresentation(pptxPath) {
+function closeActiveBlankPresentation() {
   try {
     const app = window.Application
     const pres = app?.ActivePresentation
-    if (!pres || typeof pres?.Slides?.InsertFromFile !== 'function') return { ok: false, reason: 'no-active-or-api' }
+    if (!pres) return { ok: false, reason: 'no-active' }
     const name = String(pres.Name || '').trim()
     const isUntitled = /^(演示文稿|幻灯片|未命名|untitled|presentation\s*\d*)/i.test(name)
     const cnt = Number(pres.Slides.Count || 0)
     if (!isUntitled || cnt > 1) return { ok: false, reason: 'not-blank:' + name + ':' + cnt }
-    const last = pres.Slides.InsertFromFile(pptxPath, cnt, 1, -1)
-    const inserted = Number(last)
-    if (!Number.isFinite(inserted) || inserted <= cnt) return { ok: false, reason: 'insert-noop' }
-    // 删掉原有空白页（插入位置在原第 cnt 页之后）
-    for (let i = cnt; i >= 1; i--) {
-      try { pres.Slides.Item(i).Delete() } catch (_) { /* 尽力而为 */ }
-    }
-    try { pres.Saved = false } catch (_) { /* 保持未保存态 */ }
-    return { ok: true, filled: inserted - cnt }
+    let text = ''
+    try {
+      const slide = pres.Slides.Item(1)
+      text = String(slide?.Shapes?.TextFrame?.TextRange?.Text || '')
+      if (!text) {
+        const n = Number(slide?.Shapes?.Count || 0)
+        for (let i = 1; i <= n && !text; i++) {
+          const sh = slide.Shapes.Item(i)
+          if (sh && sh.TextFrame) text = String(sh.TextFrame.TextRange?.Text || '')
+        }
+      }
+    } catch (_) { /* 读取失败按空白处理 */ }
+    if (String(text).trim()) return { ok: false, reason: 'has-text' }
+    try { pres.Saved = true } catch (_) { /* 标记干净态失败不阻断 */ }
+    try { pres.Close() } catch (e) { return { ok: false, reason: 'close-failed:' + (e?.message || e) } }
+    return { ok: true }
   } catch (e) {
-    console.warn('填充当前演示文稿失败，回退打开文件:', e?.message || e)
     return { ok: false, reason: e?.message || String(e) }
   }
 }
