@@ -692,7 +692,9 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   const stats = buildStats()
 
   const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
+  const qcModelUsable = !!model?.providerId && !!model?.modelId
   for (let round = 1; round <= maxRounds; round++) {
+    if (!qcModelUsable) { qcReport.passed = null; break } // 无模型跳过质检
     progress(taskId, 55 + Math.round(25 * round / (maxRounds + 1)), `第 ${round}/${maxRounds} 轮质检（文件级）…`)
     if (isCancelled()) throw createCancelledError()
     const slideTexts = await collectSlideTextsFromZip(zip) // 同一 zip 直取，零二次装载
@@ -887,8 +889,8 @@ export async function runTemplateGenerationTask(params = {}) {
   const requirement = String(params.requirement || '').trim()
   if (!requirement) throw new Error('缺少生成需求（requirement）')
 
-  const model = resolveChatModel()
-  if (!model) throw new Error('未配置对话模型，请先在设置中配置模型')
+  const model = resolveChatModel() // 可能为 null——底稿模式不需要模型
+  const modelUsable = !!model
 
   // ① 剖析（未开副本，失败即止）
   progress(taskId, 8, '正在剖析模板…')
@@ -905,7 +907,11 @@ export async function runTemplateGenerationTask(params = {}) {
   const analysis = await analyzeTemplateFile({ path: resolved.path, kind })
   const profileSummary = summarizeProfile(analysis)
 
-  // ② LLM 计划（仍未开副本）
+  // ② LLM 计划（仍未开副本）；模型不可用 → 跳过 LLM 直接底稿模式
+  if (!modelUsable) {
+    console.warn('模型不可用，进入纯确定性底稿模式')
+    progress(taskId, 20, '模型不可用，使用内容底稿模式…')
+  }
   progress(taskId, 20, '正在规划改写计划…')
   let docParagraphs = ''
   if (kind === 'doc') {
@@ -920,8 +926,13 @@ export async function runTemplateGenerationTask(params = {}) {
     docParagraphs,
     referenceContext: String(params.referenceContext || '').trim()
   })
-  const plan = await llmJson(model, prompt.system, prompt.user)
-  if (!plan) throw new Error('改写计划生成失败（模型未返回有效 JSON），请重试或更换模型')
+  let plan = modelUsable ? await llmJson(model, prompt.system, prompt.user).catch(() => null) : null
+  if (!plan) {
+    // 模型不可用/输出无效：降级为空计划——确定性底稿会填充全部内容（2026-10-16 真机：
+    // agnes key 失效导致"模板打开但没写内容"）
+    console.warn('LLM 计划失败，降级为确定性底稿模式')
+    plan = { pages: [], degraded: true }
+  }
   if (isCancelled()) throw createCancelledError()
 
   // 两段式（v1.4 单卡）：planOnly=true 出计划+契约卡片模型，确认卡直接渲染缓存
