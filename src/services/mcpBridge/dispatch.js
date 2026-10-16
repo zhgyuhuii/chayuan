@@ -108,7 +108,7 @@ import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presenta
 import { runVarsProbe } from './varsProbe.js'
 import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 import { getHostActiveObjectId } from './hostDispatch.js'
-import { runTemplateGenerationTask } from '../utils/templateGenerationTask.js'
+import { runTemplateGenerationTask } from '../../utils/templateGenerationTask.js'
 
 // 聊天回合托管（AI助手对话跟随文档）：懒加载——只有 ribbon 基座真正接到 chat.*
 // job 时才拉取模块（连带 orchestrator/agent-core 的 chunk），其它 webview 零开销

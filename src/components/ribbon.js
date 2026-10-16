@@ -4086,14 +4086,22 @@ function getRibbonImageRelative(control) {
 
 function GetImage(control) {
 	const rel = getRibbonImageRelative(control)
-	// dev:debug 在线模式：WPS 不加载 HTTP/相对路径的 ribbon 图标（全 404 → '?'）
-	// → 读本地 SVG 文件内容，返回 base64 data URI（WPS 原生支持）
+	const toDataUri = (raw) => 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(raw)))
+	// ① dev:debug 本机模式：origin 3889 → 读项目 public/ 下 SVG → base64
 	try {
-		if (window.location?.origin?.includes('127.0.0.1:3889')) {
+		if (String(window.location?.origin || '').includes(':3889')) {
 			const devRoot = '/Users/zyh/work/chayuan-wps/public'
 			const raw = window.Application?.FileSystem?.readFileString?.(devRoot + '/' + rel)
-			if (raw) return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(raw)))
+			if (raw) return toDataUri(raw)
 		}
+	} catch (_) { /* ignore */ }
+	// ② 离线 jsaddons 模式（UOS/Linux/Windows 离线包）：webview location 即插件目录内
+	//    file:// 路径 → 同层 images/ 相对读取 → base64（覆盖 UOS 虚拟机等全部离线场景）
+	try {
+		const base = new URL('.', window.location.href).href
+		const abs = decodeURIComponent(new URL(rel, base).href).replace(/^file:\/\//, '')
+		const raw = window.Application?.FileSystem?.readFileString?.(abs)
+		if (raw) return toDataUri(raw)
 	} catch (_) { /* ignore */ }
 	return resolveRibbonIconUrl(rel)
 }
