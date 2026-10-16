@@ -8847,7 +8847,7 @@ export default {
         // 跨文档对话交接：生成管线关闭原文档、打开新文档后，新窗格的本作用域为空——
         // 若存在新鲜交接快照（15 分钟内、来自其他文档的模板生成会话）→ 过继为当前会话
         if (!Array.isArray(parsed) || parsed.length === 0) {
-          const handed = this.consumeChatHandoff(storage, storageKeys)
+          const handed = this.consumeChatHandoff()
           if (handed) {
             parsed = [handed]
             currentId = handed.id
@@ -8860,9 +8860,7 @@ export default {
               tries++
               if (String(this.historyStorageScopeKey || '').trim() !== scheduledScope) return
               if (Array.isArray(this.chatHistory) && this.chatHistory.length > 0) return
-              const storage2 = window.Application?.PluginStorage
-              if (!storage2) return
-              const handoff2 = this.consumeChatHandoff(storage2)
+              const handoff2 = this.consumeChatHandoff()
               if (handoff2) {
                 this.chatHistory = [handoff2]
                 this.currentChatId = handoff2.id
@@ -8901,11 +8899,11 @@ export default {
         console.warn('加载对话历史失败:', e)
       }
     },
-    /** 模板生成收尾：把当前会话快照写入全局交接键（新文档窗格挂载时过继） */
+    /** 模板生成收尾：把当前会话快照写入全局交接键（新文档窗格挂载时过继）。
+     * 存储用 localStorage 优先——PluginStorage 在部分版本按文档窗格隔离，
+     * localStorage 按 file:// 同源跨窗格共享（mcp token 即此先例）。 */
     writeChatHandoff() {
       try {
-        const storage = window.Application?.PluginStorage
-        if (!storage) return
         const current = this.chatHistory.find(c => c.id === this.currentChatId) || this.chatHistory[0]
         if (!current || !Array.isArray(current.messages) || current.messages.length === 0) return
         const payload = {
@@ -8918,32 +8916,32 @@ export default {
             messages: current.messages.map(({ _renderedHtml, _renderedContent, mcpStreamingText, ...m }) => m)
           })
         }
-        storage.setItem(STORAGE_KEY_CHAT_HANDOFF, JSON.stringify(payload))
+        const json = JSON.stringify(payload)
+        if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY_CHAT_HANDOFF, json)
+        try { window.Application?.PluginStorage?.setItem(STORAGE_KEY_CHAT_HANDOFF, json) } catch (_) { /* 双通道 best-effort */ }
       } catch (e) {
         console.warn('写入对话交接快照失败:', e)
       }
     },
     /** 新文档窗格挂载、本作用域无历史时：消费新鲜的交接快照（一次性，来自其他文档才过继） */
-    consumeChatHandoff(storage) {
+    consumeChatHandoff() {
       try {
-        if (!storage) return null
-        const raw = storage.getItem(STORAGE_KEY_CHAT_HANDOFF)
+        let raw = (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY_CHAT_HANDOFF)) || ''
+        if (!raw) raw = window.Application?.PluginStorage?.getItem(STORAGE_KEY_CHAT_HANDOFF) || ''
         if (!raw) return null
         const payload = safeParsePluginJson(raw)
         if (!payload?.chat) return null
-        if (Date.now() - Number(payload.at || 0) > CHAT_HANDOFF_TTL_MS) {
-          storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
-          return null
-        }
-        const fromScope = String(payload.fromScopeKey || '').trim()
-        const currentScope = String(this.historyStorageScopeKey || '').trim()
-        if (fromScope && fromScope === currentScope) {
-          storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+        const expired = Date.now() - Number(payload.at || 0) > CHAT_HANDOFF_TTL_MS
+        const sameScope = String(payload.fromScopeKey || '').trim() === String(this.historyStorageScopeKey || '').trim()
+        if (expired || sameScope) {
+          if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+          try { window.Application?.PluginStorage?.removeItem(STORAGE_KEY_CHAT_HANDOFF) } catch (_) { /* best-effort */ }
           return null
         }
         const adopted = this.normalizeChatRecord(payload.chat)
         if (!adopted?.id) return null
-        storage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY_CHAT_HANDOFF)
+        try { window.Application?.PluginStorage?.removeItem(STORAGE_KEY_CHAT_HANDOFF) } catch (_) { /* best-effort */ }
         return adopted
       } catch (e) {
         console.warn('读取对话交接快照失败:', e)
@@ -12407,8 +12405,19 @@ export default {
       return `系统已根据当前语义和文档上下文尽量预填 ${label} 所需参数。确认后会直接调用对应文档接口。`
     },
     /** 模板类能力的指令推断（预填与直执行共用）：从原话+附件推断全部参数 */
-    inferTemplateParamsFromText(text = '') {
-      const raw = String(text || '').trim()
+    /** 上次模板生成的输入记忆（模板路径+素材，30 分钟内有效）——新窗口无附件时按指代复用 */
+    readLastTemplateGenInputs(maxAgeMs = 30 * 60 * 1000) {
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('chayuan_ai_last_template_gen_v1') : ''
+        const data = raw ? JSON.parse(raw) : null
+        if (!data?.templatePath) return null
+        if (Date.now() - Number(data.at || 0) > maxAgeMs) return null
+        return data
+      } catch (_) {
+        return null
+      }
+    },
+    inferTemplateParamsFromText(text = '') {      const raw = String(text || '').trim()
       const officeAttached = (Array.isArray(this.attachments) ? this.attachments : [])
         .some(it => it && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(it.name || '')))
       const quoted = raw.match(/[「『"']([^」』"']{2,30})[」』"']/)
@@ -19518,6 +19527,11 @@ export default {
           return hasOfficeTpl && !mediaOnly
             && /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(t)
             && /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(t)
+            || (!mediaOnly && !hasOfficeTpl
+              && /(附件|模板|上次|刚才|继续)/.test(t)
+              && /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(t)
+              && /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(t)
+              && !!this.readLastTemplateGenInputs())
         })()
         // Exclusive Lane: 文档智能体开启且 MCP 可用时，整轮只走 MCP，禁止再进意图/助手文档链路
         if (this.mcpEnabled && !templatePipelineClaimed) {
@@ -19636,6 +19650,29 @@ export default {
           const wantsGenerateDoc = /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(text) &&
             /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(text)
           const mediaOnly = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(text)
+          // 上次生成输入记忆（2026-10-16 用户实测：新窗口重发时没带附件，掉进 MCP
+          // 智能体对话要路径）。30 分钟内生成过 → 「附件1/模板/上次」指代即可复用
+          const lastGen = this.readLastTemplateGenInputs()
+          const referencesTemplateSource = /(附件|模板|上次|刚才|继续)/.test(text)
+          if (!hasOfficeAttachment && wantsGenerateDoc && !mediaOnly && referencesTemplateSource && lastGen) {
+            assistantMsg.content = '已按上次的模板与素材开始处理…'
+            assistantMsg.isLoading = false
+            this.stopAssistantLoadingProgress(assistantMsg)
+            this.saveHistory()
+            await this.runWpsCapabilityTaskFromMessage(assistantMsg, 'generate-from-template', {
+              params: {
+                templatePath: lastGen.templatePath,
+                requirement: this.inferTemplateParamsFromText(text).requirement || text,
+                referenceContext: lastGen.referenceContext || '',
+                pageTarget: this.inferTemplateParamsFromText(text).pageTarget,
+                toneFollow: '跟随模板文风',
+                planOnly: '先出计划确认',
+                savePath: ''
+              },
+              requirementText: text
+            })
+            return
+          }
           if (hasOfficeAttachment && wantsGenerateDoc && !mediaOnly) {
             const inferredDirect = this.inferTemplateParamsFromText(text)
             assistantMsg.content = '已识别模板生成请求，直接开始处理…'

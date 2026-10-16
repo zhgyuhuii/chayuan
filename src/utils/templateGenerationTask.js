@@ -986,6 +986,18 @@ export async function runTemplateGenerationTask(params = {}) {
   const resolved = resolveTemplateSource(params)
   if (!resolved.ok) throw new Error(resolved.error || '模板来源无效')
   const kind = normalizeTemplateKind(resolved.kind, resolved.path)
+  // 记住本次生成输入（用户令：新窗口里没带附件也要能按「附件1/上次模板」再生成）：
+  // localStorage 全 webview 共享；30 分钟内有效
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('chayuan_ai_last_template_gen_v1', JSON.stringify({
+        at: Date.now(),
+        templatePath: resolved.path,
+        requirement,
+        referenceContext: String(params.referenceContext || '').slice(0, 8000)
+      }))
+    }
+  } catch (_) { /* 记忆失败不影响生成 */ }
   // 同宿主闸门前置：错配时在 LLM 调用与开副本之前即失败
   const gate = assertSameHostKind(kind)
   if (!gate.ok) throw new Error(gate.error)
