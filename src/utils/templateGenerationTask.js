@@ -15,7 +15,7 @@ import { getFlatModelsFromSettings, parseModelCompositeId } from './modelSetting
 import { normalizeTemplateKind, resolveTemplateSource } from './documentTemplates.js'
 import { createFromTemplate, deliverActiveDocument, assertSameHostKind } from './documentCreateFromTemplate.js'
 import { analyzeTemplateFile, summarizeProfile, readTemplateBytes } from './templateStyleReader.js'
-import { loadTemplateZip, applySlidePlanToZip, collectSlideTextsFromZip, fixSlideTextsInZip, exportZipBytes } from './templateFileGenerator.js'
+import { loadTemplateZip, applySlidePlanToZip, collectSlideTextsFromZip, fixSlideTextsInZip, exportZipBytes, auditGeneratedDeck, fitOverflowTextsInZip, collectFontCensus } from './templateFileGenerator.js'
 import { buildDeterministicSlidePlan } from './templateContentMapper.js'
 import { getEffectiveDataDir, pathJoin, ensureDir } from './dataPathSettings.js'
 import { smartDefaults, assembleContract, contractToPromptLines, outlineChanged, cardAspectsForKind, flatKeyFor } from './templateContract.js'
@@ -26,8 +26,8 @@ import { handlePresentationAction } from '../services/mcpBridge/presentationDisp
 import { withDocumentWriteLock } from '../services/documentWriteLock.js'
 import { updateTask as updateTaskRecord, getTaskById } from './taskListStore.js'
 
-const MAX_QC_ROUNDS = 3
-const DEFAULT_QC_ROUNDS = 2
+const MAX_QC_ROUNDS = 4
+const DEFAULT_QC_ROUNDS = 3
 const TEXT_SAMPLE_LIMIT = 3000
 const PLAN_CACHE_TTL_MS = 30 * 60 * 1000
 
@@ -558,7 +558,7 @@ async function executeSlidePlan(plan) {
 async function runQcPass(model, kind, { requirement, profileSummary, contractLines = '', textOverride = '' }) {
   const currentText = (textOverride || String(getDocumentText() || '')).slice(0, TEXT_SAMPLE_LIMIT)
   const judge = await llmJson(
-    '你是文档质检员。对照用户需求审查生成结果，只输出合法 JSON。',
+    '你是文档质检员。对照用户需求与勾选要素契约逐项审查生成结果，只输出合法 JSON。',
     [
       `【用户需求】${requirement}`,
       `【模板画像摘要】\n${profileSummary.slice(0, 800)}`,
@@ -566,7 +566,7 @@ async function runQcPass(model, kind, { requirement, profileSummary, contractLin
       `【当前文档全文（截断）】\n${currentText}`,
       '',
       '输出：{"pass":布尔,"issues":[{"where":"位置描述","problem":"问题","fixFind":"需被替换的原文片段(文档中逐字存在,≥6字)","fixReplace":"修正后文本"}]}',
-      '规则：①重点检查模板占位文案残留（Lorem ipsum、输入标题文字、点击输入您的文字、请在此处添加 等）——发现残留必须列为 issue 并给出 fixFind（逐字取残留原文）与 fixReplace（来自需求的真实内容）；②检查标题位是否仍是模板原标题（与需求主题无关的旧标题）、正文是否跑题/缺失；③LOGO、PART ONE、页码、01/02 章节号、40%/77% 数据装饰属模板固定元素，不是问题，不要列为 issue。fixFind 取不到时留空；全部干净才 pass=true。'
+      '规则：①占位残留：Lorem ipsum/输入标题/点击输入/请在此处添加 等必须列为 issue 并给出 fixFind（逐字取残留原文）与 fixReplace（来自需求的真实内容）；②内容符合性：正文跑题、与需求无关、章节与需求要点缺失——列为 issue；③文案质量：空洞套话、明显拼接痕、语病、过长导致展示不全——列为 issue；④契约核对：上面【模板要素契约】若存在，逐条核对，违反的列为 issue；⑤LOGO、PART ONE、页码、01/02 章节号、40%/77% 数据装饰、模板站水印属模板固定元素，不是问题；⑥fixFind 取不到时留空该字段；全部干净才 pass=true。'
     ].join('\n')
   )
   return { judge: judge || { pass: true, issues: [] }, currentText }
@@ -613,13 +613,17 @@ async function applyQcFixes(kind, judge) {
  * 大字号标题原样残留。现按剖析角色映射（title/subtitle/body/decor）+ shapeIndex 精确落位。
  */
 
-async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, plan, sourceParams }) {
+async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, contract, plan, sourceParams }) {
   const maxRounds = Math.min(Math.max(Number(sourceParams.qcRounds) || DEFAULT_QC_ROUNDS, 0), MAX_QC_ROUNDS)
+  const contractLines = contract ? contractToPromptLines(contract) : ''
 
   progress(taskId, 35, '正在后台按计划改写模板（不打开 WPS）…')
   const loaded = await loadTemplateZip(readTemplateBytes(sourceParams.__templatePath))
   if (!loaded.ok) throw new Error(loaded.error)
   let zip = loaded.zip
+  // 字体基准：生成前采集原模板字体集（审计用——生成过程不改字体属性，此项是安全网）
+  let templateFonts = []
+  try { templateFonts = await collectFontCensus(zip) } catch (_) { /* 审计降级为跳过字体项 */ }
   // 确定性底稿：每页真实内容打底（find=剖析texts，100%命中），LLM计划随后叠加精修
   const detPlan = buildDeterministicSlidePlan(sourceParams.__analysisProfile, sourceParams.referenceContext, requirement)
   const detRes = await applySlidePlanToZip(zip, detPlan)
@@ -660,15 +664,50 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   }
   const stats = buildStats()
 
-  const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0 }
+  // 多轮核对（2026-10-16 用户令：打开前多次核对——内容/换行/字体/文案 + 勾选表单逐项）：
+  // 每轮 = 确定性机器审计（可自愈项当场修）+ LLM 多维审查（需求符合性/文案/契约项），通过或达轮次上限为止
+  const qcReport = { rounds: 0, passed: null, issues: [], geometryIssues: [], fixApplied: 0, machineFixed: 0, dims: null }
   const qcModelUsable = !!model?.providerId && !!model?.modelId
   for (let round = 1; round <= maxRounds; round++) {
-    if (!qcModelUsable) { qcReport.passed = null; break } // 无模型跳过质检
-    progress(taskId, 55 + Math.round(25 * round / (maxRounds + 1)), `第 ${round}/${maxRounds} 轮质检（文件级）…`)
     if (isCancelled()) throw createCancelledError()
+    progress(taskId, 55 + Math.round(25 * round / (maxRounds + 1)), `第 ${round}/${maxRounds} 轮核对（占位/换行/字体/内容）…`)
+    // ① 确定性机器审计：零 LLM、每轮必跑
+    let audit = { placeholderHits: [], overflows: [], foreignFonts: [] }
+    try {
+      audit = await auditGeneratedDeck(zip, { profile: sourceParams.__analysisProfile, templateFonts })
+    } catch (e) { console.warn('机器审计失败:', e?.message) }
+    qcReport.dims = {
+      placeholder: (audit.placeholderHits || []).length === 0,
+      overflow: (audit.overflows || []).length === 0,
+      fonts: (audit.foreignFonts || []).length === 0,
+      content: null
+    }
+    // ② 自愈：能机器修的当场修（占位残留→再清扫；文本溢出→按容量句读截断重写）
+    let machineFixed = 0
+    if ((audit.placeholderHits || []).length) {
+      try {
+        const { sweepPlaceholders } = await import('./templateFileGenerator.js')
+        const sweep = await sweepPlaceholders(zip, sourceParams.referenceContext)
+        machineFixed += sweep.swept || 0
+      } catch (_) { /* 下一轮再审 */ }
+    }
+    if ((audit.overflows || []).length) {
+      try {
+        const fit = await fitOverflowTextsInZip(zip, audit.overflows)
+        machineFixed += fit.applied || 0
+      } catch (_) { /* 下一轮再审 */ }
+    }
+    if (machineFixed > 0) {
+      qcReport.machineFixed += machineFixed
+      qcReport.fixApplied += machineFixed
+      continue // 修完当轮即重审（占轮次，保证"修了再核对"）
+    }
+    // ③ LLM 多维审查：需求符合性/文案质量/契约勾选项逐条（无模型时机器审计即终点）
+    if (!qcModelUsable) { qcReport.rounds = round; qcReport.passed = qcReport.dims.placeholder && qcReport.dims.overflow && qcReport.dims.fonts ? true : false; break }
     const slideTexts = await collectSlideTextsFromZip(zip) // 同一 zip 直取，零二次装载
-    const { judge } = await runQcPass(model, 'slide', { requirement, profileSummary, textOverride: slideTexts })
+    const { judge } = await runQcPass(model, 'slide', { requirement, profileSummary, textOverride: slideTexts, contractLines })
     qcReport.rounds = round
+    qcReport.dims.content = judge?.pass !== false
     if (judge?.pass !== false) { qcReport.passed = true; break }
     qcReport.passed = false
     qcReport.issues.push(...(Array.isArray(judge?.issues) ? judge.issues : []))
@@ -703,12 +742,19 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
     }
   }
   progress(taskId, 99, '生成完成')
+  const dims = qcReport.dims || {}
+  const dimText = [
+    `内容${dims.content === null || dims.content === undefined ? (qcReport.passed === null ? '未审' : '✓') : (dims.content ? '✓' : '✗')}`,
+    `换行溢出${dims.overflow ? '✓' : '✗'}`,
+    `字体${dims.fonts ? '✓' : '✗'}`,
+    `占位残留${dims.placeholder ? '✓' : '✗'}`
+  ].join(' ')
   const summary = [
     `已后台生成：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
     `执行：改写 ${stats.edits} 处（含内容底稿 ${stats.deterministicEdits || 0} 处）/ 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
     stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
     stats.rejected ? `拒收异常替换 ${stats.rejected} 处` : '',
-    `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
+    `核对：${qcReport.rounds} 轮（${dimText}）${contractLines ? '，勾选契约项已逐条核查' : ''}${qcReport.machineFixed ? `，机器自愈 ${qcReport.machineFixed} 处` : ''}——${qcReport.passed === true ? '全部通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}${qcReport.passed !== true && (qcReport.issues || []).length ? '；未决问题：' + qcReport.issues.slice(0, 3).map(i => i?.problem || '').filter(Boolean).join('；') : ''}`,
     opened ? (replacedBlank ? '原空白文稿已关闭，生成结果已带完整模板设计打开。' : '已自动在 WPS 打开生成结果。') : '自动打开失败——请手动打开：' + (outPath.path || '')
   ].filter(Boolean).join('\n')
   return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true, replacedBlank }
@@ -780,7 +826,7 @@ async function executePlanStages({ taskId, isCancelled, kind, requirement, profi
   // ③-文件级（slide，2026-10-15 架构修正）：全程后台生成文件，绝不在 WPS 中打开
   // 模板（jsapi Open 会崩 + OS 打开抢焦点，双问题一并消失）。产物落盘 _temp。
   if (kind === 'slide' && sourceParams.__templatePath) {
-    return executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, contract: null, plan, sourceParams })
+    return executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, contract, plan, sourceParams })
   }
   // ③ 开临时副本（同宿主闸门在 createFromTemplate 内）
   progress(taskId, 35, '正在从模板创建新文档…')

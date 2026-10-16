@@ -64,6 +64,11 @@ function parseSlideShapes(doc) {
     const tNodes = tags(sp, 'a:t')
     entry.texts = tNodes.map(n => n.textContent || '')
     entry.combined = entry.texts.join('').trim()
+    // 尺寸（EMU）：供溢出审计按容量截断
+    const xfrm = tags(sp, 'a:xfrm')[0] || null
+    const extNode = xfrm ? (tags(xfrm, 'a:ext')[0] || null) : null
+    entry.w = extNode ? (Number(extNode.getAttribute('cx')) || 0) : 0
+    entry.h = extNode ? (Number(extNode.getAttribute('cy')) || 0) : 0
     // 字号/字体（首个 rPr 的属性）
     const rPrs = tags(sp, 'a:rPr')
     if (rPrs.length) {
@@ -443,6 +448,143 @@ export async function collectSlideTextsFromZip(zip) {
     parts.push(texts.join(' | '))
   }
   return parts.join('\n')
+}
+
+// ── 生成结果确定性审计（2026-10-16 用户令：打开前多次核对——内容/换行/字体/文案）──
+
+const EMU_PER_PT = 12700
+
+/** 视觉宽度：CJK 全角=1，半角字母数字标点≈0.55——"01."≈1.65 字宽，不再误报装饰小框 */
+function visualLen(t) {
+  let n = 0
+  for (const ch of String(t || '')) n += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F]/.test(ch) ? 1 : 0.55
+  return n
+}
+
+/** 形状文本容量估算：宽/字号→每行字数，高/行高→行数（CJK 全宽近似，留 25% 误差余量在外部判断） */
+export function shapeTextCapacity(wEmu, hEmu, fontSizePt) {
+  if (!wEmu || !hEmu || !fontSizePt || fontSizePt < 5) return null
+  const charW = fontSizePt * EMU_PER_PT * 1.02
+  const lineH = fontSizePt * EMU_PER_PT * 1.4
+  const cols = Math.max(1, Math.floor(wEmu / charW))
+  const rows = Math.max(1, Math.floor(hEmu / lineH))
+  return cols * rows
+}
+
+const AUDIT_FONT_ALLOW = /(^[\u4e00-\u9fa5A-Za-z0-9 ]+$)|(^[+\-/a-z]{2,6}$)/i
+
+/** 原模板字体普查（生成前采集一次，作为字体一致性审计的基准集） */
+export async function collectFontCensus(zip) {
+  const fonts = new Set()
+  const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+  for (const name of names) {
+    const doc = xmlOf(await zip.file(name).async('string'))
+    for (const tag of ['a:latin', 'a:ea']) {
+      for (const n of tags(doc, tag)) {
+        const f = String(n.getAttribute('typeface') || '').trim()
+        if (f && !f.startsWith('+')) fonts.add(f)
+      }
+    }
+  }
+  return [...fonts]
+}
+
+/**
+ * 确定性审计生成的幻灯片 zip（零 LLM，可反复执行）：
+ *  - placeholderHits：模板占位残留（Lorem/输入标题/点击输入/请在此处/单击此处…）
+ *  - overflows：文本量超过形状容量 1.25 倍的形状（换行/溢出风险）
+ *  - foreignFonts：不在「原模板字体普查集」内的字体（生成过程不改字体属性，此项是安全网）
+ * @returns {{placeholderHits:Array, overflows:Array, foreignFonts:Array, pageCount:number}}
+ */
+export async function auditGeneratedDeck(zip, { templateFonts } = {}) {
+  const PLACEHOLDER_AUDIT_RE = /(lorem\s+ipsum|输入标题|点击输入|请在此处|单击此处|添加合适的文字|文字内容或复制|用简明扼要|此处输入您的文本)/i
+  const allowedFonts = new Set(Array.isArray(templateFonts) ? templateFonts : [])
+  const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNum(a) - slideNum(b))
+  const placeholderHits = []
+  const overflows = []
+  const foreignFonts = []
+  for (const name of names) {
+    const page = slideNum(name)
+    const doc = xmlOf(await zip.file(name).async('string'))
+    // 占位残留（a:t 级）
+    for (const n of tags(doc, 'a:t')) {
+      const t = String(n.textContent || '').trim()
+      if (t.length >= 4 && PLACEHOLDER_AUDIT_RE.test(t)) placeholderHits.push({ page, text: t.slice(0, 40) })
+    }
+    // 字体（a:latin/a:ea 显式字体）
+    for (const tag of ['a:latin', 'a:ea']) {
+      for (const n of tags(doc, tag)) {
+        const f = String(n.getAttribute('typeface') || '').trim()
+        if (!f || f.startsWith('+')) continue // +mj-lt/+mn-ea = 主题引用，天然一致
+        if (!AUDIT_FONT_ALLOW.test(f)) continue
+        if (allowedFonts.size && !allowedFonts.has(f)) foreignFonts.push({ page, font: f })
+      }
+    }
+    // 溢出：形状合并文本的视觉宽度 vs 容量（≥6 字宽且超容 25% 才关注，装饰小框/短编号不算）
+    const census = parseSlideShapes(doc)
+    for (const s of census) {
+      if (!s.combined) continue
+      const cap = shapeTextCapacity(s.w, s.h, s.fontSize || 0)
+      if (!cap) continue
+      const vlen = visualLen(s.combined)
+      if (vlen < 6) continue
+      if (vlen > cap * 1.25) overflows.push({ page, shapeIndex: s.shapeIndex, len: Math.round(vlen), cap, fontSize: s.fontSize, combined: s.combined })
+    }
+  }
+  return { placeholderHits, overflows, foreignFonts, pageCount: names.length }
+}
+
+/**
+ * 溢出自愈：对审计出的溢出形状按容量截断重写（句读处截断+省略号，fitText 同款逻辑）。
+ * @returns {{applied:number}}
+ */
+export async function fitOverflowTextsInZip(zip, overflows) {
+  let applied = 0
+  const byPage = new Map()
+  for (const o of Array.isArray(overflows) ? overflows : []) {
+    if (!byPage.has(o.page)) byPage.set(o.page, [])
+    byPage.get(o.page).push(o)
+  }
+  for (const [page, list] of byPage) {
+    const file = zip.file(`ppt/slides/slide${page}.xml`)
+    if (!file) continue
+    const doc = xmlOf(await file.async('string'))
+    const spElements = tags(doc, 'p:sp')
+    let changed = false
+    for (const o of list) {
+      const sp = spElements[Number(o.shapeIndex)]
+      if (!sp) continue
+      const tNodes = tags(sp, 'a:t')
+      if (!tNodes.length) continue
+      // 按视觉宽度换算字符数上限（CJK 记 1、半角记 0.55）；目标恰达容量，低于告警线（cap×1.25）
+      const capVisual = Math.max(4, Number(o.cap))
+      const full = tNodes.map(n => String(n.textContent || '')).join('')
+      let used = 0
+      let end = full.length
+      for (let i = 0; i < full.length; i++) {
+        used += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\u3000-\u303F]/.test(full[i]) ? 1 : 0.55
+        if (used > capVisual) { end = i; break }
+      }
+      const trimmed = fitTrim(full, end)
+      if (trimmed === full) continue
+      tNodes[0].textContent = trimmed
+      for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+      applied++
+      changed = true
+    }
+    if (changed) zip.file(`ppt/slides/slide${page}.xml`, textOf(doc))
+  }
+  return { applied }
+}
+
+/** 句读优先截断（与 templateContentMapper.fitText 同策略，独立实现避免循环依赖） */
+function fitTrim(text, cap) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim()
+  if (t.length <= cap) return t
+  const cut = t.slice(0, cap)
+  const m = cut.match(/^[\s\S]*[。；;！!？?]/)
+  const base = (m && m[0].length >= cap * 0.5) ? m[0] : cut.replace(/[，,、\s]+$/, '')
+  return /[。！？!?]$/.test(base) ? base : base + '…'
 }
 
 /** QC 修正直接作用于同一 zip */

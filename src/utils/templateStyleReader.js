@@ -218,10 +218,14 @@ function classifySlideShapes(doc) {
     const texts = tags(sp, 'a:t').map(t => (t.textContent || '').trim()).filter(Boolean)
     const combined = texts.join('').trim()
     // 位置（EMU）：供内容映射按阅读顺序/就近序号排布；组合形状内为相对坐标，同页排序足够
-    const off = firstTag(firstTag(sp, 'a:xfrm') || sp, 'a:off')
+    const xfrm = firstTag(sp, 'a:xfrm')
+    const off = firstTag(xfrm || sp, 'a:off')
+    const ext = firstTag(xfrm || sp, 'a:ext')
     const x = Number(attr(off, 'x')) || 0
     const y = Number(attr(off, 'y')) || 0
-    const entry = { shapeIndex: i, phType, combined: combined.slice(0, 120), fontSize: maxFontSizeOf(sp), role: null, x, y }
+    const w = Number(attr(ext, 'cx')) || 0
+    const h = Number(attr(ext, 'cy')) || 0
+    const entry = { shapeIndex: i, phType, combined: combined.slice(0, 120), fontSize: maxFontSizeOf(sp), role: null, x, y, w, h }
     if (!combined) { shapes.push(entry); continue }
     if (phType && PH_TITLE.has(phType)) entry.role = 'title'
     else if (phType === 'subTitle') entry.role = 'subtitle'
