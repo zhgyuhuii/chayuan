@@ -300,6 +300,7 @@ const JOB_HARD_TIMEOUT_MS = 55_000
  * Keep dot-form keys (match dispatchMcpJob's `job.method`, e.g. 'proofread.run').
  */
 const JOB_TIMEOUT_BY_METHOD = {
+  'template.generate': 900_000,
   'proofread.run': 300_000,
   'proofread.apply_comments': 300_000,
   'document.apply_ops': 180_000,
