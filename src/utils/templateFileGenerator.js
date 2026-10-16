@@ -46,6 +46,61 @@ function slideNum(name) {
   return Number(String(name).match(/slide(\d+)\.xml$/)?.[1] || 0)
 }
 
+/** 解析单页所有形状（含占位符类型/字号/文本/位置）——形状级剖析核心 */
+function parseSlideShapes(doc) {
+  const shapes = []
+  const spElements = tags(doc, 'p:sp')
+  for (let i = 0; i < spElements.length; i++) {
+    const sp = spElements[i]
+    const entry = { shapeIndex: i, phType: null, phIdx: null, isPlaceholder: false, texts: [], combined: '', fontSize: null, fontName: null }
+    // 占位符类型
+    const phNodes = tags(sp, 'p:ph')
+    if (phNodes.length) {
+      entry.phType = phNodes[0].getAttribute('type') || 'body'
+      entry.phIdx = phNodes[0].getAttribute('idx') || null
+      entry.isPlaceholder = true
+    }
+    // 文本内容
+    const tNodes = tags(sp, 'a:t')
+    entry.texts = tNodes.map(n => n.textContent || '')
+    entry.combined = entry.texts.join('').trim()
+    // 字号/字体（首个 rPr 的属性）
+    const rPrs = tags(sp, 'a:rPr')
+    if (rPrs.length) {
+      const sz = rPrs[0].getAttribute('sz')
+      if (sz) entry.fontSize = Number(sz) / 100
+    }
+    const defRPr = tags(sp, 'a:defRPr')
+    if (defRPr.length) {
+      const sz = defRPr[0].getAttribute('sz')
+      if (sz && !entry.fontSize) entry.fontSize = Number(sz) / 100
+    }
+    const latin = tags(sp, 'a:latin')
+    if (latin.length) entry.fontName = latin[0].getAttribute('typeface') || null
+    const ea = tags(sp, 'a:ea')
+    if (ea.length) entry.fontName = ea[0].getAttribute('typeface') || entry.fontName
+    shapes.push(entry)
+  }
+  return shapes
+}
+
+/** 按形状索引替换文本：将该 shape 的全部 <a:t> 合并为新文本（放入首节点，清空其余） */
+function replaceShapeText(doc, shapeIndex, newText) {
+  const spElements = tags(doc, 'p:sp')
+  if (shapeIndex >= spElements.length) return false
+  const tNodes = tags(spElements[shapeIndex], 'a:t')
+  if (!tNodes.length) return false
+  tNodes[0].textContent = newText
+  for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+  return true
+}
+
+/** 按占位符类型查找形状索引（title/ctrTitle/body/subTitle 等） */
+function findShapeByPlaceholder(shapes, phType) {
+  return shapes.findIndex(s => s.phType === phType)
+}
+
+
 /**
  * 在单页 XML 上执行文本替换；find 需逐字命中单个 <a:t> 节点。
  * @returns {{applied:number, missed:string[]}}
@@ -71,45 +126,48 @@ function isBadReplace(replaceTo) {
   return false
 }
 
-function replaceTextsInSlideDoc(doc, replaces) {
+function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
+  const pageSpElements = tags(doc, 'p:sp')
   const applied = []
   const missed = []
   const rejected = []
-  const nodes = tags(doc, 'a:t')
+  const spElements = tags(doc, 'p:sp')
   for (const rep of replaces) {
     const find = String(rep?.find || '')
     let replaceTo = String(rep?.replace ?? rep?.replaceWith ?? '')
     if (!find) continue
     if (isBadReplace(replaceTo)) { rejected.push(find.slice(0, 12)); continue }
-    const hit = nodes.find(n => (n.textContent || '').includes(find))
+    // 优先按 shapeIndex 精确替换
+    if (rep?.shapeIndex !== undefined && shapeCensus) {
+      const target = shapeCensus[Number(rep.shapeIndex)]
+      if (target) {
+        const sp = pageSpElements[Number(rep.shapeIndex)]
+        if (sp) {
+          const tNodes = tags(sp, 'a:t')
+          if (tNodes.length) {
+            tNodes[0].textContent = replaceTo
+            for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+            applied.push(find)
+            continue
+          }
+        }
+      }
+    }
+    // 文本子串匹配（兜底）
+    const hit = tags(doc, 'a:t').find(n => (n.textContent || '').includes(find))
     if (hit) {
-      // 整节点替换（2026-10-16 真机：子串替换留残留→新旧内容混合乱糟糟）
-      // find 用于定位节点，replace 直接成为该节点全部文本
       hit.textContent = replaceTo
       applied.push(find)
       continue
     }
-    if (rejected.length && rejected[rejected.length - 1] === find.slice(0, 12)) continue
-    // 模糊匹配（弱模型 find 常为缩写/词序打乱）：两级——归一化包含 → 词元重合度
+    // 模糊匹配
     const nFind = normText(find)
     if (nFind.length >= 4 && !PLACEHOLDER_WORDS.test(find)) {
-      let fuzzy = nodes.find(n => {
+      const allT = tags(doc, 'a:t')
+      const fuzzy = allT.find(n => {
         const nn = normText(n.textContent)
-        return nn && (nn.includes(nFind) || (nFind.includes(nn) && nn.length >= 4))
+        return nn && nn.includes(nFind)
       })
-      if (!fuzzy) {
-        // 词元重合度：find 的词元 ≥60% 出现在节点文本中（'lorem dolor' ⊂ 'lorem ipsum dolor sit'）
-        const findTokens = nFind.split(/[^a-z0-9\u4e00-\u9fa5]+/).filter(t => t.length >= 2)
-        if (findTokens.length >= 2) {
-          fuzzy = nodes.find(n => {
-            const nn = normText(n.textContent)
-            if (!nn) return false
-            let hits = 0
-            for (const tk of findTokens) if (nn.includes(tk)) hits++
-            return hits / findTokens.length >= 0.6
-          })
-        }
-      }
       if (fuzzy) {
         fuzzy.textContent = replaceTo
         applied.push(find + '(fuzzy)')
@@ -120,7 +178,6 @@ function replaceTextsInSlideDoc(doc, replaces) {
   }
   return { applied: applied.length, missed }
 }
-
 /**
  * 应用计划到 pptx 字节。
  * @param {ArrayBuffer} templateBytes
@@ -297,7 +354,8 @@ export async function applySlidePlanToZip(zip, plan) {
       const file = zip.file(`ppt/slides/slide${num}.xml`)
       if (!file) { stats.missedTexts.push(`第${num}页不存在`); continue }
       const doc = xmlOf(await file.async('string'))
-      const r = replaceTextsInSlideDoc(doc, page?.replaces || [])
+      const census = parseSlideShapes(doc)
+      const r = replaceTextsInSlideDoc(doc, page?.replaces || [], census)
       stats.edits += r.applied; stats.missedTexts.push(...r.missed)
       zip.file(`ppt/slides/slide${num}.xml`, textOf(doc))
     } else if (action === 'duplicate' || action === 'add') {
