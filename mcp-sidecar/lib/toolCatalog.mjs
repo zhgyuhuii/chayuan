@@ -31,7 +31,8 @@ export const SERVER_INSTRUCTIONS = [
   'Hosts: wps_status.agent.hosts shows which hosts are online. spreadsheet.* actions operate the ACTIVE WORKBOOK in WPS 表格 (requires et host online); presentation.* operate the ACTIVE PRESENTATION in WPS 演示 (requires wpp host online); document_*/format_*/table/comment/… operate Writer documents. Tool calls are auto-routed to the matching host.',
   'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE). Prefer resource chayuan://guide/tool-routing for layer routing.',
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
-  'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled, including blank files and template copies. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
+  'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled for document_* lifecycle tools (including blank files and template copies); the ONE exception is template_generate — it creates a NEW file from a user-provided template (pptx/docx/xlsx) and auto-opens it. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
+  'Template generation (模板编制): template_generate takes a template file + reference material and produces a new document — pptx→演示, docx→文字, xlsx→表格 (host auto-routed and auto-launched). Prefer it over manual fill when the user says 按/根据模板生成. It already runs multi-round checks (placeholder residue, text overflow, font consistency, content/copy quality, contract items) before opening the result.',
   'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_*.',
   'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
   'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply. In ET: 改值 → spreadsheet range_write; 改外观 → spreadsheet format.',
@@ -1580,20 +1581,21 @@ const TEMPLATE_TOOLS = [
   tool({
     name: 'template_generate',
     description: [
-      'WHAT: 按用户提供的模板文件（pptx/docx）+ 参考素材（md/txt），后台生成同框架新文档（不打开 WPS 窗口，纯文件级：剖析模板框架→LLM 计划→逐页/逐段填充→质检→落盘）。宿主无关——任何在线宿主的 webview 都能执行。',
-      'WHEN: 用户要求按模板生成 PPT/文档并提供模板路径与内容素材。',
-      'HOW: {"templatePath":"/abs/path/模板.pptx","requirement":"生成年度总结","referenceContext":"素材文本"}. 返回生成文件路径与执行/质检统计。',
-      'NOT: 不是格式转换；不修改原模板文件（输出为新文件）。'
+      'WHAT: 按用户提供的模板文件（pptx/docx/xlsx 均可）+ 参考素材（md/txt），后台生成同框架新文档：剖析模板框架（形状角色/字号/字体）→ 确定性底稿+LLM 计划 → 逐形状填充 → 多轮核对（占位残留/换行溢出/字体一致性机器审计自愈 + 内容符合性/文案/契约项 LLM 审查）→ 落盘并自动打开新文档。',
+      '宿主路由：按模板扩展名自动派发到对应宿主（docx→文字 / xlsx→表格 / pptx→演示），目标宿主离线会自动拉起 WPS 并等待就绪——调用方无需关心当前哪个宿主在线。',
+      'WHEN: 用户要求「按模板/附件1模板 生成 PPT/Word文档/Excel表格」并提供模板路径与内容素材。',
+      'HOW: {"templatePath":"/abs/path/模板.pptx","requirement":"生成年度总结","referenceContext":"素材文本"}. 返回生成文件路径、各核对维度（内容/换行/字体/占位）与执行统计。',
+      'NOT: 不是格式转换；不修改原模板文件（输出为新文件并自动打开）；无需先打开对应宿主。'
     ].join(' '),
     inputSchema: {
       type: 'object',
       required: ['templatePath', 'requirement'],
       properties: {
-        templatePath: { type: 'string', description: '模板文件绝对路径（pptx/docx）' },
+        templatePath: { type: 'string', description: '模板文件绝对路径（pptx/ppsx/docx/aidocx/xlsx/xlsm/csv——扩展名决定生成类型与目标宿主）' },
         requirement: { type: 'string', description: '生成需求（主题/要点/受众）' },
         referenceContext: { type: 'string', description: '参考素材文本（总结/数据/计划等，作为内容事实来源）' },
         pageTarget: { type: 'number', description: '目标页数（PPT 可选）' },
-        qcRounds: { type: 'number', description: '质检轮次 0-3（默认 2）' }
+        qcRounds: { type: 'number', description: '核对轮次 0-4（默认 3；每轮=机器审计自愈+LLM 多维审查）' }
       }
     }
   })

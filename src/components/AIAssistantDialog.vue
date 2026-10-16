@@ -14466,8 +14466,13 @@ export default {
         getSnapshot: () => this.getLiveSelectionContext() || this.resolveBestSelectionContext()
       })
     },
-    inferPrimaryConversationIntentByRule(text = '') {
+    inferPrimaryConversationIntentByRule(text = '', attachments = null) {
       const normalized = String(text || '').trim()
+      // 附件快照优先（2026-10-16 真机根因）：composer 发送后 this.attachments 已清空，
+      // 附件感知模板路由必须用 sendMessage 传入的 attachmentsSnapshot，否则永远不命中
+      const attachmentPool = (Array.isArray(attachments) && attachments.length)
+        ? attachments
+        : (Array.isArray(this.attachments) ? this.attachments : [])
       if (!normalized) {
         return {
           kind: 'chat',
@@ -14479,7 +14484,7 @@ export default {
       // 用户说「根据附件/上传的…生成PPT/文档/表格」即使没说「模板」二字，
       // 也应走模板生成管线——否则落到 chat，模型只能反复追问附件细节。
       {
-        const hasOfficeTemplateAttachment = (Array.isArray(this.attachments) ? this.attachments : [])
+        const hasOfficeTemplateAttachment = attachmentPool
           .some(item => item && /\.(aidocx|docx|doc|dotx|xlsm|xlsx|xls|et|pptx|ppsx|ppt|dps)$/i.test(String(item.name || '')))
         const mediaOnlyRequest = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(normalized)
         if (hasOfficeTemplateAttachment && !mediaOnlyRequest &&
@@ -14631,7 +14636,7 @@ export default {
       }
     },
     async resolvePrimaryConversationIntent(text, model, turnCtx = null) {
-      const ruleIntent = this.inferPrimaryConversationIntentByRule(text)
+      const ruleIntent = this.inferPrimaryConversationIntentByRule(text, turnCtx?.attachmentsSnapshot || null)
       const selectionContext = this.resolveBestSelectionContext()
       const routeContext = {
         ruleIntent,
@@ -19527,6 +19532,34 @@ export default {
         this.saveHistory()
 
         if (routeKind === 'wps-capability') {
+          // 附件感知直通（2026-10-16 用户实测：「根据附件1 分析附件2 生成年度总结ppt」无
+          // 「模板」二字，capability 规则全文本匹配落空 → 掉回普通聊天，模型只能对着
+          // pptx 元信息叹气）。有 Office 模板类附件 + 生成意图 → 直接进模板生成管线：
+          // 附件即模板（resolveTemplateAttachmentParams 注入），计划卡承担勾选表单确认
+          const directAtts = (Array.isArray(attachmentsSnapshot) && attachmentsSnapshot.length) ? attachmentsSnapshot : this.attachments
+          const hasOfficeAttachment = (Array.isArray(directAtts) ? directAtts : [])
+            .some(item => item && /\.(aidocx|docx|doc|xlsm|xlsx|xls|et|pptx|ppsx|dps)$/i.test(String(item.name || '')))
+          const wantsGenerateDoc = /(生成|做一|写一|制作|出一|创建|帮我做|帮我写)/.test(text) &&
+            /(PPT|ppt|演示|幻灯片|文稿|文档|Word|word|表格|Excel|excel|报表|报告|总结|文章|课件|汇报)/.test(text)
+          const mediaOnly = /(图片|图像|插画|头像|海报|logo|视频|语音|配音|朗读)/.test(text)
+          if (hasOfficeAttachment && wantsGenerateDoc && !mediaOnly) {
+            const inferredDirect = this.inferTemplateParamsFromText(text)
+            assistantMsg.content = '已识别模板生成请求，直接开始处理…'
+            assistantMsg.isLoading = false
+            this.stopAssistantLoadingProgress(assistantMsg)
+            this.saveHistory()
+            await this.runWpsCapabilityTaskFromMessage(assistantMsg, 'generate-from-template', {
+              params: {
+                requirement: inferredDirect.requirement || text,
+                pageTarget: inferredDirect.pageTarget,
+                toneFollow: '跟随模板文风',
+                planOnly: '先出计划确认',
+                savePath: ''
+              },
+              requirementText: text
+            })
+            return
+          }
           const wpsCapabilityRoute = await resolveWpsCapabilityRoute(text, model)
           if (wpsCapabilityRoute?.capabilityKey) {
             // 模板生成：不弹参数表单，指令推断直接执行（用户指令：不要弹表单直接处理；
