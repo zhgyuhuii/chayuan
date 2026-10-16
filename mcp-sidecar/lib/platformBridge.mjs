@@ -1,7 +1,7 @@
 /**
  * Cross-platform WPS executable discovery + OS spawn (not WebView ShellExecute).
  */
-import { spawn, execSync } from 'node:child_process'
+import { spawn, execSync, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -316,6 +316,8 @@ const OS_OPEN_EXTENSIONS = new Set([
  * OS 级打开本地文档（等同用户双击）：模板新建通路的 viaOs 兜底——
  * Mac 沙盒里 webview 无法 spawn，统一由 sidecar 代为打开。
  * 仅接受办公文档扩展名白名单，路径必须真实存在。
+ * Linux（2026-10-16 UOS 真机）：xdg-open 存在 MIME 关联丢失/自身 gio 校验失败的部署面，
+ * 且 fire-and-forget 感知不到失败 → 主路 gio open（同步等待、可报错），失败回退 xdg-open。
  */
 export function openFileWithOs(rawPath) {
   const filePath = normalizePath(rawPath)
@@ -334,8 +336,13 @@ export function openFileWithOs(rawPath) {
       const child = spawn('cmd.exe', ['/c', 'start', '', filePath], { detached: true, stdio: 'ignore', windowsHide: true })
       child.unref()
     } else {
-      const child = spawn('xdg-open', [filePath], { detached: true, stdio: 'ignore' })
-      child.unref()
+      try {
+        // gio open 需要会话总线（systemd 用户单元拉起时已具备）；同步等待以捕获「无关联应用」
+        execFileSync('gio', ['open', filePath], { stdio: 'ignore', timeout: 8000, env: process.env })
+      } catch (gioErr) {
+        const child = spawn('xdg-open', [filePath], { detached: true, stdio: 'ignore' })
+        child.unref()
+      }
     }
     return { ok: true }
   } catch (e) {

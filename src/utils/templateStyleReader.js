@@ -186,6 +186,72 @@ function parseDocxProfile(zip) {
 
 // ── pptx 剖析 ──
 
+/** 装饰性短文案：LOGO/章节序号/页码/年份/CONTENTS/百分比等——角色 decor，改写时保持原样 */
+const DECOR_TEXT_RE = /^(logo|contents?|agenda|catalog(ue)?|目录|章节|thanks?(\s*you)?|thank\s*you|谢谢(观看|聆听)?|q\s*&\s*a|the\s*end|end|part\s*(one|two|three|four|five|six|seven|eight|nine|ten|[ivx]+|\d+)|chapter\s*\d*|section\s*\d*|0?\d{1,2}\s*[.．、:：]?|\d{4}([./年-]\d{1,2}){0,2}[月日]?|第?\s*[一二三四五六七八九十\d]+\s*[章节部分页]|[a-z]{1,6}|\d+(\.\d+)?%|[#*·•\-—_]+)$/i
+const PH_TITLE = new Set(['title', 'ctrTitle'])
+const PH_DECOR = new Set(['sldNum', 'dt', 'ftr', 'hdr', 'pic', 'chart', 'tbl', 'media', 'clipArt', 'dgm'])
+
+/** 形状最大字号（pt）：扫全部 a:rPr/a:defRPr/a:endParaRPr 的 sz（百分之一 pt），取最大 */
+function maxFontSizeOf(sp) {
+  let max = 0
+  for (const name of ['a:rPr', 'a:defRPr', 'a:endParaRPr']) {
+    for (const n of tags(sp, name)) {
+      const sz = Number(attr(n, 'sz'))
+      if (Number.isFinite(sz) && sz > max) max = sz
+    }
+  }
+  return max > 0 ? Math.round(max / 100) : null
+}
+
+/**
+ * 形状级角色剖析（2026-10-16 真机根因：texts 按 a:t 平铺，第 1 条是「LOGO」，底稿把它当标题）。
+ * 枚举顺序与 templateFileGenerator.parseSlideShapes 一致（文档序全部 p:sp），shapeIndex 可直接用于精确替换。
+ * 角色：title（占位 title/ctrTitle 或页内最大字号）/ subtitle / body / decor（LOGO、页码、PART ONE 等）。
+ */
+function classifySlideShapes(doc) {
+  const spElements = tags(doc, 'p:sp')
+  const shapes = []
+  for (let i = 0; i < spElements.length; i++) {
+    const sp = spElements[i]
+    const ph = firstTag(sp, 'p:ph')
+    const phType = ph ? (attr(ph, 'type') || 'body') : null
+    const texts = tags(sp, 'a:t').map(t => (t.textContent || '').trim()).filter(Boolean)
+    const combined = texts.join('').trim()
+    // 位置（EMU）：供内容映射按阅读顺序/就近序号排布；组合形状内为相对坐标，同页排序足够
+    const off = firstTag(firstTag(sp, 'a:xfrm') || sp, 'a:off')
+    const x = Number(attr(off, 'x')) || 0
+    const y = Number(attr(off, 'y')) || 0
+    const entry = { shapeIndex: i, phType, combined: combined.slice(0, 120), fontSize: maxFontSizeOf(sp), role: null, x, y }
+    if (!combined) { shapes.push(entry); continue }
+    if (phType && PH_TITLE.has(phType)) entry.role = 'title'
+    else if (phType === 'subTitle') entry.role = 'subtitle'
+    else if (phType && PH_DECOR.has(phType)) entry.role = 'decor'
+    else if (DECOR_TEXT_RE.test(combined)) entry.role = 'decor'
+    else if ((entry.fontSize && entry.fontSize <= 4) || /https?:\/\/|www\./i.test(combined)) entry.role = 'decor' // 隐形水印/网址
+    else if (phType) entry.role = 'body'
+    shapes.push(entry)
+  }
+  // 非占位文本框按字号定级：页内最大字号（≥20pt 且不超过 40 字）= 标题；≥16pt 且 ≤60 字 = 副标题；其余正文
+  const free = shapes.filter(s => s.combined && !s.role)
+  const maxFont = Math.max(0, ...free.map(s => s.fontSize || 0))
+  let hasTitle = shapes.some(s => s.role === 'title')
+  for (const s of free) {
+    const len = s.combined.length
+    if (!hasTitle && s.fontSize && s.fontSize === maxFont && maxFont >= 20 && len <= 40) { s.role = 'title'; hasTitle = true; continue }
+    if (s.fontSize && s.fontSize >= 16 && len <= 60) { s.role = 'subtitle'; continue }
+    s.role = 'body'
+  }
+  // 页内无标题但有非装饰文本 → 提升字号最大（同字号取最短）的一个为标题，保证每页有标题位
+  if (!hasTitle) {
+    const cands = shapes.filter(s => s.combined && s.role !== 'decor')
+      .sort((a, b) => (b.fontSize || 0) - (a.fontSize || 0) || a.combined.length - b.combined.length)
+    if (cands.length) cands[0].role = 'title'
+  }
+  return shapes
+}
+
+const ROLE_LABEL = { title: '标题', subtitle: '副标题', body: '正文', decor: '装饰' }
+
 function parsePptxProfile(zip) {
   return (async () => {
     const profile = { kind: 'slide', theme: null, slideSize: null, slides: [] }
@@ -246,12 +312,14 @@ function parsePptxProfile(zip) {
       const doc = parseXml(await zip.file(file).async('string').catch(() => ''))
       const spTree = firstTag(doc, 'p:spTree')
       const texts = tags(spTree, 'a:t').map(t => (t.textContent || '').trim()).filter(Boolean)
+      const shapes = classifySlideShapes(doc).filter(s => s.combined)
       profile.slides.push({
         index: idx + 1,
         shapeCount: tags(spTree, 'p:sp').length,
         pictureCount: tags(spTree, 'p:pic').length,
         tableCount: tags(spTree, 'a:tbl').length,
-        texts: texts.slice(0, 12).map(t => t.slice(0, 60))
+        texts: texts.slice(0, 12).map(t => t.slice(0, 60)),
+        shapes
       })
     }
     profile.slideCount = slideFiles.length
@@ -338,7 +406,14 @@ export function summarizeProfile(analyzeResult) {
     const theme = p.theme || {}
     const colors = Object.entries(theme.colors || {}).map(([k, v]) => `${k}:${v}`).join(' ')
     const fonts = theme.fonts ? `主标题字体:${theme.fonts.major?.eastAsia || theme.fonts.major?.latin || '默认'} 正文字体:${theme.fonts.minor?.eastAsia || theme.fonts.minor?.latin || '默认'}` : ''
-    const pages = (p.slides || []).map(s => `第${s.index}页(形状${s.shapeCount}/图片${s.pictureCount}/表格${s.tableCount}): ${(s.texts || []).join(' | ').slice(0, 90) || '无文案'}`)
+    // 形状级画像（带 #shapeIndex 与角色），LLM 计划据此给出 shapeIndex 精确替换；无 shapes 时退回 texts 平铺
+    const pages = (p.slides || []).map(s => {
+      const shapes = Array.isArray(s.shapes) ? s.shapes.filter(x => x.combined) : []
+      const body = shapes.length
+        ? shapes.slice(0, 10).map(x => `#${x.shapeIndex}${ROLE_LABEL[x.role] || '正文'}${x.fontSize ? x.fontSize + 'pt' : ''}「${x.combined.slice(0, 48)}」`).join(' ')
+        : ((s.texts || []).join(' | ').slice(0, 90) || '无文案')
+      return `第${s.index}页(形状${s.shapeCount}/图片${s.pictureCount}/表格${s.tableCount}): ${body}`
+    })
     return [`共${p.slideCount}页，页面宽高比${p.slideSize?.ratio || '?'}`, colors, fonts, ...pages].filter(Boolean).join('\n')
   }
   if (analyzeResult.kind === 'sheet') {

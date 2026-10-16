@@ -114,16 +114,35 @@ const PLACEHOLDER_WORDS = /(输入标题|请在此处|单击此处|点击输入|
 
 /** 替换文案净化（2026-10-15 渲染实证根因）：GLM 叠加层曾产出
  * 「旧占位+新标题+旧正文」拼接体与通用占位词 find，扩散污染多页。
- * 规则：replace 含占位词/含 │ 拼接/过短(≤6字含中文除外) → 拒绝该条；
- * find 归一化后 <4 字（纯通用词）→ 拒绝（防同一垃圾扩散多页）。 */
+ * 规则：replace 含占位词/含 │ 拼接 → 拒绝；过短（≤2 个汉字且总长 <6，如「标题」「内容」）→ 拒绝；
+ * 「工作概述」「项目成果」等 3~5 字章节标题是合法替换，不得误杀（2026-10-16 形状级底稿依赖）。 */
 function isBadReplace(replaceTo) {
   const t = String(replaceTo || '')
   if (!t.trim()) return true
   if (PLACEHOLDER_WORDS.test(t)) return true
   if ((t.match(/\|/g) || []).length >= 2) return true
   const cjk = (t.match(/[\u4e00-\u9fa5]/g) || []).length
-  if (cjk > 0 && cjk < 6 && t.length < 12) return true
+  if (cjk > 0 && cjk <= 2 && t.length < 6) return true
+  if (/^(标题|内容|正文|文本|副标题|小标题|文字)$/.test(t.trim())) return true
   return false
+}
+
+/** 命中节点所属形状（向上找 p:sp）；找不到返回 null */
+function ownerShape(node) {
+  let cur = node?.parentNode
+  while (cur && cur.nodeType === 1) {
+    if (cur.localName === 'sp') return cur
+    cur = cur.parentNode
+  }
+  return null
+}
+
+/** 整形状替换：首 a:t 写入新文、其余清空——杜绝同形状多 run 旧新混杂 */
+function replaceWholeShapeText(sp, hitNode, newText) {
+  const tNodes = sp ? tags(sp, 'a:t') : []
+  if (!tNodes.length) { hitNode.textContent = newText; return }
+  tNodes[0].textContent = newText
+  for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
 }
 
 function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
@@ -131,32 +150,32 @@ function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
   const applied = []
   const missed = []
   const rejected = []
-  const spElements = tags(doc, 'p:sp')
   for (const rep of replaces) {
     const find = String(rep?.find || '')
     let replaceTo = String(rep?.replace ?? rep?.replaceWith ?? '')
-    if (!find) continue
+    if (!find && rep?.shapeIndex === undefined) continue
     if (isBadReplace(replaceTo)) { rejected.push(find.slice(0, 12)); continue }
-    // 优先按 shapeIndex 精确替换
-    if (rep?.shapeIndex !== undefined && shapeCensus) {
-      const target = shapeCensus[Number(rep.shapeIndex)]
-      if (target) {
-        const sp = pageSpElements[Number(rep.shapeIndex)]
-        if (sp) {
-          const tNodes = tags(sp, 'a:t')
-          if (tNodes.length) {
-            tNodes[0].textContent = replaceTo
-            for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
-            applied.push(find)
-            continue
-          }
+    // 优先按 shapeIndex 精确替换（census 校验：该形状原文需与 find 相符，防 LLM 报错索引误伤）
+    if (rep?.shapeIndex !== undefined && rep?.shapeIndex !== null) {
+      const idx = Number(rep.shapeIndex)
+      const sp = pageSpElements[idx]
+      const target = shapeCensus ? shapeCensus[idx] : null
+      const sameText = !find || !target || normText(target.combined).includes(normText(find).slice(0, 12)) || normText(find).includes(normText(target.combined).slice(0, 12))
+      if (sp && sameText) {
+        const tNodes = tags(sp, 'a:t')
+        if (tNodes.length) {
+          tNodes[0].textContent = replaceTo
+          for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+          applied.push(find || `#${idx}`)
+          continue
         }
       }
+      if (!find) { missed.push(`#${idx}`); continue }
     }
-    // 文本子串匹配（兜底）
+    // 文本子串匹配（兜底）——命中后整形状替换
     const hit = tags(doc, 'a:t').find(n => (n.textContent || '').includes(find))
     if (hit) {
-      hit.textContent = replaceTo
+      replaceWholeShapeText(ownerShape(hit), hit, replaceTo)
       applied.push(find)
       continue
     }
@@ -169,10 +188,25 @@ function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
         return nn && nn.includes(nFind)
       })
       if (fuzzy) {
-        fuzzy.textContent = replaceTo
+        replaceWholeShapeText(ownerShape(fuzzy), fuzzy, replaceTo)
         applied.push(find + '(fuzzy)')
         continue
       }
+      // 形状级模糊：find 可能跨多个 run（LLM 复制了形状合并文本），按形状合并文本匹配
+      let shapeHit = false
+      for (const sp of pageSpElements) {
+        const tNodes = tags(sp, 'a:t')
+        if (!tNodes.length) continue
+        const combined = normText(tNodes.map(n => n.textContent || '').join(''))
+        if (combined && (combined.includes(nFind) || (nFind.length >= 8 && combined.length >= 6 && nFind.includes(combined)))) {
+          tNodes[0].textContent = replaceTo
+          for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+          applied.push(find + '(shape)')
+          shapeHit = true
+          break
+        }
+      }
+      if (shapeHit) continue
     }
     missed.push(find)
   }
@@ -414,16 +448,27 @@ export async function collectSlideTextsFromZip(zip) {
 /** QC 修正直接作用于同一 zip */
 export async function fixSlideTextsInZip(zip, fixes) {
   let applied = 0
+  const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNum(a) - slideNum(b))
   for (const fix of Array.isArray(fixes) ? fixes : []) {
-    const find = String(fix?.fixFind || fix?.find || '')
+    const find = String(fix?.fixFind || fix?.find || '').trim()
     const replaceTo = String(fix?.fixReplace ?? fix?.replace ?? '')
-    if (!find) continue
-    const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => slideNum(a) - slideNum(b))
+    if (!find || !replaceTo.trim()) continue
     for (const name of names) {
       const doc = xmlOf(await zip.file(name).async('string'))
       const hit = tags(doc, 'a:t').find(n => (n.textContent || '').includes(find))
       if (hit) {
-        hit.textContent = String(hit.textContent).replace(find, replaceTo)
+        // find 覆盖该形状绝大部分文本 → 整形状替换（清掉其余 run 的旧文）；否则节点内片段替换
+        const sp = ownerShape(hit)
+        const combined = sp ? tags(sp, 'a:t').map(n => n.textContent || '').join('').trim() : String(hit.textContent).trim()
+        if (combined === find || find.length >= combined.length * 0.7) replaceWholeShapeText(sp, hit, replaceTo)
+        else hit.textContent = String(hit.textContent).replace(find, replaceTo)
+        zip.file(name, textOf(doc))
+        applied++
+        break
+      }
+      // 逐字未命中 → 复用计划替换引擎的模糊/形状级匹配（QC 的 fixFind 常带标点差异）
+      const r = replaceTextsInSlideDoc(doc, [{ find, replace: replaceTo }], parseSlideShapes(doc))
+      if (r.applied > 0) {
         zip.file(name, textOf(doc))
         applied++
         break
@@ -448,16 +493,19 @@ function pickNthText(xmlString, index) {
  * 占位清扫器（2026-10-16 真机：确定性底稿遗漏的占位文本导致"乱糟糟"）：
  * 计划执行完后扫描全部幻灯片，把剩余的 Lorem/输入标题/点击输入 等占位
  * 全部替换为参考素材内容（轮转分配）。确保零占位残留。
+ * 形状级：一个形状内任一 a:t 命中占位 → 整形状合并替换（首节点写入、其余清空），
+ * 杜绝「Lorem ipsum」「consectetuer…」两段各拿一行参考文拼成乱文。
+ * PART ONE / 01 等章节装饰不清扫（由剖析角色 decor 保留原样）。
  */
 export async function sweepPlaceholders(zip, referenceContext) {
-  const PLACEHOLDER_RE = /^(?:Lorem\s+ipsum.*|LOREM\s+IPSUM.*|输入标题.*|点击输入.*|请在此处.*|单击此处.*|添加合适的文字.*|用简明扼要.*|文字内容或复制.*|PART\s+(?:ONE|TWO|THREE|FOUR|FIVE|SIX)|\d{1,2}\.\d?\s*$| consectetuer.*|adipiscing.*|dolor sit.*|amet.*|\.*\s*$)/i
+  const PLACEHOLDER_RE = /^(?:Lorem\s+ipsum.*|LOREM\s+IPSUM.*|输入标题.*|点击输入.*|请在此处.*|单击此处.*|添加合适的文字.*|用简明扼要.*|文字内容或复制.*|\s*consectetuer.*|adipiscing.*|dolor\s+sit.*|amet.*|sed\s+diam.*|nonummy.*|euismod.*|\.*\s*$)/i
   const SHORT_MEANINGFUL_MIN = 4 // 少于4字的非占位文本跳过（如 "01."）
 
-  // 参考素材行
+  // 参考素材行（剥 md 前缀/表格竖线/加粗标记）
   const refLines = String(referenceContext || '')
     .split(/\n+/)
-    .map(l => l.trim().replace(/^#{1,6}\s*/, '').replace(/^[-*+]\s*/, ''))
-    .filter(l => l.length > 4)
+    .map(l => l.trim().replace(/^#{1,6}\s*/, '').replace(/^[-*+]\s*/, '').replace(/^\||\|$/g, '').replace(/\s*\|\s*/g, '，').replace(/\*\*/g, ''))
+    .filter(l => l.length > 4 && !/^[-:：，\s]+$/.test(l))
   if (!refLines.length) return { swept: 0 }
 
   const names = Object.keys(zip.files)
@@ -468,18 +516,20 @@ export async function sweepPlaceholders(zip, referenceContext) {
   let refIdx = 0
   for (const name of names) {
     const doc = xmlOf(await zip.file(name).async('string'))
-    const nodes = tags(doc, 'a:t')
     let slideChanged = false
-    for (const node of nodes) {
-      const txt = String(node.textContent || '').trim()
-      if (!txt) continue
-      if (txt.length < SHORT_MEANINGFUL_MIN) continue // "01." 等编号保留
-      if (PLACEHOLDER_RE.test(txt)) {
-        node.textContent = refLines[refIdx % refLines.length].slice(0, 80)
-        refIdx++
-        swept++
-        slideChanged = true
-      }
+    for (const sp of tags(doc, 'p:sp')) {
+      const tNodes = tags(sp, 'a:t')
+      if (!tNodes.length) continue
+      const hit = tNodes.some(n => {
+        const txt = String(n.textContent || '').trim()
+        return txt.length >= SHORT_MEANINGFUL_MIN && PLACEHOLDER_RE.test(txt)
+      })
+      if (!hit) continue
+      tNodes[0].textContent = refLines[refIdx % refLines.length].slice(0, 80)
+      for (let i = 1; i < tNodes.length; i++) tNodes[i].textContent = ''
+      refIdx++
+      swept++
+      slideChanged = true
     }
     if (slideChanged) zip.file(name, textOf(doc))
   }

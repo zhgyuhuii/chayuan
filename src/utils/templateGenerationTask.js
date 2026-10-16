@@ -16,6 +16,7 @@ import { normalizeTemplateKind, resolveTemplateSource } from './documentTemplate
 import { createFromTemplate, deliverActiveDocument, assertSameHostKind } from './documentCreateFromTemplate.js'
 import { analyzeTemplateFile, summarizeProfile, readTemplateBytes } from './templateStyleReader.js'
 import { loadTemplateZip, applySlidePlanToZip, collectSlideTextsFromZip, fixSlideTextsInZip, exportZipBytes } from './templateFileGenerator.js'
+import { buildDeterministicSlidePlan } from './templateContentMapper.js'
 import { getEffectiveDataDir, pathJoin, ensureDir } from './dataPathSettings.js'
 import { smartDefaults, assembleContract, contractToPromptLines, outlineChanged, cardAspectsForKind, flatKeyFor } from './templateContract.js'
 import { checkDeckGeometry } from './pptGeometryChecker.js'
@@ -289,17 +290,15 @@ function buildPlanPrompt(kind, { profileSummary, requirement, pageTarget, toneFo
         `【用户需求】${requirement}`,
         `【目标页数】${pageTarget > 0 ? pageTarget + ' 页（可按需 duplicate/add 调整）' : '由你按需求决定，优先复用模板已有页'}`,
         '',
-        '输出 JSON：{"pages":[{"action":"edit|duplicate|add","page":页码,"replaces":[{"find":"模板原文案片段(≥4字且尽量整段)","replace":"新文案"}],"title":"新页标题(add/duplicate时)","body":"新页正文(add时)"}]}',
+        '输出 JSON：{"pages":[{"action":"edit|duplicate|add","page":页码,"replaces":[{"shapeIndex":形状序号,"find":"该形状原文(逐字)","replace":"新文案"}],"title":"新页标题(add/duplicate时)","body":"新页正文(add时)"}]}',
         '规则（硬约束，违反视为失败）：',
-        '1. 模板每一页的占位文案（Lorem ipsum、输入标题文字、点击输入、PART ONE 等）必须全部用真实内容替换——禁止保留任何占位文案。',
-        '2. edit 的 find 必须逐字复制【模板画像】该页 texts 中的原文片段（优先整条 texts，不要自己缩写）；每页 replaces 至少 1 条。',
-        '2a. find 禁止只写「输入标题」等通用占位词——必须是该页独有的完整文案（≥8字）。',
-        '2b. replace 必须是对应占位的纯净新文案：标题占位("输入标题文字"等)放标题内容、正文占位("点击输入您的文字内容"等)放正文内容，不要交叉；禁止拼接模板占位原文；禁止用 | 分隔；长度 10~80 字。',
-        '2c. 模板的装饰元素（PART章节页、数据图表 40%/77%、图标、LOGO）保持原样，不要替换。',
-        '2a. find 禁止只写「输入标题」等通用占位词——必须是该页独有的完整文案（≥8字）。',
-        '2b. replace 必须是纯净的新文案：禁止拼接模板占位原文（输入标题/请在此处/Lorem 等）、禁止用 | 分隔拼接多段、长度 10~80 字。',
+        '1. 模板每一页的占位文案（Lorem ipsum、输入标题文字、点击输入 等）必须全部用真实内容替换——禁止保留任何占位文案。',
+        '2. 【模板画像】每页以 #序号+角色(标题/副标题/正文/装饰)+字号+「原文」列出形状；edit 的每条 replace 必须给出 shapeIndex（取 # 后数字）并逐字复制该形状「原文」作 find；每页 replaces 至少 1 条。',
+        '2a. 角色对位：标题形状只放标题（≤ 原文 1.5 倍长、不超过 30 字），副标题形状放一句概括，正文形状放正文段落（≤ 原文 1.6 倍长）——禁止把正文塞进标题形状，禁止把标题写进正文形状。',
+        '2b. replace 必须是纯净的新文案：禁止拼接模板占位原文（输入标题/请在此处/Lorem 等）、禁止用 | 分隔拼接多段。',
+        '2c. 角色为「装饰」的形状（LOGO、PART ONE、页码、01/02 章节号、40%/77% 数据）保持原样，不要为其输出 replace。',
         '3. 优先 edit 遍历已有页；pages 数组最多 14 项（页多则合并章节取舍）；只有页数不足需求时才 duplicate/add。',
-        '4. 新文案必须来自【参考素材】的真实内容（数字、项目名、成果），禁止泛泛而谈。'
+        '4. 新文案必须来自【参考素材】的真实内容（数字、项目名、成果），禁止泛泛而谈；第 1 页为封面：标题形状放文档主标题，副标题放一句主旨。'
       ].join('\n')
     }
   }
@@ -567,7 +566,7 @@ async function runQcPass(model, kind, { requirement, profileSummary, contractLin
       `【当前文档全文（截断）】\n${currentText}`,
       '',
       '输出：{"pass":布尔,"issues":[{"where":"位置描述","problem":"问题","fixFind":"需被替换的原文片段(文档中逐字存在,≥6字)","fixReplace":"修正后文本"}]}',
-      '规则：重点检查模板占位文案残留（Lorem ipsum、输入标题文字、点击输入您的文字、PART ONE/TWO/THREE/FOUR 等装饰性占位）——发现残留必须列为 issue 并给出 fixFind（逐字取残留原文）与 fixReplace（来自需求的真实内容）；同时检查内容缺失/跑题。fixFind 取不到时留空；全部干净才 pass=true。'
+      '规则：①重点检查模板占位文案残留（Lorem ipsum、输入标题文字、点击输入您的文字、请在此处添加 等）——发现残留必须列为 issue 并给出 fixFind（逐字取残留原文）与 fixReplace（来自需求的真实内容）；②检查标题位是否仍是模板原标题（与需求主题无关的旧标题）、正文是否跑题/缺失；③LOGO、PART ONE、页码、01/02 章节号、40%/77% 数据装饰属模板固定元素，不是问题，不要列为 issue。fixFind 取不到时留空；全部干净才 pass=true。'
     ].join('\n')
   )
   return { judge: judge || { pass: true, issues: [] }, currentText }
@@ -609,50 +608,10 @@ async function applyQcFixes(kind, judge) {
  */
 
 /**
- * 确定性兜底计划（2026-10-15 用户令：直到自动生成为止）：
- * 用剖析到的每页真实 texts 做find（命中率100%），把参考素材（md标题/段落块）
- * 轮转分配到每一页做replace。LLM计划在其上叠加精修——模型再弱也保证每页有真实内容。
+ * 确定性兜底计划：实现见 templateContentMapper.js（纯函数、离线可测）。
+ * 真机根因（2026-10-16）——旧版把每页 texts[0]（封面上是「LOGO」）当标题替换，真正的
+ * 大字号标题原样残留。现按剖析角色映射（title/subtitle/body/decor）+ shapeIndex 精确落位。
  */
-function buildDeterministicSlidePlan(analysisProfile, referenceContext, requirement) {
-  const slides = (analysisProfile?.slides || [])
-  const blocks = []
-  const rawLines = String(referenceContext || '')
-    .split(/\n+/)
-    .map(l => l.trim())
-    .filter(l => l.length > 3 && !/^[-=]{3,}$/.test(l))
-  for (const line of rawLines) {
-    // 剥离 markdown 前缀：#标题 / - bullet / * bullet / 数字序号保留
-    let text = line.replace(/^#{1,6}\s*/, '').replace(/^[-*+]\s*/, '')
-    const isHeading = /^#{1,6}\s/.test(line) || /^[一二三四五六七八九十]+[、.．]/.test(text) || /^\d+[、.．]/.test(text)
-    blocks.push({ title: isHeading ? text.slice(0, 24) : '', body: isHeading ? '' : text })
-  }
-  // 确保存在正文块（全是标题时取标题做正文）
-  if (!blocks.some(b => b.body)) blocks.forEach(b => { b.body = b.body || b.title })
-  if (!blocks.length) blocks.push({ title: requirement.slice(0, 20), body: requirement })
-  const pages = []
-  let bi = 0
-  for (const sl of slides) {
-    const block = blocks[bi % blocks.length]
-    bi++
-    const replaces = []
-    const texts = (sl.texts || []).filter(Boolean)
-    if (texts.length === 0) continue
-    // 首条文本（多为标题位）← 标题块或块标题；其余文本 ← 块正文
-    replaces.push({ find: texts[0], replace: block.title || block.body.slice(0, 24) || '年度内容' })
-    let cursor = bi
-    const takeBlock = () => {
-      const b = blocks[cursor % blocks.length]
-      cursor++
-      return b
-    }
-    for (let k = 1; k < Math.min(texts.length, 6); k++) {
-      const b2 = takeBlock()
-      replaces.push({ find: texts[k], replace: String(b2.body || b2.title || '').slice(0, k === 1 ? 120 : 60) })
-    }
-    pages.push({ action: 'edit', page: sl.index, replaces })
-  }
-  return { pages }
-}
 
 async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, profileSummary, plan, sourceParams }) {
   const maxRounds = Math.min(Math.max(Number(sourceParams.qcRounds) || DEFAULT_QC_ROUNDS, 0), MAX_QC_ROUNDS)
