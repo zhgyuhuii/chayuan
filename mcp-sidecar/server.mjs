@@ -186,10 +186,25 @@ async function waitForAgent(timeoutMs = 20000) {
   return agentHub.status()
 }
 
+/** 指定宿主的 agent 在线等待（template.* 宿主感知路由配套：doc→wps / 表格→et / 演示→wpp） */
+async function waitForHostAgent(host, timeoutMs = 20000) {
+  const start = Date.now()
+  const h = String(host || '').toLowerCase()
+  while (Date.now() - start < timeoutMs) {
+    const st = agentHub.status()
+    const hosts = st?.agent?.hosts || {}
+    if (st.agentOnline && (h === 'any' || hosts[h])) return st
+    await new Promise(r => setTimeout(r, 500))
+  }
+  return agentHub.status()
+}
+
 async function launchWpsAndWait(params = {}) {
   const waitAgentMs = Math.min(Math.max(Number(params.waitAgentMs) || 20000, 3000), 120000)
   const already = agentHub.status()
-  if (already.agentOnline) {
+  const needHost = String(params.host || '').toLowerCase()
+  const hostAlreadyOnline = already.agentOnline && (!needHost || (already?.agent?.hosts || {})[needHost])
+  if (hostAlreadyOnline) {
     // Avoid trusting a zombie registration after WPS was killed.
     try {
       await agentHub.callAgent('wps.status', {}, { timeoutMs: 5_000 })
@@ -214,7 +229,9 @@ async function launchWpsAndWait(params = {}) {
     throw err
   }
   const t0 = Date.now()
-  const st = await waitForAgent(waitAgentMs)
+  const st = params.host
+    ? await waitForHostAgent(params.host, waitAgentMs)
+    : await waitForAgent(waitAgentMs)
   const result = {
     wpsRunning: !!st.agentOnline,
     agentOnline: !!st.agentOnline,

@@ -487,9 +487,32 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
     }
 
     switch (name) {
-      // ── 模板生成管线：agentHub 派发到任意在线宿主 webview（宿主无关，文件级执行）──
+      // ── 模板生成管线：按模板扩展名路由到对应宿主 webview；目标宿主离线自动拉起 ──
       case 'template_generate': {
         try {
+          const src = String(args?.templatePath || args?.templateRef || '')
+          const host = /\.(docx?|aidocx|dotx?)$/i.test(src) ? 'wps'
+            : /\.(xlsx?|xlsm|csv|ett?)$/i.test(src) ? 'et'
+              : /\.(pptx?|ppsx|dps|potx?)$/i.test(src) ? 'wpp' : ''
+          if (host && typeof launchWpsAndWait === 'function') {
+            const hosts = agentHub.status()?.agent?.hosts || {}
+            if (!hosts[host]) {
+              try {
+                await launchWpsAndWait({ host, waitAgentMs: 45000 })
+              } catch (e) {
+                // 裸启动可能停在起始页（无文档窗口=无 webview 注册）——打开模板文件催生宿主窗口再等
+                try {
+                  const { openFileWithOs } = await import('./platformBridge.js')
+                  if (src) openFileWithOs(src)
+                } catch (_) { /* 尽力而为 */ }
+                try {
+                  await launchWpsAndWait({ host, waitAgentMs: 45000 })
+                } catch (e2) {
+                  return jsonError(e2.code || 'HOST_LAUNCH_FAILED', `目标宿主（${{ wps: '文字', et: '表格', wpp: '演示' }[host] || host}）未能上线：${e2.message}`)
+                }
+              }
+            }
+          }
           const result = await agentHub.callAgent('template.generate', args && typeof args === 'object' ? { ...args } : {}, { timeoutMs: 900_000 })
           return jsonResult(result)
         } catch (e) {

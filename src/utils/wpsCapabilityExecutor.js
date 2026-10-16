@@ -12,9 +12,37 @@ import { evaluateCapabilityPolicy, inferCapabilityRiskLevel } from './capability
 import { appendCapabilityQuotaUsage, evaluateCapabilityQuota } from './capabilityQuotaStore.js'
 import { createFromTemplate, detectHostKind } from './documentCreateFromTemplate.js'
 import { runTemplateGenerationTask, runTemplatePlanExecution } from './templateGenerationTask.js'
-import { saveActiveDocumentAsTemplate } from './documentTemplates.js'
+import { normalizeTemplateKind, saveActiveDocumentAsTemplate } from './documentTemplates.js'
+import { MCP_BASE_URL } from '../services/mcpBridge/config.js'
 
 const activeCapabilityRuns = new Map()
+
+/**
+ * 跨宿主模板生成：委派 sidecar 的 template_generate（按扩展名路由对应宿主、
+ * 离线自动拉起、完成后自动打开新文档）。本 webview 的 jsapi 只能操作本宿主文档，
+ * Word/表格模板在演示宿主的对话里发起时由此通路执行。
+ */
+async function generateViaSidecar(args) {
+  const token = window.Application?.PluginStorage?.getItem('chayuan_mcp_token') ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem('chayuan_mcp_token') : '') || ''
+  const headers = { 'content-type': 'application/json', ...(token ? { 'x-chayuan-token': token } : {}) }
+  let sessionId = ''
+  const post = async (body) => {
+    const res = await fetch(MCP_BASE_URL + '/mcp', {
+      method: 'POST', headers,
+      body: JSON.stringify(body)
+    })
+    const sid = res.headers.get('mcp-session-id')
+    if (sid) sessionId = sid
+    return JSON.parse(await res.text())
+  }
+  await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pane-delegate', version: '1.0' } } })
+  if (sessionId) headers['mcp-session-id'] = sessionId
+  await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
+  const r = await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'template_generate', arguments: args } })
+  const txt = r?.result?.content?.[0]?.text || ''
+  try { return JSON.parse(txt) } catch { return { ok: false, message: txt || '模板生成委派失败' } }
+}
 
 function createCancelError() {
   const err = new Error('任务已停止')
@@ -158,6 +186,25 @@ export function executeWpsCapabilityDirect(capabilityKey, params = {}) {
       } catch (_) { activeDocPath = '' }
     }
     const pathLike = /[\\/]/.test(ref)
+    const tplPath = explicitPath || activeDocPath || (pathLike ? ref : '')
+    // 跨宿主委派（2026-10-16 用户令：首页对话可用模板编制 PPT/Word/Excel）：
+    // 模板类型 ≠ 当前宿主时，本 webview 的 jsapi 无法操作另一宿主的文档——
+    // 委派 sidecar 的 template_generate：按扩展名路由到对应宿主（离线自动拉起），
+    // 生成完成自动打开；结果结构一致，面板展示不受影响
+    if (tplPath && /\.(docx?|aidocx|dotx?|xlsx?|xlsm|csv|ett?|pptx?|ppsx|dps|potx?)$/i.test(tplPath)) {
+      const tplKind = String(normalizeTemplateKind('', tplPath))
+      const hostKind = String(detectHostKind() || '')
+      const kindToHost = { doc: 'wps', sheet: 'et', slide: 'wpp' }
+      if (kindToHost[tplKind] && kindToHost[tplKind] !== hostKind) {
+        return generateViaSidecar({
+          templatePath: tplPath,
+          requirement: params.requirement,
+          referenceContext: params.referenceContext || '',
+          pageTarget: Number(params.pageTarget) || 0,
+          qcRounds: Number(params.qcRounds) || undefined
+        })
+      }
+    }
     return runTemplateGenerationTask({
       templatePath: explicitPath || activeDocPath || (pathLike ? ref : undefined),
       templateRef: (explicitPath || activeDocPath) ? undefined : (pathLike ? undefined : (ref || undefined)),

@@ -35,11 +35,20 @@ function isRibbonBaseAgent(agent) {
  * 宿主无关工具（状态/助手配方/知识库）投给任意在线执行者；其余（document.*、
  * format.*、table.* 等全部 Writer 工具）只能回文字宿主。
  */
-function targetForMethod(method) {
+function targetForMethod(method, params = {}) {
   const m = String(method || '')
   if (m.startsWith('spreadsheet.')) return 'et'
   if (m.startsWith('presentation.')) return 'wpp'
-  if (m.startsWith('template.')) return 'any' // 模板生成管线：宿主无关（文件级执行）
+  if (m.startsWith('template.')) {
+    // 宿主感知路由（2026-10-16 用户令：首页对话可用模板编制 PPT/Word/Excel）：
+    // 填充/执行段的 jsapi 必须落在对应宿主（Writer/ET/WPP）内——docx→wps、表格→et、演示→wpp；
+    // 扩展名判定不了的（库引用/空白新建）才 any
+    const src = String(params?.templatePath || params?.templateRef || '')
+    if (/\.(docx?|aidocx|dotx?)$/i.test(src)) return 'wps'
+    if (/\.(xlsx?|xlsm|csv|ett?)$/i.test(src)) return 'et'
+    if (/\.(pptx?|ppsx|dps|potx?)$/i.test(src)) return 'wpp'
+    return 'any'
+  }
   if (m === 'wps.status' || m.startsWith('assistants.') || m.startsWith('kb.')) return 'any'
   return 'wps'
 }
@@ -295,7 +304,7 @@ export function createAgentHub({ logger } = {}) {
    */
   function callAgent(method, params = {}, { timeoutMs = 120_000, target } = {}) {
     pruneStale()
-    const resolvedTarget = target !== undefined ? normalizeTarget(target) : targetForMethod(method)
+    const resolvedTarget = target !== undefined ? normalizeTarget(target) : targetForMethod(method, params)
     if (![...agents.values()].some(a => now() - a.lastSeen < 60_000 && matchesTarget(a, resolvedTarget))) {
       try { logger?.({ ev: 'job_reject_offline', method, target: resolvedTarget }) } catch { /* ignore */ }
       const hostLabel = { wps: 'WPS 文字', et: 'WPS 表格', wpp: 'WPS 演示', any: 'WPS' }[resolvedTarget] || 'WPS'
