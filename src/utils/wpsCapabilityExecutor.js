@@ -23,25 +23,36 @@ const activeCapabilityRuns = new Map()
  * Word/表格模板在演示宿主的对话里发起时由此通路执行。
  */
 async function generateViaSidecar(args) {
-  const token = window.Application?.PluginStorage?.getItem('chayuan_mcp_token') ||
-    (typeof localStorage !== 'undefined' ? localStorage.getItem('chayuan_mcp_token') : '') || ''
-  const headers = { 'content-type': 'application/json', ...(token ? { 'x-chayuan-token': token } : {}) }
-  let sessionId = ''
-  const post = async (body) => {
-    const res = await fetch(MCP_BASE_URL + '/mcp', {
-      method: 'POST', headers,
-      body: JSON.stringify(body)
-    })
-    const sid = res.headers.get('mcp-session-id')
-    if (sid) sessionId = sid
-    return JSON.parse(await res.text())
+  try {
+    const token = window.Application?.PluginStorage?.getItem('chayuan_mcp_token') ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('chayuan_mcp_token') : '') || ''
+    const headers = { 'content-type': 'application/json', ...(token ? { 'x-chayuan-token': token } : {}) }
+    let sessionId = ''
+    // MCP 通知类请求（notifications/*）按协议返回 202 空响应体——只对非空 body 做 JSON.parse
+    //（真机崩点：JSON.parse('') → "Unexpected end of JSON input"）
+    const post = async (body) => {
+      const res = await fetch(MCP_BASE_URL + '/mcp', {
+        method: 'POST', headers,
+        body: JSON.stringify(body)
+      })
+      const sid = res.headers.get('mcp-session-id')
+      if (sid) sessionId = sid
+      const text = await res.text()
+      if (!String(text || '').trim()) return null
+      try { return JSON.parse(text) } catch { return null }
+    }
+    await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pane-delegate', version: '1.0' } } })
+    if (sessionId) headers['mcp-session-id'] = sessionId
+    await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
+    const r = await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'template_generate', arguments: args } })
+    const txt = r?.result?.content?.[0]?.text || ''
+    try { return JSON.parse(txt) } catch { return { ok: false, message: String(txt || '模板生成委派失败（sidecar 无有效响应）').slice(0, 300) } }
+  } catch (e) {
+    // 委派通路任何失败（sidecar 不在/端口变化/环回被拦）→ 回退本地执行：
+    // 同宿主模板本可本地生成；真跨宿主时会得到宿主闸门的明确提示而非崩溃
+    console.warn('模板生成委派 sidecar 失败，回退本地执行:', e?.message)
+    return runTemplateGenerationTask(args)
   }
-  await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pane-delegate', version: '1.0' } } })
-  if (sessionId) headers['mcp-session-id'] = sessionId
-  await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
-  const r = await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'template_generate', arguments: args } })
-  const txt = r?.result?.content?.[0]?.text || ''
-  try { return JSON.parse(txt) } catch { return { ok: false, message: String(txt || '模板生成委派失败（sidecar 无有效响应）').slice(0, 300) } }
 }
 
 function createCancelError() {
