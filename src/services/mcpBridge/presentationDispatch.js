@@ -65,6 +65,21 @@ function slideShapeTexts(slide) {
       name: safeGet(() => sh.Name),
       type: safeGet(() => Number(sh.Type), null)
     }
+    // 占位符类型（ppPlaceholderTitle=13/CenterTitle=14/SubTitle=4 等——判断"哪个是标题"的关键）
+    try {
+      const ph = safeGet(() => sh.PlaceholderFormat?.Type, null)
+      if (ph != null) entry.placeholderType = Number(ph)
+      entry.isPlaceholder = ph != null
+    } catch { entry.isPlaceholder = false }
+    // 字号/字体/加粗（用户要求分析字号）
+    try {
+      if (Number(sh.HasTextFrame) !== 0) {
+        const rng = sh.TextFrame.TextRange
+        entry.fontSize = safeGet(() => Number(rng.Font.Size) || null, null)
+        entry.fontName = safeGet(() => String(rng.Font.NameFarEast || rng.Font.Name || ''), null)
+        entry.bold = safeGet(() => Number(rng.Font.Bold) === -1, false)
+      }
+    } catch { /* ignore */ }
     try {
       const hasText = Number(sh.HasTextFrame)
       if (hasText !== 0) {
