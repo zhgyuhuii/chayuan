@@ -19456,7 +19456,7 @@ export default {
         }
 
         const routeStartedAt = Date.now()
-        let resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model, legacyTurnCtx)
+        let resolvedPrimaryIntent = await this.resolvePrimaryConversationIntent(text, model, { ...legacyTurnCtx, attachmentsSnapshot })
         // 终极保险（防御任何内层覆盖）：office 模板附件 + 生成文档类话术 → 无条件模板管线。
         // 层层修复史（附件感知规则→lane覆盖→…）证明单层修复会被下一层改写，这里在最终出口兜底。
         {
