@@ -260,7 +260,14 @@ async function llmJson(modelArg, systemPrompt, userPrompt) {
       }
     } else {
       console.warn('llmJson 首次失败，1 次自动重试:', msg)
-      raw = await attempt()
+      try {
+        raw = await attempt()
+      } catch (second) {
+        // 重试仍失败：底层传输错误（如「Unexpected end of JSON input」=空响应体）
+        // 对用户无信息量——转译为可行动的提示
+        console.warn('llmJson 重试仍失败:', second?.message)
+        throw new Error('模型服务暂时不可用（返回为空或连接中断），请稍后重试或更换模型。原始错误：' + String(second?.message || first?.message || '').slice(0, 120))
+      }
     }
   }
   return parseJsonLoose(raw)
@@ -705,7 +712,17 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
     // ③ LLM 多维审查：需求符合性/文案质量/契约勾选项逐条（无模型时机器审计即终点）
     if (!qcModelUsable) { qcReport.rounds = round; qcReport.passed = qcReport.dims.placeholder && qcReport.dims.overflow && qcReport.dims.fonts ? true : false; break }
     const slideTexts = await collectSlideTextsFromZip(zip) // 同一 zip 直取，零二次装载
-    const { judge } = await runQcPass(model, 'slide', { requirement, profileSummary, textOverride: slideTexts, contractLines })
+    let judge = null
+    try {
+      judge = (await runQcPass(model, 'slide', { requirement, profileSummary, textOverride: slideTexts, contractLines })).judge
+    } catch (e) {
+      // 模型审查不可用（空响应/网络中断）不炸任务：机器审计已过的维度照常交付
+      console.warn('LLM 审查不可用，以机器审计结论交付:', e?.message)
+      qcReport.rounds = round
+      qcReport.passed = qcReport.dims.placeholder && qcReport.dims.overflow && qcReport.dims.fonts ? true : false
+      if (!qcReport.passed) qcReport.issues.push({ where: '机器审计', problem: '占位/溢出/字体存在未决问题且模型审查不可用' })
+      break
+    }
     qcReport.rounds = round
     qcReport.dims.content = judge?.pass !== false
     if (judge?.pass !== false) { qcReport.passed = true; break }

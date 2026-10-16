@@ -41,7 +41,7 @@ async function generateViaSidecar(args) {
   await post({ jsonrpc: '2.0', method: 'notifications/initialized' })
   const r = await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'template_generate', arguments: args } })
   const txt = r?.result?.content?.[0]?.text || ''
-  try { return JSON.parse(txt) } catch { return { ok: false, message: txt || '模板生成委派失败' } }
+  try { return JSON.parse(txt) } catch { return { ok: false, message: String(txt || '模板生成委派失败（sidecar 无有效响应）').slice(0, 300) } }
 }
 
 function createCancelError() {
