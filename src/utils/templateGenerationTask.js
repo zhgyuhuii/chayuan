@@ -623,9 +623,9 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   // 确定性底稿：每页真实内容打底（find=剖析texts，100%命中），LLM计划随后叠加精修
   const detPlan = buildDeterministicSlidePlan(sourceParams.__analysisProfile, sourceParams.referenceContext, requirement)
   const detRes = await applySlidePlanToZip(zip, detPlan)
-  const detStats = detRes.ok ? detRes.stats : { edits: 0, missedTexts: [] }
+  const detStats = detRes.ok ? detRes.stats : { edits: 0, missedTexts: [], rejected: 0 }
   let applied = await applySlidePlanToZip(zip, plan)
-  const buildStats = () => ({ edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, pages: applied.stats.pages, deterministicEdits: detStats.edits })
+  const buildStats = () => ({ edits: (detStats.edits || 0) + applied.stats.edits, duplicates: applied.stats.duplicates, adds: applied.stats.adds, missedTexts: applied.stats.missedTexts, rejected: (detStats.rejected || 0) + (applied.stats.rejected || 0), pages: applied.stats.pages, deterministicEdits: detStats.edits })
   // 占位清扫（2026-10-16）：底稿/LLM遗漏的占位文本全部替换——零残留
   try {
     const { sweepPlaceholders } = await import('./templateFileGenerator.js')
@@ -684,28 +684,67 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   progress(taskId, 92, '正在保存生成文件…')
   const outBytes = await exportZipBytes(zip)
   const outPath = writeGeneratedPptx(outBytes)
-  // 自动打开结果（用户要求：生成文档自动在当前窗口打开，不要藏着）——
-  // OS 级打开是唯一真机验证不崩的方式；WPS 会切到该文档
+  // 交付（2026-10-16 用户令）：当前窗口开着空白演示文稿 → 生成页经 jsapi InsertFromFile
+  // 插入该文稿（原地填充，不新开窗口），并删掉原有空白页；没有合适宿主 → OS 级打开产物。
+  // 插页会连同版式/母版引用一起拷贝；任何失败回退 OS 打开，不阻断交付。
   let opened = false
+  let filled = 0
   if (outPath.ok) {
-    progress(taskId, 96, '正在打开生成结果…')
-    try {
-      const { openFileViaOs } = await import('./documentCreateFromTemplate.js')
-      const r = await openFileViaOs(outPath.path)
-      opened = !!r?.ok
-    } catch (e) {
-      console.warn('自动打开失败:', e?.message || e)
+    progress(taskId, 95, '正在交付生成结果…')
+    const fill = fillActiveBlankPresentation(outPath.path)
+    if (fill.ok) {
+      filled = fill.filled
+    } else {
+      try {
+        const { openFileViaOs } = await import('./documentCreateFromTemplate.js')
+        const r = await openFileViaOs(outPath.path)
+        opened = !!r?.ok
+      } catch (e) {
+        console.warn('自动打开失败:', e?.message || e)
+      }
     }
   }
   progress(taskId, 99, '生成完成')
   const summary = [
-    `已后台生成（未打开 WPS 窗口）：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
+    filled
+      ? `已在当前演示文稿填充生成内容（${filled} 页，未保存；产物备份：${outPath.ok ? outPath.path : '保存失败'}）`
+      : `已后台生成：${outPath.ok ? outPath.path : '（保存失败：' + outPath.error + '）'}`,
     `执行：改写 ${stats.edits} 处（含内容底稿 ${stats.deterministicEdits || 0} 处）/ 复制 ${stats.duplicates} 页 / 新增 ${stats.adds} 页；共 ${stats.pages} 页`,
     stats.missedTexts?.length ? `未命中模板原文 ${stats.missedTexts.length} 处（已跳过）` : '',
+    stats.rejected ? `拒收异常替换 ${stats.rejected} 处` : '',
     `质检：${qcReport.rounds} 轮，${qcReport.passed === true ? '通过' : qcReport.passed === null ? '未执行' : '达轮次上限'}`,
-    opened ? '已自动在 WPS 打开生成结果。' : '自动打开失败——请手动打开：' + (outPath.path || '')
+    filled ? '请检查后自行保存（Ctrl/Cmd+S）。' : opened ? '已自动在 WPS 打开生成结果。' : '自动打开失败——请手动打开：' + (outPath.path || '')
   ].filter(Boolean).join('\n')
-  return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true }
+  return { ok: outPath.ok, message: summary, path: outPath.ok ? outPath.path : null, qcReport, execResult: stats, fileLevel: true, filledIntoActive: filled > 0 }
+}
+
+/**
+ * 把生成的 pptx 插入「当前打开的空白演示文稿」（用户令：在当前窗口原地生成，不要另开窗口）。
+ * 判定空白：未命名（演示文稿N/Untitled/PresentationN/未命名）且页数 ≤ 1。
+ * 返回 { ok, filled } —— filled 为插入的页数；不可插入时 ok:false 交由调用方回退。
+ */
+function fillActiveBlankPresentation(pptxPath) {
+  try {
+    const app = window.Application
+    const pres = app?.ActivePresentation
+    if (!pres || typeof pres?.Slides?.InsertFromFile !== 'function') return { ok: false, reason: 'no-active-or-api' }
+    const name = String(pres.Name || '').trim()
+    const isUntitled = /^(演示文稿|幻灯片|未命名|untitled|presentation\s*\d*)/i.test(name)
+    const cnt = Number(pres.Slides.Count || 0)
+    if (!isUntitled || cnt > 1) return { ok: false, reason: 'not-blank:' + name + ':' + cnt }
+    const last = pres.Slides.InsertFromFile(pptxPath, cnt, 1, -1)
+    const inserted = Number(last)
+    if (!Number.isFinite(inserted) || inserted <= cnt) return { ok: false, reason: 'insert-noop' }
+    // 删掉原有空白页（插入位置在原第 cnt 页之后）
+    for (let i = cnt; i >= 1; i--) {
+      try { pres.Slides.Item(i).Delete() } catch (_) { /* 尽力而为 */ }
+    }
+    try { pres.Saved = false } catch (_) { /* 保持未保存态 */ }
+    return { ok: true, filled: inserted - cnt }
+  } catch (e) {
+    console.warn('填充当前演示文稿失败，回退打开文件:', e?.message || e)
+    return { ok: false, reason: e?.message || String(e) }
+  }
 }
 
 function writeGeneratedPptx(arrayBuffer) {

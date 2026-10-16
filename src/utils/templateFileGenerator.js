@@ -210,7 +210,7 @@ function replaceTextsInSlideDoc(doc, replaces, shapeCensus) {
     }
     missed.push(find)
   }
-  return { applied: applied.length, missed }
+  return { applied: applied.length, missed, rejected: rejected.length }
 }
 /**
  * 应用计划到 pptx 字节。
@@ -373,7 +373,7 @@ export async function loadTemplateZip(templateBytes) {
 
 export async function applySlidePlanToZip(zip, plan) {
   // 与 applySlidePlanToPptx 相同逻辑，但作用在已装载的 zip 上且不导出字节
-  const stats = { edits: 0, duplicates: 0, adds: 0, missedTexts: [], pages: 0 }
+  const stats = { edits: 0, duplicates: 0, adds: 0, missedTexts: [], rejected: 0, pages: 0 }
   let ctText = await zip.file('[Content_Types].xml').async('string')
   let presText = await zip.file('ppt/presentation.xml').async('string')
   let nextSlide = 1
@@ -390,7 +390,7 @@ export async function applySlidePlanToZip(zip, plan) {
       const doc = xmlOf(await file.async('string'))
       const census = parseSlideShapes(doc)
       const r = replaceTextsInSlideDoc(doc, page?.replaces || [], census)
-      stats.edits += r.applied; stats.missedTexts.push(...r.missed)
+      stats.edits += r.applied; stats.rejected += r.rejected || 0; stats.missedTexts.push(...r.missed)
       zip.file(`ppt/slides/slide${num}.xml`, textOf(doc))
     } else if (action === 'duplicate' || action === 'add') {
       const srcNum = action === 'duplicate' ? (Number(page?.page) || 1) : pickContentSlideNum(zip)

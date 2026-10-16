@@ -672,7 +672,7 @@ async function dispatchMcpJobInner(method, params) {
         pageTarget: Number(params.pageTarget) || 0,
         toneFollow: params.toneFollow !== false,
         qcRounds: Number(params.qcRounds) || undefined,
-        planOnly: false
+        planOnly: params.planOnly === true || String(params.planOnly) === 'true'
       })
     case 'document.new':
       return handleDocumentNew(params)
