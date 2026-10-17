@@ -12687,8 +12687,12 @@ export default {
       message.activeWpsCapabilityRun = {
         taskId,
         status: 'running',
-        summaryText: `正在执行“${taskTitle}”...`,
-        statusMessage: '察元AI操作已启动，正在执行...',
+        summaryText: capabilityKey === 'generate-from-template' || capabilityKey === 'execute-template-plan'
+          ? '正在后台生成（完成后自动打开新文档）...'
+          : `正在执行“${taskTitle}”...`,
+        statusMessage: capabilityKey === 'generate-from-template' || capabilityKey === 'execute-template-plan'
+          ? '正在后台生成，完成后将自动打开新文档...'
+          : '察元AI操作已启动，正在执行...',
         showDetails: false,
         details: [],
         progress: 8,

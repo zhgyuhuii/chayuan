@@ -24,7 +24,7 @@ import { getDocumentText } from './documentActions.js'
 import { handleSpreadsheetAction } from '../services/mcpBridge/spreadsheetDispatch.js'
 import { handlePresentationAction } from '../services/mcpBridge/presentationDispatch.js'
 import { withDocumentWriteLock } from '../services/documentWriteLock.js'
-import { updateTask as updateTaskRecord, getTaskById } from './taskListStore.js'
+import { updateTask as updateTaskRecord, getTaskById, markTaskHeartbeat } from './taskListStore.js'
 
 const MAX_QC_ROUNDS = 4
 const DEFAULT_QC_ROUNDS = 3
@@ -759,7 +759,17 @@ async function executeSlideFileLevel({ taskId, isCancelled, model, requirement, 
   let opened = false
   let replacedBlank = false
   if (outPath.ok) {
-    progress(taskId, 95, '正在交付生成结果…')
+    // 交付会关闭原文档（本任务所在 webview 随之销毁、心跳停止）——先把任务落成
+    // 终态，避免其它窗口的 stale 回收器把它标成「应用已退出或重启，任务执行中断」
+    try {
+      updateTaskRecord(taskId, {
+        status: 'completed',
+        current: 3,
+        progress: 100,
+        resultSummary: '正在后台生成，产物将自动打开'
+      })
+    } catch (_) { /* 尽力而为 */ }
+    progress(taskId, 95, '正在后台生成，产物将自动打开…')
     const closed = closeActiveBlankPresentation()
     replacedBlank = closed.ok
     try {
@@ -973,6 +983,16 @@ export async function runTemplateGenerationTask(params = {}) {
   const isCancelled = () => { try { return !!(params.__isCancelled?.()) } catch (_) { return false } }
   const requirement = String(params.requirement || '').trim()
   if (!requirement) throw new Error('缺少生成需求（requirement）')
+  // 心跳保活（4s/次）：生成常超 20s，心跳缺席会被其它窗口的 stale 回收器
+  // 误判为「应用已退出或重启」；任务落终态后自清
+  const hbTimer = setInterval(() => {
+    try {
+      const t = getTaskById(taskId)
+      const st = String(t?.status || '').toLowerCase()
+      if (!t || ['completed', 'failed', 'error', 'cancelled', 'abnormal'].includes(st)) { clearInterval(hbTimer); return }
+      markTaskHeartbeat(taskId)
+    } catch (_) { /* 尽力而为 */ }
+  }, 4000)
 
   const model = resolveChatModel() // 可能为 null——底稿模式不需要模型
   const modelUsable = !!model
@@ -1117,6 +1137,15 @@ export async function runTemplatePlanExecution(params = {}) {
   }
   const taskId = params.__taskId || ''
   const isCancelled = () => { try { return !!(params.__isCancelled?.()) } catch (_) { return false } }
+  // 心跳保活（同 runTemplateGenerationTask）：计划执行段常超 20s
+  const hbTimer = setInterval(() => {
+    try {
+      const t = getTaskById(taskId)
+      const st = String(t?.status || '').toLowerCase()
+      if (!taskId || !t || ['completed', 'failed', 'error', 'cancelled', 'abnormal'].includes(st)) { clearInterval(hbTimer); return }
+      markTaskHeartbeat(taskId)
+    } catch (_) { /* 尽力而为 */ }
+  }, 4000)
 
   // 过期失效（v1.4 #5）：确认时活动文档 ≠ 触发时 → 计划作废，防开错副本上下文
   if (cached.triggerDocId) {
