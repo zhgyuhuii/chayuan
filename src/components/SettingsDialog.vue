@@ -31,14 +31,25 @@
           </div>
         </div>
 
-        <!-- 第二列：模型清单 / 分类 -->
+        <!-- 第二列：模型清单 / 分类（宽度可拖拽调整，见列尾 resizer） -->
         <div
           class="settings-column column-2"
           :class="{ 'column-2-narrow': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+          :style="{ width: column2Width + 'px' }"
         >
-          <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像） -->
+          <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像，按厂商分组） -->
           <div v-if="activeMainMenu === 'model-settings'" class="model-list-container">
             <div class="search-box">
+              <select
+                v-model="vendorFreeFilter"
+                class="vendor-filter-select"
+                :class="'filter-' + vendorFreeFilter"
+                title="按免费可用性筛选厂商"
+              >
+                <option value="all">全部</option>
+                <option value="nokey">免Key</option>
+                <option value="free">免费</option>
+              </select>
               <input
                 v-model="modelInventorySearch"
                 type="text"
@@ -48,51 +59,71 @@
             </div>
             <div class="inventory-list" ref="inventoryListRef">
               <div
-                v-for="(item, index) in filteredModelInventory"
-                :key="item.id"
-                class="inventory-row-wrap"
+                v-for="group in groupedModelInventory"
+                :key="group.key"
+                class="inventory-group"
               >
                 <div
-                  v-if="dragState.dropIndex === index && dragState.dropPosition === 'before'"
-                  class="inventory-insert-line"
-                />
-                <div
-                  class="inventory-row inventory-row-draggable"
-                  :class="{
-                    active: selectedModelId === item.id,
-                    'inventory-row-dragging': dragState.fromIndex === index
-                  }"
-                  draggable="true"
-                  @click="selectModel(item)"
-                  @contextmenu.prevent="item.isCustom && showContextMenu($event, item)"
-                  @dragstart="onDragStart($event, index)"
-                  @dragover.prevent="onDragOver($event, index)"
-                  @dragleave="onDragLeave($event, index)"
-                  @drop.prevent="onDrop($event, index)"
-                  @dragend="onDragEnd"
+                  class="inventory-group-header"
+                  :class="{ collapsed: isVendorGroupCollapsed(group.key) }"
+                  @click="toggleVendorGroupCollapsed(group.key)"
                 >
-                  <span class="inventory-drag-handle" title="拖动排序">⋮⋮</span>
-                  <img
-                    v-if="item.icon"
-                    :src="getIconSrc(item)"
-                    :alt="item.name"
-                    class="inventory-icon"
-                    @error="handleImageError"
-                  />
-                  <span class="inventory-name">{{ item.name }}</span>
-                  <label class="switch switch-inline" @click.stop>
-                    <input
-                      type="checkbox"
-                      :checked="getModelEnabled(item.id)"
-                      @change="toggleModelEnabled(item, $event)"
-                    />
-                    <span class="slider"></span>
-                  </label>
+                  <span class="inventory-group-arrow" aria-hidden="true">▾</span>
+                  <span class="inventory-group-label">{{ group.label }}</span>
+                  <span class="inventory-group-count">{{ group.items.length }}</span>
                 </div>
-                <div
-                  v-if="dragState.dropIndex === index && dragState.dropPosition === 'after'"
-                  class="inventory-insert-line"
-                />
+                <template v-if="!isVendorGroupCollapsed(group.key)">
+                  <div
+                    v-for="item in group.items"
+                    :key="item.id"
+                    class="inventory-row-wrap"
+                  >
+                    <div
+                      v-if="dragState.dropId === item.id && dragState.dropPosition === 'before'"
+                      class="inventory-insert-line"
+                    />
+                    <div
+                      class="inventory-row inventory-row-draggable"
+                      :class="{
+                        active: selectedModelId === item.id,
+                        'inventory-row-dragging': dragState.draggingId === item.id
+                      }"
+                      draggable="true"
+                      @click="selectModel(item)"
+                      @contextmenu.prevent="item.isCustom && showContextMenu($event, item)"
+                      @dragstart="onDragStart($event, item)"
+                      @dragover.prevent="onDragOver($event, item)"
+                      @dragleave="onDragLeave($event, item)"
+                      @drop.prevent="onDrop($event, item)"
+                      @dragend="onDragEnd"
+                    >
+                      <span class="inventory-drag-handle" title="拖动排序">⋮⋮</span>
+                      <img
+                        v-if="item.icon"
+                        :src="getIconSrc(item)"
+                        :alt="item.name"
+                        class="inventory-icon"
+                        @error="handleImageError"
+                      />
+                      <span class="inventory-name">{{ item.name }}</span>
+                      <span
+                        v-if="vendorFreeBadge(item.id)"
+                        class="vendor-badge"
+                        :class="vendorFreeBadge(item.id).cls"
+                        :title="vendorFreeBadge(item.id).title"
+                      >{{ vendorFreeBadge(item.id).text }}</span>
+                      <span
+                        class="vendor-status-badge"
+                        :class="'is-' + vendorStatusInfo(item.id).key"
+                        :title="vendorStatusInfo(item.id).title"
+                      >{{ vendorStatusInfo(item.id).text }}</span>
+                    </div>
+                    <div
+                      v-if="dragState.dropId === item.id && dragState.dropPosition === 'after'"
+                      class="inventory-insert-line"
+                    />
+                  </div>
+                </template>
               </div>
             </div>
             <div class="inventory-row inventory-row-add" @click="openAddModelDialog">
@@ -419,6 +450,15 @@
             </div>
           </div>
         </div>
+
+        <!-- 第二/三列分割线：按住左右拖动调整模型厂商列宽度（松开记忆） -->
+        <div
+          class="column-resizer"
+          :class="{ 'column-resizer-active': column2Resizing }"
+          @mousedown.prevent="startColumn2Resize"
+          @dblclick="resetColumn2Width"
+          title="拖动调整列宽，双击恢复默认"
+        ></div>
 
         <!-- 第三列：模型设置 / 选择模型 / 配置详情 -->
         <div
@@ -2776,6 +2816,104 @@ const MODEL_INVENTORY = [
   { id: 'REPLICATE_FAL_AI', name: 'Replicate', description: 'FAL.ai' }
 ]
 
+// 模型厂商分组（分组归属与 chayuan-harness vendor-catalog.js 对齐）：
+// custom 自定义 / cn 国内平台 / global 国际平台 / local 本地与自建 / agg API 聚合
+const VENDOR_GROUPS = [
+  { key: 'custom', label: '自定义' },
+  { key: 'cn', label: '国内平台' },
+  { key: 'global', label: '国际平台' },
+  { key: 'local', label: '本地与自建' },
+  { key: 'agg', label: 'API 聚合' }
+]
+
+const VENDOR_GROUP_BY_ID = new Map()
+{
+  const assign = (groupKey, ids) => ids.forEach(id => VENDOR_GROUP_BY_ID.set(id.toLowerCase(), groupKey))
+  assign('cn', [
+    'deepseek', 'moonshot', 'aliyun-bailian', 'baidu-qianfan', 'zhipu', 'volcengine',
+    'lingyi-wanwu', 'minimax', 'step-ai', 'baichuan', 'tencent-hunyuan', 'tencent-cloud-ti',
+    'xiaomi-mimo', 'modelscope', 'tianyi-xirang', 'qiniu', 'ppio', 'lanyun', 'ph8',
+    'sophnet', 'alaya-new', 'wuwen-xinqiong', 'netease-youdao', 'gitee-ai', 'agnes', 'siliconflow'
+  ])
+  assign('global', [
+    'openai', 'anthropic', 'gemini', 'azure-openai', 'vertex-ai', 'github-models',
+    'github-copilot', 'grok', 'mistral', 'perplexity', 'cohere', 'groq', 'together',
+    'fireworks', 'nvidia', 'cerebras', 'hyperbolic', 'aws-bedrock', 'huggingface',
+    'jina', 'voyage-ai', 'poe', 'replicate', 'vercel-ai', 'reka', 'replicate_fal_ai'
+  ])
+  assign('local', [
+    'ollama', 'lm-studio', 'xinference', 'oneapi', 'new-api', 'fastchat',
+    'gpustack', 'openai-compatible', 'openai_compatible'
+  ])
+  assign('agg', [
+    'openrouter', 'aihubmix', 'dmxapi', '302-ai', 'tokenflux', 'burncloud',
+    'ocoolai', 'cephalon', 'aionly', 'totoro', 'longcat'
+  ])
+}
+
+// 模型清单列（第二列）宽度：默认 240，拖拽分割线调整后记忆到 localStorage
+const COLUMN2_WIDTH_STORAGE_KEY = 'settingsColumn2Width'
+const COLUMN2_WIDTH_DEFAULT = 240
+const COLUMN2_WIDTH_MIN = 170
+const COLUMN2_WIDTH_MAX = 420
+
+// 免费可用标记（与 chayuan-harness vendor-catalog 同源）：
+// nokey=完全免Key(含本地自建) | freekey=注册即得免费Key | tier=有免费额度
+const VENDOR_FREE_BY_ID = new Map([
+  ['zhipu', 'tier'], ['modelscope', 'freekey'], ['gemini', 'tier'], ['github-models', 'tier'],
+  ['mistral', 'tier'], ['cohere', 'tier'], ['groq', 'tier'], ['nvidia', 'tier'],
+  ['cerebras', 'tier'], ['huggingface', 'freekey'], ['ollama', 'nokey'], ['lm-studio', 'nokey'],
+  ['xinference', 'nokey'], ['oneapi', 'nokey'], ['new-api', 'nokey'], ['fastchat', 'nokey'],
+  ['gpustack', 'nokey'], ['openai-compatible', 'nokey'], ['openai_compatible', 'nokey'],
+  ['openrouter', 'tier'], ['siliconflow', 'tier'], ['zhipu'.toUpperCase(), 'tier'],
+  ['GEMINI', 'tier'], ['ZHIPU', 'tier'], ['OLLAMA', 'nokey'], ['XINFERENCE', 'nokey'],
+  ['ONEAPI', 'nokey'], ['FASTCHAT', 'nokey'], ['OPENAI_COMPATIBLE', 'nokey']
+])
+
+// 厂商行状态优先级：enabled（已开启）> error（异常）> configured（已配置）> 未配置。
+// enabled 沿用 getModelConfig().enabled；configured = 已填密钥或本地类已填地址；
+// error 为「检测连接」失败记录（localStorage，含时间戳），成功检测即清除。
+const VENDOR_ERROR_STORAGE_KEY = 'vendorDetectErrors'
+const VENDOR_ERROR_TTL_MS = 24 * 60 * 60 * 1000
+
+function readVendorDetectErrors() {
+  try {
+    const raw = JSON.parse(window.localStorage?.getItem(VENDOR_ERROR_STORAGE_KEY) || '{}')
+    const now = Date.now()
+    const fresh = {}
+    for (const [id, rec] of Object.entries(raw || {})) {
+      if (rec && Number.isFinite(rec.at) && now - rec.at < VENDOR_ERROR_TTL_MS) fresh[id] = rec
+    }
+    return fresh
+  } catch (_) { return {} }
+}
+
+function writeVendorDetectError(providerId, message) {
+  try {
+    const all = readVendorDetectErrors()
+    all[providerId] = { at: Date.now(), message: String(message || '').slice(0, 200) }
+    window.localStorage?.setItem(VENDOR_ERROR_STORAGE_KEY, JSON.stringify(all))
+  } catch (_) { /* 存储不可用时跳过记录 */ }
+}
+
+function clearVendorDetectError(providerId) {
+  try {
+    const all = readVendorDetectErrors()
+    if (all[providerId]) {
+      delete all[providerId]
+      window.localStorage?.setItem(VENDOR_ERROR_STORAGE_KEY, JSON.stringify(all))
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function readInitialColumn2Width() {
+  try {
+    const raw = parseInt(window.localStorage?.getItem(COLUMN2_WIDTH_STORAGE_KEY) || '', 10)
+    if (Number.isFinite(raw)) return Math.min(COLUMN2_WIDTH_MAX, Math.max(COLUMN2_WIDTH_MIN, raw))
+  } catch (_) { /* 存储不可用时回落默认宽 */ }
+  return COLUMN2_WIDTH_DEFAULT
+}
+
 export default {
   name: 'SettingsDialog',
   components: { KbSettingsPanel, WebResourceSettings },
@@ -2842,6 +2980,11 @@ export default {
       settingsWindowSession: null,
       modelSearchText: '',
       modelInventorySearch: '',
+      // 厂商清单免费筛选（搜索框前下拉）：all=全部 | nokey=免Key | free=免费（freekey 注册即得 或 tier 有额度）
+      vendorFreeFilter: 'all',
+      // 第二列（模型厂商清单）宽度：可拖拽分割线调整，localStorage 记忆
+      column2Width: readInitialColumn2Width(),
+      column2Resizing: false,
       defaultModelId: null,
       // 默认模型分类（与 modelType 对应，仅显示设置中已开启的模型）
       modelCategories: [
@@ -2890,8 +3033,9 @@ export default {
         menuType: ''
       },
       dragState: {
-        fromIndex: -1,
-        dropIndex: -1,
+        fromId: '',
+        draggingId: '',
+        dropId: '',
         dropPosition: 'before'
       },
       assistantDragState: {
@@ -2924,6 +3068,12 @@ export default {
       defaultModelDropdownOpen: false,
       // 分组折叠状态：providerId -> true 表示折叠
       modelGroupCollapsed: {},
+      // 模型厂商分组（国内/国际/本地/聚合）折叠状态：groupKey -> true 表示折叠
+      vendorGroupCollapsed: {},
+      // 厂商「检测连接」失败记录（providerId -> { at, message }），行内显示「异常」徽标
+      vendorDetectErrors: readVendorDetectErrors(),
+      // 模型配置版本号：保存/开关变化时自增，驱动厂商行状态徽标重算
+      modelConfigVersion: 0,
       // 段落截取设置（大文档分批处理）
       chunkSettings: {
         chunkLength: 4000,
@@ -3162,12 +3312,28 @@ export default {
     selectedModelDescription() {
       return this.selectedModel?.description || ''
     },
-    filteredModelInventory() {
-      if (!this.modelInventorySearch) return this.modelInventoryList
-      const search = this.modelInventorySearch.toLowerCase()
-      return this.modelInventoryList.filter(
-        m => m.name.toLowerCase().includes(search) || m.id.toLowerCase().includes(search)
-      )
+    // 模型厂商清单按分组（自定义/国内平台/国际平台/本地与自建/API 聚合）组织，
+    // 组内保持清单自身顺序（含用户拖拽排序）；搜索 + 免费筛选叠加，空组自动隐藏
+    groupedModelInventory() {
+      const search = this.modelInventorySearch
+      const freeFilter = this.vendorFreeFilter
+      const buckets = new Map(VENDOR_GROUPS.map(g => [g.key, { ...g, items: [] }]))
+      const fallback = buckets.get('global')
+      for (const item of this.modelInventoryList) {
+        if (search) {
+          const q = search.toLowerCase()
+          if (!(item.name.toLowerCase().includes(q) || item.id.toLowerCase().includes(q))) continue
+        }
+        if (freeFilter !== 'all') {
+          const kind = VENDOR_FREE_BY_ID.get(String(item.id).trim()) ||
+            VENDOR_FREE_BY_ID.get(String(item.id).trim().toLowerCase())
+          if (freeFilter === 'nokey' ? kind !== 'nokey' : !kind) continue
+        }
+        const groupKey = item.isCustom ? 'custom' : (VENDOR_GROUP_BY_ID.get(String(item.id).toLowerCase()) || 'global')
+        const bucket = buckets.get(groupKey) || fallback
+        bucket.items.push(item)
+      }
+      return [...buckets.values()].filter(g => g.items.length > 0)
     },
     // 默认设置下的设置项列表（模型分类 + 段落截取设置 + 网络资源搜索）
     defaultSettingsItems() {
@@ -6047,18 +6213,49 @@ export default {
     onFormChange() {
       this.isFormSaved = false // 表单内容变化时重置保存状态
     },
-    // 获取模型是否已开启（用于左侧清单开关显示）
+    // 获取模型是否已开启（右侧设置面板开关 / 状态徽标共用）
     getModelEnabled(providerId) {
+      this.modelConfigVersion // 依赖配置版本：保存后徽标即时刷新
       const config = getModelConfig(providerId)
       return !!config.enabled
     },
-    // 切换模型启用状态（左侧清单开关）
+    // 厂商行状态徽标：已开启 > 异常 > 已配置 > 未配置
+    vendorStatusInfo(providerId) {
+      this.modelConfigVersion
+      const config = getModelConfig(providerId)
+      const hasKey = !!(config.apiKey || '').trim()
+      const hasUrl = !!(config.apiUrl || '').trim()
+      const isLocalLike = this.isOllamaLikeProvider(providerId)
+      const configured = hasKey || (isLocalLike && hasUrl)
+      const err = this.vendorDetectErrors[providerId]
+      if (config.enabled) {
+        return { key: 'enabled', text: '已开启', title: '已开启：显示在察元AI助理模型下拉中（在右侧设置面板可关闭）' }
+      }
+      if (err) {
+        return { key: 'error', text: '异常', title: `最近检测失败：${err.message || '连接异常'}` }
+      }
+      if (configured) {
+        return { key: 'configured', text: '已配置', title: '已配置密钥/地址，尚未开启' }
+      }
+      return { key: 'empty', text: '未配置', title: '尚未配置 API 密钥/地址' }
+    },
+    // 免Key/免费徽标（与 chayuan-harness vendor-catalog 同源标记）
+    vendorFreeBadge(providerId) {
+      const kind = VENDOR_FREE_BY_ID.get(String(providerId || '').trim()) ||
+        VENDOR_FREE_BY_ID.get(String(providerId || '').trim().toLowerCase())
+      if (!kind) return null
+      if (kind === 'nokey') return { cls: 'vendor-badge-nokey', text: '免Key', title: '免Key：本地/自建或无需 API Key 即可使用' }
+      if (kind === 'freekey') return { cls: 'vendor-badge-freekey', text: '免费', title: '注册即得免费 Key' }
+      return { cls: 'vendor-badge-tier', text: '免费额度', title: '提供免费额度（超出后按量付费）' }
+    },
+    // 切换模型启用状态（右侧设置面板开关；行内已改为状态徽标显示）
     toggleModelEnabled(item, event) {
       const enabled = !!event?.target?.checked
       saveModelConfig(item.id, { enabled })
       if (this.selectedModel?.id === item.id) {
         this.currentModelConfig.enabled = enabled
       }
+      this.modelConfigVersion += 1
       this.$forceUpdate()
       this.notifyRibbonRefreshModelMenu()
     },
@@ -6326,6 +6523,7 @@ export default {
     updateModelConfig() {
       if (!this.selectedModel) return
       saveModelConfig(this.selectedModel.id, this.currentModelConfig)
+      this.modelConfigVersion += 1 // 厂商行状态徽标刷新
       this.notifyRibbonRefreshModelMenu()
     },
     // 切换 API 密钥显示
@@ -6438,6 +6636,8 @@ export default {
         const res = await fetch(url, options)
         if (res.ok) {
           this.showMessage('连接成功，API 可用', 'success')
+          clearVendorDetectError(this.selectedModel?.id)
+          this.vendorDetectErrors = readVendorDetectErrors()
         } else {
           const text = await res.text()
           let msg = `连接失败: ${res.status} ${res.statusText}`
@@ -6454,10 +6654,15 @@ export default {
             } catch (_) {}
           }
           this.showMessage(msg, 'error')
+          writeVendorDetectError(this.selectedModel?.id, msg)
+          this.vendorDetectErrors = readVendorDetectErrors()
         }
       } catch (e) {
         console.error('API 检测失败:', e)
-        this.showMessage('连接失败: ' + (e.message || '网络错误'), 'error')
+        const msg = '连接失败: ' + (e.message || '网络错误')
+        this.showMessage(msg, 'error')
+        writeVendorDetectError(this.selectedModel?.id, msg)
+        this.vendorDetectErrors = readVendorDetectErrors()
       }
     },
     // 真 Ollama：探测用 Ollama 私有的 /api/tags。其余 Ollama 类(xinference/oneapi/fastchat/
@@ -6804,38 +7009,43 @@ export default {
       if (!item || item.type !== 'custom-assistant') return
       this.deleteAssistantItem(item)
     },
-    onDragStart(e, index) {
-      this.dragState = { fromIndex: index, dropIndex: -1, dropPosition: 'before' }
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData('text/plain', String(index))
-      e.dataTransfer.setData('application/json', JSON.stringify({ index }))
+    isVendorGroupCollapsed(groupKey) {
+      return !!this.vendorGroupCollapsed[groupKey]
     },
-    onDragOver(e, index) {
-      e.dataTransfer.dropEffect = 'move'
-      const from = this.dragState.fromIndex
-      if (from < 0 || from === index) return
-      const rect = e.currentTarget.getBoundingClientRect()
-      const midY = rect.top + rect.height / 2
-      const position = e.clientY < midY ? 'before' : 'after'
-      this.dragState.dropIndex = index
-      this.dragState.dropPosition = position
-    },
-    onDragLeave(e, index) {
-      if (this.dragState.dropIndex === index) {
-        this.dragState.dropIndex = -1
+    toggleVendorGroupCollapsed(groupKey) {
+      this.vendorGroupCollapsed = {
+        ...this.vendorGroupCollapsed,
+        [groupKey]: !this.vendorGroupCollapsed[groupKey]
       }
     },
-    onDrop(e, toIndex) {
-      const fromIndex = this.dragState.fromIndex
+    onDragStart(e, item) {
+      this.dragState = { fromId: item.id, draggingId: item.id, dropId: '', dropPosition: 'before' }
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(item.id))
+      e.dataTransfer.setData('application/json', JSON.stringify({ id: item.id }))
+    },
+    onDragOver(e, item) {
+      e.dataTransfer.dropEffect = 'move'
+      const from = this.dragState.fromId
+      if (!from || from === item.id) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      this.dragState.dropId = item.id
+      this.dragState.dropPosition = e.clientY < midY ? 'before' : 'after'
+    },
+    onDragLeave(e, item) {
+      if (this.dragState.dropId === item.id) {
+        this.dragState.dropId = ''
+      }
+    },
+    onDrop(e, toItem) {
+      const fromId = this.dragState.fromId
       const dropPosition = this.dragState.dropPosition
-      this.dragState = { fromIndex: -1, dropIndex: -1, dropPosition: 'before' }
-      if (fromIndex < 0) return
+      this.dragState = { fromId: '', draggingId: '', dropId: '', dropPosition: 'before' }
+      if (!fromId) return
       const list = [...this.modelInventoryList]
-      const filtered = this.filteredModelInventory
-      const fromItem = filtered[fromIndex]
-      const toItem = filtered[toIndex]
-      if (!fromItem || !toItem || fromItem.id === toItem.id) return
-      const fromIdx = list.findIndex(m => m.id === fromItem.id)
+      if (!toItem || fromId === toItem.id) return
+      const fromIdx = list.findIndex(m => m.id === fromId)
       let toIdx = list.findIndex(m => m.id === toItem.id)
       if (fromIdx < 0 || toIdx < 0) return
       if (dropPosition === 'after') toIdx += 1
@@ -6848,7 +7058,33 @@ export default {
       this.modelOrder = newOrder
     },
     onDragEnd(e) {
-      this.dragState = { fromIndex: -1, dropIndex: -1, dropPosition: 'before' }
+      this.dragState = { fromId: '', draggingId: '', dropId: '', dropPosition: 'before' }
+    },
+    // 第二列宽度拖拽调整：mousemove 全局跟踪，mouseup 落定并记忆到 localStorage
+    startColumn2Resize(e) {
+      const startX = e.clientX
+      const startWidth = this.column2Width
+      this.column2Resizing = true
+      const onMove = (ev) => {
+        const next = startWidth + (ev.clientX - startX)
+        this.column2Width = Math.min(COLUMN2_WIDTH_MAX, Math.max(COLUMN2_WIDTH_MIN, next))
+      }
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        this.column2Resizing = false
+        try {
+          window.localStorage?.setItem(COLUMN2_WIDTH_STORAGE_KEY, String(this.column2Width))
+        } catch (_) { /* 存储不可用时仅本次生效 */ }
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    },
+    resetColumn2Width() {
+      this.column2Width = COLUMN2_WIDTH_DEFAULT
+      try {
+        window.localStorage?.setItem(COLUMN2_WIDTH_STORAGE_KEY, String(COLUMN2_WIDTH_DEFAULT))
+      } catch (_) { /* ignore */ }
     },
     // 关闭管理弹窗
     closeManageModal() {
@@ -7844,12 +8080,14 @@ export default {
   flex-direction: column;
 }
 
-/* 第二列：模型清单，加宽避免拥挤 */
+/* 第二列：模型清单。默认宽度 240px（内联 style 覆盖），拖动列间分割线可调，
+   宽度记忆在 localStorage（settingsColumn2Width），双击分割线恢复默认 */
 .column-2 {
-  width: 200px;
-  flex-shrink: 0;
+  width: 240px;
+  flex: 0 0 auto;
   min-height: 0;
   overflow-y: auto;
+  border-right: none; /* 分隔线由 column-resizer 提供，避免双线 */
 }
 
 /* 知识库设置子菜单激活时把第二列收窄(20 字符宽度足够),
@@ -7857,6 +8095,40 @@ export default {
 .column-2.column-2-narrow {
   width: 200px;
   min-width: 200px;
+}
+
+/* 第二/三列分割线：hover/拖拽中高亮为可拖把手 */
+.column-resizer {
+  flex: 0 0 5px;
+  width: 5px;
+  margin: 0 -2.5px;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color 0.15s;
+}
+
+.column-resizer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+  background: rgba(226, 232, 240, 0.86);
+  pointer-events: none;
+}
+
+.column-resizer:hover,
+.column-resizer-active {
+  background: #1890ff;
+  opacity: 0.35;
+}
+
+.column-resizer-active {
+  opacity: 0.55;
 }
 
 .column-3 {
@@ -7958,10 +8230,41 @@ export default {
 .search-box {
   padding: 12px;
   border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  gap: 6px;
+}
+
+/* 免费/免Key 筛选下拉：搜索框前置，与搜索叠加过滤 */
+.vendor-filter-select {
+  flex-shrink: 0;
+  width: 82px;
+  padding: 6px 4px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+}
+
+.vendor-filter-select:focus {
+  outline: none;
+  border-color: #1890ff;
+}
+
+.vendor-filter-select.filter-nokey {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.5);
+}
+
+.vendor-filter-select.filter-free {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.5);
 }
 
 .search-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
@@ -7991,6 +8294,117 @@ export default {
   min-height: 0;
   overflow-y: auto;
   padding: 8px 0;
+}
+
+/* 模型厂商分组标题：国内平台 / 国际平台 / 本地与自建 / API 聚合 / 自定义 */
+.inventory-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.inventory-group-header:hover {
+  color: #1890ff;
+}
+
+.inventory-group-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+
+.inventory-group-header.collapsed .inventory-group-arrow {
+  transform: rotate(-90deg);
+}
+
+.inventory-group-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.inventory-group-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+
+/* 厂商行状态徽标：已开启(绿) / 异常(红) / 已配置(蓝) / 未配置(灰) */
+.vendor-status-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.vendor-status-badge.is-enabled {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
+.vendor-status-badge.is-error {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.vendor-status-badge.is-configured {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+.vendor-status-badge.is-empty {
+  color: #9ca3af;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+/* 免Key(绿)/免费(蓝)小标签：与状态徽标并列，悬停出说明 */
+.vendor-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.vendor-badge-nokey {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+  border: 1px solid rgba(22, 163, 74, 0.35);
+}
+
+.vendor-badge-freekey,
+.vendor-badge-tier {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+/* 选中行的徽标反白 */
+.inventory-row.active .vendor-status-badge,
+.inventory-row.active .vendor-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 .model-list-container .inventory-row-add {
