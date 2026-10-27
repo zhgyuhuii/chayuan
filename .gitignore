@@ -64,3 +64,6 @@ artifacts/e2e-v2/shots/
 # Win7 portable node runtime (downloaded at build time, bundled into the SFX)
 mcp-sidecar/.node-runtime/
 mcp-sidecar/nodejs/
+
+# ZCode agent session dir (local)
+.zcode/
