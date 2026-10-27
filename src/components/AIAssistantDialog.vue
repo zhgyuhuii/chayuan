@@ -12665,8 +12665,9 @@ export default {
 
     /**
      * 附件落盘并登记 file_parse 30 分钟记忆（附件N 别名）。
-     * 只处理非纯文本附件（docx/xlsx/pptx/pdf/office 系与未知二进制）——
-     * 纯文本附件 content 已内联进消息，无需路径解析通道。
+     * 全部附件都登记（含文本类）——别名是「最近一次带附件消息的第 N 个」语义；
+     * 若文本类跳过，模型调 file_parse 查「附件1」会命中上一份非文本附件的陈旧
+     * 登记（真机案例：传 HTML 后模型查附件1，拿到 30 分钟前登记的 PPTX）。
      */
     registerAttachmentPathsForParse() {
       if (!Array.isArray(this.attachments)) return
@@ -12674,7 +12675,6 @@ export default {
         for (const item of this.attachments) {
           try {
             if (!item || item.parseRegistered || !(item.rawFile instanceof File)) continue
-            if (isTextLikeAttachment(item.rawFile)) { item.parseRegistered = true; continue }
             item.parseRegistered = true
             const materialized = await materializeAttachmentToTemp(item.rawFile, { anyFormat: true })
             if (!materialized?.ok || !materialized.path) continue
