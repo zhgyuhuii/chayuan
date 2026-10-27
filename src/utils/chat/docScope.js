@@ -58,8 +58,13 @@ export function createScopedStorageSuffix(value) {
  * @returns {{scopeKey:string, documentLinkId:string, docId:string, source:string, fullName:string, name:string}}
  */
 export function resolveDocumentScope(doc, { ignoreIdentity = false } = {}) {
-  const fullName = String(doc?.FullName || '').trim()
-  const name = String(doc?.Name || '').trim()
+  // 属性读取逐项兜底：部分宿主的 COM 代理对象读 FullName/Name 会抛异常而非返回
+  // undefined——不兜底时整个解析每拍都抛、被上层静默吞掉，表现为"开着文档也
+  // 永远未绑定"（真机复现：新建空白演示稿后标签持续不跟随，2026-10-27）
+  let fullName = ''
+  let name = ''
+  try { fullName = String(doc?.FullName || '').trim() } catch (_) { /* 按缺失处理 */ }
+  try { name = String(doc?.Name || '').trim() } catch (_) { /* 按缺失处理 */ }
   // docId = 对话所属文档身份（远程回合执行侧校验"对话↔文档"绑定用）
   const docId = fullName || name
   let docLinkId = null
