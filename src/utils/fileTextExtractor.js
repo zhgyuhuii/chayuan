@@ -134,7 +134,27 @@ async function loadMammoth() {
 }
 
 async function loadPdfJs() {
-  return import('pdfjs-dist/webpack.mjs')
+  // pdfjs-dist v5 主构建需要 Promise.withResolvers（Chrome 119+）；WPS webview 的
+  // CEF 内核偏旧会抛 "Promise.withResolvers is not a function"——特性检测后回落
+  // legacy 构建（同版本、为旧浏览器保留的转译产物）。
+  // worker 装配：legacy 直引不带 worker，需 `?url` 指定 workerSrc 起真 module
+  // worker（真机实证可用）；不要用主线程 fake-worker——LoopbackPort 流式通道在
+  // 旧内核挂起（300s 无响应）。主线程侧唯一不兼容点是 getTextContent 内部对
+  // ReadableStream 的 for-await（Chrome 124+），由 pdfPageText 的 getReader 消费规避。
+  const legacy = typeof Promise.withResolvers !== 'function'
+  const mod = legacy
+    ? await import('pdfjs-dist/legacy/build/pdf.mjs')
+    : await import('pdfjs-dist/webpack.mjs')
+  const pdfjs = mod?.default && typeof mod.default.getDocument === 'function' ? mod.default : mod
+  if (pdfjs?.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+    try {
+      const w = legacy
+        ? await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
+        : await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+      if (w?.default) pdfjs.GlobalWorkerOptions.workerSrc = w.default
+    } catch (_) { /* worker 资产失败时由 pdfjs 自行兜底 */ }
+  }
+  return pdfjs
 }
 
 async function loadXlsx() {
@@ -144,6 +164,34 @@ async function loadXlsx() {
 
 async function loadJsZip() {
   return (await import('jszip')).default
+}
+
+/**
+ * 兼容旧内核的 pdf 页文本提取。
+ * pdfjs v5 的 getTextContent 内部对 ReadableStream 做 for-await 异步迭代
+ * （Chrome 124+ 才支持 ReadableStream async 迭代），旧 CEF 报
+ * "t is not async iterable"——这里手动 getReader() 消费同一个流
+ * （getReader 自 Chrome 43 可用），失败再回落 getTextContent。
+ */
+export async function pdfPageText(page) {
+  try {
+    if (typeof page.streamTextContent !== 'function') throw new Error('no streamTextContent')
+    const stream = page.streamTextContent({ includeMarkedContent: false })
+    const reader = stream.getReader()
+    const items = []
+    const styles = Object.create(null)
+    let lang = null
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value?.lang && !lang) lang = value.lang
+      if (value?.styles) Object.assign(styles, value.styles)
+      if (Array.isArray(value?.items)) items.push(...value.items)
+    }
+    return { items, styles, lang }
+  } catch (_) {
+    return page.getTextContent()
+  }
 }
 
 /** docx：mammoth 全文 + jszip 抽 Heading1-3 做 outline（偏移在全文里顺序定位） */
@@ -188,7 +236,7 @@ async function extractPdf(bytes) {
   let offset = 0
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
+    const content = await pdfPageText(page)
     const normalized = normalizeText(content.items.map(item => String(item?.str || '')).join(' '))
     const header = `第 ${i} 页`
     pages.push(`${header}\n${normalized || '（本页无可提取文本，疑似扫描件）'}`)

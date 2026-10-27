@@ -1,3 +1,5 @@
+import { pdfPageText } from './fileTextExtractor.js'
+
 function normalizeText(value) {
   return String(value || '')
     .replace(/\r\n/g, '\n')
@@ -7,6 +9,7 @@ function normalizeText(value) {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
+
 
 function getFileName(file) {
   return String(file?.name || '').trim()
@@ -60,7 +63,24 @@ async function extractDocxText(file) {
 }
 
 async function loadPdfJs() {
-  return import('pdfjs-dist/webpack.mjs')
+  // 与 fileTextExtractor 同款兼容装配：WPS webview CEF 内核缺 Promise.withResolvers
+  // 时回落 pdfjs legacy 构建 + `?url` 真 module worker（真机实证可用）；不要走
+  // 主线程 fake-worker（LoopbackPort 流式通道在旧内核挂起 300s）。getTextContent
+  // 的 ReadableStream for-await 不兼容由 pdfPageText 的 getReader 规避。
+  const legacy = typeof Promise.withResolvers !== 'function'
+  const mod = legacy
+    ? await import('pdfjs-dist/legacy/build/pdf.mjs')
+    : await import('pdfjs-dist/webpack.mjs')
+  const pdfjs = mod?.default && typeof mod.default.getDocument === 'function' ? mod.default : mod
+  if (pdfjs?.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+    try {
+      const w = legacy
+        ? await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')
+        : await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+      if (w?.default) pdfjs.GlobalWorkerOptions.workerSrc = w.default
+    } catch (_) { /* worker 资产失败时由 pdfjs 自行兜底 */ }
+  }
+  return pdfjs
 }
 
 async function loadXlsx() {
@@ -82,7 +102,9 @@ async function extractPdfText(file) {
   const pages = []
   for (let index = 1; index <= pdf.numPages; index++) {
     const page = await pdf.getPage(index)
-    const content = await page.getTextContent()
+    // pdfjs v5 getTextContent 内部对 ReadableStream 做 for-await（Chrome 124+），
+    // 旧 CEF 报 "not async iterable"——用 getReader 兼容助手（fileTextExtractor 同源）
+    const content = await pdfPageText(page)
     const text = content.items.map(item => String(item?.str || '')).join(' ')
     const normalized = normalizeText(text)
     if (normalized) {

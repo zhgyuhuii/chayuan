@@ -61,17 +61,20 @@ function noteUnsavedIfOpen(path) {
   return ''
 }
 
-/** 导航式摘要：outline 目录 + 头 50% + 中段均匀采样 + 尾 25%（全按字符预算） */
+/** 导航式摘要：outline 目录 + 头 50% + 中段均匀采样 + 尾 25%（全按字符预算）。
+ *  outline 实扣预算（120 项目录本身可达数千字符，固定比例会导致总装超预算）。 */
 function buildDigest(text, outline, charsBudget, includeOutline) {
   const parts = []
+  let outlineChars = 0
   if (includeOutline && outline && outline.length) {
     const outlineText = '【结构目录】\n' + outline
       .slice(0, 120)
       .map(o => `${'  '.repeat(Math.max(0, (o.level || 1) - 1))}- ${o.title}（offset ${o.offset}）`)
       .join('\n')
-    parts.push({ text: outlineText, weight: 0.12 })
+    outlineChars = outlineText.length
+    parts.push({ text: outlineText, label: '' })
   }
-  const bodyBudget = Math.max(200, Math.floor(charsBudget * (parts.length ? 0.88 : 1)))
+  const bodyBudget = Math.max(300, Math.floor(charsBudget) - outlineChars - 40)
   const headLen = Math.floor(bodyBudget * 0.5)
   const tailLen = Math.floor(bodyBudget * 0.25)
   const midBudget = bodyBudget - headLen - tailLen
