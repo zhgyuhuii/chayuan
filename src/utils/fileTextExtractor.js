@@ -320,7 +320,10 @@ async function extractPptx(bytes) {
   }
 }
 
-/** html/xhtml：剥 script/style，块级标签转换行，h1-h6 保留为行并做 outline */
+/** html/xhtml：剥 script/style，块级标签转换行，h1-h6 保留为行并做 outline。
+ *  公共导出 extractHtmlText 供面板附件读取复用（HTML 原文 90%+ 是 style/script
+ *  噪音，截断后模型只见 CSS 看不到正文——真机案例：架构图.html 前 12000 字符
+ *  仅 17 个汉字）。 */
 function extractHtml(rawText) {
   const withoutHead = String(rawText || '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -544,5 +547,5 @@ function legacyError(ext, convertTo) {
   }
 }
 
-export { sampleHeadTail }
-export default { extractFileText, readLocalFileBytes, extensionOf }
+export { sampleHeadTail, extractHtml as extractHtmlText }
+export default { extractFileText, readLocalFileBytes, extensionOf, extractHtmlText: extractHtml }

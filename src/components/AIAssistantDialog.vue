@@ -2807,6 +2807,7 @@ import {
 } from '../utils/chat/docScope.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
 import { registerAttachmentPath } from '../services/mcpBridge/attachmentRegistryClient.js'
+import { extractHtmlText } from '../utils/fileTextExtractor.js'
 import { putHistoryFile, fetchHistoryFile, describeHistoryFileStore } from '../utils/chat/historyFileStore.js'
 import {
   setWriteBaseline,
@@ -13549,7 +13550,20 @@ export default {
           item.pendingLazy = true
         } else if (isTextLikeAttachment(file)) {
           try {
-            const rawText = await readBrowserFileAsText(file)
+            let rawText = await readBrowserFileAsText(file)
+            const lowerName = String(file.name || '').toLowerCase()
+            if ((lowerName.endsWith('.html') || lowerName.endsWith('.htm')) && rawText) {
+              // HTML 原文 90%+ 是 <style>/<script> 噪音：12000 字符截断后模型只见
+              // CSS、看不到正文（真机案例：架构图.html 前 12000 字符仅 17 个汉字，
+              // 模型只能拿历史里的上一份附件应答）——读取时即做正文提取
+              try {
+                const extracted = extractHtmlText(rawText)
+                if (String(extracted?.text || '').trim().length > 80) {
+                  item.parsedKind = 'html'
+                  rawText = String(extracted.text)
+                }
+              } catch (_) { /* 提取失败保留原文 */ }
+            }
             item.isText = true
             item.truncated = rawText.length > MAX_ATTACHMENT_TEXT_LENGTH
             // 超 token 预算走压缩采样（头 2/3 + 尾 1/3），保留更多结构信息而非纯头部截断
@@ -19442,7 +19456,18 @@ export default {
           if (a && !a.isText && !String(a.content || '').trim() && a.rawFile instanceof File &&
               isTextLikeAttachment(a.rawFile)) {
             try {
-              const raw = await readBrowserFileAsText(a.rawFile)
+              let raw = await readBrowserFileAsText(a.rawFile)
+              const lowerName = String(a.name || '').toLowerCase()
+              if ((lowerName.endsWith('.html') || lowerName.endsWith('.htm')) && raw) {
+                // 与 onAttachmentChange 同款 HTML 正文提取（防 CSS 噪音挤占截断窗口）
+                try {
+                  const extracted = extractHtmlText(raw)
+                  if (String(extracted?.text || '').trim().length > 80) {
+                    a.parsedKind = 'html'
+                    raw = String(extracted.text)
+                  }
+                } catch (_) { /* 提取失败保留原文 */ }
+              }
               if (String(raw || '').trim()) {
                 a.isText = true
                 a.truncated = raw.length > MAX_ATTACHMENT_TEXT_LENGTH
