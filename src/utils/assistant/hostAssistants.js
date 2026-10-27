@@ -11,6 +11,7 @@
  * presentation 域工具完成；写操作走现有预览→确认闸门。
  */
 import { loadGlobalSettings, saveGlobalSettings, getGlobalSettingsVersion } from '../globalSettings.js'
+import { getHostAssistantManual } from './hostAssistantManuals.js'
 
 export const HOST_ASSISTANT_PACKS = {
   et: [
@@ -695,7 +696,7 @@ export const HOST_ASSISTANT_PACKS = {
   ],
 
   wpp: [
-    // ── 通用高频 ★7 ──
+    // ── 通用高频 ★ ──
     {
       id: 'wpp-gen',
       label: 'AI 生成 PPT',
@@ -766,6 +767,126 @@ export const HOST_ASSISTANT_PACKS = {
       description: '每页生成演讲者备注，口语化 3-5 句',
       prompt: '请为当前演示稿的每一页生成演讲者备注（口播稿）：先逐页读取内容，再为每页写口语化的演讲词（每页 3-5 句，衔接自然），用 notes_set 写入对应页的备注。'
     },
+    {
+      id: 'wpp-progress',
+      label: '项目进度汇报',
+      shortLabel: '项目进度',
+      icon: '📈',
+      group: '通用高频',
+      mode: 'prefill',
+      description: '里程碑对照/本期完成/风险问题/资源需求/下期计划',
+      prompt: '请生成一份项目进度汇报演示稿：项目概况与里程碑对照（table_add 表格：里程碑/计划时间/当前状态）/ 本期完成工作 / 风险与问题（含应对措施）/ 资源需求与协调事项 / 下期计划，共 6-8 页，商务简洁风格。项目信息与本期进展：'
+    },
+    {
+      id: 'wpp-proof',
+      label: '整套校对',
+      shortLabel: '整套校对',
+      icon: '🔍',
+      group: '通用高频',
+      mode: 'send',
+      description: '全页只读校对：错别字/重复词/占位符，问题清单不改文字',
+      prompt: '请通读当前演示稿全部页面（slide_list + slide_read）做只读校对：错别字、重复词、占位符文本（Lorem/TODO/XX/示例）、明显标点问题。输出问题清单（页码+原文+修改建议），不要修改任何文字。'
+    },
+    {
+      id: 'wpp-proof-fix',
+      label: '校对修复执行',
+      shortLabel: '校对修复',
+      icon: '✒️',
+      group: '通用高频',
+      mode: 'send',
+      description: '先出校对清单，确认后逐条 text_replace 修复',
+      prompt: '请对当前演示稿做只读校对（错别字、重复词、占位符文本、明显标点问题），输出问题清单（页码+原文+建议改法）后等我回复"确认修复"；确认后逐条用 text_replace 修改，完成后报告每处替换结果。'
+    },
+    {
+      id: 'wpp-structure',
+      label: '结构诊断',
+      shortLabel: '结构诊断',
+      icon: '🩺',
+      group: '通用高频',
+      mode: 'send',
+      description: '金字塔检查：标题故事线/单页要点数/结构件缺失+改进建议',
+      prompt: '请对当前演示稿做结构诊断（只读不改）：① 按顺序连读每页标题，判断故事线是否连贯（是否结论先行、层次递进）② 单页要点是否超过 5 条、有无文字过密页 ③ 是否缺封面/目录/章节过渡页/结尾页 ④ 给出 3-5 条结构调整建议（注明页码与操作）。'
+    },
+    {
+      id: 'wpp-scaffold',
+      label: '结构件补齐',
+      shortLabel: '结构件补齐',
+      icon: '🧱',
+      group: '通用高频',
+      mode: 'send',
+      description: '封面/目录/章节页/结尾页 缺啥补啥（风格跟随现稿）',
+      prompt: '请检查并补齐当前演示稿的结构件：缺封面则加封面页（主标题+副标题+日期），缺目录则加目录页（列出各章节），长稿的章节之间缺过渡页则补齐，缺结尾感谢页则加。新页风格与现有页面保持一致，完成后列出新增的页码与页名。'
+    },
+    {
+      id: 'wpp-compress',
+      label: '汇报压缩',
+      shortLabel: '汇报压缩',
+      icon: '⏳',
+      group: '通用高频',
+      mode: 'send',
+      description: '长稿压缩成短版汇报：先列删减清单，确认后再删',
+      prompt: '请把当前演示稿压缩成短版汇报：先通读全部页面（slide_list + slide_read），保留结论页、关键数据页与核心图表，列出"拟删除页清单（页码+理由）与拟合并页"，等我回复"确认压缩"后再执行 slide_delete / text_replace，完成后报告压缩前后页数。汇报时长与保留要求：'
+    },
+    {
+      id: 'wpp-qa-prep',
+      label: '答辩问答预案',
+      shortLabel: '答辩预案',
+      icon: '🛡️',
+      group: '通用高频',
+      mode: 'send',
+      description: '预判听众提问+应答要点，写入对应页备注（不改正文）',
+      prompt: '请为当前演示稿准备答辩问答预案：通读全部页面（slide_list + slide_read），从听众/评委视角预判 5-8 个最可能被问到的问题，逐个给出应答要点（注明数据出处页码），用 notes_set 写入最相关页面的备注区，不改动幻灯片正文。汇报场合与听众：'
+    },
+    {
+      id: 'wpp-to-doc',
+      label: '转讲义文档',
+      shortLabel: '转讲义',
+      icon: '📃',
+      group: '通用高频',
+      mode: 'prefill',
+      description: '整套 PPT → Word 讲义（页码+标题+要点+备注，跨宿主写入）',
+      prompt: '请把当前演示稿转成 Word 讲义：逐页读取内容（slide_list + slide_read），按「页码+标题+要点+备注」结构整理，用 document_insert 写入打开的 Word 文档（每页一个小节，标题加粗），完成后报告写入页数。目标文档与要求：'
+    },
+    {
+      id: 'wpp-notes-timed',
+      label: '口播稿（时长版）',
+      shortLabel: '口播时长版',
+      icon: '⏱️',
+      group: '通用高频',
+      mode: 'prefill',
+      description: '按目标总时长分配每页秒数生成口播稿（notes_set 写入）',
+      prompt: '请为当前演示稿生成口播稿并写入每页备注（notes_set）：先逐页读取内容，按目标总时长分配每页秒数，为每页写口语化演讲词（3-5 句、衔接自然），开场页注明开场白、结尾页注明收尾。目标总时长（默认 5 分钟）：'
+    },
+    {
+      id: 'wpp-translate',
+      label: '整套翻译',
+      shortLabel: '整套翻译',
+      icon: '🈯',
+      group: '通用高频',
+      mode: 'prefill',
+      description: '全页文本译为目标语言（数字/专有名词不动，版式不变）',
+      prompt: '请把当前演示稿整套翻译：逐页 slide_read 后用 text_replace 将文本译为目标语言（数字、专有名词、代码保持原样），版式不变，完成后报告翻译页数与替换处数。目标语言与术语表：'
+    },
+    {
+      id: 'wpp-footer',
+      label: '页码页脚统一',
+      shortLabel: '页码页脚',
+      icon: '🔢',
+      group: '通用高频',
+      mode: 'prefill',
+      description: '每页加页码/单位名（textbox_add 批量，封面跳过）',
+      prompt: '请给当前演示稿统一加页脚：除封面外每页右下角加页码 textbox_add（字号 12、灰色），左下角加单位名文字，位置各页一致，完成后报告触及页数。页脚文字要求：'
+    },
+    {
+      id: 'wpp-table-style',
+      label: '表格样式统一',
+      shortLabel: '表格样式',
+      icon: '🎛️',
+      group: '通用高频',
+      mode: 'send',
+      description: '全稿表格统一表头配色/字号/边框/隔行底纹',
+      prompt: '请统一当前演示稿所有表格的样式：表头底色统一深蓝、白字加粗，正文行高与字号统一（标题行 14、正文 12），隔行浅灰底纹，边框统一细线。逐页执行后报告触及表格数，写回前我会预览确认。'
+    },
     // ── 配图（收割自 chayuan-office slides image-source 体系：web/model/svg 三级）──
     {
       id: 'wpp-img-web',
@@ -797,13 +918,195 @@ export const HOST_ASSISTANT_PACKS = {
       description: 'svg_add 语义单元矢量图形（免费可编辑）',
       prompt: '请为当前演示稿的第 1 页添加矢量装饰：用 presentation svg_add 生成 2-3 个语义图标（如增长箭头/齿轮/对话气泡，扁平风格、蓝色系），错落排布在页面右下区域，不要遮挡标题。'
     },
-    // ── 行业包：政企汇报 ──
+    // ── 科研学术 ──
+    {
+      id: 'wpp-res-labmeet',
+      label: '组会汇报',
+      shortLabel: '组会汇报',
+      icon: '🧪',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '计划回顾/本期进展/文献阅读/问题讨论/下期计划',
+      prompt: '请生成一份组会汇报演示稿：上次计划回顾 / 本期研究进展（数据结果用 table_add 或 svg_add 图表呈现）/ 本期文献阅读 / 遇到的问题与讨论请求 / 下期研究计划，共 6-8 页，简洁学术风（白底深蓝标题）。我的研究课题与本期进展：'
+    },
+    {
+      id: 'wpp-res-paperclub',
+      label: '文献分享',
+      shortLabel: '文献分享',
+      icon: '📑',
+      group: '科研学术',
+      mode: 'prefill',
+      description: 'Journal Club：背景/方法/关键结果逐图解读/启发',
+      prompt: '请根据论文生成文献分享演示稿（Journal Club）：论文信息与研究问题 / 研究方法 / 关键结果逐图解读 / 局限与不足 / 对我们研究的启发，共 6-8 页；引用原文数据图表处标注「图源：原文图 X」，数字照原文不改动、不编造。论文路径或核心内容：'
+    },
+    {
+      id: 'wpp-res-kaiti',
+      label: '开题报告',
+      shortLabel: '开题报告',
+      icon: '🧭',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '背景/现状/内容目标/技术路线/进度安排/创新点',
+      prompt: '请生成一份开题报告演示稿：选题背景与意义 / 国内外研究现状（需引文处标【待补文献】）/ 研究内容与研究目标 / 技术路线（重点页，用 svg_add 画分层流程框图）/ 研究计划与进度安排 / 预期成果与创新点，共 10 页左右，学术简洁风。我的选题与研究构想：'
+    },
+    {
+      id: 'wpp-res-midterm',
+      label: '中期检查汇报',
+      shortLabel: '中期检查',
+      icon: '📋',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '开题任务对照/阶段成果/问题原因/下阶段计划',
+      prompt: '请生成一份研究生中期检查汇报演示稿：开题任务对照（table_add 表格：开题内容/计划进度/完成情况）/ 已完成工作与阶段成果 / 存在问题与原因分析 / 下一阶段计划与调整，共 8 页左右，学术严谨风。开题内容与当前进展：'
+    },
+    {
+      id: 'wpp-res-conf',
+      label: '学术会议报告',
+      shortLabel: '会议报告',
+      icon: '🎤',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '15 分钟口头报告：背景/方法/结果/结论 + 备注含 Q&A 预案',
+      prompt: '请生成一份学术会议口头报告演示稿（按 15 分钟报告设计）：研究背景 / 研究方法 / 主要结果（图表为主、文字极简）/ 结论与展望 / 致谢，共 10 页左右；每页备注写约 1 分钟的口播要点，最后一页备注附 3 个听众可能提问的应答预案。论文核心内容：'
+    },
+    {
+      id: 'wpp-edu-defense',
+      label: '毕业答辩',
+      shortLabel: '毕业答辩',
+      icon: '🎓',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '学位答辩全流程：背景/方法/结果/创新点/成果清单 + QA 预案',
+      prompt: '请生成一份学位毕业答辩演示稿：选题背景与意义 / 文献综述简要 / 研究方法与数据 / 研究结果（图表为主）/ 创新点（单独一页，评审必问）/ 攻读期间成果清单 / 总结与展望 / 致谢，共 10-12 页；最后一页备注附 3 个评委常见提问的应答预案（如创新点辨析、样本与结论边界）。论文题目与核心内容：'
+    },
+    {
+      id: 'wpp-res-grant',
+      label: '基金申报答辩',
+      shortLabel: '基金申报',
+      icon: '🏛️',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '立项依据/内容目标/方案路线/可行性/研究基础',
+      prompt: '请生成一份基金项目申报答辩演示稿：立项依据与研究意义 / 国内外研究现状（需引文处标【待补文献】）/ 研究目标与研究内容 / 研究方案与技术路线 / 可行性分析 / 研究基础与前期成果 / 预期成果与年度计划，共 10 页左右，学术严谨风。项目名称与研究构想：'
+    },
+    {
+      id: 'wpp-res-closing',
+      label: '结题验收汇报',
+      shortLabel: '结题验收',
+      icon: '✅',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '任务书指标对照/研究进展/成果清单/经费使用',
+      prompt: '请生成一份项目结题验收汇报演示稿：任务书指标对照（table_add 表格：考核指标/完成情况/支撑成果）/ 主要研究进展 / 成果清单（论文/专利/软著/获奖）/ 经费使用情况 / 人才培养与后续研究计划，共 10 页左右，庄重学术风。项目信息与完成情况：'
+    },
+    {
+      id: 'wpp-res-title',
+      label: '职称评审汇报',
+      shortLabel: '职称评审',
+      icon: '🎖️',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '教学/科研业绩/代表作逐页/项目经费/获奖服务',
+      prompt: '请生成一份职称评审答辩演示稿：个人基本情况 / 教学与人才培养工作 / 科研业绩与代表作（代表作逐页介绍：创新点+发表信息+影响）/ 项目与经费情况 / 获奖与学术兼职 / 未来工作规划，共 10 页左右，沉稳庄重风，关键数据用大字号突出。个人情况与业绩材料：'
+    },
+    {
+      id: 'wpp-res-award',
+      label: '奖项申报答辩',
+      shortLabel: '奖项申报',
+      icon: '🏆',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '核心成果/三项代表性贡献/同行评价/推广应用',
+      prompt: '请生成一份科技奖项（人才计划）申报答辩演示稿：核心成果概述 / 三项代表性贡献（每项一页：背景-做法-成效）/ 成果水平与同行评价 / 推广应用与经济社会效益 / 团队建设与人才培养，共 8 页左右。申报信息与成果材料：'
+    },
+    {
+      id: 'wpp-res-paper2ppt',
+      label: '论文转汇报',
+      shortLabel: '论文转汇报',
+      icon: '🖼️',
+      group: '科研学术',
+      mode: 'prefill',
+      description: '论文按汇报逻辑重组：背景/方法/结果/讨论，图片留占位',
+      prompt: '请把论文转成学术汇报演示稿：读取论文内容（document_get_text），按「研究背景 / 研究方法 / 主要结果 / 结论与讨论」重新组织（不是照搬论文章节结构），共 8-10 页；结果页数据照原文不改动，图片处用 textbox_add 标注「此处插入原文图 X」提醒我替换。论文路径：'
+    },
+    {
+      id: 'wpp-res-roadmap',
+      label: '技术路线图页',
+      shortLabel: '技术路线图',
+      icon: '🔀',
+      group: '科研学术',
+      mode: 'prefill',
+      description: 'svg_add 画分层技术路线图（研究内容分框+箭头脉络）',
+      prompt: '请为我的研究生成技术路线图页：单独新增一页（标题「技术路线」），用 svg_add 画分层技术路线图——研究内容分 3-4 层，每层列出关键任务框，用箭头连接研究脉络，扁平学术配色、框内文字精炼。研究内容与关键环节：'
+    },
+    // ── 党务学习 ──
+    {
+      id: 'wpp-gov-party',
+      label: '党建学习课件',
+      shortLabel: '党建课件',
+      icon: 'flag',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '党建学习课件：红色主题、严肃版式',
+      prompt: '请生成一份党建学习课件：红色主色调、庄重版式，结构为 学习主题 / 精神解读 / 要点摘录 / 实践要求 / 学习小结，共 8 页左右。学习主题与要求：'
+    },
+    {
+      id: 'wpp-party-study',
+      label: '学习心得交流',
+      shortLabel: '心得交流',
+      icon: '💬',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '学习概要/主要收获/对照查摆差距/努力方向',
+      prompt: '请生成一份学习心得交流演示稿：学习主题与内容概要 / 主要收获（理论认识 + 实践体会）/ 对照自身查摆差距 / 下一步努力方向，共 5-6 页，红色主色调庄重版式。学习主题与个人体会要点：'
+    },
+    {
+      id: 'wpp-party-check',
+      label: '对照检查汇报',
+      shortLabel: '对照检查',
+      icon: '🪞',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '组织生活会：问题清单/原因剖析/整改措施/努力方向',
+      prompt: '请生成一份组织生活会对照检查演示稿：存在问题清单（分思想政治 / 能力本领 / 工作作风等维度）/ 问题原因剖析（思想根源）/ 整改措施与整改时限 / 努力方向，共 6-8 页，严肃庄重风格。个人对照检查情况：'
+    },
+    {
+      id: 'wpp-party-micro',
+      label: '微党课',
+      shortLabel: '微党课',
+      icon: '📢',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '5-8 分钟小课：故事导入/道理阐释/榜样案例/行动号召',
+      prompt: '请生成一份微党课课件（5-8 分钟讲解）：主题导入（一个故事或案例）/ 道理阐释 / 榜样案例 / 行动号召，共 5-6 页，红色主题、大字号少文字（适合投屏讲解），并用 notes_set 为每页写好讲解词。党课题目与要求：'
+    },
+    {
+      id: 'wpp-party-integrity',
+      label: '廉政警示教育',
+      shortLabel: '廉政警示',
+      icon: '⚖️',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '案例通报/问题剖析/法规摘录/警示启示/廉洁要求',
+      prompt: '请生成一份党风廉政警示教育课件：典型案例通报 / 违纪违法问题剖析 / 党纪法规条款摘录 / 警示启示 / 廉洁自律要求，共 8 页左右，严肃风格（深色庄重配色）。警示教育主题与案例材料：'
+    },
+    {
+      id: 'wpp-party-themeday',
+      label: '主题党日活动页',
+      shortLabel: '主题党日',
+      icon: '🚩',
+      group: '党务学习',
+      mode: 'prefill',
+      description: '活动主题/议程安排/学习环节/研讨题目/实践安排',
+      prompt: '请生成一份主题党日活动演示稿：活动主题与意义 / 活动议程安排 / 集中学习环节要点 / 交流研讨题目 / 实践活动安排 / 活动要求，共 5-6 页，红色主题版式。活动主题与安排：'
+    },
+    // ── 政务汇报 ──
     {
       id: 'wpp-gov-annual',
       label: '年终总结',
       shortLabel: '年终总结',
       icon: '🏛️',
-      group: '政企汇报',
+      group: '政务汇报',
       mode: 'prefill',
       description: '政企风格：回顾/成绩/不足/计划 四段式',
       prompt: '请生成一份年终工作总结演示稿：政企风格（庄重版式、稳重配色），结构为 工作回顾 / 主要成绩 / 存在不足 / 下一步计划 四段，共 10 页左右（含封面与结尾页）。本年度主要工作：'
@@ -813,30 +1116,110 @@ export const HOST_ASSISTANT_PACKS = {
       label: '述职报告',
       shortLabel: '述职报告',
       icon: '📜',
-      group: '政企汇报',
+      group: '政务汇报',
       mode: 'prefill',
       description: '履职/业绩/不足改进/来年计划',
       prompt: '请生成一份述职报告演示稿：岗位职责履行情况 / 主要业绩（用数据说话）/ 不足与改进 / 来年工作计划，共 8 页左右。我的岗位与职责：'
     },
     {
-      id: 'wpp-gov-party',
-      label: '党建课件',
-      shortLabel: '党建课件',
-      icon: 'flag',
-      group: '政企汇报',
+      id: 'wpp-gov-special',
+      label: '专项工作汇报',
+      shortLabel: '专项汇报',
+      icon: '📌',
+      group: '政务汇报',
       mode: 'prefill',
-      description: '党建学习课件：红色主题、严肃版式',
-      prompt: '请生成一份党建学习课件：红色主色调、庄重版式，结构为 学习主题 / 精神解读 / 要点摘录 / 实践要求 / 学习小结，共 8 页左右。学习主题与要求：'
+      description: '背景/主要做法分条块/成效数据/问题/下步安排',
+      prompt: '请生成一份专项工作汇报演示稿：工作背景与总体情况 / 主要做法（分条块，每条一页）/ 工作成效（用数据，table_add 或大数字版式）/ 存在问题 / 下一步工作安排，共 8-10 页，政企庄重风格。专项工作名称与开展情况：'
+    },
+    {
+      id: 'wpp-gov-survey',
+      label: '调研汇报',
+      shortLabel: '调研汇报',
+      icon: '🔎',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '调研概况/基本情况/发现问题/原因分析/对策建议',
+      prompt: '请生成一份调研情况汇报演示稿：调研概况（时间/地点/对象/方式）/ 基本情况 / 发现的主要问题 / 原因分析 / 对策建议，共 8 页左右，庄重风格。调研主题与情况：'
     },
     {
       id: 'wpp-gov-meeting',
       label: '会议纪要页',
       shortLabel: '会议纪要',
       icon: '🗂️',
-      group: '政企汇报',
+      group: '政务汇报',
       mode: 'prefill',
       description: '会议纪要转决议/行动项页',
       prompt: '请把以下会议内容生成会议纪要页（1-2 页）：会议基本信息 / 讨论要点 / 决议事项 / 行动项与责任人。会议内容：'
+    },
+    {
+      id: 'wpp-gov-rectify',
+      label: '整改汇报',
+      shortLabel: '整改汇报',
+      icon: '🧾',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '巡察/审计整改：问题/原因/措施/成效/长效机制 五段式',
+      prompt: '请生成一份巡察（审计）整改汇报演示稿：问题清单 / 原因剖析 / 整改措施 / 整改成效（用数据）/ 长效机制 五段式，政企庄重风格，共 10 页左右。问题与整改情况：'
+    },
+    {
+      id: 'wpp-gov-livelihood',
+      label: '民生实事汇报',
+      shortLabel: '民生实事',
+      icon: '🏘️',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '项目清单/进度数据/资金使用/群众反馈/下步安排',
+      prompt: '请生成一份民生实事项目汇报演示稿：项目清单与责任分工 / 进度完成情况（用数据）/ 资金使用情况 / 群众反馈与满意度 / 下一步安排，庄重风格，共 8-10 页。项目信息：'
+    },
+    {
+      id: 'wpp-gov-inspection',
+      label: '迎检创建汇报',
+      shortLabel: '迎检创建',
+      icon: '🏅',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '创建目标/重点举措/指标达标对照表/特色亮点/长效机制',
+      prompt: '请生成一份创建（迎检）工作汇报演示稿：创建目标与指标体系 / 重点工作举措 / 指标达标情况对照（table_add 表格：考核指标/考核要求/完成情况）/ 特色亮点工作 / 长效机制建设，共 10 页左右，庄重风格。创建项目与迎检要求：'
+    },
+    {
+      id: 'wpp-gov-invest',
+      label: '招商推介',
+      shortLabel: '招商推介',
+      icon: '🤝',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '区位产业/产业链图谱/载体要素/扶持政策/服务承诺',
+      prompt: '请生成一份招商引资推介演示稿：区位交通与产业基础 / 主导产业与产业链图谱 / 载体平台与要素保障 / 扶持政策（用地/资金/人才）/ 营商环境与服务承诺 / 联系方式，共 10 页左右，大气现代风格，配图优先用 image_search 搜实景图。地区与产业方向：'
+    },
+    {
+      id: 'wpp-gov-proposal',
+      label: '建议提案办理汇报',
+      shortLabel: '建议提案',
+      icon: '📮',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '基本情况/办理机制/采纳落实/逐件对照表/下步改进',
+      prompt: '请生成一份建议提案办理情况汇报演示稿：建议提案基本情况（数量/分类/重点件）/ 办理工作流程与机制 / 采纳落实情况 / 逐件办理对照（table_add 表格：建议内容/办理措施/落实状态）/ 下一步改进措施，共 8 页左右。办理情况：'
+    },
+    {
+      id: 'wpp-gov-safetyedu',
+      label: '安全警示教育课件',
+      shortLabel: '安全警示',
+      icon: '⚠️',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '事故案例/原因剖析/法规摘录/防范措施，严肃警示风',
+      prompt: '请生成一份安全警示教育课件：事故案例回顾 / 原因剖析 / 法规条款摘录 / 防范措施 / 警示总结，严肃风格（深色警示配色），共 8 页左右。行业与案例主题：'
+    },
+    {
+      id: 'wpp-gov-compete',
+      label: '竞聘上岗汇报',
+      shortLabel: '竞聘上岗',
+      icon: '🎯',
+      group: '政务汇报',
+      mode: 'prefill',
+      description: '简历经历/岗位理解/竞聘优势/上任思路/表态',
+      prompt: '请生成一份竞聘上岗演示稿：个人简历与工作经历 / 对竞聘岗位的理解 / 竞聘优势（业绩+能力，用事例说话）/ 上任后的工作思路（分条块，重点页）/ 表态发言，共 7-8 页，稳重职业风格。竞聘岗位与个人情况：'
     },
     // ── 行业包：销售提案 ──
     {
@@ -912,14 +1295,14 @@ export const HOST_ASSISTANT_PACKS = {
       prompt: '请生成一份教学课件：按知识点分页（每页一个知识点，含要点与示例），结尾加小结页与思考题。课程主题与受众：'
     },
     {
-      id: 'wpp-edu-defense',
-      label: '答辩模板',
-      shortLabel: '答辩模板',
-      icon: '🎓',
+      id: 'wpp-edu-corporate',
+      label: '企业内训课件',
+      shortLabel: '企业内训',
+      icon: '🏢',
       group: '教育培训',
       mode: 'prefill',
-      description: '毕业答辩：选题/方法/结论/致谢',
-      prompt: '请生成毕业答辩演示稿：选题背景 / 研究方法 / 核心结论 / 创新点 / 致谢，共 8 页左右。论文题目与核心内容：'
+      description: '培训目标/要点讲解/案例分析/课堂练习/要点回顾',
+      prompt: '请生成一份企业内训课件：培训目标 / 知识要点讲解（分页，每页一个要点+示例）/ 案例分析 / 课堂练习 / 要点回顾与考核方式，共 10 页左右，商务简洁风格。培训主题与受众：'
     },
     {
       id: 'wpp-edu-quiz',
@@ -930,6 +1313,36 @@ export const HOST_ASSISTANT_PACKS = {
       mode: 'prefill',
       description: '课堂习题页（题目+答案翻页）',
       prompt: '请生成课堂习题页：题目页 2-3 页（每页 1-2 道题），每题后跟一页答案解析。科目与知识点：'
+    },
+    {
+      id: 'wpp-edu-parents',
+      label: '家长会课件',
+      shortLabel: '家长会',
+      icon: '👨‍👩‍👧',
+      group: '教育培训',
+      mode: 'prefill',
+      description: '班级情况/学期分析（不点名）/问题/家庭配合建议',
+      prompt: '请生成一份家长会课件：班级整体情况 / 学期学习分析（用整体数据，不点名到个人）/ 存在的共性问题 / 给家庭的配合建议 / 沟通渠道，温和亲切风格，共 6-8 页。班级信息：'
+    },
+    {
+      id: 'wpp-edu-recruit',
+      label: '招生宣讲',
+      shortLabel: '招生宣讲',
+      icon: '🎓',
+      group: '教育培训',
+      mode: 'prefill',
+      description: '机构介绍/师资/课程体系/成果数据/报名方式',
+      prompt: '请生成一份招生宣讲演示稿：学校（机构）介绍 / 师资力量 / 课程体系 / 办学成果数据 / 报名方式与优惠政策，共 8-10 页。机构信息：'
+    },
+    {
+      id: 'wpp-edu-class',
+      label: '主题班会课件',
+      shortLabel: '主题班会',
+      icon: '🍎',
+      group: '教育培训',
+      mode: 'prefill',
+      description: '主题导入/案例故事/讨论问题/行动倡议/总结',
+      prompt: '请生成一份主题班会课件：主题导入 / 案例或故事 / 讨论问题 / 行动倡议 / 总结，共 5-7 页，风格贴合中学生审美。班会主题与要求：'
     },
     // ── 行业包：通用职场 ──
     {
@@ -952,107 +1365,15 @@ export const HOST_ASSISTANT_PACKS = {
       description: '会议/复盘转行动项与责任人页',
       prompt: '请生成行动项跟踪页（table_add 表格：事项/责任人/截止日/状态）。待办内容：'
     },
-    // ── 通用高频（2026-10 增补 7）──
     {
-      id: 'wpp-proof',
-      label: '整套校对',
-      shortLabel: '整套校对',
-      icon: '🔍',
-      group: '通用高频',
-      mode: 'send',
-      description: '全页只读校对：错别字/重复词/占位符，问题清单不改文字',
-      prompt: '请通读当前演示稿全部页面（slide_list + slide_read）做只读校对：错别字、重复词、占位符文本（Lorem/TODO/XX/示例）、明显标点问题。输出问题清单（页码+原文+修改建议），不要修改任何文字。'
-    },
-    {
-      id: 'wpp-structure',
-      label: '结构诊断',
-      shortLabel: '结构诊断',
-      icon: '🩺',
-      group: '通用高频',
-      mode: 'send',
-      description: '金字塔检查：标题故事线/单页要点数/结构件缺失+改进建议',
-      prompt: '请对当前演示稿做结构诊断（只读不改）：① 按顺序连读每页标题，判断故事线是否连贯（是否结论先行、层次递进）② 单页要点是否超过 5 条、有无文字过密页 ③ 是否缺封面/目录/章节过渡页/结尾页 ④ 给出 3-5 条结构调整建议（注明页码与操作）。'
-    },
-    {
-      id: 'wpp-scaffold',
-      label: '结构件补齐',
-      shortLabel: '结构件补齐',
-      icon: '🧱',
-      group: '通用高频',
-      mode: 'send',
-      description: '封面/目录/章节页/结尾页 缺啥补啥（风格跟随现稿）',
-      prompt: '请检查并补齐当前演示稿的结构件：缺封面则加封面页（主标题+副标题+日期），缺目录则加目录页（列出各章节），长稿的章节之间缺过渡页则补齐，缺结尾感谢页则加。新页风格与现有页面保持一致，完成后列出新增的页码与页名。'
-    },
-    {
-      id: 'wpp-to-doc',
-      label: '转讲义文档',
-      shortLabel: '转讲义',
-      icon: '📃',
-      group: '通用高频',
+      id: 'wpp-work-bookshare',
+      label: '读书分享',
+      shortLabel: '读书分享',
+      icon: '📚',
+      group: '通用职场',
       mode: 'prefill',
-      description: '整套 PPT → Word 讲义（页码+标题+要点+备注，跨宿主写入）',
-      prompt: '请把当前演示稿转成 Word 讲义：逐页读取内容（slide_list + slide_read），按「页码+标题+要点+备注」结构整理，用 document_insert 写入打开的 Word 文档（每页一个小节，标题加粗），完成后报告写入页数。目标文档与要求：'
-    },
-    {
-      id: 'wpp-notes-timed',
-      label: '口播稿（时长版）',
-      shortLabel: '口播时长版',
-      icon: '⏱️',
-      group: '通用高频',
-      mode: 'prefill',
-      description: '按目标总时长分配每页秒数生成口播稿（notes_set 写入）',
-      prompt: '请为当前演示稿生成口播稿并写入每页备注（notes_set）：先逐页读取内容，按目标总时长分配每页秒数，为每页写口语化演讲词（3-5 句、衔接自然），开场页注明开场白、结尾页注明收尾。目标总时长（默认 5 分钟）：'
-    },
-    {
-      id: 'wpp-translate',
-      label: '整套翻译',
-      shortLabel: '整套翻译',
-      icon: '🈯',
-      group: '通用高频',
-      mode: 'prefill',
-      description: '全页文本译为目标语言（数字/专有名词不动，版式不变）',
-      prompt: '请把当前演示稿整套翻译：逐页 slide_read 后用 text_replace 将文本译为目标语言（数字、专有名词、代码保持原样），版式不变，完成后报告翻译页数与替换处数。目标语言与术语表：'
-    },
-    {
-      id: 'wpp-footer',
-      label: '页码页脚统一',
-      shortLabel: '页码页脚',
-      icon: '🔢',
-      group: '通用高频',
-      mode: 'prefill',
-      description: '每页加页码/单位名（textbox_add 批量，封面跳过）',
-      prompt: '请给当前演示稿统一加页脚：除封面外每页右下角加页码 textbox_add（字号 12、灰色），左下角加单位名文字，位置各页一致，完成后报告触及页数。页脚文字要求：'
-    },
-    // ── 行业包：政企汇报（增补 3）──
-    {
-      id: 'wpp-gov-rectify',
-      label: '整改汇报',
-      shortLabel: '整改汇报',
-      icon: '🧾',
-      group: '政企汇报',
-      mode: 'prefill',
-      description: '巡察/审计整改：问题/原因/措施/成效/长效机制 五段式',
-      prompt: '请生成一份巡察（审计）整改汇报演示稿：问题清单 / 原因剖析 / 整改措施 / 整改成效（用数据）/ 长效机制 五段式，政企庄重风格，共 10 页左右。问题与整改情况：'
-    },
-    {
-      id: 'wpp-gov-livelihood',
-      label: '民生实事汇报',
-      shortLabel: '民生实事',
-      icon: '🏘️',
-      group: '政企汇报',
-      mode: 'prefill',
-      description: '项目清单/进度数据/资金使用/群众反馈/下步安排',
-      prompt: '请生成一份民生实事项目汇报演示稿：项目清单与责任分工 / 进度完成情况（用数据）/ 资金使用情况 / 群众反馈与满意度 / 下一步安排，庄重风格，共 8-10 页。项目信息：'
-    },
-    {
-      id: 'wpp-gov-safetyedu',
-      label: '安全警示教育课件',
-      shortLabel: '安全警示',
-      icon: '⚠️',
-      group: '政企汇报',
-      mode: 'prefill',
-      description: '事故案例/原因剖析/法规摘录/防范措施，严肃警示风',
-      prompt: '请生成一份安全警示教育课件：事故案例回顾 / 原因剖析 / 法规条款摘录 / 防范措施 / 警示总结，严肃风格（深色警示配色），共 8 页左右。行业与案例主题：'
+      description: '书籍简介/核心观点/金句摘录/联系实际/推荐理由',
+      prompt: '请生成一份读书分享演示稿：书籍与作者简介 / 核心观点（3-5 个，每个一页）/ 金句摘录 / 联系工作实际的思考 / 推荐理由，共 6-8 页，简约风格。书名与分享场合：'
     },
     // ── 行业包：医疗健康 ──
     {
@@ -1158,37 +1479,6 @@ export const HOST_ASSISTANT_PACKS = {
       description: '场次流程时间轴/分时段商品话术/利益点与逼单节奏',
       prompt: '请生成直播带货脚本页组：场次流程时间轴 / 各时段商品与话术要点 / 利益点与逼单节奏 / 互动与留人设计，共 4-5 页，话术要口语化。直播商品与排期：'
     },
-    // ── 行业包：教育培训（增补 3）──
-    {
-      id: 'wpp-edu-parents',
-      label: '家长会课件',
-      shortLabel: '家长会',
-      icon: '👨‍👩‍👧',
-      group: '教育培训',
-      mode: 'prefill',
-      description: '班级情况/学期分析（不点名）/问题/家庭配合建议',
-      prompt: '请生成一份家长会课件：班级整体情况 / 学期学习分析（用整体数据，不点名到个人）/ 存在的共性问题 / 给家庭的配合建议 / 沟通渠道，温和亲切风格，共 6-8 页。班级信息：'
-    },
-    {
-      id: 'wpp-edu-recruit',
-      label: '招生宣讲',
-      shortLabel: '招生宣讲',
-      icon: '🎓',
-      group: '教育培训',
-      mode: 'prefill',
-      description: '机构介绍/师资/课程体系/成果数据/报名方式',
-      prompt: '请生成一份招生宣讲演示稿：学校（机构）介绍 / 师资力量 / 课程体系 / 办学成果数据 / 报名方式与优惠政策，共 8-10 页。机构信息：'
-    },
-    {
-      id: 'wpp-edu-class',
-      label: '主题班会课件',
-      shortLabel: '主题班会',
-      icon: '🍎',
-      group: '教育培训',
-      mode: 'prefill',
-      description: '主题导入/案例故事/讨论问题/行动倡议/总结',
-      prompt: '请生成一份主题班会课件：主题导入 / 案例或故事 / 讨论问题 / 行动倡议 / 总结，共 5-7 页，风格贴合中学生审美。班会主题与要求：'
-    },
     // ── 行业包：房产置业 ──
     {
       id: 'wpp-realestate',
@@ -1257,7 +1547,8 @@ export function getHostAssistantItems(host, settingsMapOverride = null) {
       prompt: config.prompt ?? item.prompt,
       domain: '',
       tags: [],
-      enabled: config.enabled !== false
+      enabled: config.enabled !== false,
+      manual: getHostAssistantManual(item)
     }
   })
 }
