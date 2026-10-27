@@ -101,7 +101,7 @@ for /d %%D in ("%destination_folder%\\${pkg.name}-wpp_*") do call :rmold "%%~nxD
 	}
 	// Keep every character ASCII. Chinese comments here WILL break cmd.exe on CP936.
 	const bat = `@echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 set "LOG=%TEMP%\\chayuan-wps-install.log"
 set "source_folder=${folder}"
 set "destination_folder=%APPDATA%\\kingsoft\\wps\\jsaddons"
@@ -127,12 +127,31 @@ copy /Y "publish.xml" "%destination_folder%\\jsplugins.xml" >> "%LOG%" 2>&1
 
 if not exist "%sidecar_runtime%" mkdir "%sidecar_runtime%"
 if not exist "%sidecar_runtime%\\bin" mkdir "%sidecar_runtime%\\bin"
-rem kill a running old sidecar first -- its exe file lock would silently break the
-rem copy below and leave the PREVIOUS version running (install reports OK anyway)
+rem disable the 2-minute watchdog first: it relaunches start-mcp.cmd, which would
+rem otherwise restart the OLD sidecar in the window between our kill and the copy
+rem and re-lock the exe (silent stale-binary install, reports OK anyway)
+schtasks /Change /TN ChayuanWpsMcpWatch /DISABLE >> "%LOG%" 2>&1
+rem kill a running old sidecar before copying -- its exe file lock would silently
+rem break the copy and leave the PREVIOUS version serving (verify + retry below)
+set /a KILL_TRIES=0
+:kill_sidecar
 taskkill /F /IM ${SIDECAR_EXE_NAME} >> "%LOG%" 2>&1
+rem node fallback (Win7/8) runs server.mjs under node.exe, which taskkill /IM
+rem cannot match -- kill by command line (wmic on Win7/10, PowerShell elsewhere)
+wmic process where "name='node.exe' and commandline like '%%chayuan-wps%%'" call terminate >> "%LOG%" 2>&1
+powershell -NoProfile -Command "Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*chayuan-wps*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >> "%LOG%" 2>&1
+ping -n 2 127.0.0.1 >nul
+tasklist /FI "IMAGENAME eq ${SIDECAR_EXE_NAME}" 2>nul | find /I "${SIDECAR_EXE_NAME}" >nul
+if not errorlevel 1 (
+  set /a KILL_TRIES+=1
+  if !KILL_TRIES! lss 3 goto :kill_sidecar
+  echo WARNING: ${SIDECAR_EXE_NAME} still running after 3 kill attempts>> "%LOG%"
+)
 echo copying sidecar...>> "%LOG%"
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_exe%" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail_sidecar
 copy /Y "${SIDECAR_EXE_NAME}" "%sidecar_runtime%\\bin\\${SIDECAR_EXE_NAME}" >> "%LOG%" 2>&1
+if errorlevel 1 goto :fail_sidecar
 rem Node fallback payload for Win7/8 (bun exe cannot run there): server.mjs + lib
 rem + the multi-OS start-mcp.cmd (try exe -> healthz -> node) copied from the addon
 copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\start-mcp.cmd" "%sidecar_runtime%\\start-mcp.cmd" >> "%LOG%" 2>&1
@@ -144,6 +163,9 @@ rem Watchdog: scheduled task runs start-mcp.cmd (hidden via vbs) every 2 minutes
 rem silent no-op while healthz answers -- self-heals after crash / missed logon start
 copy /Y "%destination_folder%\\${folder}\\mcp-sidecar\\chayuan-mcp-watch.vbs" "%sidecar_runtime%\\chayuan-mcp-watch.vbs" >> "%LOG%" 2>&1
 schtasks /Create /F /TN ChayuanWpsMcpWatch /SC MINUTE /MO 2 /TR "wscript.exe \\"%sidecar_runtime%\\chayuan-mcp-watch.vbs\\"" >> "%LOG%" 2>&1
+rem /Create /F recreates the task enabled; /ENABLE covers the failure path where
+rem the task pre-existed and we disabled it above (never leave the watchdog off)
+schtasks /Change /TN ChayuanWpsMcpWatch /ENABLE >> "%LOG%" 2>&1
 rem HKCU Run points to start-mcp.cmd (hidden launch, node fallback for Win7/8)
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v ChayuanWpsMcp /t REG_SZ /d "\\"%sidecar_runtime%\\start-mcp.cmd\\"" /f >> "%LOG%" 2>&1
 call "%sidecar_runtime%\\start-mcp.cmd" >> "%LOG%" 2>&1
@@ -162,6 +184,20 @@ if /i "%~1"=="${folder}" goto :eof
 			hostNames.map((hf) => `if /i "%~1"=="${hf}" goto :eof\n`).join('') +
 			`rmdir /s /q "%destination_folder%\\%~1" >> "%LOG%" 2>&1
 goto :eof
+
+:fail_sidecar
+rem sidecar exe still locked after the kill attempts -- copying over it failed.
+rem Installing anyway would leave the OLD sidecar serving while reporting success,
+rem so fail loudly instead; restore the watchdog we disabled at the top.
+schtasks /Change /TN ChayuanWpsMcpWatch /ENABLE >> "%LOG%" 2>&1
+echo FAILED: copy sidecar exe (file locked?)>> "%LOG%"
+echo.
+echo ERROR: failed to copy the MCP sidecar binary.
+echo A chayuan-mcp process may still be running. Close it and run the
+echo installer again, e.g.:  taskkill /F /IM ${SIDECAR_EXE_NAME}
+echo Log: %LOG%
+pause
+exit /b 1
 
 :fail_mkdir
 echo FAILED: cannot create jsaddons dir>> "%LOG%"
