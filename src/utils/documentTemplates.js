@@ -766,14 +766,16 @@ export function shouldUseFileInputForImport() {
  * @param {File} file - 用户附件
  * @returns {Promise<{ok:boolean, path?:string, name?:string, kind?:string, error?:string}>}
  */
-export function materializeAttachmentToTemp(file) {
+export function materializeAttachmentToTemp(file, opts = {}) {
   return new Promise((resolve) => {
     if (!file || !(file instanceof File)) {
       resolve({ ok: false, error: '附件无效' })
       return
     }
     const kind = normalizeTemplateKind(null, file?.name)
-    if (!kindFromFileExtension(file?.name)) {
+    // anyFormat：附件注册（file_parse 别名解析）用——office/pdf 等所有格式都允许落盘，
+    // 不限于模板格式；模板直连通道（默认）保持原格式白名单不变
+    if (!opts.anyFormat && !kindFromFileExtension(file?.name)) {
       resolve({ ok: false, error: '该附件不是可用的模板格式（支持 docx/xlsx/pptx 系）' })
       return
     }

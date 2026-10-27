@@ -4,7 +4,7 @@
 
 # 察元 AI 文档助手 · Chayuan AI Document Assistant
 
-**WPS 文字 / 表格 / 演示三端智能加载项 / WPS 文档智能体** — 以**内嵌智能体**在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；文字 / 表格 / 演示三端内置助手（4526 + 29 + 25），**三级生图**与**网络资源搜索**为 PPT 配图保底；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
+**WPS 文字 / 表格 / 演示三端智能加载项 / WPS 文档智能体** — 以**内嵌智能体**在编辑器内完成 AI 对话、文档审查、表单填报与**正文写回**；文字 / 表格 / 演示三端内置助手（4526 + 66 + 81），**三级生图**与**网络资源搜索**为 PPT 配图保底；内置**本机 MCP 文档智能体服务**，可被 Claude Code、OpenAI Codex、Cursor 等外部 AI 智能体直接调用，读写本机 WPS 文档、做**多文档错别字校对与批量修正**；**优先支持离线 / 内网模型**（Ollama、LM Studio、Xinference、OneAPI 等 OpenAI 兼容端点），亦可对接主流云端大模型。
 
 [![Vue 3](https://img.shields.io/badge/Vue-3-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -59,7 +59,7 @@
 
 ### 演示稿助手（WPS 演示）
 
-- 演示域 **20 个 MCP 动作** + **25 个内置助手配方**（通用 7 + 配图 3 + 行业 15）
+- 演示域 **20 个 MCP 动作** + **81 个内置助手配方**（通用 19 + 配图 3 + 科研学术 12 + 党务学习 6 + 政务汇报 12 + 行业包 29；每条助手带「?」分步使用说明）
 - 「AI 生成 PPT」：主题一句话 → 大纲确认 → 逐页生成（版式 / 标题 / 正文 / 演讲备注）
 - 文档转 PPT 跨宿主编排、整套摘要、美化统一、口播稿
 
@@ -68,6 +68,13 @@
 - **三级图源**：模型生图 → 网络搜图 → SVG 矢量自动降级（降级铁律：上级失败才降级，绝不静默换花钱来源）；图源四模式 auto / model / web / svg
 - **网络资源搜索设置**（新）：Serper / Tavily / Linkup / SearXNG + Pexels / Pixabay / Unsplash + 必应 / Openverse 免 Key 兜底——独立开关、Key 本地保存、一键测活，启用清单驱动 `image_search` 搜图链
 - 生图模型直连 agent 生图链（百炼原生 / OpenAI 兼容双通道路由）
+
+### 文件解析（file_parse）——本地文件一键变模型可读文本
+
+- **多路径入口**：一次 1-8 个绝对路径，或**附件别名**——用户 30 分钟内在面板上传过的附件，对话里说「附件1/刚才那个文件」即可解析（面板发送附件时自动落盘登记）
+- **全格式矩阵**：txt/md/csv/json/yaml/log/代码等纯文本（**UTF-8/GBK 自动探测**）+ html（剥标签留标题结构）+ docx/xlsx/xls/csv + pptx（逐页文本+备注）+ pdf（逐页）+ eml/zip/svg；**旧版 doc/ppt/et/dps 自动经对应 WPS 宿主转新格式再解析**（副本操作不碰原文件，宿主离线自动拉起）；图片音视频仍走面板多模态识别管线
+- **token 预算三档**（短/超长模型通吃）：返回体全程带 `tokenEstimate/consumedTokens/budgetTokens`；`mode:auto` 预算内全文直出、超预算给「结构目录(带字符偏移)+头尾采样」；`mode:chunk` cursor 翻页（幂等重切 + fingerprint 文件变更校验）；outline 偏移 `rangeStart/rangeEnd` 随机直取目标段
+- **模型感知预算**：模型卡新增可选「上下文窗口(tokens)」字段（设置 → 管理模型，留空按内置表推断 deepseek/qwen/glm/gpt 等）——面板内部调用自动按 min(窗口×25%, 32k) 定预算，小模型少拿、大模型多拿；外部 MCP 客户端用 `budgetTokens` 自报
 
 ### 本机知识库自动发现
 

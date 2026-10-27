@@ -820,6 +820,12 @@
                 </p>
               </div>
               <div class="config-header-actions">
+                <button
+                  v-if="currentAssistantSettingItem.type === 'host-assistant' && currentAssistantSettingItem.manual"
+                  type="button"
+                  class="btn btn-secondary btn-compact"
+                  @click="assistantHelpVisible = true"
+                >使用说明</button>
                 <label v-if="currentAssistantSettingItem.type === 'host-assistant'" class="switch">
                   <input
                     type="checkbox"
@@ -2409,6 +2415,15 @@
               <span class="manage-item-name">{{ m.name || m.id }}</span>
               <span class="manage-item-id">{{ m.id }}</span>
               <span class="manage-item-type">{{ getModelTypeLabel(m.type || inferModelType(m.id)) }}</span>
+              <input
+                v-model.number="m.contextWindow"
+                type="number"
+                min="1000"
+                step="1000"
+                class="manage-input manage-ctx-input"
+                :placeholder="`上下文 ${inferContextWindow(m.id)}(推断)`"
+                title="上下文窗口（tokens）：留空按内置表推断；影响 file_parse 等工具的结果预算"
+              />
               <button class="btn-remove" @click="removeManageModel(idx)" title="删除">✕</button>
             </div>
           </div>
@@ -2647,6 +2662,13 @@
       <button class="btn btn-secondary" @click="onClose">取消</button>
       <button class="btn btn-primary" @click="onSave">保存</button>
     </div>
+
+    <!-- 助手分步使用说明书：宿主助手表单「使用说明」按钮弹出 -->
+    <AssistantHelpDialog
+      :visible="assistantHelpVisible"
+      :assistant="currentAssistantSettingItem"
+      @close="assistantHelpVisible = false"
+    />
     </template>
   </div>
 </template>
@@ -2678,6 +2700,7 @@ import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
 import { inAppConfirm } from '../utils/inAppDialog.js'
 import { inferModelRecordType, inferModelType, getModelTypeLabel, matchesModelType, normalizeModelType } from '../utils/modelTypeUtils.js'
+import { inferContextWindow } from '../utils/modelContextCatalog.js'
 import { getChunkSettings, saveChunkSettings } from '../utils/chunkSettings.js'
 import {
   DEFAULT_ASSISTANT_ICON_LIBRARY_ID,
@@ -2701,6 +2724,7 @@ import {
 } from '../utils/assistantSettings.js'
 import { consumeAssistantPrefillDraft } from '../utils/assistantPrefillDraftStore.js'
 import { startAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
+import AssistantHelpDialog from './AssistantHelpDialog.vue'
 import {
   getChayuanSpaceConfig,
   saveChayuanSpaceConfig,
@@ -2916,7 +2940,7 @@ function readInitialColumn2Width() {
 
 export default {
   name: 'SettingsDialog',
-  components: { KbSettingsPanel, WebResourceSettings },
+  components: { KbSettingsPanel, WebResourceSettings, AssistantHelpDialog },
   data() {
     return {
       // 领域包懒加载完成标记(自增以触发助手设置列表重算)
@@ -2927,6 +2951,8 @@ export default {
       hostAssistantSettingsMap: {},
       // 宿主自定义助手(按宿主分桶):与内置配方同形态,面板可直接执行
       customHostAssistantsMap: { et: [], wpp: [] },
+      // 助手分步使用说明书弹窗(宿主助手表单「使用说明」按钮)
+      assistantHelpVisible: false,
       // 助手设置分组展开状态(groupKey->bool;未显式设置则默认仅展开含当前选中项的分组)
       expandedAssistantGroups: {},
       // 主菜单
@@ -4193,6 +4219,7 @@ export default {
     getModelTypeLabel,
     inferModelRecordType,
     inferModelType,
+    inferContextWindow,
     getSeriesModelType(series) {
       if (series && typeof series === 'object') return inferModelRecordType(series)
       return inferModelType(String(series || ''))
@@ -6822,7 +6849,12 @@ export default {
     manageModelSeries() {
       this.manageModelList = [...(this.currentModelConfig.modelSeries || [])].map(m => {
         if (typeof m === 'string') return { id: m, name: m, type: inferModelType(m) }
-        return { id: m.id || m.name, name: m.name || m.id || '', type: m.type || inferModelType(m.id || m.name) }
+        return {
+          id: m.id || m.name,
+          name: m.name || m.id || '',
+          type: m.type || inferModelType(m.id || m.name),
+          contextWindow: Number(m.contextWindow) >= 1000 ? Number(m.contextWindow) : undefined
+        }
       })
       this.manageNewId = ''
       this.manageNewName = ''
@@ -7106,13 +7138,20 @@ export default {
       this.manageNewId = ''
       this.manageNewName = ''
     },
-    // 确认管理结果，写回 modelSeries（保留 type 便于按类型过滤）
+    // 确认管理结果，写回 modelSeries（保留 type 便于按类型过滤；contextWindow 可选，
+    // 留空走 modelContextCatalog 推断）
     confirmManageModels() {
-      this.currentModelConfig.modelSeries = this.manageModelList.map(m => ({
-        id: m.id,
-        name: m.name || m.id,
-        type: m.type || inferModelType(m.id)
-      }))
+      this.currentModelConfig.modelSeries = this.manageModelList.map(m => {
+        const entry = {
+          id: m.id,
+          name: m.name || m.id,
+          type: m.type || inferModelType(m.id)
+        }
+        if (Number.isFinite(Number(m.contextWindow)) && Number(m.contextWindow) >= 1000) {
+          entry.contextWindow = Math.floor(Number(m.contextWindow))
+        }
+        return entry
+      })
       this.updateModelConfig()
       this.closeManageModal()
       this.showMessage('模型列表已更新', 'success')
@@ -10445,6 +10484,14 @@ input:checked + .slider:before {
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 13px;
+}
+
+/* 管理模型行内的上下文窗口输入：窄列，不参与 flex:1 撑宽 */
+.manage-ctx-input {
+  flex: 0 0 150px;
+  width: 150px;
+  padding: 3px 6px;
+  font-size: 12px;
 }
 
 .modal-footer {

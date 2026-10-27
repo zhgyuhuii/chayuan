@@ -33,7 +33,7 @@ export const SERVER_INSTRUCTIONS = [
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
   'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled for document_* lifecycle tools (including blank files and template copies); the ONE exception is template_generate — it creates a NEW file from a user-provided template (pptx/docx/xlsx) and auto-opens it. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
   'Template generation (模板编制): template_generate takes a template file + reference material and produces a new document — pptx→演示, docx→文字, xlsx→表格 (host auto-routed and auto-launched). Prefer it over manual fill when the user says 按/根据模板生成. It already runs multi-round checks (placeholder residue, text overflow, font consistency, content/copy quality, contract items) before opening the result.',
-  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_*.',
+  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_* → file_parse (input side: parse local files/attachments into LLM-readable text; NOT for the open document).',
   'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
   'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply. In ET: 改值 → spreadsheet range_write; 改外观 → spreadsheet format.',
   'Multi-span edits: one format_apply_ops or document_apply_ops — never N×(locate+single write).',
@@ -1601,11 +1601,52 @@ const TEMPLATE_TOOLS = [
   })
 ]
 
+const FILE_TOOLS = [
+  tool({
+    name: 'file_parse',
+    description: [
+      'WHAT: 按本地路径或附件别名解析文件为「大模型可直接阅读的文本」，多路径一次解析（1-8 个）。支持：txt/md/csv/json/yaml/log/代码等纯文本（UTF-8/GBK 自动探测）、html（剥标签）、docx、xlsx/xls/csv、pptx（逐页文本+备注）、pdf（逐页）、eml、zip（条目清单）、svg；旧版二进制 doc/ppt/et/dps 自动经对应 WPS 宿主转新格式后再解析（convertLegacy:false 可关）。',
+      'WHEN: 用户给文件路径要「读一下/总结/参考附件/按附件生成」而文件不是当前打开的文档时；或用户说「附件1/刚才那个文件」（30 分钟内面板上传过的附件，别名可直接解析）。',
+      'NOT: 不是读当前打开的文档（用 document_get_text/document_chunks）；不解析图片/音视频（走面板附件的多模态识别）；不改任何文件。',
+      'HOW token 纪律：{"paths":["D:\\\\a.docx","附件2"],"budgetTokens":6000,"mode":"auto"}。mode=auto：≤预算全文直出，超预算返回结构目录(outline,含字符偏移)+头尾采样并建议改 chunk；mode=chunk：cursor/limit(1-4)/nextCursor 翻页（cursor 只前进），chunkTokens 定块大小；rangeStart/rangeEnd（来自 outline 偏移）随机直取目标段，超长文档省 token 首选。budgetTokens 按你自己模型的上下文设（128k 模型可给 100000；不确定就默认）。返回带 tokenEstimate/consumedTokens 便于规划。超长文档建议 map-reduce：逐块读→记笔记丢原文→终局合成，读够即停。50MB 以上仅 chunk 模式；200MB 拒绝。多文件预算按体积加权分配。fingerprint 校验文件变更（fileChanged=true 需从头重读）。',
+      'EXAMPLE: {"paths":"D:\\\\work\\\\说明.md"} 或 {"paths":["附件1","D:\\\\data.xlsx"],"sheet":"Sheet1","mode":"chunk","cursor":0} 或 {"action":"remembered"}（查看附件记忆清单）'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        paths: {
+          oneOf: [
+            { type: 'string', description: '单个绝对路径或附件别名' },
+            { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8, description: '1-8 个路径/别名' }
+          ],
+          description: '文件绝对路径 | 附件别名（附件N/文件名）'
+        },
+        action: { type: 'string', enum: ['parse', 'remembered'], description: 'parse=解析（默认）；remembered=列出 30 分钟内的附件记忆' },
+        mode: { type: 'string', enum: ['auto', 'full', 'chunk'], description: 'auto=预算内全文/超预算导航式摘要（默认）；full=强制全文；chunk=分块翻页' },
+        budgetTokens: { type: 'number', description: '本次结果 token 预算（默认 6000；按调用方模型上下文自行调大调小）' },
+        chunkTokens: { type: 'number', description: 'chunk 模式每块 token 数（默认 2000）' },
+        cursor: { type: 'number', description: 'chunk 翻页游标（0 起，只前进）' },
+        limit: { type: 'number', description: 'chunk 每次返回块数 1-4（默认 2）' },
+        rangeStart: { type: 'number', description: '随机访问起始字符偏移（来自 outline）' },
+        rangeEnd: { type: 'number', description: '随机访问结束字符偏移' },
+        sheet: { type: 'string', description: 'xlsx 只解析指定工作表' },
+        raw: { type: 'boolean', description: 'html 不剥标签直出原文（默认 false）' },
+        convertLegacy: { type: 'boolean', description: '旧版二进制(doc/ppt/et)是否自动转格式解析（默认 true；转换会短暂打开 WPS 窗口）' },
+        includeOutline: { type: 'boolean', description: '是否携带结构目录 outline（默认 true）' },
+        expectedFingerprint: { type: 'string', description: 'chunk 续读时带上上次返回的 fingerprint，文件变更会得到 fileChanged:true' }
+      }
+    }
+  })
+]
+
 export const TOOLS = [
   ...TEMPLATE_TOOLS,
   ...CORE_TOOLS.filter((t) => !REPLACED_FINE_GRAINED.has(t.name)),
   ...AGGREGATE_TOOLS,
-  ...IMAGE_TOOLS
+  ...IMAGE_TOOLS,
+  ...FILE_TOOLS
 ]
 
 export default { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS }

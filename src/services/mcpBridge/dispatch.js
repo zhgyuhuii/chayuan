@@ -18,6 +18,7 @@ import {
 import { getTaskById, updateTask } from '../../utils/taskListStore.js'
 import { gateCapability } from './licenseGate.js'
 import { MCP_PROTOCOL_VERSION, getAddonVersion } from './config.js'
+import { handleFileParse, handleFileConvert } from './fileParseDispatch.js'
 import {
   handleAssistantsListDomains,
   handleAssistantsSearch,
@@ -654,6 +655,13 @@ async function dispatchMcpJobInner(method, params) {
       return handleDocumentListParagraphs(params)
     case 'document.chunks':
       return handleDocumentChunks(params)
+    // 文件级解析（file_parse 工具）：宿主无关，任意在线 webview 可执行；
+    // sidecar 已完成路径归一/别名解析/fs 探测，这里只做提取与预算装配
+    case 'file.parse':
+      return handleFileParse(params)
+    // L3 旧版格式转换：sidecar 按扩展名定向派发（doc→wps / et 系→et / ppt 系→wpp）
+    case 'file.convert':
+      return handleFileConvert(params)
     case 'document.locate':
       return handleDocumentLocate(params)
     case 'document.replace':

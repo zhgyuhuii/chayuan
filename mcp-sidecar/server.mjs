@@ -617,6 +617,21 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, saveTmpImage(dataDir, body))
       return
     }
+    // 附件落盘路径注册表（file_parse 的「附件N」别名源）：面板把非纯文本附件
+    // materialize 到 数据目录/_temp 后登记（trusted），file_parse 按别名解析。
+    if (pathname === '/attachments/register' && req.method === 'PUT') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const body = (await readBody(req)) || {}
+      const { createAttachmentRegistry } = await import('./lib/attachmentRegistry.mjs')
+      sendJson(res, 200, createAttachmentRegistry({ dataDir }).register(body || {}))
+      return
+    }
+    if (pathname === '/attachments/list' && req.method === 'GET') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const { createAttachmentRegistry } = await import('./lib/attachmentRegistry.mjs')
+      sendJson(res, 200, createAttachmentRegistry({ dataDir }).list())
+      return
+    }
     // 模板新建通路的 viaOs 兜底：webview（尤其 Mac 沙盒）无法 spawn，由 sidecar
     // 以用户双击等价的 OS 方式打开办公文档（扩展名白名单 + isTrusted 门禁）
     if (pathname === '/open-local-file' && req.method === 'POST') {

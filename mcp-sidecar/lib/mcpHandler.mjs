@@ -3,13 +3,16 @@
  * Session is optional/pluggable for future stateless RC.
  */
 import fs from 'node:fs'
+import path from 'node:path'
 import { listDomains, searchDomainsOffline } from './catalog.mjs'
+import { createAttachmentRegistry } from './attachmentRegistry.mjs'
 import {
   activateAndSaveWpsMac,
   findWpsExecutable,
   isDocumentVisibleInWindows,
   listVisibleWpsWindows,
   normalizePath,
+  openFileWithOs,
   openPathWithOs
 } from './platformBridge.mjs'
 import { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS } from './toolCatalog.mjs'
@@ -127,6 +130,11 @@ function toolRoutingGuide() {
       { id: 'L6-review', tools: ['comment', 'revision'] },
       { id: 'L7-layout', tools: ['layout', 'nav', 'toc', 'bookmark'] },
       { id: 'L8-objects', tools: ['table', 'image', 'hyperlink', 'headerfooter', 'watermark', 'export'] },
+      {
+        id: 'L8b-file-input',
+        tools: ['file_parse'],
+        note: '输入侧：把本地文件（txt/md/csv/json/html/docx/xlsx/pptx/pdf/eml/zip + 旧版 doc/ppt/et 自动转换）解析为模型可读文本。多路径；附件别名（附件N，30 分钟记忆）；token 预算 mode=auto|full|chunk，chunk 支持 cursor 翻页与 outline 偏移 range 随机访问。不是读当前打开的文档（那是 L2-read）。'
+      },
       { id: 'L9-business', tools: ['proofread_run', 'proofread_apply_comments', 'declassify_preview', 'kb_retrieve', 'assistants_search'] }
     ],
     routes: [
@@ -293,6 +301,40 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
     const id = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     sessions.set(id, { id, createdAt: Date.now() })
     return id
+  }
+
+  /**
+   * L3 旧版格式转换（file_parse 内部步骤）：复制到 dataDir/tmp-convert（不碰原文件）
+   * → 确保目标宿主在线（离线自动拉起，复用 template_generate 拉起经验）
+   * → file.convert job 由目标宿主 webview 打开副本导出新格式 → 返回新路径。
+   */
+  async function convertLegacyFile(file, { ext, host }) {
+    const crypto = await import('node:crypto')
+    const dir = path.join(dataDir, 'tmp-convert')
+    fs.mkdirSync(dir, { recursive: true })
+    const base = file.name.replace(/\.[^.]+$/, '') || 'convert'
+    const copyPath = path.join(dir, `${base}-${crypto.randomBytes(4).toString('hex')}${path.extname(file.name)}`)
+    fs.copyFileSync(file.path, copyPath)
+
+    const hosts = agentHub.status()?.agent?.hosts || {}
+    if (!hosts[host] && typeof launchWpsAndWait === 'function') {
+      try {
+        await launchWpsAndWait({ host, waitAgentMs: 45000 })
+      } catch (e) {
+        try { openFileWithOs(copyPath) } catch (_) { /* 尽力而为 */ }
+        try { await launchWpsAndWait({ host, waitAgentMs: 45000 }) } catch (e2) {
+          fs.rmSync(copyPath, { force: true })
+          throw Object.assign(new Error(`目标宿主（${{ wps: '文字', et: '表格', wpp: '演示' }[host]}）未能上线`), { code: 'HOST_LAUNCH_FAILED', cause: e2 })
+        }
+      }
+    }
+    try {
+      const result = await agentHub.callAgent('file.convert', { srcPath: copyPath, targetExt: ext, host }, { timeoutMs: 180_000, target: host })
+      if (!result?.ok || !result?.path) throw new Error(result?.error || '转换无产出')
+      return { path: result.path, name: path.basename(result.path) }
+    } finally {
+      try { fs.rmSync(copyPath, { force: true }) } catch (_) { /* 清理尽力而为 */ }
+    }
   }
 
   async function readHealthResource() {
@@ -502,7 +544,6 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
               } catch (e) {
                 // 裸启动可能停在起始页（无文档窗口=无 webview 注册）——打开模板文件催生宿主窗口再等
                 try {
-                  const { openFileWithOs } = await import('./platformBridge.js')
                   if (src) openFileWithOs(src)
                 } catch (_) { /* 尽力而为 */ }
                 try {
@@ -532,6 +573,93 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
         try {
           const result = await generateImageTool(dataDir, { prompt: args?.prompt, size: args?.size, aspectRatio: args?.aspectRatio })
           if (result.ok) audit?.append({ tool: 'generate_image', confirmed: true })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
+      // ── 文件解析（file_parse）：路径/别名归一 + fs 探测 + L3 旧版转换编排，
+      //    提取本体在 webview（file.parse，任意在线宿主）──────────────────
+      case 'file_parse': {
+        try {
+          const p = args && typeof args === 'object' ? args : {}
+          const registry = createAttachmentRegistry({ dataDir })
+          if (p.action === 'remembered') return jsonResult(registry.list())
+
+          let rawPaths = p.paths
+          if (typeof rawPaths === 'string') rawPaths = [rawPaths]
+          if (!Array.isArray(rawPaths) || !rawPaths.length) {
+            return jsonError('INVALID_PARAMS', 'paths 必填（绝对路径或附件别名，1-8 个）；或用 {"action":"remembered"} 查看附件记忆')
+          }
+          rawPaths = rawPaths.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8)
+
+          const unresolved = []
+          const files = []
+          for (const ref of rawPaths) {
+            const r = registry.resolve(ref)
+            if (!r.ok) { unresolved.push({ ref, error: r.error }); continue }
+            try {
+              const st = fs.statSync(r.path)
+              if (!st.isFile()) { unresolved.push({ ref, error: '不是普通文件' }); continue }
+              const fd = fs.openSync(r.path, 'r')
+              const head = Buffer.alloc(8)
+              fs.readSync(fd, head, 0, 8, 0)
+              fs.closeSync(fd)
+              files.push({
+                ref,
+                path: r.path,
+                via: r.via,
+                name: path.basename(r.path),
+                sizeBytes: st.size,
+                mtimeMs: Math.round(st.mtimeMs),
+                magic: head.subarray(0, 4).toString('hex')
+              })
+            } catch (e) {
+              unresolved.push({ ref, error: `路径不可访问：${e.message}` })
+            }
+          }
+          if (!files.length) {
+            return jsonError('PATH_UNRESOLVED', `没有可解析的文件。${unresolved.map(u => `${u.ref}：${u.error}`).join('；')}`)
+          }
+
+          // L3 旧版二进制转换（doc/ppt/et 系 → 新格式；副本操作，原文件不动）
+          const convertMap = {
+            doc: { ext: 'docx', host: 'wps' }, wps: { ext: 'docx', host: 'wps' },
+            ppt: { ext: 'pptx', host: 'wpp' }, pps: { ext: 'pptx', host: 'wpp' }, dps: { ext: 'pptx', host: 'wpp' },
+            et: { ext: 'xlsx', host: 'et' }, ett: { ext: 'xlsx', host: 'et' },
+            ofd: { ext: 'pdf', host: 'wps' }
+          }
+          if (p.convertLegacy !== false) {
+            for (const f of files) {
+              const ext = path.extname(f.name).slice(1).toLowerCase()
+              const conv = convertMap[ext]
+              if (!conv) continue
+              try {
+                const converted = await convertLegacyFile(f, conv)
+                Object.assign(f, { path: converted.path, name: converted.name, convertedFrom: ext, via: `${f.via}+convert` })
+              } catch (e) {
+                f.convertError = `.${ext} 旧版转换失败：${e.message}（可另存为新版格式后重试）`
+              }
+            }
+          }
+
+          const result = await agentHub.callAgent('file.parse', {
+            files: files.map(({ ref, via, magic, ...rest }) => rest),
+            mode: p.mode,
+            budgetTokens: p.budgetTokens,
+            chunkTokens: p.chunkTokens,
+            cursor: p.cursor,
+            limit: p.limit,
+            rangeStart: p.rangeStart,
+            rangeEnd: p.rangeEnd,
+            sheet: p.sheet,
+            raw: p.raw,
+            includeOutline: p.includeOutline,
+            expectedFingerprint: p.expectedFingerprint
+          }, { timeoutMs: 300_000 })
+          result.unresolved = unresolved
+          result.convertNotes = files.filter(f => f.convertError).map(f => ({ name: f.name, error: f.convertError }))
+          audit?.append({ tool: 'file_parse', files: files.map(f => f.path) })
           return jsonResult(result)
         } catch (e) {
           return jsonError(e.code || 'ERROR', e.message, e.details)

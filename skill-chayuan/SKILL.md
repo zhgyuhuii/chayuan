@@ -31,6 +31,19 @@ description: 通过本机 chayuan-wps-mcp（http://127.0.0.1:62588/mcp）驱动 
 - **多轮核对（打开前）**：占位残留/换行溢出/字体一致性机器审计自愈 + 需求符合性/文案/契约项 LLM 审查；报告里会给各维度 ✓✗。
 - **素材要求**：`referenceContext` 传素材**正文文本**（md/txt 内容直接粘入参数）。用户只给文件路径时，先读文件内容再传。
 
+## 文件解析（file_parse）
+
+**工具**：`file_parse`——把本地文件解析成「模型可直接阅读的文本」，素材读取的统一入口（含 template_generate 的素材准备）。
+**入参**：`{"paths":["D:\\报告.docx","附件2"],"mode":"auto","budgetTokens":6000}`
+
+- **多路径**：一次 1-8 个；绝对路径，或**附件别名**（用户 30 分钟内在察元面板上传过的附件，说「附件1/刚才那个文件」即可）。
+- **格式**：txt/md/csv/json/yaml/html/eml/zip/svg + docx/xlsx/xls/pdf/pptx；旧版 doc/ppt/et 自动经对应 WPS 宿主转新格式再解析（`convertLegacy:false` 可关）；图片音视频不走这里（面板附件自动走识别/转写）。
+- **token 纪律（重点）**：返回体带 `tokenEstimate/consumedTokens/budgetTokens`。短文件预算内全文直出；超预算 auto 档给「结构目录(带字符偏移)+头尾采样」并建议 chunk；长文档用 `mode:"chunk"` 翻页（cursor 只前进、读够即停），或按 outline 偏移 `rangeStart/rangeEnd` 直取目标段。`budgetTokens` 按所用模型的上下文给（128k 模型可给 10 万）。
+- **示例开场白**：
+```
+调用 file_parse：paths 用 D:\work\素材.md 与 附件1，budgetTokens 8000；若超预算改 mode=chunk 逐块读。
+```
+
 **开场白示例**：
 ```
 调用 template_generate：templatePath 用 /path/to/模板.pptx，requirement 为「生成年度总结PPT」，referenceContext 用附件/文件中的素材正文。

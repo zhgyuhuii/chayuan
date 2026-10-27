@@ -165,6 +165,15 @@
                       <svg v-else viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 6h5v12H6zm7 0h5v12h-5z"/></svg>
                     </button>
                     <button
+                      v-if="item.manual"
+                      type="button"
+                      class="icon-action-btn"
+                      title="使用说明"
+                      @click="openAssistantHelp(item)"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14a4 4 0 0 0-4 4h2a2 2 0 1 1 4 0c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4z"/></svg>
+                    </button>
+                    <button
                       type="button"
                       class="icon-action-btn"
                       title="编辑助手"
@@ -2620,6 +2629,13 @@
       @open-mcp-settings="openMcpSettingsFromHelp"
     />
 
+    <!-- 助手分步使用说明书：条目「?」图标弹出 -->
+    <AssistantHelpDialog
+      :visible="assistantHelpVisible"
+      :assistant="assistantHelpItem"
+      @close="assistantHelpVisible = false"
+    />
+
     <div
       v-if="showMcpGuideDialog"
       class="assistant-recommend-modal-overlay"
@@ -2790,6 +2806,7 @@ import {
   isSameDocumentScopeChange
 } from '../utils/chat/docScope.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
+import { registerAttachmentPath } from '../services/mcpBridge/attachmentRegistryClient.js'
 import { putHistoryFile, fetchHistoryFile, describeHistoryFileStore } from '../utils/chat/historyFileStore.js'
 import {
   setWriteBaseline,
@@ -2983,6 +3000,7 @@ import KbSelectorDialog from './KbSelectorDialog.vue'
 import FeedbackDialog from './FeedbackDialog.vue'
 import ChatEmbed from './ChatEmbed.vue'
 import HelpManualDialog from './HelpManualDialog.vue'
+import AssistantHelpDialog from './AssistantHelpDialog.vue'
 import KbSourceStrip from './KbSourceStrip.vue'
 import ToolAssistantPanel from './ToolAssistantPanel.vue'
 import SourceCodeLinks from './common/SourceCodeLinks.vue'
@@ -4374,6 +4392,7 @@ export default {
     FeedbackDialog,
     ChatEmbed,
     HelpManualDialog,
+    AssistantHelpDialog,
     ToolAssistantPanel,
     SourceCodeLinks,
     WelcomeAdSlots
@@ -4526,7 +4545,9 @@ export default {
       desktopUnsub: null,
       feedbackDialogVisible: false,
       chatEmbedVisible: false,
-      helpManualVisible: false
+      helpManualVisible: false,
+      assistantHelpVisible: false,
+      assistantHelpItem: null
     }
   },
   computed: {
@@ -8733,6 +8754,33 @@ export default {
     ensureHistoryStorageScope() {
       return this.applyHistoryStorageScope(this.resolveHistoryStorageScope())
     },
+    /** 无文档兜底：只读解析为 no_active_document（没建/没开任何文档）时，按宿主
+     *  新建一个空白文档（表格=Workbooks.Add / 演示=Presentations.Add / 文字=
+     *  Documents.Add）。只建不同步——发送路径的 scope 硬校准紧随其后完成会话
+     *  切换，本条消息随之落进新文档的键。尽力而为：jsapi 异常一律吞掉。 */
+    async ensureHostDocumentForTurn() {
+      let probe = null
+      try { probe = this.resolveHistoryStorageScope() } catch (_) { return }
+      if (String(probe?.scopeKey || '') !== 'no_active_document') return
+      const app = window.Application
+      if (!app) return
+      try {
+        const host = detectAddonType()
+        if (host === 'et') await app.Workbooks.Add()
+        else if (host === 'wpp') await app.Presentations.Add()
+        else await app.Documents.Add()
+      } catch (_) { return }
+      // 新建对象在部分宿主上要数拍才反映到 ActiveXxx（真机：空白演示稿建出后
+      // 解析仍拿到 no_active_document）：有界轮询等它可见，最长约 3s；超时仍
+      // 不可见则放弃，交由 1.5s 周期轮询与 wps_status 探针定位根因
+      for (let i = 0; i < 12; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        try {
+          const probe = this.resolveHistoryStorageScope()
+          if (String(probe?.scopeKey || '') !== 'no_active_document') return
+        } catch (_) { /* 单次解析失败继续等 */ }
+      }
+    },
     syncHistoryScopeWithActiveDocument() {
       // 只挡"本地执行"：本地回合在本 webview 内改文档，切会话确实危险；
       // 远程回合跑在基座 webview 且带 docId 绑定守卫，切会话安全——若也挡住，
@@ -12612,6 +12660,33 @@ export default {
         item.pendingLazy = false
       }
       return item
+    },
+
+    /**
+     * 附件落盘并登记 file_parse 30 分钟记忆（附件N 别名）。
+     * 只处理非纯文本附件（docx/xlsx/pptx/pdf/office 系与未知二进制）——
+     * 纯文本附件 content 已内联进消息，无需路径解析通道。
+     */
+    registerAttachmentPathsForParse() {
+      if (!Array.isArray(this.attachments)) return
+      ;(async () => {
+        for (const item of this.attachments) {
+          try {
+            if (!item || item.parseRegistered || !(item.rawFile instanceof File)) continue
+            if (isTextLikeAttachment(item.rawFile)) { item.parseRegistered = true; continue }
+            item.parseRegistered = true
+            const materialized = await materializeAttachmentToTemp(item.rawFile, { anyFormat: true })
+            if (!materialized?.ok || !materialized.path) continue
+            registerAttachmentPath({
+              alias: `附件${item.ordinal || 1}`,
+              name: String(item.name || ''),
+              path: materialized.path,
+              bytes: Number(item.size) || 0,
+              scopeKey: this.historyStorageScopeKey || ''
+            })
+          } catch (_) { /* 注册失败不影响发送 */ }
+        }
+      })()
     },
 
     async resolveTemplateAttachmentParams(message, params = {}) {
@@ -19263,6 +19338,11 @@ export default {
           mimeType: String(a.mimeType || '')
         }))
     },
+    openAssistantHelp(item) {
+      if (!item) return
+      this.assistantHelpItem = item
+      this.assistantHelpVisible = true
+    },
     async runAssistant(item) {
       if (!item?.key || this.assistantRunLoadingKey) return
       if (this.activeMcpTurnContexts?.[this.currentChatId]?.messageId) {
@@ -19352,6 +19432,10 @@ export default {
           for (const a of this.attachments) await this.ensureAttachmentContent(a)
         } catch (_) { /* 解析失败不阻塞发送 */ }
       }
+      // 附件路径注册（file_parse 别名解析）：非纯文本附件落盘到 数据目录/_temp 并
+      // 登记 30 分钟记忆——之后对话里说「附件1/刚才那个文件」，外部 MCP 客户端或
+      // 内部 agent 都能用 file_parse 按别名解析。fire-and-forget，失败不阻塞发送。
+      this.registerAttachmentPathsForParse()
       // 兜底：任何入口产生的文本类附件若缺内容（含 rawFile 但 content 空），发送前补读
       if (Array.isArray(this.attachments)) {
         for (const a of this.attachments) {
@@ -19378,6 +19462,11 @@ export default {
       // 文档的会话，本条消息进入正确的 scope（面板 UI 也随之切换，所见即所对）。
       try {
         if (!this.isStreaming && !this.docWriteLockState?.locked) {
+          // 无文档兜底：用户没建任何文档就打开面板开聊——按宿主先新建一个空白
+          // 文档，让本回合立刻有绑定目标（否则消息落在 no_active_document 键，
+          // 后续文档操作无着落）。建档失败不阻塞发送；busy 分支刻意不建档，
+          // 避免新建出来的活动文档反手触发下方跨文档守卫拒发。
+          await this.ensureHostDocumentForTurn()
           const switched = this.syncHistoryScopeWithActiveDocument()
           if (switched) {
             // sync 内部已 saveHistory+loadHistory；等待 Vue 渲染出新会话消息

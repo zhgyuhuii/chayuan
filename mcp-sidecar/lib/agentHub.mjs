@@ -50,6 +50,11 @@ function targetForMethod(method, params = {}) {
     return 'any'
   }
   if (m === 'wps.status' || m.startsWith('assistants.') || m.startsWith('kb.')) return 'any'
+  // 文件级解析：宿主无关（WPS FileSystem 三宿主等价），任意在线 webview 执行
+  if (m === 'file.parse') return 'any'
+  // L3 旧版格式转换：mcpHandler 按扩展名显式指定 target（wps/et/wpp），
+  // 缺省回落 any（webview 侧按自身宿主能力判断）
+  if (m === 'file.convert') return params?.host || 'any'
   return 'wps'
 }
 

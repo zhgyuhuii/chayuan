@@ -20,6 +20,43 @@ import { generateImageViaModelChain } from '../imagery/agentImageTier.js'
 import { getActiveTask } from '../../utils/taskListStore.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
+import { getFlatModelsFromSettings } from '../../utils/modelSettings.js'
+import { getToolResultBudgetTokens } from '../../utils/modelContextCatalog.js'
+
+/**
+ * 当前对话模型（面板选中项）——file_parse 内部调用时按模型上下文注入结果预算：
+ * 显式字段 contextWindow > 内置推断表 > 保守 8192（见 modelContextCatalog）。
+ * 解析失败返回 null（file_parse 侧落回默认 6000 tokens）。
+ */
+function currentChatModelEntry() {
+  try {
+    let compositeId = ''
+    try {
+      compositeId = String(window.Application?.PluginStorage?.getItem('ai_assistant_selected_model_id') || '').trim()
+    } catch (_) { /* PluginStorage 不可用 */ }
+    if (!compositeId) {
+      compositeId = String(window.localStorage?.getItem('ai_assistant_selected_model_id') || '').trim()
+    }
+    if (!compositeId) return null
+    const modelId = compositeId.includes('|') ? compositeId.split('|').slice(1).join('|') : compositeId
+    return { modelId, contextWindow: undefined }
+  } catch (_) {
+    return null
+  }
+}
+
+function fileParseBudgetTokens() {
+  const entry = currentChatModelEntry()
+  if (!entry?.modelId) return undefined
+  try {
+    // 设置里显式登记的 contextWindow 优先于推断表
+    const flat = getFlatModelsFromSettings('chat')
+    const matched = flat.find(m => m.modelId === entry.modelId)
+    return getToolResultBudgetTokens(matched || entry) || undefined
+  } catch (_) {
+    return undefined
+  }
+}
 
 /**
  * 跨宿主首写前的目标身份探针：读目标宿主 status 取活动对象 FullName。
@@ -130,11 +167,17 @@ function normalizeTodoList(raw) {
 
 // 上游工具只读启发式已随写确认闸门一并移除（2026-09-17）：上游工具同样直通执行。
 
-function summarizeToolResult(result) {
+// file_parse 结果进历史放宽：默认 6000 字符会把 chunk 块（默认 2000 token ≈ 3k+
+// 字符）连元数据一起截掉；file_parse 自带 token 预算（auto 档已按预算产出，
+// chunk 档每块远小于该值），这里给到 12000 防误伤。
+const TOOL_RESULT_LIMITS = { default: 6000, file_parse: 12000 }
+
+function summarizeToolResult(result, toolName) {
   try {
     const sc = result?.structuredContent || result?.content || result
     const text = typeof sc === 'string' ? sc : JSON.stringify(sc)
-    return text.length > 6000 ? `${text.slice(0, 6000)}…(truncated)` : text
+    const limit = TOOL_RESULT_LIMITS[toolName] || TOOL_RESULT_LIMITS.default
+    return text.length > limit ? `${text.slice(0, limit)}…(truncated)` : text
   } catch {
     return String(result)
   }
@@ -337,6 +380,13 @@ export function createMcpDocumentSkill({
       if (toolName === 'kb_retrieve' && kbBinding && Array.isArray(kbBinding.kbNames) && kbBinding.kbNames.length) {
         args.binding = kbBinding
       }
+      // file_parse 预算注入：内部 agent 调用未显式给 budgetTokens 时，按当前对话
+      // 模型的上下文窗口自动定预算（min(窗口×0.25, 32000)），小模型自动少拿、
+      // 大模型自动多拿——外部 MCP 客户端不经过这里，仍用工具缺省 6000 或自带值
+      if (toolName === 'file_parse' && !Number(args.budgetTokens)) {
+        const budget = fileParseBudgetTokens()
+        if (budget) args.budgetTokens = budget
+      }
       if (needsAutoConfirm(serverId, toolName, args)) {
         args.confirmed = true
       }
@@ -425,7 +475,7 @@ export function createMcpDocumentSkill({
         }
         const card = extractProofreadCard(toolName, args, result)
         if (card) onProofreadCard?.(card)
-        let output = summarizeToolResult(result)
+        let output = summarizeToolResult(result, toolName)
         const summaryBase = output.slice(0, 120)
         // 催单（仅一次）：真实工具已在跑但清单还没立——提醒模型下一条消息立即补
         // todo_write（已完成项标 completed），与下一个工具调用并行提交

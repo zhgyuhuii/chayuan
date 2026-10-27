@@ -295,6 +295,8 @@ export function chayuanToolTargetHost(toolName) {
   if (n.startsWith('presentation')) return 'wpp'
   if (n === 'wps_status' || n.startsWith('assistants') || n.startsWith('kb_')) return null
   if (n.startsWith('wps_')) return null
+  // 文件级能力：宿主无关（sidecar 按 any/显式 target 路由）
+  if (n === 'file_parse' || n === 'generate_image' || n === 'image_search' || n === 'template_generate') return null
   return 'wps'
 }
 

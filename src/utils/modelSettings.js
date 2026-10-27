@@ -316,7 +316,13 @@ export function getModelGroupsFromSettings(modelType) {
       const name = typeof m === 'string' ? m : (m.name || m.id || '')
       const type = typeof m === 'object' ? inferModelRecordType(m) : inferModelType(modelId)
       const compositeId = `${configKey}|${modelId}`
-      return { id: compositeId, providerId: configKey, modelId, name, type }
+      const entry = { id: compositeId, providerId: configKey, modelId, name, type }
+      // 可选 contextWindow（设置页「管理模型」可填）：供 file_parse 等注入型工具
+      // 按模型上下文做结果预算（modelContextCatalog.getContextWindow）
+      if (m && typeof m === 'object' && Number(m.contextWindow) >= 1000) {
+        entry.contextWindow = Math.floor(Number(m.contextWindow))
+      }
+      return entry
     }).filter(m => m.modelId && (!modelType || matchesModelType(m.type, modelType)))
 
     if (models.length === 0) continue
