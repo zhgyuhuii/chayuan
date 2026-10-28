@@ -87,11 +87,8 @@ export function createAgentHub({ logger } = {}) {
     const t = now()
     for (const [id, a] of agents) {
       if (t - a.lastSeen > maxAgeMs) {
-        for (const w of a.waiters) {
-          clearTimeout(w.timer)
-          w.resolve(null)
-        }
-        agents.delete(id)
+        // 走 dropAgent 统一清理：waiters 放行 + 名下 inflight job 立即失败
+        dropAgent(id, 'stale-prune')
       }
     }
   }
@@ -288,6 +285,28 @@ export function createAgentHub({ logger } = {}) {
   /**
    * Enqueue job for agent; returns Promise of result.
    */
+  /**
+   * 失败某 agent 名下的全部 inflight job（僵尸自愈）：agent 被踢/剪除后，其
+   * inflight job 若只靠自身 timer 会继续等满超时——期间调用方悬挂、status 里
+   * 幽灵 job 常驻。立即 reject（AGENT_DROPPED）让调用方马上拿到失败。
+   */
+  function failInflightOf(agentId, reason) {
+    let failed = 0
+    for (const [jobId, job] of inflight) {
+      if (job.assignedAgentId !== agentId) continue
+      inflight.delete(jobId)
+      clearTimeout(job.timer)
+      try {
+        logger?.({ ev: 'job_fail_dropped', jobId, method: job.method, agentId, reason })
+      } catch { /* ignore */ }
+      try {
+        job.reject(Object.assign(new Error(`执行者已被移除（${reason}），任务终止`), { code: 'AGENT_DROPPED' }))
+      } catch { /* ignore */ }
+      failed++
+    }
+    return failed
+  }
+
   function dropAgent(agentId, reason = 'stale') {
     const id = String(agentId || '')
     const a = agents.get(id)
@@ -299,17 +318,31 @@ export function createAgentHub({ logger } = {}) {
     a.waiters = []
     agents.delete(id)
     droppedAt.set(id, now())
-    try { logger?.({ ev: 'agent_dropped', agentId: id, reason, windowId: a.windowId }) } catch { /* ignore */ }
-    console.warn(`[agentHub] dropped agent ${id} (${reason})`)
+    const failedJobs = failInflightOf(id, reason)
+    try { logger?.({ ev: 'agent_dropped', agentId: id, reason, windowId: a.windowId, inflightFailed: failedJobs }) } catch { /* ignore */ }
+    console.warn(`[agentHub] dropped agent ${id} (${reason}${failedJobs ? `, inflight failed=${failedJobs}` : ''})`)
   }
 
   /**
    * Enqueue job for agent; returns Promise of result.
    * 目标宿主按 method 前缀推断（targetForMethod），可用 options.target 显式覆盖。
    */
+  // 队列熔断：同一目标的待派 job 积压超过阈值 = 执行侧已 wedge（典型：webview
+  // 派发队列被挂死 handler 堵住，每个 job 都要吃满超时）。快速失败保护调用方，
+  // 不再无限堆 300s 等待；执行侧恢复（看门狗放行/agent 重注册）后自然疏通。
+  const QUEUE_SATURATION_LIMIT = 16
+
   function callAgent(method, params = {}, { timeoutMs = 120_000, target } = {}) {
     pruneStale()
     const resolvedTarget = target !== undefined ? normalizeTarget(target) : targetForMethod(method, params)
+    const queuedForTarget = pendingJobs.filter(j => matchesTarget(j, resolvedTarget)).length
+    if (queuedForTarget >= QUEUE_SATURATION_LIMIT) {
+      try { logger?.({ ev: 'job_reject_saturated', method, target: resolvedTarget, queued: queuedForTarget }) } catch { /* ignore */ }
+      return Promise.reject(Object.assign(
+        new Error(`任务队列已积压 ${queuedForTarget} 个（执行侧疑似卡死），本次快速失败；请稍后重试或重启 WPS 加载项`),
+        { code: 'AGENT_QUEUE_SATURATED' }
+      ))
+    }
     if (![...agents.values()].some(a => now() - a.lastSeen < 60_000 && matchesTarget(a, resolvedTarget))) {
       try { logger?.({ ev: 'job_reject_offline', method, target: resolvedTarget }) } catch { /* ignore */ }
       const hostLabel = { wps: 'WPS 文字', et: 'WPS 表格', wpp: 'WPS 演示', any: 'WPS' }[resolvedTarget] || 'WPS'

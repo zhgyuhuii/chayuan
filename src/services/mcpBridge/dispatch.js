@@ -508,8 +508,53 @@ function isWriteMethod(method) {
 let _isDispatching = false
 const _dispatchQueue = []
 
+// 派发看门狗预算（毫秒）：必须 ≥ sidecar 对该 method 的 callAgent 超时（看门狗是
+// 队列解堵的兜底，不是和 sidecar 抢跑）。看门狗到点：放弃等待永不 settle 的
+// handler（其 promise 悬空，若日后 settle 为幂等空转），向 sidecar 回
+// AGENT_HANDLER_TIMEOUT 错误结果，队列立即放行——单次挂死不再永久堵死整个
+// webview 派发队列（真机事故：挂死的 pdf 解析把队列堵死数小时，所有后续 job
+// 超时、agent 反复被踢又回锅，直到人工重启 sidecar）。
+const JOB_WATCHDOG_MS = {
+  'template.generate': 960_000,
+  'proofread.run': 660_000,
+  'proofread.apply_comments': 330_000,
+  'file.parse': 330_000,
+  'file.convert': 210_000,
+  'chat.turn': 90_000
+}
+const JOB_WATCHDOG_DEFAULT_MS = 210_000
+
 // 运行日志序号：job_start/job_end 按 id 配对；崩溃后日志里无 end 的最大 id = 崩溃时执行中的 job
 let _jobLogSeq = 0
+
+/** handler promise 与看门狗竞速；看门狗先到则 reject（handler 悬空继续） */
+function raceWatchdog(handlerPromise, ms, method) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      reject(Object.assign(
+        new Error(`Agent handler watchdog: ${method} 超过 ${Math.round(ms / 1000)}s 未完成，已放弃等待并放行队列`),
+        { code: 'AGENT_HANDLER_TIMEOUT' }
+      ))
+    }, ms)
+    Promise.resolve(handlerPromise).then(
+      (v) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        reject(e)
+      }
+    )
+  })
+}
 
 export async function dispatchMcpJob(job = {}) {
   if (_isDispatching) {
@@ -533,7 +578,9 @@ export async function dispatchMcpJob(job = {}) {
       ...extra
     })
   }
-  try {
+  // handler 全程封装为独立 promise：看门狗到点时外层先返回（finally 放行队列），
+  // handler 悬空继续——它若日后 settle，结果被丢弃，不再影响任何人
+  const handler = (async () => {
     const params = { ...(job.params || {}) }
     // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
     // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
@@ -560,19 +607,29 @@ export async function dispatchMcpJob(job = {}) {
         { label: method, ...(baselineToken ? { baselineToken } : {}), ...(expectDocId !== undefined ? { expectDocId } : {}) },
         () => dispatchMcpJobInner(method, params)
       )
-      return promise.then(
-        (v) => { jobEndLog('ok'); return v },
-        (e) => { jobEndLog('error', { code: e?.code || '', message: String(e?.message || '').slice(0, 200) }); throw e }
-      )
+      return promise
     }
-    try {
-      const v = await dispatchMcpJobInner(method, params)
-      jobEndLog('ok')
-      return v
-    } catch (e) {
+    return dispatchMcpJobInner(method, params)
+  })()
+  const watchdogMs = JOB_WATCHDOG_MS[method] || JOB_WATCHDOG_DEFAULT_MS
+  try {
+    const v = await raceWatchdog(handler, watchdogMs, method)
+    jobEndLog('ok')
+    return v
+  } catch (e) {
+    if (e?.code === 'AGENT_HANDLER_TIMEOUT') {
+      // 挂死的若是写 job，连带强制放锁——否则后续所有写操作在锁上二次排队
+      if (isWrite) {
+        try {
+          const { forceReleaseLock } = await import('../documentWriteLock.js')
+          forceReleaseLock(method)
+        } catch (_) { /* 锁模块异常不影响放行 */ }
+      }
+      jobEndLog('watchdog-timeout', { code: e.code, watchdogMs })
+    } else {
       jobEndLog('error', { code: e?.code || '', message: String(e?.message || '').slice(0, 200) })
-      throw e
     }
+    throw e
   } finally {
     _isDispatching = false
     const next = _dispatchQueue.shift()

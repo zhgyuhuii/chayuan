@@ -223,6 +223,23 @@ export function getLockState() {
 }
 
 /**
+ * 强制释放写锁（僵尸 job 自愈专用）：看门狗放弃等待一个永不 settle 的写 handler
+ * 时调用。若 fn 日后迟到 settle，其 finally 里的 owner=null / 基线滚动为幂等空转。
+ * 队列中的等待者按原语义继续（下一个写者拿锁时会有 OCC 基线校验兜底）。
+ * @param {string} label - 持锁者标识（dispatch 传 method）
+ * @returns {boolean} 是否确实释放了一个持锁者
+ */
+export function forceReleaseLock(label) {
+  const want = String(label || '')
+  if (!owner || (want && owner.label !== want)) return false
+  const stuck = owner
+  owner = null
+  try { console.warn(`[documentWriteLock] force-release stuck owner label=${stuck.label}`) } catch { /* ignore */ }
+  notifySubscribers()
+  return true
+}
+
+/**
  * 持锁执行 fn。等待期间可 cancel()；轮到时依次校验：
  * 取消 → 活动文档身份 → OCC 基线（仅校验调用者的 baselineToken，PR5 起各回合
  * 互不洗白），任一失败即拒绝并抛错（不占用写窗口）。
