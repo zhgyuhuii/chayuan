@@ -520,7 +520,11 @@ const JOB_WATCHDOG_MS = {
   'proofread.apply_comments': 330_000,
   'file.parse': 330_000,
   'file.convert': 210_000,
-  'chat.turn': 90_000
+  'chat.turn': 90_000,
+  // agentClient/sidecar 对这两个 method 的预算都是 300s——落进默认 210s 会被
+  // 看门狗抢跑：合法慢任务被误报超时、handler 悬空继续写文档、写锁还被强放
+  'declassify.apply': 330_000,
+  'declassify.restore': 330_000
 }
 const JOB_WATCHDOG_DEFAULT_MS = 210_000
 
@@ -580,6 +584,7 @@ export async function dispatchMcpJob(job = {}) {
   }
   // handler 全程封装为独立 promise：看门狗到点时外层先返回（finally 放行队列），
   // handler 悬空继续——它若日后 settle，结果被丢弃，不再影响任何人
+  let lockHandle = null
   const handler = (async () => {
     const params = { ...(job.params || {}) }
     // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
@@ -603,11 +608,12 @@ export async function dispatchMcpJob(job = {}) {
     if (isWrite) {
       // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
       // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
-      const { promise } = withDocumentWriteLock(
+      const lock = withDocumentWriteLock(
         { label: method, ...(baselineToken ? { baselineToken } : {}), ...(expectDocId !== undefined ? { expectDocId } : {}) },
         () => dispatchMcpJobInner(method, params)
       )
-      return promise
+      lockHandle = lock
+      return lock.promise
     }
     return dispatchMcpJobInner(method, params)
   })()
@@ -618,11 +624,13 @@ export async function dispatchMcpJob(job = {}) {
     return v
   } catch (e) {
     if (e?.code === 'AGENT_HANDLER_TIMEOUT') {
-      // 挂死的若是写 job，连带强制放锁——否则后续所有写操作在锁上二次排队
+      // 挂死的若是写 job，连带强制放锁并跳过其链节——否则后续所有写操作在
+      // 锁的 FIFO 链上二次排队。按本 job 的 lockId 匹配：挂死的若只是排队者
+      // （持锁者是同 method 的健康 job），严格匹配保证不误杀健康持锁者
       if (isWrite) {
         try {
           const { forceReleaseLock } = await import('../documentWriteLock.js')
-          forceReleaseLock(method)
+          forceReleaseLock(lockHandle?.id)
         } catch (_) { /* 锁模块异常不影响放行 */ }
       }
       jobEndLog('watchdog-timeout', { code: e.code, watchdogMs })

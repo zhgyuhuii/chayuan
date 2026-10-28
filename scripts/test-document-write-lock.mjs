@@ -12,7 +12,9 @@ import {
   setWriteBaseline,
   resetWriteBaselines,
   getWriteBaseline,
-  withDocumentWriteLock
+  withDocumentWriteLock,
+  forceReleaseLock,
+  getLockState
 } from '../src/services/documentWriteLock.js'
 
 let passed = 0
@@ -208,6 +210,56 @@ globalThis.window = { Application: { get ActiveDocument() { return state.doc } }
   const closed = withDocumentWriteLock({ expectDocId: 'docA.docx' }, async () => { calls++ })
   ok((await errCode(closed.promise)) === 'DOC_SWITCHED' && calls === 0, 'T12 原文档关闭后不执行写入')
   state.doc = makeDoc('docA.docx', '第一段张三\r第二段李四\r第三段王五')
+}
+
+/* ── T13 强制放锁（僵尸 job 自愈）──────────────────────────────── */
+{
+  resetWriteBaselines()
+  // 挂死的持锁者：fn 永不 settle（模拟 COM 调用挂死）
+  let releaseHung = null
+  const hung = withDocumentWriteLock({ label: 'proofread.run' }, () => new Promise((resolve) => { releaseHung = resolve }))
+  await delay(10)
+  ok(getLockState().locked && getLockState().ownerLabel === 'proofread.run', 'T13 挂死者持锁')
+  // 排队者：挂死者后面再排两个写
+  const executed = []
+  const b = withDocumentWriteLock({ label: 'document.replace' }, async () => { executed.push('b'); return 'b' })
+  const c = withDocumentWriteLock({ label: 'document.replace' }, async () => { executed.push('c'); return 'c' })
+  await delay(10)
+  ok(executed.length === 0, 'T13 挂死期间后续写全部被链挡住')
+  // 按 lockId 强制放锁：链必须立即推进
+  ok(forceReleaseLock(b.id) === false, 'T13 严格 id 匹配：排队者的 id 不会误杀持锁者')
+  ok(forceReleaseLock(hung.id) === true, 'T13 按挂死者的 lockId 强放命中')
+  // 强放以链门 reject 表达「本次写未执行」；dispatch 侧 raceWatchdog 已挂处理器，
+  // 测试里同样立刻接住，避免 unhandled rejection
+  hung.promise.catch(() => {})
+  ok(getLockState().locked === false, 'T13 强放后锁空闲')
+  ok(await b.promise === 'b' && await c.promise === 'c', 'T13 强放后链推进，排队写者立即执行')
+  ok(JSON.stringify(executed) === JSON.stringify(['b', 'c']), 'T13 排队写者按 FIFO 执行')
+  // 挂死者迟到 settle：结果被幂等丢弃，不得影响任何状态
+  releaseHung('too-late')
+  await delay(20)
+  ok(JSON.stringify(executed) === JSON.stringify(['b', 'c']), 'T13 挂死者迟到 settle 不再触发第二次执行')
+  ok(getLockState().locked === false, 'T13 迟到 settle 后锁仍空闲（未误清/未复活）')
+}
+
+{
+  // 迟到 settle 不得误伤强放后新上岗的持锁者、不得滚基线
+  resetWriteBaselines()
+  let releaseHung = null
+  const hung = withDocumentWriteLock({ label: 'slow.write' }, () => new Promise((resolve) => { releaseHung = resolve }))
+  await delay(10)
+  forceReleaseLock(hung.id)
+  hung.promise.catch(() => {})
+  const next = withDocumentWriteLock({ baselineToken: 'turn-new' }, async () => 'next-ok')
+  await delay(10)
+  ok(getLockState().locked && getLockState().ownerLabel !== 'slow.write', 'T13b 强放后新写者已上岗持锁')
+  releaseHung('late')
+  await hung.promise.catch(() => {})
+  await delay(20)
+  ok(getLockState().locked === true, 'T13b 挂死者迟到 settle 不清新持锁者的旗标')
+  ok(await next.promise === 'next-ok', 'T13b 新持锁者照常完成')
+  await delay(350)
+  ok(getLockState().locked === false, 'T13b 新持锁者正常释放')
 }
 
 console.log(failed === 0 ? `\nALL ${passed} TESTS PASSED` : `\n${failed} FAILED / ${passed} passed`)

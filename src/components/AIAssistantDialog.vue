@@ -2269,7 +2269,7 @@
                     @contextmenu.prevent="insertAttachmentReference(item, 'full')"
                   >
                     <img :src="aiDialogAssetsInline.chatAttach" alt="" class="composer-meta-icon-image" />
-                    <span class="composer-attachment-ref-text">附件{{ item.ordinal || 0 }}</span>
+                    <span class="composer-attachment-ref-text">附件{{ item.ordinal || 1 }}</span>
                     <span class="composer-attachment-ref-name">{{ $cdt(item.name) }}</span>
                   </button>
                   <button
@@ -6383,7 +6383,7 @@ export default {
     // 必须跑在 ribbon 基座 webview（跨切换存活）。派发成功返回 turnId，面板
     // 轮询 PluginStorage 共享键观察；派发失败（基座离线/忙/配置缺失）返回
     // null，调用方落回本地循环——行为与旧版完全一致。
-    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, turnChatId, historyMessages, previousTodos, previousLoopHistory }) {
+    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, turnChatId, historyMessages, previousTodos, previousLoopHistory, attachmentCtx = '' }) {
       try {
         const providerId = String(model?.providerId || '').trim()
         const modelId = String(model?.modelId || model?.id || '').trim()
@@ -6406,6 +6406,7 @@ export default {
             apiUrl: cfg.apiUrl
           },
           selectionCtx: this.buildMcpSelectionCtx(),
+          attachmentCtx: String(attachmentCtx || ''),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
           kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,
           historyMessages,
@@ -6789,6 +6790,15 @@ export default {
       // ── 远程回合优先（AI助手对话跟随文档）────────────────────────
       // 派发成功 → 轮询共享键观察（切文档重挂载不中断）；失败 → 落回下方
       // 本地循环（原地生成，行为与旧版一致）
+      // 附件上下文：MCP 管线此前不带任何附件信息（模型只知当前文档，遇到「附件N」
+      // 类问题会反问用户）。此时 composer 附件已被 prepareOutgoingMessages 清空，
+      // 必须用快照；文本类附件的 content 已在发送前提取好。
+      const mcpAttSnapshot = (Array.isArray(prepared?.attachmentsSnapshot) && prepared.attachmentsSnapshot.length)
+        ? prepared.attachmentsSnapshot
+        : (Array.isArray(this.attachments) ? this.attachments : [])
+      const mcpAttachmentCtx = mcpAttSnapshot.length
+        ? this.buildAttachmentContext(text, mcpAttSnapshot).attachmentPrompt
+        : ''
       const remoteTurnId = await this.tryDispatchRemoteMcpTurn({
         text,
         model,
@@ -6796,7 +6806,8 @@ export default {
         turnChatId,
         historyMessages,
         previousTodos,
-        previousLoopHistory
+        previousLoopHistory,
+        attachmentCtx: mcpAttachmentCtx
       })
       if (remoteTurnId) {
         await this.waitForRemoteMcpTurn({ turnId: remoteTurnId, assistantMsg, ctrl, turnChatId })
@@ -6807,6 +6818,7 @@ export default {
         const result = await runMcpChatOrchestrator({
           userText: text,
           model,
+          attachmentCtx: mcpAttachmentCtx,
           selectionCtx: this.buildMcpSelectionCtx(),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
           kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,

@@ -40,9 +40,12 @@ function clampBudgetTokens(v) {
 
 /** 路径命中当前宿主「已打开且未保存」的文档 → 补警示 note */
 function noteUnsavedIfOpen(path) {
+  // 两侧统一按 / 归一再比对：Windows FullName 用 \，macOS 用 /——单侧归一
+  // 会让另一侧永不相等（警示静默失效）
+  const canon = (s) => String(s || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
   try {
     const app = window.Application
-    const p = String(path || '').replace(/\//g, '\\').toLowerCase()
+    const p = canon(path)
     const collections = []
     if (app?.Documents?.Count) collections.push(app.Documents)
     if (app?.Workbooks?.Count) collections.push(app.Workbooks)
@@ -50,7 +53,7 @@ function noteUnsavedIfOpen(path) {
     for (const col of collections) {
       for (let i = 1; i <= col.Count; i++) {
         const doc = col.Item(i)
-        const full = String(doc?.FullName || '').toLowerCase()
+        const full = canon(doc?.FullName)
         if (full && full === p) {
           const saved = (() => { try { return doc.Saved === true } catch (_) { return true } })()
           if (!saved) return '注意：该文件正在 WPS 中打开且有未保存修改，本次读取的是磁盘上的旧版本。'
@@ -106,9 +109,11 @@ function buildDigest(text, outline, charsBudget, includeOutline) {
   return { text: assembled, truncated: true }
 }
 
-/** 多文件预算分配：weight = charCount^0.7，保底 500 tokens */
+/** 多文件预算分配：weight = charCount^0.7，保底 500 tokens。
+ *  空 text 的 ok 文件也参与分配：0 ≤ 保底预算 → 走全文直出分支返回空串，
+ *  否则 0 <= undefined 为 false 会误落 digest 分支产出「开头/结尾」壳摘要。 */
 function allocateBudgets(entries, budgetTokens) {
-  const parsed = entries.filter(e => e.ok && e.fullText)
+  const parsed = entries.filter(e => e.ok)
   if (!parsed.length) return
   const weights = new Map()
   let total = 0
@@ -193,6 +198,7 @@ export async function handleFileParse(params) {
   allocateBudgets(entries, budgetTokens)
   const outFiles = []
   let consumed = 0
+  let rangeApplied = false
   for (const e of entries) {
     if (!e.ok) {
       outFiles.push({ path: e.path, name: e.name, ext: e.ext, sizeBytes: e.sizeBytes, ok: false, error: e.error, code: e.code, convertTo: e.convertTo })
@@ -220,8 +226,9 @@ export async function handleFileParse(params) {
       fileOut.recommendedMode = 'chunk'
     } else {
       // auto
-      if (params && typeof params.rangeStart === 'number') {
-        // 随机访问：单文件意义最明确，多文件时作用于首个解析成功的文件
+      if (params && typeof params.rangeStart === 'number' && !rangeApplied) {
+        // 随机访问：单文件意义最明确，多文件时只作用于首个解析成功的文件
+        rangeApplied = true
         const start = Math.max(0, Math.floor(Number(params.rangeStart) || 0))
         const end = typeof params.rangeEnd === 'number'
           ? Math.min(e.fullText.length, Math.max(start, Math.floor(Number(params.rangeEnd) || 0)))

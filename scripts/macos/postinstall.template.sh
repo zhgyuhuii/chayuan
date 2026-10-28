@@ -137,6 +137,43 @@ PYI
 	fi
 }
 
+# 安装前先停 agent 服务（sidecar）。LaunchAgent 是 KeepAlive=true：不先 unload 直接
+# kill 会立刻复活；不杀的后果是旧进程占着 62588 用旧代码继续服务，Phase 2 的新启动
+# 静默失败——用户拿到「装完还是旧版」的网关（2026-10-28 真机：旧 sidecar 从 09:23
+# 一路活过 10:26 整个安装过程）。
+stop_agent_service() {
+	local plist="$USER_HOME/Library/LaunchAgents/com.chayuan.mcp.plist"
+	local uid
+	uid="$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null || true)"
+	if [[ -f "$plist" ]]; then
+		if [[ -n "$uid" ]]; then
+			/bin/launchctl bootout "gui/$uid/com.chayuan.mcp" 2>/dev/null || true
+		fi
+		/bin/launchctl unload "$plist" 2>/dev/null || true
+		echo "Chayuan WPS: LaunchAgent com.chayuan.mcp unloaded"
+	fi
+	local pat
+	for pat in "chayuan-mcp-macos" "chayuan-mcp-linux" "mcp-sidecar/server.mjs" "chayuan-mcp-watch"; do
+		if /usr/bin/pgrep -f "$pat" >/dev/null 2>&1; then
+			/usr/bin/pkill -f "$pat" 2>/dev/null || true
+			echo "Chayuan WPS: killed running agent process (match: $pat)"
+		fi
+	done
+	# 端口兜底：启动命令五花八门（dev 态 node / 二进制绝对路径），进程名未必落在上面模式里
+	local lsof_bin="/usr/sbin/lsof"
+	[[ -x "$lsof_bin" ]] || lsof_bin="$(/usr/bin/command -v lsof || true)"
+	if [[ -n "$lsof_bin" ]] && "$lsof_bin" -ti tcp:62588 >/dev/null 2>&1; then
+		"$lsof_bin" -ti tcp:62588 | /usr/bin/xargs kill 2>/dev/null || true
+		echo "Chayuan WPS: killed process holding port 62588"
+		local i=0
+		while "$lsof_bin" -ti tcp:62588 >/dev/null 2>&1 && [[ $i -lt 10 ]]; do
+			/bin/sleep 1
+			i=$((i + 1))
+		done
+	fi
+	return 0
+}
+
 CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
 if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" ]]; then
 	CONSOLE_USER="${SUDO_USER:-}"
@@ -150,6 +187,9 @@ USER_HOME="$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/de
 if [[ -z "$USER_HOME" || ! -d "$USER_HOME" ]]; then
 	USER_HOME="/Users/$CONSOLE_USER"
 fi
+
+# 先停 agent 服务再动文件（LaunchAgent unload → 杀进程 → 端口兜底，见函数注释）
+stop_agent_service
 
 # Robust copy: ditto preferred; retry on EINTR / transient sandbox locks (WPS open).
 copy_tree() {
@@ -227,13 +267,28 @@ install_all_one() {
 }
 
 INSTALLED=0
+CONTAINER_OK=0
 # Sandboxed WPS for Mac (common)
 if install_all_one "$USER_HOME/Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons"; then
 	INSTALLED=1
+	CONTAINER_OK=1
 fi
 # Non-sandbox / older layouts (best-effort)
 if install_all_one "$USER_HOME/Library/Application Support/Kingsoft/wps/jsaddons"; then
 	INSTALLED=1
+fi
+
+# 沙盒版 WPS 只读容器 jsaddons：容器失败而非容器成功 = 假成功（WPS 仍加载旧版），
+# 不能被 INSTALLED=1 掩盖。2026-10-28 真机：macOS 收紧 TCC 后 Installer 无完全磁盘
+# 访问权限，容器内 ditto/读注册表全部 EPERM，仅非容器落盘，用户毫无感知。
+if [[ "$CONTAINER_OK" -eq 0 ]]; then
+	echo "*******************************************************************" >&2
+	echo "Chayuan WPS: 容器 jsaddons 安装失败（Operation not permitted）！" >&2
+	echo "  沙盒版 WPS 只从容器路径加载插件，本次安装对 WPS 无效（仍会加载旧版）。" >&2
+	echo "  修复任选其一：" >&2
+	echo "  ① 系统设置 → 隐私与安全性 → 完全磁盘访问权限 → 勾选「安装器」，重跑本安装包" >&2
+	echo "  ② 在有完全磁盘访问权限的终端执行：bash 仓库/scripts/repair-mac-jsaddons-container.sh" >&2
+	echo "*******************************************************************" >&2
 fi
 
 if [[ "$INSTALLED" -eq 0 ]]; then
@@ -263,6 +318,20 @@ if [[ -d "$MCP_SRC" ]]; then
 				|| true
 		fi
 		echo "Chayuan WPS: MCP sidecar staged at $MCP_HOME/runtime (URL http://127.0.0.1:62588/mcp)"
+		# 启动确认：等 healthz 就绪（≤10s）——把「新网关到底起没起来」写进安装日志，
+		# 不再静默（此前旧的占端口时这里毫无痕迹）
+		HI=0
+		while [[ $HI -lt 10 ]]; do
+			if /usr/bin/curl -sm 2 http://127.0.0.1:62588/healthz 2>/dev/null | /usr/bin/grep -q '"ok":true'; then
+				echo "Chayuan WPS: MCP sidecar is up (healthz ok)"
+				break
+			fi
+			/bin/sleep 1
+			HI=$((HI + 1))
+		done
+		if [[ $HI -ge 10 ]]; then
+			echo "Chayuan WPS: MCP sidecar not ready within 10s (LaunchAgent KeepAlive 会再拉起；若仍异常查 $MCP_HOME/launchd.err.log)" >&2
+		fi
 	else
 		echo "Chayuan WPS: MCP sidecar staging failed (non-fatal)" >&2
 	fi

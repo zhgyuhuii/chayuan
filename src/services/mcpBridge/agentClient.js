@@ -310,7 +310,11 @@ const JOB_TIMEOUT_BY_METHOD = {
   'declassify.apply': 300_000,
   'declassify.restore': 120_000,
   'assistants.search': 120_000,
-  'assistants.get': 180_000
+  'assistants.get': 180_000,
+  // 与 sidecar 的 callAgent 超时对齐（file.parse 300s / file.convert 180s）：
+  // 落进默认 55s 会让大 PDF 解析、旧版 doc/ppt 转换必然超时
+  'file.parse': 300_000,
+  'file.convert': 180_000
 }
 function timeoutForJob(method) {
   // 表格/演示宿主工具：导出/批量写放宽（批量逐格降级可达秒级 × 多批）

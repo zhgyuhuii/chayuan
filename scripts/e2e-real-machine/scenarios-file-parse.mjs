@@ -42,7 +42,9 @@ export const SCENARIOS = [
     prompt: `请用 file_parse 读取文件 ${MD_FIXTURE}（mode 用默认 auto），告诉我第一级标题是什么、共多少节。只读取分析，不要写任何文档。`,
     timeout: 240,
     verify: async ({ tool }) => {
-      const r = await fp(tool, { paths: MD_FIXTURE })
+      // 显式大预算：fixture 约 1.3 万 tokens，默认预算 6000 会走 digest 分支
+      // （truncated:true）——「预算内全文直出」语义必须给定预算才有确定性
+      const r = await fp(tool, { paths: MD_FIXTURE, budgetTokens: 20000 })
       const f = r?.files?.[0]
       const okAll = r?.ok === true && f?.ok === true && f?.kind === 'markdown'
         && String(f?.text || '').includes(MARKER_HEAD)

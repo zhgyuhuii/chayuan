@@ -242,6 +242,7 @@ function runDetachedTurn(params = {}) {
         userText: String(params.userText || ''),
         model,
         selectionCtx: params.selectionCtx || null,
+        attachmentCtx: String(params.attachmentCtx || ''),
         kbBound: !!params.kbBound,
         kbBinding: turnKbBinding,
         historyMessages: Array.isArray(params.historyMessages) ? params.historyMessages : [],

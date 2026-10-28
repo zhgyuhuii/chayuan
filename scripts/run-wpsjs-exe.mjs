@@ -141,7 +141,9 @@ rem cannot match -- kill by command line (wmic on Win7/10, PowerShell elsewhere)
 wmic process where "name='node.exe' and commandline like '%%chayuan-wps%%'" call terminate >> "%LOG%" 2>&1
 powershell -NoProfile -Command "Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*chayuan-wps*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >> "%LOG%" 2>&1
 ping -n 2 127.0.0.1 >nul
-tasklist /FI "IMAGENAME eq ${SIDECAR_EXE_NAME}" 2>nul | find /I "${SIDECAR_EXE_NAME}" >nul
+rem find string must stay <=25 chars: tasklist's piped IMAGENAME column truncates
+rem longer names, and a never-matching find makes the retry loop below dead code
+tasklist /FI "IMAGENAME eq ${SIDECAR_EXE_NAME}" 2>nul | find /I "${SIDECAR_EXE_NAME.replace(/\.exe$/i, '')}" >nul
 if not errorlevel 1 (
   set /a KILL_TRIES+=1
   if !KILL_TRIES! lss 3 goto :kill_sidecar

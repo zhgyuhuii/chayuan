@@ -9,8 +9,9 @@
 
 import { readSidecarToken } from './webviewFsProbe.js'
 import { syncTokenFromSidecar } from './agentClient.js'
+import { MCP_BASE_URL } from './config.js'
 
-const SIDECAR_BASE = 'http://127.0.0.1:62588'
+const SIDECAR_BASE = MCP_BASE_URL
 let _cachedToken = null
 
 function token() {
@@ -52,7 +53,7 @@ export function registerAttachmentPath(entry) {
     try {
       const tk = await ensureToken()
       if (!tk || !entry?.path) return
-      await fetch(`${SIDECAR_BASE}/attachments/register`, {
+      const res = await fetch(`${SIDECAR_BASE}/attachments/register`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-Chayuan-Token': tk },
         body: JSON.stringify({
@@ -63,6 +64,7 @@ export function registerAttachmentPath(entry) {
           scopeKey: String(entry.scopeKey || '').slice(0, 120)
         })
       })
+      if (!res?.ok) throw new Error(`register http ${res?.status}`)
     } catch (_) { /* 注册失败不影响发送主流程 */ }
   })()
 }

@@ -330,12 +330,22 @@ export function createAgentHub({ logger } = {}) {
   // 队列熔断：同一目标的待派 job 积压超过阈值 = 执行侧已 wedge（典型：webview
   // 派发队列被挂死 handler 堵住，每个 job 都要吃满超时）。快速失败保护调用方，
   // 不再无限堆 300s 等待；执行侧恢复（看门狗放行/agent 重注册）后自然疏通。
+  // 计数必须按 job.target 匹配——job 没有 addonType/windowId，套用 matchesTarget
+  // 会让 et/wpp 恒计 0（永不熔断）、wps/any 被所有宿主的积压误杀
   const QUEUE_SATURATION_LIMIT = 16
+
+  function jobMatchesTarget(jobTarget, want) {
+    const a = String(jobTarget || 'any')
+    const b = String(want || 'any')
+    if (a.startsWith('ribbon:') || b.startsWith('ribbon:')) return a === b
+    if (a === 'any' || b === 'any') return true
+    return a === b
+  }
 
   function callAgent(method, params = {}, { timeoutMs = 120_000, target } = {}) {
     pruneStale()
     const resolvedTarget = target !== undefined ? normalizeTarget(target) : targetForMethod(method, params)
-    const queuedForTarget = pendingJobs.filter(j => matchesTarget(j, resolvedTarget)).length
+    const queuedForTarget = pendingJobs.filter(j => jobMatchesTarget(j.target, resolvedTarget)).length
     if (queuedForTarget >= QUEUE_SATURATION_LIMIT) {
       try { logger?.({ ev: 'job_reject_saturated', method, target: resolvedTarget, queued: queuedForTarget }) } catch { /* ignore */ }
       return Promise.reject(Object.assign(

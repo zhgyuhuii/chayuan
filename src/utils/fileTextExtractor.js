@@ -466,7 +466,15 @@ export async function extractFileText(input) {
   const name = String(input?.name || input?.path || '')
   const ext = extensionOf(name)
   let bytes = input?.bytes
-  if (!bytes && input?.path) bytes = readLocalFileBytes(input.path)
+  if (!bytes && input?.path) {
+    // 读取失败必须走 {ok:false} 降级而不是抛出——批量解析里一个不可读文件
+    // （被占用/中途删除/无文件系统）不能拖死整批
+    try {
+      bytes = readLocalFileBytes(input.path)
+    } catch (e) {
+      return { ok: false, error: `本地文件不可读：${e?.message || e}`, code: e?.code || 'PATH_UNREADABLE' }
+    }
+  }
   if (!bytes) {
     return { ok: false, error: '缺少文件字节或路径', code: 'INVALID_INPUT' }
   }

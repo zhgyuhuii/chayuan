@@ -196,6 +196,7 @@ function makeError(code, message) {
 let owner = null
 const queue = [] // 尚未轮到的等待者 { label, cancelled, handle }
 const subscribers = new Set()
+let lockSeq = 0
 
 function snapshot() {
   return {
@@ -224,17 +225,25 @@ export function getLockState() {
 
 /**
  * 强制释放写锁（僵尸 job 自愈专用）：看门狗放弃等待一个永不 settle 的写 handler
- * 时调用。若 fn 日后迟到 settle，其 finally 里的 owner=null / 基线滚动为幂等空转。
- * 队列中的等待者按原语义继续（下一个写者拿锁时会有 OCC 基线校验兜底）。
- * @param {string} label - 持锁者标识（dispatch 传 method）
+ * 时调用。除清掉 owner 外，还必须把挂死者所在的链节跳过去——写 FIFO 靠 promise
+ * 链（writeTail）推进而不是 owner 标志，只清旗标的话后续写者仍被链门挡死。
+ * 做法：链节用「可外部 settle 的链门」包装 run()，这里 reject 链门即让链继续
+ * 流转；挂死 fn 日后迟到 settle 时，结果进入已 settle 的链门（幂等丢弃），其
+ * finally 因 owner 身份不符而空转（不清旗标、不滚基线，见 run 内注释）。
+ * 按 lockId 严格匹配：挂死的可能只是锁队列里的等待者（持锁者是同 method 的
+ * 另一个健康 job），按 label 匹配会误杀健康持锁者。
+ * @param {string} lockId - withDocumentWriteLock 返回的 handle.id
  * @returns {boolean} 是否确实释放了一个持锁者
  */
-export function forceReleaseLock(label) {
-  const want = String(label || '')
-  if (!owner || (want && owner.label !== want)) return false
+export function forceReleaseLock(lockId) {
+  const want = String(lockId || '')
+  if (!owner || !want || owner.id !== want) return false
   const stuck = owner
   owner = null
-  try { console.warn(`[documentWriteLock] force-release stuck owner label=${stuck.label}`) } catch { /* ignore */ }
+  try {
+    stuck.linkSettle?.reject(makeError('DOC_WRITE_LOCK_FORCED_RELEASE', '写 handler 挂死已被强制放行，本节写链路已跳过。'))
+  } catch { /* ignore */ }
+  try { console.warn(`[documentWriteLock] force-release stuck owner label=${stuck.label} id=${stuck.id}`) } catch { /* ignore */ }
   notifySubscribers()
   return true
 }
@@ -248,6 +257,7 @@ export function forceReleaseLock(label) {
  */
 export function withDocumentWriteLock(opts = {}, fn) {
   const label = String(opts.label || 'document-write')
+  const lockId = `wl-${++lockSeq}`
   const expectDocId = opts.expectDocId !== undefined ? opts.expectDocId : getActiveDocId()
   const baselineToken = String(opts.baselineToken || ANON_TOKEN)
   const waiter = { label, cancelled: false, handle: null, rejectEarly: null }
@@ -287,35 +297,54 @@ export function withDocumentWriteLock(opts = {}, fn) {
     if (!verdict.ok) {
       throw makeError('DOCUMENT_MODIFIED_SINCE_BASELINE', `写回前校验失败：${verdict.reason}。请重新读取文档内容后重试，或改用带备份的写回方式。`)
     }
-    owner = { label }
+    const myToken = { label, id: lockId, linkSettle: waiter.linkSettle }
+    owner = myToken
     notifySubscribers()
     try {
       return await fn()
     } finally {
-      // 写后沉淀：部分写操作（典型=分页符 break.insert）返回时 WPS 对文档结构的
-      // 二次更新（段落计数/全文 Text）尚未完成，立即取指纹会把「未沉淀态」存成
-      // 基线，随后真实指纹漂移 → 本 token 的所有后续写全部撞
-      // DOCUMENT_MODIFIED_SINCE_BASELINE（2026-09-17 实测：首个 break.insert ok、
-      // 之后同回合写永久被拦直至回合轮次烧尽）。持锁静置 300ms 等 WPS 沉淀后再
-      // 采样滚动，把基线钉在稳定态。
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 300))
-      } catch { /* ignore */ }
-      owner = null
-      // 回合基线不能因写后沉淀期间切换文档而重新绑定到另一篇文档。
-      const rollDocId = getActiveDocId()
-      if (baselineToken === ANON_TOKEN || rollDocId === nowDocId) {
-        const rollFp = getDocumentFingerprint()
-        baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
-        if (baselineToken !== ANON_TOKEN) {
-          baselines.set(ANON_TOKEN, { docId: rollDocId, fp: rollFp })
+      if (owner === myToken) {
+        // 写后沉淀：部分写操作（典型=分页符 break.insert）返回时 WPS 对文档结构的
+        // 二次更新（段落计数/全文 Text）尚未完成，立即取指纹会把「未沉淀态」存成
+        // 基线，随后真实指纹漂移 → 本 token 的所有后续写全部撞
+        // DOCUMENT_MODIFIED_SINCE_BASELINE（2026-09-17 实测：首个 break.insert ok、
+        // 之后同回合写永久被拦直至回合轮次烧尽）。持锁静置 300ms 等 WPS 沉淀后再
+        // 采样滚动，把基线钉在稳定态。
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        } catch { /* ignore */ }
+        owner = null
+        // 回合基线不能因写后沉淀期间切换文档而重新绑定到另一篇文档。
+        const rollDocId = getActiveDocId()
+        if (baselineToken === ANON_TOKEN || rollDocId === nowDocId) {
+          const rollFp = getDocumentFingerprint()
+          baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
+          if (baselineToken !== ANON_TOKEN) {
+            baselines.set(ANON_TOKEN, { docId: rollDocId, fp: rollFp })
+          }
         }
+        notifySubscribers()
       }
-      notifySubscribers()
+      // owner !== myToken：已被 forceReleaseLock 强制放行，本次为迟到 settle——
+      // 幂等空转。不能清 owner（会误伤强放后新上岗的持锁者）、不能滚基线
+      // （会把并发写者的 OCC 校验洗白），也不能从这里 return（finally 里
+      // return 会吞掉 fn 的异常，直接落空即可）
     }
   }
 
-  const chained = writeTail.then(run, run)
+  // 链门包装：run 的完成 promise 可被 forceReleaseLock 外部 settle——挂死的
+  // handler 永不 settle 时，看门狗 reject 链门即可让 writeTail 继续流转，
+  // 后续写者不再被堵死在这节链路上
+  const chained = writeTail.then(
+    () => new Promise((resolve, reject) => {
+      waiter.linkSettle = { resolve, reject }
+      run().then(resolve, reject)
+    }),
+    () => new Promise((resolve, reject) => {
+      waiter.linkSettle = { resolve, reject }
+      run().then(resolve, reject)
+    })
+  )
   writeTail = chained.catch(() => { /* 链继续，跳过失败者 */ })
   const result = new Promise((resolve, reject) => {
     waiter.rejectEarly = reject
@@ -325,7 +354,8 @@ export function withDocumentWriteLock(opts = {}, fn) {
   notifySubscribers()
   return {
     promise: result,
-    cancel: waiter.handle.cancel
+    cancel: waiter.handle.cancel,
+    id: lockId
   }
 }
 

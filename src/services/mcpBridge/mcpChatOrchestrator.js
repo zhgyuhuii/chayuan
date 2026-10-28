@@ -136,7 +136,7 @@ function collectActiveDocumentContext(host) {
   }
 }
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null }) {
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null, attachmentCtx = '' }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
@@ -229,6 +229,10 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
       : '',
     sel.fileName ? `当前文件：${sel.fileName}` : '',
     kbBound ? '用户已绑定知识库：需要事实依据时先 chayuan__kb_retrieve。' : '',
+    // 附件上下文（此前 MCP 管线完全丢失附件信息：模型只知当前文档，会反问用户要附件）
+    attachmentCtx
+      ? `【用户本轮上传的附件】面板已收到以下附件并提取了正文，视为本任务的直接可用输入，禁止向用户索要附件或质疑其存在：\n${String(attachmentCtx).slice(0, 20000)}\n如需更完整的原文，调 chayuan__file_parse，paths 传「附件1」等附件别名（发送后 30 分钟内有效）。`
+      : '',
     proofreadIntent === 'fix' ? '本轮用户意图偏「改正正文」。' : '',
     proofreadIntent === 'check' ? '本轮用户意图偏「检查/批注」。' : ''
   ]
@@ -303,6 +307,7 @@ export async function runMcpChatOrchestrator({
   userText,
   model,
   selectionCtx = null,
+  attachmentCtx = '',
   kbBound = false,
   kbBinding = null,
   historyMessages = [],
@@ -435,7 +440,7 @@ export async function runMcpChatOrchestrator({
   const proofreadIntent = inferProofreadIntent(userText)
   const host = detectAddonType()
   const docCtx = collectActiveDocumentContext(host)
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx })
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx, attachmentCtx })
   const seed = seedHistoryFrom(historyMessages)
   let proofreadCard = null
 
@@ -574,7 +579,7 @@ export async function runMcpChatOrchestrator({
         '请继续调用工具完成上述剩余任务；已完成的部分不要重做，全部完成后按惯例总结交付。'
       ].join('\n')
       out = await runLoop(false, {
-        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx }),
+        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx }),
         restoreMessages: loopRef.messages,
         runText: continueText,
         phaseLabel: '续跑'
