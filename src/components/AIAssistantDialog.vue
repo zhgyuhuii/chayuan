@@ -4743,9 +4743,18 @@ export default {
       return this.chatHistory.find(c => c.id === this.currentChatId)
     },
     isTurnRunning() {
-      // 当前会话视角：聊天/MCP 回合按会话隔离，多 tab 并行互不阻塞
+      // 当前会话视角：聊天/MCP 回合按会话隔离，多 tab 并行互不阻塞。
+      // 文档类长任务（修订预览/整篇处理/文件生成）是全局单例、没有会话级回合
+      // 上下文，也必须点亮停止键——多会话拆分时丢了 isStreaming 的覆盖，执行中
+      // 发送键退回灰发送键，用户无从停止；stopActiveTurn 对这三个上下文本就可停。
       const chatId = this.currentChatId
-      return !!(this.activeMcpTurnContexts?.[chatId] || this.activeLegacyTurnContexts?.[chatId])
+      return !!(
+        this.activeMcpTurnContexts?.[chatId] ||
+        this.activeLegacyTurnContexts?.[chatId] ||
+        this.activeDocumentRevisionRunContext ||
+        this.activeDocumentAwareRunContext ||
+        this.activeGeneratedOutputRunContext
+      )
     },
     anyChatTurnRunning() {
       // 任意会话是否有回合在跑（数据源=回合上下文映射，不受 isStreaming 误清影响）
@@ -6641,16 +6650,21 @@ export default {
           })
           // 恢复观察也要登记回合上下文：回合确实还在执行侧跑着，busy 语义与首发
           // 一致（此前不登记，恢复期间窗口切换防线的判定比首发松）
+          // 恢复路径同样要接通停止键：给真 AbortController，waitForRemoteMcpTurn
+          // 的 abort 监听才会把取消键写进 PluginStorage、执行侧心跳消费后中止——
+          // 此前 ctrl/abortController 均为 null，恢复期间点停止只清了本地观察，
+          // 执行侧继续跑完并写回文档（「点了停止任务还在跑」）。
+          const resumeCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null
           if (!this.activeMcpTurnContexts[this.currentChatId]) {
             this.activeMcpTurnContexts[this.currentChatId] = {
               messageId: msg.id || '',
-              abortController: null,
+              abortController: resumeCtrl,
               cancelled: false,
               chatId: this.currentChatId,
               startedAt: Number(state.startedAt) || Date.now()
             }
           }
-          this.waitForRemoteMcpTurn({ turnId: pendingTurnId, assistantMsg: msg, ctrl: null, turnChatId: this.currentChatId })
+          this.waitForRemoteMcpTurn({ turnId: pendingTurnId, assistantMsg: msg, ctrl: resumeCtrl, turnChatId: this.currentChatId })
         } else {
           this.mergeRemoteTurnOutcome(msg, state, this.currentChatId)
         }
