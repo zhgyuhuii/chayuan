@@ -20,10 +20,13 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 	exit 1
 fi
 
-ARCH_RAW="$(uname -m)"
+# 跨架构打包：CHAYUAN_PKG_ARCH=x64 可在 arm64 机上出 x64 包（sidecar 二进制同步替换）
+ARCH_RAW="${CHAYUAN_PKG_ARCH:-$(uname -m)}"
+ARCH_RAW="${ARCH_RAW/aarch64/arm64}"
+ARCH_RAW="${ARCH_RAW/x86_64/x64}"
 case "$ARCH_RAW" in
 	arm64) ARCH_ID="arm64" ;;
-	x86_64) ARCH_ID="x64" ;;
+	x64) ARCH_ID="x64" ;;
 	*) ARCH_ID="$ARCH_RAW" ;;
 esac
 
@@ -43,6 +46,25 @@ rm -rf "$PKG_ROOT" "$SCRIPTS_DIR"
 PAYLOAD="$PKG_ROOT/Library/Application Support/ChayuanWPS"
 mkdir -p "$PAYLOAD"
 cp -R "$STAGING/"* "$PAYLOAD/"
+
+# 跨架构：staging 里是构建机架构的 sidecar 二进制，替换成目标架构的
+# （照 build-linux-deb.sh 同款模式；缺失时 pkg 仍产出，安装后回落 node server.mjs）
+HOST_ARCH="$(uname -m | sed 's/aarch64/arm64/; s/x86_64/x64/')"
+if [[ "$ARCH_ID" != "$HOST_ARCH" ]]; then
+	for addon in "$PAYLOAD"/chayuan_*; do
+		[[ -d "$addon" ]] || continue
+		bin_dir="$addon/mcp-sidecar/bin"
+		[[ -d "$bin_dir" ]] || continue
+		rm -f "$bin_dir"/chayuan-mcp-macos-*
+		if [[ -f "$ROOT/mcp-sidecar/bin/chayuan-mcp-macos-$ARCH_ID" ]]; then
+			cp "$ROOT/mcp-sidecar/bin/chayuan-mcp-macos-$ARCH_ID" "$bin_dir/"
+			chmod 0755 "$bin_dir/chayuan-mcp-macos-$ARCH_ID"
+			echo "Embedded sidecar binary: chayuan-mcp-macos-$ARCH_ID ($(basename "$addon"))"
+		else
+			echo "⚠ 缺 mcp-sidecar/bin/chayuan-mcp-macos-$ARCH_ID（先跑 npm run mcp:build-binary；安装后回落 node）" >&2
+		fi
+	done
+fi
 
 mkdir -p "$SCRIPTS_DIR"
 sed -e "s|__INSTALL_ROOT__|/Library/Application Support/ChayuanWPS|g" -e "s|__PKG_VERSION__|$VERSION|g" \
