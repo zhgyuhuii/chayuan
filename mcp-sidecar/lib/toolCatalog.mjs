@@ -1525,6 +1525,7 @@ const CORE_TOOLS = [
         historyMessages: { type: 'array' },
         previousTodos: { type: 'array' },
         loopHistory: { type: 'array' },
+        attachedSkills: { type: 'array', description: 'Attached skill snippets [{name,body}] (skill library, max 4 x 16KB)' },
         docId: { type: 'string' }
       }
     }

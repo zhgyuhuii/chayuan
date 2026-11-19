@@ -2300,6 +2300,19 @@
           <div v-if="attachments.length" class="composer-attachment-tip">
             点击附件标签插入“附件N”，右键插入“附件N（文件名）”。
           </div>
+          <!-- 已附加技能 chips（点击移除；仅本条消息携带，发送后清空） -->
+          <div v-if="selectedSkillNames.length" class="composer-skill-row">
+            <div
+              v-for="name in selectedSkillNames"
+              :key="name"
+              class="composer-skill-chip"
+              :title="skillDescOf(name)"
+              @click="removeSelectedSkill(name)"
+            >
+              <span class="composer-skill-chip-name">{{ name }}</span>
+              <span class="composer-skill-chip-x">×</span>
+            </div>
+          </div>
           <div class="input-row">
           <input
             ref="attachmentInputRef"
@@ -2508,6 +2521,51 @@
             </svg>
             <span v-if="currentChatKbBoundCount > 0" class="composer-tool-badge">{{ currentChatKbBoundCount }}</span>
           </button>
+          <!-- 附加技能：从技能库勾选，随本条消息注入（技能与通用指导冲突时技能赢） -->
+          <div class="skill-picker-wrap" ref="skillPickerRef">
+            <button
+              type="button"
+              class="composer-tool-btn"
+              :class="{ 'is-active': selectedSkillNames.length > 0 }"
+              :title="selectedSkillNames.length ? `已附加 ${selectedSkillNames.length} 个技能 · 点击编辑` : '附加技能'"
+              aria-label="附加技能"
+              @click="toggleSkillPicker"
+              @blur="onSkillPickerBlur"
+            >
+              <!-- 技能：闪电 -->
+              <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M13.2 3.5 6.6 13.1h4.2l-1.4 7.4 6.9-9.9h-4.3l1.2-7.1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+              </svg>
+              <span v-if="selectedSkillNames.length" class="composer-tool-badge">{{ selectedSkillNames.length }}</span>
+            </button>
+            <div v-if="skillPickerOpen" class="skill-picker-dropdown" @mousedown.prevent>
+              <input
+                v-model.trim="skillSearchText"
+                type="search"
+                class="skill-picker-search"
+                placeholder="搜索技能…"
+              >
+              <template v-if="filteredSkillGroups.length">
+                <div v-for="[cat, list] in filteredSkillGroups" :key="cat" class="skill-picker-group">
+                  <div class="skill-picker-group-label">{{ skillCategoryLabel(cat) }}</div>
+                  <label v-for="s in list" :key="s.name" class="skill-picker-row" :title="s.description">
+                    <input
+                      type="checkbox"
+                      :checked="selectedSkillNames.includes(s.name)"
+                      @change="toggleSelectedSkill(s.name)"
+                    >
+                    <span class="skill-picker-row-name">{{ s.name }}</span>
+                    <span class="skill-picker-row-desc">{{ s.description }}</span>
+                  </label>
+                </div>
+              </template>
+              <div v-else class="skill-picker-empty">没有匹配的技能；可在「设置 → 技能设置」启用或导入。</div>
+              <div class="skill-picker-foot">
+                <span class="skill-picker-count">{{ selectedSkillNames.length }}/{{ maxAttachedSkills }}</span>
+                <button type="button" class="mcp-dropdown-link" @click="clearSelectedSkills">清空</button>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
             class="composer-tool-btn"
@@ -2950,6 +3008,15 @@ import {
   applyProofreadTextFixes,
   runMcpChatOrchestrator
 } from '../services/mcpBridge/mcpChatOrchestrator.js'
+import {
+  listBuiltinSkills,
+  groupByCategory,
+  searchSkills,
+  buildAttachments,
+  CATEGORY_LABELS,
+  MAX_ATTACHED_SKILLS
+} from '../utils/skillLibrary.js'
+import { isSkillEnabled, listCustomSkills } from '../utils/skillSettings.js'
 import { startSidecarBestEffort } from '../services/mcpBridge/sidecarLauncher.js'
 import {
   getHostAssistantDisplayItems,
@@ -4419,6 +4486,12 @@ export default {
       // 任务清单漂浮卡的折叠状态：true=右上角圆点态（新回合默认收起），false=完整清单
       mcpTodoFloatCollapsed: true,
       mcpDropdownOpen: false,
+      // 附加技能（技能库收割）：面板内选择器状态。skillItems 打开下拉时从
+      // PluginStorage/内置库现取现用（跨 webview 启停状态不参与 Vue 响应式）
+      skillPickerOpen: false,
+      skillSearchText: '',
+      skillItems: [],
+      selectedSkillNames: [],
       mcpServerList: [],
       sidebarWidth: 300,
       sidebarCollapsed: false,
@@ -4552,6 +4625,13 @@ export default {
     }
   },
   computed: {
+    // 附加技能下拉：搜索过滤 + 按分类分组（skillItems 由打开下拉时现取现用）
+    filteredSkillGroups() {
+      return groupByCategory(searchSkills(this.skillItems, this.skillSearchText))
+    },
+    maxAttachedSkills() {
+      return MAX_ATTACHED_SKILLS
+    },
     // 当前窗口形态：浮窗 or 停靠方向。优先读 PluginStorage 记忆（停靠间互切
     // 快路径只改 DockPosition 不换 URL，路由里的 dock 参数会过期，不能作准）
     currentDockMode() {
@@ -6267,6 +6347,50 @@ export default {
     onMcpSelectBlur() {
       setTimeout(() => { this.mcpDropdownOpen = false }, 150)
     },
+    // ── 附加技能（技能库收割，2026-11）────────────────────────
+    // skillItems 每次打开下拉现取现用：设置页（独立 webview）的启停/导入写
+    // PluginStorage，不参与本 webview 的 Vue 响应式，缓存会出幻影技能
+    toggleSkillPicker() {
+      this.modelDropdownOpen = false
+      this.mcpDropdownOpen = false
+      this.skillPickerOpen = !this.skillPickerOpen
+      if (this.skillPickerOpen) this.refreshSkillItems()
+    },
+    onSkillPickerBlur() {
+      setTimeout(() => { this.skillPickerOpen = false }, 150)
+    },
+    refreshSkillItems() {
+      try {
+        const builtin = listBuiltinSkills().filter(s => isSkillEnabled(s.name))
+        const custom = listCustomSkills()
+        this.skillItems = [...builtin, ...custom]
+        // 启停/删除后可能残留失效勾选，顺手清掉
+        const names = new Set(this.skillItems.map(s => s.name))
+        this.selectedSkillNames = this.selectedSkillNames.filter(n => names.has(n))
+      } catch (_) {
+        this.skillItems = []
+      }
+    },
+    toggleSelectedSkill(name) {
+      if (this.selectedSkillNames.includes(name)) {
+        this.selectedSkillNames = this.selectedSkillNames.filter(n => n !== name)
+        return
+      }
+      if (this.selectedSkillNames.length >= MAX_ATTACHED_SKILLS) return
+      this.selectedSkillNames = [...this.selectedSkillNames, name]
+    },
+    removeSelectedSkill(name) {
+      this.selectedSkillNames = this.selectedSkillNames.filter(n => n !== name)
+    },
+    clearSelectedSkills() {
+      this.selectedSkillNames = []
+    },
+    skillCategoryLabel(key) {
+      return CATEGORY_LABELS[key] || CATEGORY_LABELS.other
+    },
+    skillDescOf(name) {
+      return String(this.skillItems.find(s => s.name === name)?.description || name)
+    },
     onMcpEnabledChange(enabled) {
       this.mcpEnabled = !!enabled
       saveMcpEnabled(this.mcpEnabled)
@@ -6383,7 +6507,7 @@ export default {
     // 必须跑在 ribbon 基座 webview（跨切换存活）。派发成功返回 turnId，面板
     // 轮询 PluginStorage 共享键观察；派发失败（基座离线/忙/配置缺失）返回
     // null，调用方落回本地循环——行为与旧版完全一致。
-    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, turnChatId, historyMessages, previousTodos, previousLoopHistory, attachmentCtx = '' }) {
+    async tryDispatchRemoteMcpTurn({ text, model, assistantMsg, turnChatId, historyMessages, previousTodos, previousLoopHistory, attachmentCtx = '', attachedSkills = [] }) {
       try {
         const providerId = String(model?.providerId || '').trim()
         const modelId = String(model?.modelId || model?.id || '').trim()
@@ -6411,7 +6535,8 @@ export default {
           kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,
           historyMessages,
           previousTodos,
-          loopHistory: previousLoopHistory
+          loopHistory: previousLoopHistory,
+          attachedSkills
         })
         const payload = result?.structuredContent || result
         if (payload?.ok && payload?.accepted) {
@@ -6799,6 +6924,14 @@ export default {
       const mcpAttachmentCtx = mcpAttSnapshot.length
         ? this.buildAttachmentContext(text, mcpAttSnapshot).attachmentPrompt
         : ''
+      // 附加技能快照：仅本条消息携带，发送即清空（追问不带——上游同语义）。
+      // buildAttachments 负责上限（≤4 个）与超长截断（单条 ≤16KB）。
+      const mcpAttachedSkills = buildAttachments(
+        (this.selectedSkillNames || [])
+          .map(name => this.skillItems.find(s => s.name === name))
+          .filter(Boolean)
+      )
+      this.selectedSkillNames = []
       const remoteTurnId = await this.tryDispatchRemoteMcpTurn({
         text,
         model,
@@ -6807,7 +6940,8 @@ export default {
         historyMessages,
         previousTodos,
         previousLoopHistory,
-        attachmentCtx: mcpAttachmentCtx
+        attachmentCtx: mcpAttachmentCtx,
+        attachedSkills: mcpAttachedSkills
       })
       if (remoteTurnId) {
         await this.waitForRemoteMcpTurn({ turnId: remoteTurnId, assistantMsg, ctrl, turnChatId })
@@ -6819,6 +6953,7 @@ export default {
           userText: text,
           model,
           attachmentCtx: mcpAttachmentCtx,
+          attachedSkills: mcpAttachedSkills,
           selectionCtx: this.buildMcpSelectionCtx(),
           kbBound: this.currentChatKbBinding.kbNames.length > 0,
           kbBinding: this.currentChatKbBinding.kbNames.length ? this.currentChatKbBinding : null,
@@ -21951,6 +22086,126 @@ export default {
   justify-content: center;
   box-shadow: 0 0 0 1.5px #fff;
   pointer-events: none;
+}
+/* ── 附加技能（技能库收割）：选择器下拉 + 已选 chips ── */
+.skill-picker-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.skill-picker-dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+  z-index: 60;
+}
+.skill-picker-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  outline: none;
+  margin-bottom: 6px;
+}
+.skill-picker-search:focus {
+  border-color: #6366f1;
+}
+.skill-picker-group + .skill-picker-group {
+  margin-top: 4px;
+}
+.skill-picker-group-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #8a8f99;
+  padding: 4px 6px 2px;
+}
+.skill-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.skill-picker-row:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+.skill-picker-row input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.skill-picker-row-name {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2430;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.skill-picker-row-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: #5f6673;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.skill-picker-empty {
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 11.5px;
+  color: #8a8f99;
+  line-height: 1.6;
+}
+.skill-picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 2px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  margin-top: 6px;
+}
+.skill-picker-count {
+  font-size: 11px;
+  color: #8a8f99;
+}
+.composer-skill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+.composer-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 220px;
+}
+.composer-skill-chip-name {
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-skill-chip-x {
+  flex: 0 0 auto;
+  opacity: 0.7;
 }
 .composer-tool-dot {
   position: absolute;

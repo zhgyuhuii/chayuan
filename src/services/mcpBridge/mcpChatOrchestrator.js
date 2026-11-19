@@ -7,7 +7,7 @@
  * （入参/结果对象/steps 进度流/AbortError 取消语义），UI 无感。
  * 领域语义（写确认闸门、proofread 进度与卡片）在 agentCoreSkill.js。
  */
-import { AgentLoop } from '../../agent-core/index'
+import { AgentLoop, withAttachedSkills } from '../../agent-core/index'
 import {
   CHAYUAN_SERVER_ID,
   getEnabledMcpServers,
@@ -59,12 +59,13 @@ function listUpstreamToolsCached(serverId, { signal } = {}) {
   })
 }
 
-// 模型对 tools 参数报错的特征（与旧编排器同一正则；命中后整轮重跑 JSON 兼容协议）
+// 模型对 tools 参数报错的特征（2026-11 同步上游 agent-core 后随降级模式一同退役：
+// 不再整轮重跑 JSON 兼容协议，命中即在 localizeLoopError 转为引导文案）
 const TOOLS_UNSUPPORTED_RE = /tool|tools|function call|不支持/i
 
 // agent-core 循环守卫的终态错误前缀（localizeLoopError 同一清单）。这些错误文本
-// 恰好都含 "tool"，若按正则判定会误认为「模型不支持 tools」而整轮降级重跑——
-// 一次 Agent 离线故障会烧掉 2×16 轮模型调用（PR6/H4）。
+// 恰好都含 "tool"，若按正则判定会误认为「模型不支持 tools」——一次 Agent 离线
+// 故障会被误报成模型不支持工具调用（PR6/H4 沿革）。
 const LOOP_GUARD_ERROR_PREFIXES = [
   'Tool input was unusable',
   'Every tool call failed',
@@ -77,6 +78,9 @@ function isToolsUnsupportedError(message) {
   if (LOOP_GUARD_ERROR_PREFIXES.some(p => s.startsWith(p))) return false
   return TOOLS_UNSUPPORTED_RE.test(s)
 }
+
+/** 模型不支持 tools 协议时的用户引导文案（不再降级重跑，见 2026-11 同步说明） */
+const TOOLS_UNSUPPORTED_GUIDANCE = '当前模型不支持工具调用（Function Calling），AI 助手无法执行文档操作；请在「设置 → 模型设置」中更换支持工具调用的模型。'
 
 /**
  * 活动文档上下文采集（I4 上下文注入，治"文档1/文档2 对话输出一样"）：
@@ -136,7 +140,7 @@ function collectActiveDocumentContext(host) {
   }
 }
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null, attachmentCtx = '' }) {
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null, attachmentCtx = '', attachedSkillCount = 0 }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
@@ -234,7 +238,17 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
       ? `【用户本轮上传的附件】面板已收到以下附件并提取了正文，视为本任务的直接可用输入，禁止向用户索要附件或质疑其存在：\n${String(attachmentCtx).slice(0, 20000)}\n如需更完整的原文，调 chayuan__file_parse，paths 传「附件1」等附件别名（发送后 30 分钟内有效）。`
       : '',
     proofreadIntent === 'fix' ? '本轮用户意图偏「改正正文」。' : '',
-    proofreadIntent === 'check' ? '本轮用户意图偏「检查/批注」。' : ''
+    proofreadIntent === 'check' ? '本轮用户意图偏「检查/批注」。' : '',
+    // 附加技能（技能库收割）：技能正文是通用写法（收割自上游 GenOffice 推荐技能库），
+    // 指称到本环境实际工具的映射在此一次性说明，避免逐篇改写技能文本
+    attachedSkillCount > 0
+      ? `【附加技能指称映射】本轮用户附加了 ${attachedSkillCount} 个技能（见消息前部的 <skill> 块；技能与通用指导冲突时，以技能为准）。技能文本中的指称按此映射落地：
+- 「本环境可用的文档工具 / the document tools」→ chayuan__document_* / format_* / style / comment / revision 等域工具；「写回当前文档」即写当前活动文档。
+- 「本环境可用的表格工具 / the spreadsheet tools」→ chayuan__spreadsheet(action=…)；「工作簿」即当前工作簿。
+- 「本环境可用的演示工具 / the slide tools / presentation tools」→ chayuan__presentation(action=…)；「演示文稿」即当前演示文稿。
+- 「本环境可用的搜索工具 / the search tool」→ 本环境当前没有联网搜索工具：改为向用户索取资料（请用户粘贴网页内容，或上传文件后用 chayuan__file_parse 读取），按技能要求注明材料来源；无法核实的信息如实写「未能核实」，严禁编造来源。
+技能正文中的交付落稿要求同样受【仅当前${targetNoun}】纪律约束。`
+      : ''
   ]
   return lines.filter(Boolean).join('\n')
 }
@@ -261,6 +275,9 @@ function localizeLoopError(message) {
   }
   if (s.startsWith('The model kept repeating')) {
     return '模型连续重复相同操作且无进展，已停止；请换个说法或更换模型重试。'
+  }
+  if (isToolsUnsupportedError(s)) {
+    return TOOLS_UNSUPPORTED_GUIDANCE
   }
   return s
 }
@@ -315,6 +332,10 @@ export async function runMcpChatOrchestrator({
   writeBaselineToken = '',
   targetDocumentId,
   loopHistory = [],
+  // 附加技能（技能库收割，2026-11）：[{ name, body }]，调用方已按上限整形
+  // （≤4 个、单条正文 ≤16KB，见 src/utils/skillLibrary.js buildAttachments）。
+  // 仅该条消息携带（withAttachedSkills 包进驱动指令），追问不带——上游同语义。
+  attachedSkills = [],
   signal,
   onProgress,
   onTurnText,
@@ -440,7 +461,8 @@ export async function runMcpChatOrchestrator({
   const proofreadIntent = inferProofreadIntent(userText)
   const host = detectAddonType()
   const docCtx = collectActiveDocumentContext(host)
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx, attachmentCtx })
+  const attachedSkillCount = Array.isArray(attachedSkills) ? attachedSkills.filter(s => s && s.name && s.body).length : 0
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx, attachmentCtx, attachedSkillCount })
   const seed = seedHistoryFrom(historyMessages)
   let proofreadCard = null
 
@@ -483,8 +505,7 @@ export async function runMcpChatOrchestrator({
   // restoreMessages 直接恢复上一 loop 的完整历史、runText 换驱动指令、phaseLabel 标注
   // 进度步骤（「续跑」）。默认值 = 原始单轮行为。
   let loopRef = null
-  let lastRunDegraded = false
-  const runLoop = (forceDegraded, opts = {}) => new Promise((resolve) => {
+  const runLoop = (opts = {}) => new Promise((resolve) => {
     let onAbort = null
     const settle = (value) => {
       if (onAbort) signal?.removeEventListener?.('abort', onAbort)
@@ -538,8 +559,6 @@ export async function runMcpChatOrchestrator({
       captureSnapshot: captureDocSnapshot
     })
     loopRef = loop
-    lastRunDegraded = !!forceDegraded
-    if (forceDegraded) loop.degrade()
     if (Array.isArray(opts.restoreMessages) && opts.restoreMessages.length) {
       // 续跑：restore 上一个 loop 的完整历史（本回合读过的文档、工具结论全保留），
       // 不走 loopHistory/种子窗口兜底
@@ -551,25 +570,23 @@ export async function runMcpChatOrchestrator({
     }
     onAbort = () => loop.cancel()
     if (signal && !signal.aborted) signal.addEventListener('abort', onAbort, { once: true })
-    loop.run(String(opts.runText ?? userText))
+    // 附加技能：包成 <skill name="…"> 块拼在本条驱动指令前（技能与通用指导冲突时技能
+    // 赢，见 agent-core attached-skills.ts）。仅发起这条消息携带，续跑指令不重复注入。
+    const runInstruction = attachedSkillCount > 0 && !opts.skipAttachedSkills
+      ? withAttachedSkills(String(opts.runText ?? userText), attachedSkills)
+      : String(opts.runText ?? userText)
+    loop.run(runInstruction)
   })
 
-  let out = await runLoop(false)
-  // 模型不支持 tools 协议：与旧编排器一样，识别报错特征后立即切 JSON 兼容层整轮重跑。
-  // 守卫熔断错误（Every tool call failed… 等）被 isToolsUnsupportedError 排除——
-  // 那是执行层故障（如 Agent 离线），降级重跑只会再烧一轮轮次，不解决问题。
-  if (out.error && !signal?.aborted && isToolsUnsupportedError(out.error)) {
-    pushStep('模型可能不支持 tools，改用 JSON 兼容层')
-    out = await runLoop(true)
-  }
+  let out = await runLoop()
 
   // 自动续跑：整篇写作等重任务撞轮次上限、但 todo 清单仍有未完成项时，自动再跑一段
   // （仅一次，成本护栏）——把「请用户手动说继续」变成系统行为。续跑 loop restore 本
   // 回合完整历史（工具结论保留、过期的轮次上限便签由 restore 剥离），以未完成清单为
-  // 指令驱动；系统提示词按 pending 重建，激活「沿用清单」纪律。降级（JSON 协议）运行
-  // 的历史形态不同，不续跑；todo 为空说明模型没立清单，无从判断剩余项，也不续跑。
+  // 指令驱动；系统提示词按 pending 重建，激活「沿用清单」纪律。todo 为空说明模型没
+  // 立清单，无从判断剩余项，也不续跑。
   let continued = false
-  if (out.result?.turnLimit && !lastRunDegraded && !signal?.aborted) {
+  if (out.result?.turnLimit && !signal?.aborted) {
     const pending = todos.filter(t => t && t.status !== 'completed' && String(t.content || '').trim())
     if (pending.length && Array.isArray(loopRef?.messages) && loopRef.messages.length) {
       pushStep('轮次已达上限，仍有未完成任务，自动续跑', pending.map(t => t.content).join('；').slice(0, 160))
@@ -578,8 +595,8 @@ export async function runMcpChatOrchestrator({
         ...pending.map((t, i) => `${i + 1}. ${t.content}`),
         '请继续调用工具完成上述剩余任务；已完成的部分不要重做，全部完成后按惯例总结交付。'
       ].join('\n')
-      out = await runLoop(false, {
-        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx }),
+      out = await runLoop({
+        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx, attachedSkillCount }),
         restoreMessages: loopRef.messages,
         runText: continueText,
         phaseLabel: '续跑'

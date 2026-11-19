@@ -1,10 +1,10 @@
 import type { AgentSkill, ExecutedToolCall } from './skill'
+import { addTokenUsage } from './types'
 import type {
-  AgentAudio,
   AgentImage,
   AgentMessage,
-  AgentVideo,
   AgentStreamHandle,
+  AgentTokenUsage,
   AgentToolCall,
   AgentToolDef,
   AgentToolResult,
@@ -28,10 +28,10 @@ export interface AgentRunResult {
   cancelled: boolean
   /** true when maxTurns was reached; text is the partial answer from the no-tools finalizing turn */
   turnLimit: boolean
-  /** the run answered via the degraded JSON-text protocol (model without function calling) */
-  degraded?: boolean
   /** the final turn hit the token limit (stop_reason max_tokens): text is incomplete; set only when true */
   truncated?: boolean
+  /** tokens billed across all turns of the run; absent when the provider never reported usage */
+  usage?: AgentTokenUsage
 }
 
 export interface AgentLoopEvents<TSnapshot> {
@@ -42,6 +42,8 @@ export interface AgentLoopEvents<TSnapshot> {
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
   /** a turn requested tools and they ran; the loop is going back to the model */
   onTurnEnd?(): void
+  /** tokens the provider billed for the turn that just streamed (per model call, compaction summary turns included) */
+  onUsage?(usage: AgentTokenUsage): void
   onDone?(result: AgentRunResult): void
   onError?(error: string): void
 }
@@ -62,14 +64,17 @@ export interface AgentLoopOptions<TSnapshot = unknown> {
   events?: AgentLoopEvents<TSnapshot>
   /** hard cap on model round-trips per run (default DEFAULT_MAX_TURNS) */
   maxTurns?: number
-  /** history cap in messages, trimmed at user-turn boundaries (default 40) */
+  /** history cap in messages, trimmed at user-turn boundaries (default 200) */
   maxHistory?: number
   /** Context compaction; false disables it (enabled by default with default thresholds) */
   compaction?: CompactionOptions | false
   /** capture rollback state; invoked right before tools run (see snapshotBefore) */
   captureSnapshot?(): TSnapshot
-  /** wrap instruction + skill context into the user message text */
+  /** wrap instruction + skill context into the user message text; called again with
+   * CONTEXT_OMITTED_NOTE as the context when the next run folds the previous run's snapshot */
   formatUserMessage?(instruction: string, context: string): string
+  /** clock seam for tests (ms); defaults to Date.now */
+  now?(): number
   /** appended to the system prompt each turn (e.g. reply-language directive following the UI language) */
   systemSuffix?(): string
 }
@@ -86,6 +91,10 @@ const COMPACT_KEEP_RECENT_BYTES = 96 * 1024
 const SUMMARIZE_TOOL_OUTPUT_MAX = 2_000
 const SUMMARIZE_TIMEOUT_MS = 30_000
 /** When over budget mid-run, keep the last N tool messages verbatim and truncate earlier outputs to this length */
+/** Provider prompt caches expire after about five idle minutes: past that, rewriting history costs nothing */
+const CACHE_WARM_MS = 5 * 60 * 1000
+/** Stale context snapshots tolerated in a warm history before they are folded in one rewrite */
+const STALE_CONTEXT_MAX_BYTES = 48 * 1024
 const STALE_TOOL_KEEP_RECENT = 2
 const STALE_TOOL_OUTPUT_MAX = 1_000
 
@@ -328,6 +337,27 @@ export function coerceArgumentFields(
  */
 const MAX_IDENTICAL_TURNS = 3
 const MAX_ALL_ERROR_TURNS = 8
+/**
+ * Redundant-read guard. The identical-turn guard misses the common weak-model
+ * loop where every call differs slightly yet nothing moves: image_search with a
+ * new keyword each turn and "(no images)" every time, or re-reading an
+ * attachment slice already read. A non-mutating turn is redundant when a call
+ * repeats an earlier (tool, input) with the same output, or an earlier (tool,
+ * output) from a different input. The streak is nudged first, then aborted.
+ */
+const REDUNDANT_READ_NUDGE_TURNS = 4
+const MAX_REDUNDANT_READ_TURNS = 12
+/** identical (tool, input) calls allowed before the next one counts as redundant regardless of its output */
+const REPEATED_INPUT_FREE_CALLS = 2
+const REDUNDANT_READ_NOTE =
+  '[System] Recent tool calls re-read material already read, or returned the same result as an earlier call, without making progress. ' +
+  'Stop gathering: continue the task with what you already have, or tell the user what is missing.'
+
+function hashString(s: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return `${s.length}:${h >>> 0}`
+}
 
 /**
  * Backoff schedule for in-place same-turn retries on empty-stream errors.
@@ -412,65 +442,13 @@ const SUMMARIZE_SYSTEM =
 const COMPACT_SUMMARY_PREFIX = '[Summary of earlier conversation'
 const COMPACT_SUMMARY_HEADER = '[Summary of earlier conversation (auto-compacted)]'
 const COMPACT_SUMMARY_ACK = 'Understood, continuing from the progress so far.'
+/** Replaces an earlier run's document snapshot in its user message once a newer run carries the current one */
+export const CONTEXT_OMITTED_NOTE =
+  '[Document context attached to this earlier request omitted; the latest request carries the current state]'
 
-/** Consecutive zero-tool turns that trigger the degraded-mode probe (FC dynamic fallback) */
-const DEGRADE_SILENT_TURNS = 2
-
-/**
- * Degraded-mode ("compatibility mode") wire format for models whose APIs never
- * return protocol tool_calls. The model answers in plain text; when it wants
- * to act it emits one JSON object (or an array) instead:
- *   {"tool": "generate_deck", "input": {...}}
- * The loop parses it, executes the tool(s), and feeds results back as a user
- * message — a ReAct loop over text. Field aliases are accepted because weak
- * models drift (name/tool_name, arguments/args/parameters).
- */
-export function parseDegradedToolCalls(
-  text: string,
-  knownTools: readonly string[],
-): AgentToolCall[] {
-  const raw = extractDegradedJson(text)
-  if (!raw) return []
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return []
-  }
-  const entries = Array.isArray(parsed) ? parsed : [parsed]
-  const known = new Set(knownTools)
-  const calls: AgentToolCall[] = []
-  for (const entry of entries) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
-    const rec = entry as Record<string, unknown>
-    const name = [rec['tool'], rec['name'], rec['tool_name']].find(
-      (v): v is string => typeof v === 'string' && v.trim().length > 0,
-    )
-    if (!name || !known.has(name.trim())) continue
-    const input = [rec['input'], rec['arguments'], rec['args'], rec['parameters']].find(
-      (v): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v),
-    )
-    calls.push({
-      id: `deg_${calls.length}`,
-      name: name.trim(),
-      input: input ?? {},
-    })
-  }
-  return calls
-}
-
-/** Pull the outermost JSON blob out of a possibly chatty reply (fences, preamble, trailing prose). */
-function extractDegradedJson(text: string): string | null {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenced?.[1]) return fenced[1].trim()
-  const start = text.search(/[{[]/)
-  if (start < 0) return null
-  const open = text[start]!
-  const close = open === '{' ? '}' : ']'
-  const end = text.lastIndexOf(close)
-  if (end <= start) return null
-  return text.slice(start, end + 1)
-}
+/** Leads a fresh snapshot while earlier ones are still unfolded in history */
+export const CONTEXT_SUPERSEDES_NOTE =
+  '[Current state. It supersedes the context attached to earlier requests in this conversation]'
 
 /** Approximate UTF-8 byte count (ASCII 1 byte, CJK etc. 3; surrogate pairs count as 6 — slight overestimate is harmless) */
 function utf8Size(s: string): number {
@@ -490,12 +468,6 @@ function messageSize(m: AgentMessage): number {
   let n = utf8Size(m.text)
   if (m.role === 'user' && m.images) {
     n += m.images.reduce((s, img) => s + img.base64.length, 0)
-  }
-  if (m.role === 'user' && m.audio) {
-    n += m.audio.reduce((s, a) => s + a.base64.length, 0)
-  }
-  if (m.role === 'user' && m.video) {
-    n += m.video.reduce((s, v) => s + (v.base64?.length ?? 0), 0)
   }
   if (m.role === 'assistant' && m.toolCalls) {
     for (const c of m.toolCalls) {
@@ -545,6 +517,12 @@ export class AgentLoop<TSnapshot = unknown> {
   /** signature (text + tool calls) of the previous turn, for the identical-turn guard */
   private lastTurnSig = ''
   private identicalTurns = 0
+  /** non-mutating calls since the last edit: (tool, input) → output hash, and the set of (tool, output) hashes */
+  private readOutputs = new Map<string, string>()
+  /** how often each (tool, input) was called since the last edit */
+  private readInputCounts = new Map<string, number>()
+  private readOutputSigs = new Set<string>()
+  private redundantReadTurns = 0
   private allErrorTurns = 0
   private turnStopReason: string | null = null
   private turnText = ''
@@ -557,23 +535,18 @@ export class AgentLoop<TSnapshot = unknown> {
   private verifyRetryUsed = false
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
+  /** earlier runs' user messages that still carry a skill-context snapshot, each with the bare instruction to rebuild it without */
+  private staleContexts: Array<{ msg: AgentMessage; instruction: string }> = []
+  /** when the last model request went out (0 = never): the prompt cache is warm for CACHE_WARM_MS after it */
+  private lastRequestAt = 0
+  /** usage the provider reported for the turn now streaming (null until it reports) */
+  private turnUsage: AgentTokenUsage | null = null
+  /** usage summed across the turns of the in-flight run (null when nothing reported) */
+  private runUsage: AgentTokenUsage | null = null
   /** invalidates stale transport callbacks after cancel/reset */
   private generation = 0
   /** per-run abort: aborted on cancel(); long tools (e.g. generate_deck) use it to break internal loops */
   private abortController: AbortController | null = null
-  /**
-   * Degraded mode ("compatibility mode"): the operator model cannot issue
-   * protocol tool_calls, so turns run without wire tools and the model acts by
-   * emitting JSON text (parseDegradedToolCalls). Set statically via degrade()
-   * (capability matrix) or dynamically by the silent-turn probe below.
-   */
-  private degraded = false
-  /** a probe turn is in flight: tools are withheld and the reply is parsed for JSON tool calls */
-  private degradedProbe = false
-  /** the probe ran once for this loop instance; a failed probe is never retried (model just talks) */
-  private probeUsed = false
-  /** consecutive zero-tool turns within the current run */
-  private silentTurns = 0
 
   constructor(options: AgentLoopOptions<TSnapshot>) {
     this.options = options
@@ -581,22 +554,6 @@ export class AgentLoop<TSnapshot = unknown> {
 
   get busy(): boolean {
     return this.running
-  }
-
-  /** true while this loop runs in degraded (JSON-text protocol) mode */
-  get isDegraded(): boolean {
-    return this.degraded
-  }
-
-  /**
-   * Statically force degraded mode (capability matrix knows the model has no
-   * function calling). Effective for the next and all future runs on this loop.
-   * No-op when the skill does not provide a degradedFallback protocol.
-   */
-  degrade(): boolean {
-    if (this.options.skill.degradedFallback?.() == null) return false
-    this.degraded = true
-    return true
   }
 
   get messages(): readonly AgentMessage[] {
@@ -667,17 +624,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.trimHistory()
   }
 
-  /**
-   * images/audio/video: inline attachments for this user turn (multimodal
-   * input; see AgentImage/AgentAudio/AgentVideo). Protocol converters reject
-   * parts their wire format cannot carry — gate with the capability matrix
-   * (resolveModelCapabilities().audioInput/videoInput) before calling.
-   */
-  run(
-    instruction: string,
-    images?: AgentImage[],
-    media?: { audio?: AgentAudio[]; video?: AgentVideo[] },
-  ): void {
+  /** images: inline attachments for this user turn (vision input; see AgentImage) */
+  run(instruction: string, images?: AgentImage[]): void {
     if (this.running || !instruction) return
     this.running = true
     this.cancelled = false
@@ -688,11 +636,10 @@ export class AgentLoop<TSnapshot = unknown> {
     this.lastTurnSig = ''
     this.identicalTurns = 0
     this.allErrorTurns = 0
-    // silentTurns deliberately persists across runs: a no-FC model shows the
-    // same symptom on every run (one text-only turn that ends the run), and
-    // the probe must be able to trigger on the second such run. degraded /
-    // probeUsed are instance-level facts about the model, never reset.
-    this.degradedProbe = false
+    this.readOutputs.clear()
+    this.readOutputSigs.clear()
+    this.readInputCounts.clear()
+    this.redundantReadTurns = 0
     this.executedCalls = []
     this.verifyRetryUsed = false
     this.abortController = new AbortController()
@@ -704,26 +651,68 @@ export class AgentLoop<TSnapshot = unknown> {
     // mid-transition is enough to wedge the panel. The user message was never
     // pushed, so the rollback in failRun() is a no-op and only the report matters.
     try {
-      const context = this.options.skill.buildContext?.() ?? ''
-      const format =
-        this.options.formatUserMessage ??
-        ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+      const fresh = this.options.skill.buildContext?.() ?? ''
+      // no fresh snapshot to supersede the old ones: they must not stay in view
+      this.foldStaleContexts(!fresh)
+      // an unfolded earlier snapshot is still in view: the model must not address the document by it
+      const context =
+        fresh && this.staleContexts.length > 0 ? `${CONTEXT_SUPERSEDES_NOTE}\n${fresh}` : fresh
       const userMsg: AgentMessage = {
         role: 'user',
-        text: format(instruction, context),
+        text: this.formatUser(instruction, context),
         ...(images?.length ? { images } : {}),
-        ...(media?.audio?.length ? { audio: media.audio } : {}),
-        ...(media?.video?.length ? { video: media.video } : {}),
       }
-      void this.beginRun(userMsg)
+      void this.beginRun(userMsg, context ? instruction : null)
     } catch (err) {
       this.failRun(err instanceof Error ? err.message : String(err))
     }
   }
 
+  private formatUser(instruction: string, context: string): string {
+    const format =
+      this.options.formatUserMessage ??
+      ((instr: string, ctx: string) => (ctx ? `${instr}\n\n${ctx}` : instr))
+    return format(instruction, context)
+  }
+
+  /**
+   * Every run's user message carries a fresh document snapshot (outline +
+   * selection, tens of KB in Docs) and only the newest one is useful to the
+   * model. Replacing a stale one rewrites history from that message on, which
+   * drops the provider's cached prefix for everything after it, so the fold
+   * waits for a moment the rewrite is free or due anyway: the cache has gone
+   * cold, the stale snapshots outgrew their allowance, or the history is over
+   * the compaction budget. Runs inside run()'s guard: formatUserMessage is
+   * consumer code.
+   */
+  private foldStaleContexts(force: boolean): void {
+    const stale = this.staleContexts.filter((c) => this.history.includes(c.msg))
+    this.staleContexts = stale
+    if (stale.length === 0) return
+    const cold = this.clock() - this.lastRequestAt >= CACHE_WARM_MS
+    const bulky = stale.reduce((n, c) => n + messageSize(c.msg), 0) > STALE_CONTEXT_MAX_BYTES
+    const overBudget =
+      this.compactionEnabled() && historySize(this.history) > this.compactBudget().maxBytes
+    if (!force && !cold && !bulky && !overBudget) return
+    for (const { msg, instruction } of stale) {
+      if (msg.role !== 'user') continue
+      this.history[this.history.indexOf(msg)] = {
+        ...msg,
+        text: this.formatUser(sanitizeAgentPayload(instruction), CONTEXT_OMITTED_NOTE),
+      }
+    }
+    this.staleContexts = []
+  }
+
+  private clock(): number {
+    return this.options.now?.() ?? Date.now()
+  }
+
   /** Compact (if needed), push the user message, then start the turn. Compaction failure doesn't block the run. */
-  private async beginRun(userMsg: AgentMessage): Promise<void> {
+  private async beginRun(userMsg: AgentMessage, instruction: string | null): Promise<void> {
     const generation = this.generation
+    // reset before compaction so the summary turn's billing folds into this run
+    this.runUsage = null
     try {
       await this.maybeCompact()
     } catch {
@@ -748,6 +737,7 @@ export class AgentLoop<TSnapshot = unknown> {
       userMsg = { ...userMsg, text: sanitizeAgentPayload(userMsg.text) }
     }
     this.runUserMsg = userMsg
+    if (instruction !== null) this.staleContexts.push({ msg: userMsg, instruction })
     this.history.push(userMsg)
     this.startTurn()
   }
@@ -809,10 +799,20 @@ export class AgentLoop<TSnapshot = unknown> {
     const dropped = this.history.slice(0, cut)
     const opt = this.options.compaction === false ? undefined : this.options.compaction
     let summary: string | null = null
-    if (!opt?.disableLlmSummary) summary = await this.summarizeViaLlm(dropped)
+    let summaryUsage: AgentTokenUsage | null = null
+    if (!opt?.disableLlmSummary) {
+      ;({ text: summary, usage: summaryUsage } = await this.summarizeViaLlm(dropped))
+    }
     // A reset may have cleared history or started a new conversation while
     // the summary was pending. Discard its result before touching that history.
     if (generation !== this.generation) return
+    // The summary turn bills like any other model call: fold it into the run
+    // total and surface it, so compaction spend is visible instead of silent.
+    if (summaryUsage) {
+      this.turnUsage = summaryUsage
+      this.mergeRunUsage()
+      this.options.events?.onUsage?.(summaryUsage)
+    }
     if (!summary) summary = mechanicalDigest(dropped)
     this.history = [
       { role: 'user', text: `${COMPACT_SUMMARY_HEADER}\n${summary}` },
@@ -821,8 +821,10 @@ export class AgentLoop<TSnapshot = unknown> {
     ]
   }
 
-  /** Hand the folded conversation to the model for a summary; returns null on failure/timeout (falls back to the mechanical digest). */
-  private summarizeViaLlm(dropped: readonly AgentMessage[]): Promise<string | null> {
+  /** Hand the folded conversation to the model for a summary; text is null on failure/timeout (falls back to the mechanical digest). */
+  private summarizeViaLlm(
+    dropped: readonly AgentMessage[],
+  ): Promise<{ text: string | null; usage: AgentTokenUsage | null }> {
     // Slim down the summary request itself: pre-truncate tool outputs, strip images
     const slim: AgentMessage[] = dropped.map((m) => {
       if (m.role === 'tool') {
@@ -839,13 +841,14 @@ export class AgentLoop<TSnapshot = unknown> {
     })
     return new Promise((resolve) => {
       let text = ''
+      let usage: AgentTokenUsage | null = null
       let settled = false
       let handle: AgentStreamHandle | null = null
       const finish = (v: string | null) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        resolve(v)
+        resolve({ text: v, usage })
       }
       const timer = setTimeout(() => {
         finish(null)
@@ -869,6 +872,9 @@ export class AgentLoop<TSnapshot = unknown> {
             },
             onToolCall: () => {
               /* the summary turn gets no tools */
+            },
+            onUsage: (u) => {
+              usage = u
             },
             onDone: () => finish(text.trim() || null),
             onError: () => finish(null),
@@ -910,6 +916,7 @@ export class AgentLoop<TSnapshot = unknown> {
   cancel(): void {
     if (!this.running) return
     this.cancelled = true
+    this.turnUsage = null
     // abort lets long tools mid-execution (internal LLM loops etc.) stop promptly
     this.abortController?.abort()
     // Waiting out a retry backoff: finalize here. A run that already committed
@@ -947,6 +954,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.cancelled = false
     this.history = []
     this.runUserMsg = null
+    this.staleContexts = []
+    this.lastRequestAt = 0
   }
 
   private dropTurnLimitNote(): void {
@@ -981,6 +990,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.handle?.cancel()
     this.handle = null
     this.running = false
+    this.turnUsage = null
     this.rollbackFailedRun()
     try {
       this.options.events?.onError?.(message)
@@ -1002,9 +1012,24 @@ export class AgentLoop<TSnapshot = unknown> {
     })
   }
 
-  /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request. */
+  /** Fold the turn's reported usage into the run total: every turn bills its own
+   * prompt and completion afresh, so the run's figures are the per-turn sum
+   * (sides the provider never reported stay absent). Consumes the turn's figure
+   * so a later fold (the next turn's start or the run's onDone) cannot double it. */
+  private mergeRunUsage(): void {
+    if (!this.turnUsage) return
+    this.runUsage = addTokenUsage(this.runUsage, this.turnUsage)
+    this.turnUsage = null
+  }
+
+  /** Runs at run boundaries only (restore / before a new user message): a long run's tail is all assistant/tool messages, and cutting mid-run would empty the request.
+   * The byte budget (compaction) is the real context bound; this count cap is a
+   * backstop against pathological message counts. It must sit well above the
+   * message count a compacted history reaches, because every trim drops the
+   * head of the request — silently losing context AND invalidating the
+   * provider's prompt cache from byte 0. */
   private trimHistory(): void {
-    const max = this.options.maxHistory ?? 40
+    const max = this.options.maxHistory ?? 200
     if (this.history.length <= max) return
     // cut only at a user message so tool_use/tool_result pairs stay intact
     let i = this.history.length - max
@@ -1017,26 +1042,25 @@ export class AgentLoop<TSnapshot = unknown> {
 
   private startTurn(retriesUsed = 0): void {
     const generation = this.generation
+    // a tool turn is ending here: fold its usage into the run total before the new turn resets it
+    this.mergeRunUsage()
     this.turnText = ''
     this.turnReasoning = ''
     this.toolCalls = []
     this.turnStopReason = null
-    // Degraded turns withhold wire tools entirely (a no-FC model would ignore
-    // them anyway) and append the skill's JSON-text protocol to the system prompt.
-    const degradedTurn = this.degraded || this.degradedProbe
-    const degradedFallback = degradedTurn ? this.options.skill.degradedFallback?.() : null
+    this.turnUsage = null
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
     let settled = false
+    this.lastRequestAt = this.clock()
     try {
       this.handle = this.options.transport.stream(
         {
           system:
             runtimePreamble() +
             this.options.skill.systemPrompt +
-            (this.options.systemSuffix?.() ?? '') +
-            (degradedFallback ? `\n\n${degradedFallback.systemSuffix}` : ''),
+            (this.options.systemSuffix?.() ?? ''),
           messages: [...this.history],
-          tools: this.finalizing || degradedTurn ? [] : this.options.skill.tools,
+          tools: this.finalizing ? [] : this.options.skill.tools,
         },
         {
           onDelta: (text) => {
@@ -1072,6 +1096,16 @@ export class AgentLoop<TSnapshot = unknown> {
           onStopReason: (reason) => {
             if (generation !== this.generation || settled) return
             this.turnStopReason = reason
+          },
+          onUsage: (usage) => {
+            if (generation !== this.generation || settled) return
+            this.turnUsage = usage
+            try {
+              this.options.events?.onUsage?.(usage)
+            } catch (err) {
+              settled = true
+              this.failRun(err instanceof Error ? err.message : String(err))
+            }
           },
           onDone: () => {
             if (generation !== this.generation || settled) return
@@ -1119,68 +1153,15 @@ export class AgentLoop<TSnapshot = unknown> {
     }
   }
 
-  private silentFallbackAvailable(): boolean {
-    return this.options.skill.degradedFallback?.() != null
-  }
-
   private async finishTurn(): Promise<void> {
     const { events, skill, captureSnapshot } = this.options
-    let toolCalls = this.toolCalls
-
-    // Degraded turns that answered with plain text: parse the JSON-text
-    // protocol (static degrade() and the silent-turn probe share this branch).
-    // A probe that landed a real tool call is promoted: this loop formally
-    // enters degraded mode for good. A probe that just talks is never retried;
-    // static mode keeps parsing on every zero-tool turn, so a plain-text
-    // answer still finalizes the run below (parsed empty → fall through).
-    if (
-      (this.degraded || this.degradedProbe) &&
-      toolCalls.length === 0 &&
-      !this.cancelled &&
-      !this.finalizing
-    ) {
-      const parsed = parseDegradedToolCalls(
-        this.turnText,
-        this.options.skill.tools.map((t) => t.name),
-      )
-      if (parsed.length > 0) {
-        this.degraded = true
-        toolCalls = parsed
-        this.toolCalls = parsed
-      } else {
-        this.degradedProbe = false
-        this.probeUsed = true
-        this.silentTurns = 0
-      }
-    }
+    const toolCalls = this.toolCalls
 
     // Claimed-action guard: before accepting a final text turn, let the skill
     // check the claims in it against the tools that actually ran this run.
     // A returned correction forces one more model turn (tools stay available,
     // so the model can perform the missing action or reword its claim).
-    if (toolCalls.length > 0) this.silentTurns = 0
     if (toolCalls.length === 0 && !this.cancelled && !this.finalizing) {
-      // Degraded-mode dynamic fallback: two consecutive zero-tool turns from a
-      // loop whose skill supports degradation trigger one probe turn running
-      // the JSON-text protocol. A probe that lands a real tool call promotes
-      // the loop to degraded mode permanently; a probe that just talks is
-      // never retried (a chatty FC model must not lose its native tools).
-      if (
-        !this.degraded &&
-        !this.degradedProbe &&
-        !this.probeUsed &&
-        this.silentFallbackAvailable()
-      ) {
-        this.silentTurns++
-        if (this.silentTurns >= DEGRADE_SILENT_TURNS) {
-          this.degradedProbe = true
-          this.probeUsed = true
-          this.silentTurns = 0
-          this.startTurn()
-          return
-        }
-      }
-
       // snapshot copy: the live array keeps growing if the corrective turn
       // runs more tools, and the hook must see the state at check time
       const correction =
@@ -1213,7 +1194,7 @@ export class AgentLoop<TSnapshot = unknown> {
       // prompt: Anthropic rejects empty content arrays, Gemini rejects empty
       // parts, and OpenAI-compatible routes send content:null with no tool_calls —
       // all of which make follow-up turns fail or return empty again (see
-      // chatoffice#12 / #22: first prompt works, second shows "no summary").
+      // genoffice#12 / #22: first prompt works, second shows "no summary").
       // Same normalization as restore(), applied unconditionally: cancelled and
       // read-only empty turns poison follow-ups just the same. onDone still
       // reports the raw turn text so app UIs keep their localized fallbacks
@@ -1221,14 +1202,14 @@ export class AgentLoop<TSnapshot = unknown> {
       this.history.push({ role: 'assistant', text: this.turnText || COMPLETED_VIA_TOOLS_TEXT })
       this.running = false
       this.runUserMsg = null
+      this.mergeRunUsage()
       events?.onDone?.({
         text: this.turnText,
         cancelled: this.cancelled,
         turnLimit: this.finalizing,
-        // degraded-mode runs answer via the JSON-text protocol; UIs badge it
-        ...(this.degraded ? { degraded: true } : {}),
         // set only when true so exact-shape consumers/tests stay unaffected
         ...(this.turnStopReason === 'max_tokens' && !this.cancelled ? { truncated: true } : {}),
+        ...(this.runUsage ? { usage: this.runUsage } : {}),
       })
       return
     }
@@ -1239,31 +1220,22 @@ export class AgentLoop<TSnapshot = unknown> {
     // history is echoed back on the next turn. The OpenAI-compatible stream
     // paths attach `inputError: undefined` on every parsed call, so without
     // this the second turn of any custom-provider agent run fails validation.
-    // Degraded mode keeps tool calls OUT of the assistant message: no-FC
-    // model APIs reject assistant.tool_calls, and degraded results are folded
-    // into a user message below — so no role:'tool' message follows to pair
-    // with, and the next request would be rejected outright. The executed
-    // call stays available via this.executedCalls for verify/claim checks.
     this.history.push({
       role: 'assistant',
-      text: this.turnText || COMPLETED_VIA_TOOLS_TEXT,
-      // FC mode: keep tool_calls paired with the role:'tool' results pushed below
-      ...(this.degraded || this.degradedProbe
-        ? {}
-        : {
-            toolCalls: toolCalls.map(({ id, name, input, signature }) => ({
-              id,
-              name,
-              input,
-              ...(signature ? { signature } : {}),
-            })),
-          }),
+      text: this.turnText,
+      toolCalls: toolCalls.map(({ id, name, input, signature }) => ({
+        id,
+        name,
+        input,
+        ...(signature ? { signature } : {}),
+      })),
       // interleaved-thinking models degrade in tool loops unless their reasoning is echoed back
       ...(this.turnReasoning ? { reasoning: this.turnReasoning } : {}),
     })
     const generation = this.generation
     const results: AgentToolResult[] = []
     let turnMutated = false
+    let redundantRead = false
     // unusable-input streak is counted per turn: a batch of empty calls in one
     // turn is one failed attempt, and any executed call in the turn resets it
     let unusableInTurn = false
@@ -1343,6 +1315,22 @@ export class AgentLoop<TSnapshot = unknown> {
       if (execution.mutated) {
         this.mutationSeen = true
         turnMutated = true
+      } else {
+        const inSig = `${call.name}\0${JSON.stringify(call.input)}`
+        const outHash = hashString(execution.output)
+        const outSig = `${call.name}\0${outHash}`
+        const seen = this.readInputCounts.get(inSig) ?? 0
+        // the same query a third time is a loop even when the results keep
+        // shuffling (web search churn); one repeat stays free for poll-style tools
+        if (
+          this.readOutputs.get(inSig) === outHash ||
+          this.readOutputSigs.has(outSig) ||
+          seen >= REPEATED_INPUT_FREE_CALLS
+        )
+          redundantRead = true
+        this.readInputCounts.set(inSig, seen + 1)
+        this.readOutputs.set(inSig, outHash)
+        this.readOutputSigs.add(outSig)
       }
       results.push({
         id: call.id,
@@ -1356,19 +1344,20 @@ export class AgentLoop<TSnapshot = unknown> {
         snapshotBefore: firstMutation ? snapshot : undefined,
       })
     }
-    // Degraded mode: fold results into one user text message — no-FC model
-    // APIs reject role:'tool' messages outright.
-    if (this.degraded || this.degradedProbe) {
-      const resultText = results
-        .map((r) => `[Tool result: ${r.name}${r.isError ? ' (error)' : ''}]\n${r.output}`)
-        .join('\n\n')
-      this.history.push({
-        role: 'user',
-        text: `[System] Tool execution results follow. To call another tool, output only its JSON object; to finish, answer in plain text.\n\n${resultText}`,
-      })
+    if (turnMutated) {
+      this.readOutputs.clear()
+      this.readOutputSigs.clear()
+      this.readInputCounts.clear()
+      this.redundantReadTurns = 0
+    } else if (redundantRead) {
+      if (++this.redundantReadTurns === REDUNDANT_READ_NUDGE_TURNS) {
+        const last = results[results.length - 1]!
+        last.output = `${last.output}\n\n${REDUNDANT_READ_NOTE}`
+      }
     } else {
-      this.history.push({ role: 'tool', results })
+      this.redundantReadTurns = 0
     }
+    this.history.push({ role: 'tool', results })
     if (executedInTurn) this.inputParseFails = 0
     else if (unusableInTurn) this.inputParseFails++
 
@@ -1399,6 +1388,15 @@ export class AgentLoop<TSnapshot = unknown> {
       this.rollbackFailedRun()
       events?.onError?.(
         `Every tool call failed for ${MAX_ALL_ERROR_TURNS} turns in a row; the run was stopped. Please send the request again`,
+      )
+      return
+    }
+
+    if (this.redundantReadTurns >= MAX_REDUNDANT_READ_TURNS) {
+      this.running = false
+      this.rollbackFailedRun()
+      events?.onError?.(
+        `The model kept re-reading the same material or getting the same result for ${MAX_REDUNDANT_READ_TURNS} turns without making progress; the run was stopped. Please send the request again`,
       )
       return
     }

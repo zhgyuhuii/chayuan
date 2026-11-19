@@ -37,7 +37,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port 3890",
+		"dev": "vite --port 3889",
 		"dev:debug": "node scripts/dev-debug.mjs",
 		"build": "vite build",
 		"preview": "vite preview",
@@ -54,6 +54,8 @@
 		"doctor": "node scripts/chayuan-doctor.mjs",
 		"doctor:quick": "node scripts/chayuan-doctor.mjs --quick",
 		"test:agent-loop": "node scripts/test-agent-loop-smoke.mjs",
+		"test:agent-core": "vitest run --root src/agent-core",
+		"test:skill-library": "node scripts/verify-skill-library.mjs",
 		"test:write-lock": "node scripts/test-document-write-lock.mjs",
 		"test:evolution": "node scripts/test-evolution-smoke.mjs",
 		"test:services": "node scripts/test-service-smoke.mjs",
@@ -130,6 +132,7 @@
 		"pdfkit": "^0.15.0",
 		"prettier": "^3.2.5",
 		"vite": "^5.3.1",
+		"vitest": "^3.2.4",
 		"wps-jsapi-declare": "latest",
 		"wpsjs": "latest"
 	}

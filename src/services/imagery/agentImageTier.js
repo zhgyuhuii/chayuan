@@ -14,10 +14,28 @@
  */
 
 import { getFlatModelsFromSettings } from '../../utils/modelSettings.js'
+import { getDefaultModelIdForCategory } from '../../utils/assistantSettings.js'
 import { generateImageAsset } from '../../utils/mediaApi.js'
 import { uploadTmpImage } from '../mcpBridge/mcpHttpClient.js'
 
 const MAX_MODEL_ATTEMPTS = 3
+
+/**
+ * 尝试队列：用户在「设置 → 默认设置 → 图像生成模型」选定的默认模型排到队首，
+ * 其余已启用厂商的图像模型按原顺序作后备（默认模型不可用时仍能自动补位）。
+ * 存储里的 composite id 已失效（厂商被停用等）时队列保持原样。
+ */
+function orderModelsByDefault(models) {
+  const ordered = models.slice()
+  let defaultId = ''
+  try {
+    defaultId = String(getDefaultModelIdForCategory('image') || '')
+  } catch { /* PluginStorage 不可用按无默认 */ }
+  if (!defaultId) return ordered
+  const idx = ordered.findIndex(m => m.id === defaultId)
+  if (idx > 0) ordered.unshift(...ordered.splice(idx, 1))
+  return ordered
+}
 
 /**
  * @returns {Promise<
@@ -40,7 +58,8 @@ export async function generateImageViaModelChain({ prompt, aspectRatio, signal }
   }
 
   const errors = []
-  for (const m of models.slice(0, MAX_MODEL_ATTEMPTS)) {
+  const ordered = orderModelsByDefault(models)
+  for (const m of ordered.slice(0, MAX_MODEL_ATTEMPTS)) {
     try {
       const asset = await generateImageAsset({
         providerId: m.providerId,
@@ -65,7 +84,12 @@ export async function generateImageViaModelChain({ prompt, aspectRatio, signal }
       errors.push(`${m.name || m.modelId}: ${String(e.message || e).slice(0, 120)}`)
     }
   }
-  return { ok: false, reason: 'model-failed', errors }
+  return {
+    ok: false,
+    reason: 'model-failed',
+    errors,
+    error: `已启用的图像生成模型全部调用失败（${errors.join('；')}）。请到 设置 → 默认设置 → 图像生成模型 检查所选模型的密钥、API 地址与生图权限，无需重启应用。`
+  }
 }
 
 export default { generateImageViaModelChain }

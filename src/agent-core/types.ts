@@ -34,38 +34,34 @@ export interface AgentImage {
   mime: string
 }
 
-/**
- * Audio/video attachments on a user turn. Gemini takes both inline (base64);
- * OpenAI-compat takes audio via the standard input_audio part; video on
- * OpenAI routes is vendor-specific AND URL-only (dashscope/zhipu reject
- * base64 video), so base64 video rides only on gemini — the capability
- * matrix (audioInput/videoInput) is the gate; protocol converters error out
- * if parts reach a route that cannot carry them.
- */
-export interface AgentAudio {
-  /** raw base64 (no data: URL prefix) */
-  base64: string
-  /** e.g. "audio/mp3" */
-  mime: string
+/** Token usage one model turn was billed (best-effort: providers that do not
+ * report usage simply never fire the callback — absent is "unknown", not zero). */
+export interface AgentTokenUsage {
+  inputTokens?: number
+  outputTokens?: number
+  /** share of inputTokens served from the provider's prompt cache */
+  cacheReadTokens?: number
+  /** share of inputTokens written to the prompt cache this turn */
+  cacheWriteTokens?: number
 }
 
-/** video attachment: base64 inline (gemini) or a public URL (vendor adapters) */
-export interface AgentVideo {
-  /** raw base64 when inline; empty when url is set */
-  base64?: string
-  mime: string
-  /** public http(s) URL for URL-only vendor adapters */
-  url?: string
+const USAGE_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'] as const
+
+/** Sum two usage records; a side no provider reported stays absent instead of a fake zero. */
+export function addTokenUsage(
+  prev: AgentTokenUsage | null | undefined,
+  delta: AgentTokenUsage,
+): AgentTokenUsage {
+  const out: AgentTokenUsage = { ...(prev ?? {}) }
+  for (const field of USAGE_FIELDS) {
+    const n = delta[field]
+    if (n !== undefined) out[field] = (out[field] ?? 0) + n
+  }
+  return out
 }
 
 export type AgentMessage =
-  | {
-      role: 'user'
-      text: string
-      images?: AgentImage[] | undefined
-      audio?: AgentAudio[] | undefined
-      video?: AgentVideo[] | undefined
-    }
+  | { role: 'user'; text: string; images?: AgentImage[] | undefined }
   /** reasoning: opaque vendor thinking captured during the turn; interleaved-thinking
    * models (MiniMax M3, DeepSeek V4) degrade in tool loops unless it is echoed back */
   | {
@@ -77,15 +73,30 @@ export type AgentMessage =
   | { role: 'tool'; results: AgentToolResult[] }
 
 /**
+ * One node of a mind map tree (NotebookLM-style interactive diagram). `block`
+ * optionally cites a document block index the node summarizes; the UI turns it
+ * into a jump link. Labels are short phrases, not sentences.
+ */
+export interface MindMapTreeNode {
+  label: string
+  /** 0-based document block index this node draws on (optional) */
+  block?: number
+  children?: MindMapTreeNode[]
+}
+
+/**
  * Side-channel display data: UI-only, never merged into messages sent to the LLM.
- * kind='images' → image grid; kind='links' → link list; kind='text' → extra text.
+ * kind='images' → image grid; kind='links' → link list; kind='text' → extra text;
+ * kind='mindmap' → interactive mind map rendered from `tree`.
  */
 export interface ToolDisplay {
-  kind: 'images' | 'links' | 'text'
+  kind: 'images' | 'links' | 'text' | 'mindmap'
   /** entry list for images / links modes */
   items?: Array<{ url: string; title?: string; thumb?: string }>
   /** extra text for text mode */
   text?: string
+  /** mind map root for the mindmap kind */
+  tree?: MindMapTreeNode
 }
 
 /** outcome of one tool execution */
@@ -138,6 +149,8 @@ export interface AgentStreamCallbacks {
   onPhase?(phase: AgentPhase): void
   /** normalized stop reason of the turn ('max_tokens' = cut off by the token limit); transports may omit this */
   onStopReason?(reason: string): void
+  /** tokens the provider billed for this turn; transports whose provider does not report usage omit this */
+  onUsage?(usage: AgentTokenUsage): void
   onDone(): void
   onError(error: string): void
 }

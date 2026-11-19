@@ -2328,6 +2328,14 @@
             </div>
           </div>
 
+          <!-- 技能设置：内置技能库启停 + 我的技能导入（参照上游 FoundSkills 界面） -->
+          <div
+            v-else-if="activeMainMenu === 'skill-settings'"
+            class="config-panel skill-settings-host"
+          >
+            <SkillSettingsPanel />
+          </div>
+
           <!-- 默认提示 -->
           <div v-else class="config-panel empty">
             <div class="empty-state">
@@ -2806,6 +2814,7 @@ import {
 } from '../utils/assistantRegressionSampleStore.js'
 import { getMultimodalServerFallbackConfig } from '../utils/multimodalServerBridge.js'
 import KbSettingsPanel from './KbSettingsPanel.vue'
+import SkillSettingsPanel from './SkillSettingsPanel.vue'
 import WebResourceSettings from './WebResourceSettings.vue'
 
 function cloneValue(value) {
@@ -2940,7 +2949,7 @@ function readInitialColumn2Width() {
 
 export default {
   name: 'SettingsDialog',
-  components: { KbSettingsPanel, WebResourceSettings, AssistantHelpDialog },
+  components: { KbSettingsPanel, WebResourceSettings, AssistantHelpDialog, SkillSettingsPanel },
   data() {
     return {
       // 领域包懒加载完成标记(自增以触发助手设置列表重算)
@@ -2962,6 +2971,7 @@ export default {
         { key: 'model-settings', label: '模型设置', icon: 'images/settings-model.svg' },
         { key: 'default-settings', label: '默认设置', icon: '⭐' },
         { key: 'assistant-settings', label: '助手设置', icon: '🧠' },
+        { key: 'skill-settings', label: '技能设置', icon: '⚡' },
         { key: 'general', label: '常规设置', icon: '⚙️' }
       ],
       generalSubMenus: [
@@ -4262,6 +4272,9 @@ export default {
         })
       } else if (menu === 'model-settings') {
         this.selectMainMenu('model-settings')
+      } else if (menu === 'skill-settings') {
+        // 技能设置深链：外部（如帮助手册/助手提示）可直跳技能管理页
+        this.selectMainMenu('skill-settings')
       } else if (menu === 'general-settings' || menu === 'general') {
         this.selectMainMenu('general')
         const sub = String(query?.sub || '').trim()
@@ -6453,6 +6466,27 @@ export default {
       }
       this.saveDefaultModelsToStorage()
     },
+    // 拉取模型列表后自动补齐分类默认：某类模型第一次出现（当前尚无默认）时，
+    // 自动选本厂商拉到的第一个该类型模型。用户已选过的分类绝不覆盖；
+    // 只登记设置里真正可选的模型（厂商已启用且密钥/地址齐备），避免存进不可达 id。
+    autoSetDefaultModelsFromPull(models) {
+      if (!Array.isArray(models) || !models.length) return []
+      const providerId = this.selectedModel?.id
+      if (!providerId) return []
+      // chat 兼容旧版单字段默认：defaultModelsByCategory.chat 为空但 defaultModelId 已设时视为已有
+      const chatAlreadySet = !!this.defaultModelsByCategory.chat || !!getDefaultModelId()
+      const autoSet = []
+      for (const cat of this.modelCategories) {
+        if (cat.key === 'chat' ? chatAlreadySet : !!this.defaultModelsByCategory[cat.key]) continue
+        const hit = models.find(m => matchesModelType(m.type, cat.modelType))
+        if (!hit) continue
+        const compositeId = `${providerId}|${hit.id}`
+        if (!getFlatModelsFromSettings(cat.modelType).some(m => m.id === compositeId)) continue
+        this.selectDefaultModelForCategory(cat.key, compositeId)
+        autoSet.push(`${cat.label}：${hit.name || hit.id}`)
+      }
+      return autoSet
+    },
     // 获取某分类可选的模型列表（从设置中已开启的模型，按类型过滤）
     getModelsForCategory(modelType) {
       return getFlatModelsFromSettings(modelType)
@@ -6770,7 +6804,9 @@ export default {
         if (models.length > 0) {
           this.currentModelConfig.modelSeries = models
           this.updateModelConfig()
-          this.showMessage(`已获取 ${models.length} 个模型`, 'success')
+          const autoSet = this.autoSetDefaultModelsFromPull(models)
+          const autoHint = autoSet.length ? `；首次遇到新类型模型，已自动设为默认 → ${autoSet.join('、')}` : ''
+          this.showMessage(`已获取 ${models.length} 个模型${autoHint}`, 'success')
         } else {
           this.showMessage('未解析到可用模型，请检查 API 格式', 'error')
         }

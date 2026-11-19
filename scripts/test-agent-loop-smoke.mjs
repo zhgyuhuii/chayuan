@@ -229,25 +229,20 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   console.log('✓ S3 dryRun 预览直通')
 }
 
-// 场景 4：模型报 tools 不支持 → 自动切 JSON 兼容协议整轮重跑
-// （流式主通道报错后传输层先做一次非流式回落——同一 body 同样 4xx——
-//   失败上抛编排器才降级；降级请求取最后一条，不再是固定下标 1）
+// 场景 4：模型报 tools 不支持 → 不再降级重跑（2026-11 随上游 agent-core 移除降级模式），
+// 直接终态 model_error 并给出更换模型的引导文案（localizeLoopError 收敛转换）
 {
   const m = baseMock()
   m.chatScript = [
-    { throw: new Error('400 This model does not support tools') },
-    { content: '{"tool":"chayuan__document_locate","arguments":{"text":"错字"}}' },
-    { content: '已通过兼容协议定位完成。' }
+    { throw: new Error('400 This model does not support tools') }
   ]
   const r = await run({})
-  A(r.ok === true, 'S4 ok')
-  A(m.localCalls.length === 1 && m.localCalls[0].name === 'document_locate', 'S4 degraded tool executed')
-  A(r.steps.some(s => s.label.includes('JSON 兼容层')), 'S4 step 兼容层')
-  // 降级请求不携带 tools，system 带 JSON 协议后缀
-  const degradedReq = m.requests[m.requests.length - 1]
-  A(!degradedReq.tools, 'S4 degraded request has no tools field')
-  A(degradedReq.messages[0].content.includes('JSON'), 'S4 degraded system suffix')
-  console.log('✓ S4 tools 不支持自动降级')
+  A(r.ok === false, 'S4 not ok')
+  A(r.reason === 'model_error', 'S4 reason model_error')
+  A(String(r.content).includes('不支持工具调用'), 'S4 guidance content: ' + r.content)
+  A(String(r.content).includes('更换'), 'S4 guidance suggests switching model')
+  A(m.localCalls.length === 0, 'S4 no tool executed')
+  console.log('✓ S4 tools 不支持 → 终态报错 + 引导')
 }
 
 // 场景 5：坏入参（非法 JSON arguments）→ 不执行、回灌修正提示后模型改对

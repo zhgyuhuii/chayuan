@@ -39,9 +39,10 @@ export async function scanAndRegisterSkills(options = {}) {
   let modules = {}
   try {
     // eslint-disable-next-line no-undef
-    if (typeof import.meta?.glob === 'function') {
-      modules = import.meta.glob('/src/skills/*.js', { eager: true })
-    }
+    modules = import.meta.glob('/src/skills/*.js', { eager: true }) || {}
+    // 注意：不能包 `typeof import.meta?.glob === 'function'` 守卫——import.meta.glob
+    // 是编译期宏，vite 只替换调用点本身，运行时 import.meta 上没有 glob，守卫恒为
+    // false 会让扫描永远为空（2026-11-19 修复：wps-skill-chayuan 一直没注册成功）。
   } catch (_) {
     // 非 Vite 环境(测试)→ 走空字典
   }

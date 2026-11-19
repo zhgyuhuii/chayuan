@@ -8,18 +8,6 @@ export interface ExecutedToolCall {
 }
 
 /**
- * Degraded-mode contract: when the operator model cannot issue protocol-level
- * tool calls (statically known no-FC, or the loop's silent-turn probe), the
- * loop stops sending `tools` on the wire and instead appends this suffix to
- * the system prompt. The suffix must (a) list the tool subset the model may
- * use, and (b) specify the JSON text protocol the loop parses
- * (`{"tool": name, "input": {...}}`, or an array for several calls).
- */
-export interface DegradedFallback {
-  systemSuffix: string
-}
-
-/**
  * A skill packages one capability domain for the agent loop: its system
  * prompt section, its tools, per-turn context, and the tool executor.
  * AI Docs ships a docx skill; Excel / PPT skills plug in the same way.
@@ -49,11 +37,6 @@ export interface AgentSkill {
    * so a detector false-positive costs one extra turn and cannot loop.
    */
   verifyResponse?(finalText: string, executed: readonly ExecutedToolCall[]): string | null
-  /**
-   * Degraded-mode fallback for models without function calling. Return null
-   * to opt out (the loop then never degrades this skill).
-   */
-  degradedFallback?(): DegradedFallback | null
 }
 
 /**
@@ -62,7 +45,7 @@ export interface AgentSkill {
  */
 export function composeSkills(id: string, intro: string, skills: AgentSkill[]): AgentSkill {
   // Recomputed per access: a sub-skill may expose `tools` through a getter
-  // keyed on runtime capability (e.g. chatoffice login/toggle), and the loop reads
+  // keyed on runtime capability (e.g. gsk login/toggle), and the loop reads
   // the composed skill's tools before every model request.
   const ownerOf = (name: string): AgentSkill | undefined =>
     skills.find((skill) => skill.tools.some((tool) => tool.name === name))
@@ -97,15 +80,6 @@ export function composeSkills(id: string, intro: string, skills: AgentSkill[]): 
       for (const skill of skills) {
         const correction = skill.verifyResponse?.(finalText, executed)
         if (correction) return correction
-      }
-      return null
-    },
-    // first sub-skill that opts in defines the degraded protocol (tool subsets
-    // are expected to be described inside that suffix)
-    degradedFallback: () => {
-      for (const skill of skills) {
-        const fallback = skill.degradedFallback?.()
-        if (fallback) return fallback
       }
       return null
     },

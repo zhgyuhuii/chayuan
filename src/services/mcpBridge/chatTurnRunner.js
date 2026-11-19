@@ -247,6 +247,10 @@ function runDetachedTurn(params = {}) {
         kbBinding: turnKbBinding,
         historyMessages: Array.isArray(params.historyMessages) ? params.historyMessages : [],
         previousTodos: Array.isArray(params.previousTodos) ? params.previousTodos : [],
+        // 附加技能：面板已按上限整形（≤4 个、单条 ≤16KB），这里防御式再滤一遍空条目
+        attachedSkills: Array.isArray(params.attachedSkills)
+          ? params.attachedSkills.filter(s => s && s.name && s.body)
+          : [],
         writeBaselineToken,
         targetDocumentId,
         loopHistory: Array.isArray(params.loopHistory) ? params.loopHistory : [],

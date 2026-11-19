@@ -244,14 +244,6 @@ async function callLocalToolWithProofreadProgress(name, args, { signal, pushProg
   }
 }
 
-/** 无 function-calling 模型的 JSON 文本协议（loop 会解析该格式的伪工具调用） */
-const DEGRADED_SYSTEM_SUFFIX = [
-  '若需调用工具，仅输出一个 JSON 对象（需连续调用多个工具时输出 JSON 数组）：',
-  '{"tool":"serverId__toolName","arguments":{…}}',
-  '不要输出 JSON 以外的任何文字；工具执行结果会以 [Tool result: …] 消息返回给你。',
-  '任务完成或需要向用户说明时，直接用普通文字回答，不要输出 JSON。'
-].join('\n')
-
 /**
  * @param {object} opts
  * @param {string} opts.systemPrompt - 编排器拼好的领域系统提示词
@@ -313,7 +305,6 @@ export function createMcpDocumentSkill({
       }))
     ],
     buildContext: () => '',
-    degradedFallback: () => ({ systemSuffix: DEGRADED_SYSTEM_SUFFIX }),
     /**
      * 声称核对（loop 预留钩子，PR7 接通）：末轮文本声明「已替换/改正/删除 N 处」
      * 而实际成功写操作数不足时，强制追加一轮纠偏——谎报被拦，模型要么补齐操作
