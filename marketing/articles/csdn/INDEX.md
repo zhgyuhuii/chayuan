@@ -31,3 +31,9 @@
 | — | [hot-thesis-term-unify.md](./hot-thesis-term-unify.md) | 察元AI文档助手改论文：开学前最后一周，术语统一交给机器 |
 | — | [hot-stop-paste-chatbox.md](./hot-stop-paste-chatbox.md) | 察元AI文档助手替代聊天框：稿子不出电脑的校对方式 |
 | — | [hot-table-figure-consistency.md](./hot-table-figure-consistency.md) | 察元AI文档助手核表格：正文说增长百分之十二，附表里是 11.8 |
+| — | [plaza-full-guide-domestic-offline-download.md](./plaza-full-guide-domestic-offline-download.md) | 察元AI广场深度解读：八大板块、免费模型榜与智力排行，国内下载与离线安装全流程 |
+| — | [article-1-user-facing.md](./article-1-user-facing.md) | 用了两周这个开源 WPS 插件：AI 直接在正文里改稿写回，还能全程断网 |
+| — | [article-2-dev-facing.md](./article-2-dev-facing.md) | 拆解察元AI文档助手：53 个 MCP 工具背后，把 WPS 变成智能体可编程接口的工程实现 |
+| — | [article-3-agent-batch.md](./article-3-agent-batch.md) | 让 Claude Code 一口气校完一个目录的公文：察元 WPS 批量校对流水线实操 |
+| — | [article-4-vertical-template.md](./article-4-vertical-template.md) | 每周汇报别再手工套模板了：把公司模板交给 AI，让它按形状对位出整套文档 |
+| — | [article-5-comparison.md](./article-5-comparison.md) | 已经装了 WPS AI，还要不要第三方加载项？办公 AI 选型的五个维度 |
