@@ -57,10 +57,14 @@ function jsaddonsDir() {
     return path.join(process.env.APPDATA || '', 'kingsoft', 'wps', 'jsaddons')
   }
   if (process.platform === 'darwin') {
-    return path.join(
-      os.homedir(),
-      'Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons'
-    )
+    // 沙盒版 WPS 读容器路径；非沙盒/旧布局读 Application Support。
+    // 两者只取实际存在者——写一个 WPS 不读的路径 = 注册静默无效
+    // （2026-11-19 本机实测：12.1.2 只有 Application Support 布局，容器路径不存在）。
+    const candidates = [
+      path.join(os.homedir(), 'Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons'),
+      path.join(os.homedir(), 'Library/Application Support/Kingsoft/wps/jsaddons')
+    ]
+    return candidates.find((p) => fs.existsSync(p)) || null
   }
   return path.join(os.homedir(), '.local/share/Kingsoft/wps/jsaddons')
 }
@@ -160,8 +164,8 @@ function launchWps() {
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const dir = jsaddonsDir()
-  if (!fs.existsSync(dir)) {
-    console.error(`未找到 WPS jsaddons 目录：${dir}\n请确认已安装 WPS（或本加载项至少安装过一次）。`)
+  if (!dir) {
+    console.error('未找到 WPS jsaddons 目录（已尝试 macOS 容器路径与 Application Support 路径）。\n请确认已安装 WPS（或本加载项至少安装过一次）。')
     process.exit(1)
   }
 

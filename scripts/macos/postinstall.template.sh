@@ -71,7 +71,11 @@ sync_jsplugins() {
 	{
 		echo '<?xml version="1.0" encoding="UTF-8"?>'
 		echo '<jsplugins>'
-		/usr/bin/grep -v 'name="chayuan' "$jp" 2>/dev/null | /usr/bin/grep -v '</jsplugins>' | /usr/bin/grep -v '<?xml' || true
+		# <jsplugins> 开标签必须一并滤掉：只滤闭合标签的话，源文件里历史遗留的
+		# 多余开标签会被原样保留，每装一次净增一个，最终 3 开 1 闭畸形、WPS 解析
+		# 直接失败 → 加载项整个不出现（2026-11-19 真机事故）。条目行是
+		# `<jsplugin name=…`（jsplugin 后跟空格），不会被 '<jsplugins>' 误滤。
+		/usr/bin/grep -v 'name="chayuan' "$jp" 2>/dev/null | /usr/bin/grep -v '<jsplugins>' | /usr/bin/grep -v '</jsplugins>' | /usr/bin/grep -v '<?xml' || true
 		echo "$entries"
 		echo '</jsplugins>'
 	} > "$tmp" 2>/dev/null || { /bin/rm -f "$tmp"; return 0; }
