@@ -599,7 +599,10 @@ export async function runMcpChatOrchestrator({
         systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx, attachedSkillCount }),
         restoreMessages: loopRef.messages,
         runText: continueText,
-        phaseLabel: '续跑'
+        phaseLabel: '续跑',
+        // 续跑指令不重复注入技能块（技能正文已在首段历史里，restore 完整保留）——
+        // 此前这里没传、门恒开，续跑指令会重复携带 <skill> 块（2026-11-20 冒烟 S26 实证）
+        skipAttachedSkills: true
       })
       continued = true
     }

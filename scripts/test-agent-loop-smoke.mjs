@@ -557,12 +557,18 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
     toolCall('r1', 'chayuan__document_replace', { originalText: 'a', newText: 'b' })
   ] })
   m.chatScript.push({ content: '排版与目录已补完，任务全部完成。' })
-  const r = await run({})
+  // 附加技能走续跑链路：首段注入、续跑段不重复（2026-11-20 技能模块冒烟接入）
+  const r = await run({ attachedSkills: [{ name: 'weekly-report', body: '技能正文Y：按事实/决策/待办/反思整理。' }] })
   A(r.ok === true, 'S22 ok')
   A(r.content.includes('任务全部完成'), 'S22 content 来自续跑收尾: ' + r.content)
   A(m.localCalls.some(c => c.name === 'document_replace'), 'S22 续跑补完写操作')
   A(r.steps.some(s => s.label.includes('自动续跑')), 'S22 step 自动续跑')
   A(r.steps.some(s => s.label.includes('· 续跑）')), 'S22 续跑轮次有标注')
+  const s22firstUser = String(m.requests[0].messages.filter(x => x.role === 'user').pop()?.content || '')
+  A(s22firstUser.includes('<skill name="weekly-report">'), 'S22 首段驱动指令携带技能块')
+  const contUser2 = String(m.requests[25].messages.filter(x => x.role === 'user').pop()?.content || '')
+  A(!contUser2.includes('<skill '), 'S22 续跑指令不重复注入技能块: ' + contUser2.slice(0, 200))
+  A(String(m.requests[25].messages[0].content).includes('附加技能指称映射'), 'S22 续跑系统提示词保留指称映射')
   // 24 工具轮 + 1 收尾轮 + 2 续跑轮 = 27 次模型请求
   A(m.requests.length === 27, 'S22 请求数, got ' + m.requests.length)
   const limitReq = m.requests[24]
@@ -578,6 +584,62 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(JSON.stringify(r.loopMessages || []).includes('任务全部完成'), 'S22 持久化含续跑结论')
   console.log('✓ S22 轮次上限自动续跑（未完成清单驱动）')
 }
+
+// 场景 23：附加技能随消息注入（技能库收割链路）——<skill> 块在用户位、指称映射在系统位
+{
+  const m = baseMock()
+  m.chatScript = [{ content: '已按技能要求完成整理。' }]
+  const r = await run({
+    userText: '按技能整理这份纪要',
+    attachedSkills: [{ name: 'meeting-minutes', body: '第一步：按主题/决议/待办/责任人四要素整理。' }]
+  })
+  A(r.ok === true, 'S23 ok')
+  const first = m.requests[0]
+  const sys = String(first.messages[0].content)
+  const user = String(first.messages.filter(x => x.role === 'user').pop()?.content || '')
+  A(user.includes('<skill name="meeting-minutes">'), 'S23 用户位含 skill 块')
+  A(user.includes('第一步：按主题/决议/待办/责任人四要素整理'), 'S23 技能正文随块注入')
+  A(user.includes('User request:'), 'S23 保留原始用户请求段')
+  A(user.includes('按技能整理这份纪要'), 'S23 用户原话未丢')
+  A(sys.includes('【附加技能指称映射】'), 'S23 系统位含指称映射')
+  A(sys.includes('chayuan__document_'), 'S23 映射落地到 chayuan 工具域')
+  console.log('✓ S23 附加技能随消息注入（<skill> 块 + 指称映射）')
+}
+
+// 场景 24：多技能注入 + 名称引号剥离（防 prompt 结构破坏）
+{
+  const m = baseMock()
+  m.chatScript = [{ content: '两个技能都已遵守。' }]
+  const r = await run({
+    attachedSkills: [
+      { name: 'weird"name', body: '规则A' },
+      { name: 'plain-skill', body: '规则B' }
+    ]
+  })
+  A(r.ok === true, 'S24 ok')
+  const user = String(m.requests[0].messages.filter(x => x.role === 'user').pop()?.content || '')
+  A(user.includes('<skill name="weirdname">'), 'S24 名称引号被剥离')
+  A(user.includes('<skill name="plain-skill">'), 'S24 第二个技能在块')
+  A((user.match(/<skill /g) || []).length === 2, 'S24 恰好两个 skill 块')
+  A(user.includes('Follow their steps and constraints'), 'S24 前置遵循说明（技能优先）')
+  console.log('✓ S24 多技能注入 + 名称引号剥离')
+}
+
+// 场景 25：无附加技能 → 注入分支整体关闭（零污染）
+{
+  const m = baseMock()
+  m.chatScript = [{ content: '普通回合完成。' }]
+  const r = await run({ attachedSkills: [] })
+  A(r.ok === true, 'S25 ok')
+  const first = m.requests[0]
+  const sys = String(first.messages[0].content)
+  const user = String(first.messages.filter(x => x.role === 'user').pop()?.content || '')
+  A(!user.includes('<skill '), 'S25 用户位无 skill 块')
+  A(!sys.includes('附加技能指称映射'), 'S25 系统位无映射块')
+  console.log('✓ S25 无附加技能零注入')
+}
+
+// （原 S26 已并入 S22：续跑不重复注入技能块的真实行为断言挂在自动续跑链路上）
 
 console.log('ALL SCENARIOS PASSED')
 `
