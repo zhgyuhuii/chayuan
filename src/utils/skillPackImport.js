@@ -4,9 +4,9 @@
  * 来自浏览器 File API 的字节，存储为「技能包对象」）。
  *
  * 收割的核心规则（与 office 逐条对齐）：
- *   - 单包 10MB 上限（office 同款 MAX_IMPORT_BYTES）；zip 在逐条目解压过程中
- *     累计限额（webview 无法像 nodeStream 那样边解压边停，改为：能用声明的
- *     uncompressedSize 预检就用，再叠加解压后逐条累计兜底）
+ *   - 单包导入上限 MAX_IMPORT_BYTES（2026-11-21 按用户口径放宽至 10240MB=10GB）：
+ *     大文件在「读取进内存之前」由 File.size 预检拦截（面板侧三入口都做），
+ *     解析函数内的字节级校验作为最后防线
  *   - 条目名安全：拒绝对路径 / .. / 反斜杠 / 空段 / 点开头文件；拒 __MACOSX
  *   - SKILL.md 必须在包根，或恰在一个顶层文件夹下（技能名随该文件夹）
  *   - frontmatter 需 name + description（复用 skillLibrary.parseImportedSkill）
@@ -25,7 +25,7 @@
 import JSZip from 'jszip'
 import { parseImportedSkill } from './skillLibrary.js'
 
-export const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+export const MAX_IMPORT_BYTES = 10240 * 1024 * 1024
 export const MAX_FILE_COUNT = 512
 export const MAX_STORE_BYTES = 2 * 1024 * 1024
 

@@ -216,8 +216,16 @@ import {
 import {
   parsePackFromMdBytes,
   parsePackFromZipBytes,
-  parsePackFromDirFiles
+  parsePackFromDirFiles,
+  MAX_IMPORT_BYTES
 } from '../utils/skillPackImport.js'
+
+/** 读取进内存前的体积预检：超限文件直接拒，避免 arrayBuffer 撑爆 webview
+ *  （上限放宽到 10GB 后这条是主防线，解析函数内的校验只是最后防线） */
+function rejectOversize(size) {
+  if (size <= MAX_IMPORT_BYTES) return ''
+  return `技能包 ${Math.round(size / 1024 / 1024)}MB 超过导入上限（10GB），未导入。`
+}
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -321,6 +329,11 @@ export default {
       // 复位 input.value，让同一文件可重复选择
       if (event?.target) event.target.value = ''
       if (!file) return
+      const oversize = rejectOversize(file.size)
+      if (oversize) {
+        this.flashNotice('failed', oversize)
+        return
+      }
       this.importing = true
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
@@ -340,6 +353,11 @@ export default {
       const file = event?.target?.files?.[0]
       if (event?.target) event.target.value = ''
       if (!file) return
+      const oversize = rejectOversize(file.size)
+      if (oversize) {
+        this.flashNotice('failed', oversize)
+        return
+      }
       this.importing = true
       try {
         const bytes = new Uint8Array(await file.arrayBuffer())
@@ -359,6 +377,11 @@ export default {
       const files = [...(event?.target?.files || [])]
       if (event?.target) event.target.value = ''
       if (!files.length) return
+      const oversize = rejectOversize(files.reduce((n, f) => n + (f.size || 0), 0))
+      if (oversize) {
+        this.flashNotice('failed', oversize)
+        return
+      }
       this.importing = true
       try {
         const entries = []

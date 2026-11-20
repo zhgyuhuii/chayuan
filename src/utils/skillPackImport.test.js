@@ -6,7 +6,8 @@ import { describe, it, expect } from 'vitest'
 import {
   parsePackFromMdBytes,
   parsePackFromZipBytes,
-  parsePackFromDirFiles
+  parsePackFromDirFiles,
+  MAX_IMPORT_BYTES
 } from './skillPackImport.js'
 
 const enc = new TextEncoder()
@@ -28,10 +29,8 @@ describe('parsePackFromMdBytes', () => {
     expect(r.ok).toBe(false)
     expect(r.message).toContain('frontmatter')
   })
-  it('10MB 上限', () => {
-    const r = parsePackFromMdBytes('big.md', new Uint8Array(11 * 1024 * 1024))
-    expect(r.ok).toBe(false)
-    expect(r.message).toContain('上限')
+  it('导入上限口径 = 10240MB（10GB，2026-11-21 用户指定）；超限拦截由 File.size 预检承担', () => {
+    expect(MAX_IMPORT_BYTES).toBe(10240 * 1024 * 1024)
   })
 })
 
