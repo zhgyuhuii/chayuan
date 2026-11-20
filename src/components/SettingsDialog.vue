@@ -34,7 +34,7 @@
         <!-- 第二列：模型清单 / 分类（宽度可拖拽调整，见列尾 resizer） -->
         <div
           class="settings-column column-2"
-          :class="{ 'column-2-narrow': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+          :class="{ 'column-2-narrow': (activeMainMenu === 'general' && activeSubMenu === 'kb') || activeMainMenu === 'skill-settings' }"
           :style="{ width: column2Width + 'px' }"
         >
           <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像，按厂商分组） -->
@@ -463,7 +463,7 @@
         <!-- 第三列：模型设置 / 选择模型 / 配置详情 -->
         <div
           class="settings-column column-3"
-          :class="{ 'column-3-wide': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
+          :class="{ 'column-3-wide': (activeMainMenu === 'general' && activeSubMenu === 'kb') || activeMainMenu === 'skill-settings' }"
         >
           <!-- 模型设置 → 第三级：模型设置 -->
           <div v-if="activeMainMenu === 'model-settings' && selectedModel" class="config-panel" :class="{ 'form-saved': isFormSaved }">
@@ -9447,6 +9447,13 @@ export default {
 
 /* 网络资源搜索面板：占满父容器，自带滚动（复用 KB 设置面板的宿主模式） */
 .config-panel.wr-settings-host {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 技能设置面板 host：与 KB/网络资源同款满铺宿主——零内边距交由面板自管布局，
+   技能卡片列表自身 flex:1 + overflow-y 滚动（2026-11-20 用户反馈：技能设置应在右侧设置栏铺满） */
+.config-panel.skill-settings-host {
   padding: 0;
   overflow: hidden;
 }

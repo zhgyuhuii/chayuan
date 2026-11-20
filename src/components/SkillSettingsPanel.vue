@@ -295,6 +295,9 @@ export default {
   height: 100%;
   min-height: 0;
   gap: 12px;
+  /* 宿主 config-panel.skill-settings-host 已零内边距满铺，边距由本面板自理 */
+  padding: 12px 16px;
+  box-sizing: border-box;
 }
 .skill-lead {
   margin: 0;
