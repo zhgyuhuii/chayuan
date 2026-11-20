@@ -1,6 +1,15 @@
 <template>
   <div class="skill-settings-panel">
-    <div class="column-title">技能设置</div>
+    <div class="skill-title-row">
+      <div class="column-title">技能设置</div>
+      <button
+        type="button"
+        class="skill-help-btn"
+        title="技能使用帮助"
+        aria-label="技能使用帮助"
+        @click="helpOpen = true"
+      >?</button>
+    </div>
     <p class="skill-lead">
       技能是随版本内置的「专家工作流」：在对话发送前勾选附加，AI 会按该技能的角色与方法完成任务
       （收割自上游 GenOffice 推荐技能库，v{{ libraryVersion }}）。停用的技能不会出现在对话的技能附加列表中。
@@ -133,6 +142,20 @@
         <div class="skill-viewer-body" v-html="viewingBodyHtml"></div>
       </div>
     </div>
+
+    <!-- ============ 技能使用帮助浮层(内容内置打包,离线可用) ============ -->
+    <div v-if="helpOpen" class="skill-viewer-mask" @click.self="helpOpen = false">
+      <div class="skill-viewer skill-help-viewer">
+        <div class="skill-viewer-head">
+          <div>
+            <span class="skill-name">技能使用帮助</span>
+            <span class="skill-badge">随版本内置</span>
+          </div>
+          <button class="skill-btn" @click="helpOpen = false">关闭</button>
+        </div>
+        <div class="skill-viewer-body" v-html="helpBodyHtml"></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -153,6 +176,7 @@
  * 正文预览走 renderMarkdownSafe（先整体转义再解析，无注入路径）。
  */
 import { marked } from 'marked'
+import { SKILL_HELP_MD } from './skillSettingsHelp.js'
 import {
   listBuiltinSkills,
   searchSkills,
@@ -183,6 +207,7 @@ export default {
       disabledNames: [],
       customSkills: [],
       viewing: null,
+      helpOpen: false,
       importing: false,
       notice: null,
       noticeTimer: null
@@ -212,6 +237,10 @@ export default {
     viewingBodyHtml() {
       if (!this.viewing) return ''
       return marked.parse(String(this.viewing.body || ''), { async: false })
+    },
+    helpBodyHtml() {
+      // 帮助内容为本模块内置常量(非用户输入),无注入路径
+      return marked.parse(SKILL_HELP_MD, { async: false })
     }
   },
   mounted() {
@@ -298,6 +327,50 @@ export default {
   /* 宿主 config-panel.skill-settings-host 已零内边距满铺，边距由本面板自理 */
   padding: 12px 16px;
   box-sizing: border-box;
+}
+/* 页首行:标题 + 右上角帮助入口 */
+.skill-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.skill-help-btn {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color, #e0e3e8);
+  background: transparent;
+  color: var(--text-secondary, #8a8f99);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.skill-help-btn:hover {
+  color: var(--primary-color, #2b6de5);
+  border-color: var(--primary-color, #2b6de5);
+}
+/* 帮助模态:比技能全文查看器略宽(长文档阅读) */
+.skill-help-viewer {
+  width: min(860px, 94vw);
+}
+.skill-help-viewer .skill-viewer-body :deep(h1) {
+  font-size: 17px;
+  margin-top: 0;
+}
+.skill-help-viewer .skill-viewer-body :deep(h2) {
+  font-size: 15px;
+  margin-top: 18px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color, #e0e3e8);
+}
+.skill-help-viewer .skill-viewer-body :deep(h3) {
+  color: var(--primary-color, #2b6de5);
 }
 .skill-lead {
   margin: 0;
