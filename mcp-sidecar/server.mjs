@@ -29,6 +29,7 @@ import { createAuditLog } from './lib/auditLog.mjs'
 import { writeMcpServerJson, findWpsExecutable, launchWps, openFileWithOs } from './lib/platformBridge.mjs'
 import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
 import { imageSearchTool, generateImageTool, saveTmpImage } from './lib/imageTools.mjs'
+import { listSkillPacks, saveSkillPack, removeSkillPack } from './lib/skillPackStore.mjs'
 import { probeResource, saveWebResourcesConfig, loadWebResourcesConfig } from './lib/webResources.mjs'
 
 const dataDir = ensureDataDir()
@@ -695,6 +696,28 @@ const server = http.createServer(async (req, res) => {
       if (!isTrusted(req)) { unauthorized(res); return }
       const body = (await readBody(req)) || {}
       sendJson(res, 200, await generateImageTool(dataDir, body))
+      return
+    }
+
+    // 技能包磁盘存储（面板「我的技能」/技能市场下载落点）：PluginStorage 配额装
+    // 不下真实技能包，存储层落到 sidecar 文件系统（dataDir/skills/<name>/）。
+    // 不挂 token 门禁——与 /mcp tools/call、/app-settings 同款安全模型：
+    // sidecar 仅绑 127.0.0.1，token 防的是环回不可达的远程方，本机 webview 的
+    // token 引导（/token bootstrap 响应读取）在部分 webview 被 CORS 挡住，
+    // 强制门禁会让「我的技能」在面板侧永远 401（2026-11-21 实证）。
+    if (pathname === '/skillpack/list' && req.method === 'GET') {
+      const packsNow = listSkillPacks(dataDir)
+      sendJson(res, 200, { ok: true, packs: packsNow })
+      return
+    }
+    if (pathname === '/skillpack/save' && req.method === 'POST') {
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, saveSkillPack(dataDir, body?.pack ?? body))
+      return
+    }
+    if (pathname === '/skillpack/remove' && req.method === 'POST') {
+      const body = (await readBody(req)) || {}
+      sendJson(res, 200, removeSkillPack(dataDir, String(body?.name || '')))
       return
     }
 

@@ -210,9 +210,13 @@ import {
   readSkillSettings,
   setSkillEnabled,
   listCustomSkills,
-  upsertCustomSkill,
   removeCustomSkill
 } from '../utils/skillSettings.js'
+import {
+  loadSkillPacks,
+  saveSkillPackAnywhere,
+  removeSkillPackAnywhere
+} from '../utils/skillPackStore.js'
 import {
   parsePackFromMdBytes,
   parsePackFromZipBytes,
@@ -288,6 +292,13 @@ export default {
     reload() {
       this.disabledNames = readSkillSettings().disabledSkills
       this.customSkills = listCustomSkills()
+      // 异步合流：sidecar 技能包为权威存储（本地残留会被自动迁移过去）。
+      // 同名时 sidecar 赢；loadSkillPacks 内部完成迁移
+      loadSkillPacks().then((packs) => {
+        const names = new Set(packs.map(p => p.name))
+        const locals = this.customSkills.filter(s => !names.has(s.name))
+        this.customSkills = [...packs.map(p => ({ ...p, local: !!p.local })), ...locals]
+      }).catch(() => { /* 保持本地列表 */ })
     },
     flashNotice(kind, text) {
       this.notice = { kind, text }
@@ -308,20 +319,16 @@ export default {
     pickImportDir() {
       this.$refs.importDirInput?.click()
     },
-    /** 入库一个技能包对象（skillPackImport 产出），失败给中文提示 */
+    /** 入库一个技能包对象（skillPackImport 产出）：sidecar 权威，不可达时本地兜底 */
     async commitPack(pack) {
-      const r = upsertCustomSkill(pack)
+      const r = await saveSkillPackAnywhere(pack)
       if (!r.ok) {
-        const msg = {
-          limit: '「我的技能」数量已达上限（32 个）。',
-          persist: '写入存储失败：技能包超出面板存储配额，未导入（可精简包内附属文件后重试）。',
-          invalid: '导入内容无效。'
-        }[r.reason] || '导入内容无效。'
-        this.flashNotice('failed', msg)
+        this.flashNotice('failed', r.message)
         return false
       }
       this.reload()
-      this.flashNotice('done', `已导入技能「${pack.name}」${pack.entries?.length > 1 ? `（${pack.entries.length} 个文件）` : ''}。`)
+      const where = r.local ? '（sidecar 未运行，暂存本机，下次启动自动迁移）' : ''
+      this.flashNotice('done', `已导入技能「${pack.name}」${pack.entries?.length > 1 ? `（${pack.entries.length} 个文件）` : ''}${where}。`)
       return true
     },
     async onImportFile(event) {
@@ -401,9 +408,9 @@ export default {
         this.importing = false
       }
     },
-    onRemoveCustom(skill) {
+    async onRemoveCustom(skill) {
       if (!window.confirm(`删除技能「${skill.name}」？该操作不可恢复。`)) return
-      removeCustomSkill(skill.name)
+      await removeSkillPackAnywhere(skill.name)
       if (this.viewing?.name === skill.name) this.viewing = null
       this.reload()
       this.flashNotice('done', `已删除技能「${skill.name}」。`)

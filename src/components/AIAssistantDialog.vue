@@ -3050,6 +3050,7 @@ import {
   MAX_ATTACHED_SKILLS
 } from '../utils/skillLibrary.js'
 import { isSkillEnabled, listCustomSkills } from '../utils/skillSettings.js'
+import { loadSkillPacks } from '../utils/skillPackStore.js'
 import { startSidecarBestEffort } from '../services/mcpBridge/sidecarLauncher.js'
 import {
   getHostAssistantDisplayItems,
@@ -6404,6 +6405,7 @@ export default {
       setTimeout(() => { this.skillPickerOpen = false }, 150)
     },
     refreshSkillItems() {
+      // 同步部分：内置（启停过滤）+ 本地兜底自定义；sidecar 技能包异步到货后合流
       try {
         const builtin = listBuiltinSkills().filter(s => isSkillEnabled(s.name))
         const custom = listCustomSkills()
@@ -6414,6 +6416,19 @@ export default {
       } catch (_) {
         this.skillItems = []
       }
+      // 异步部分：sidecar 技能包（权威存储，含本地迁移）。到货合流：sidecar
+      // 同名赢，内置保持启停过滤
+      loadSkillPacks().then((packs) => {
+        const enabled = packs.filter(p => isSkillEnabled(p.name))
+        const remoteNames = new Set(enabled.map(p => p.name))
+        const merged = [
+          ...listBuiltinSkills().filter(s => isSkillEnabled(s.name) && !remoteNames.has(s.name)),
+          ...enabled
+        ]
+        this.skillItems = merged
+        const names = new Set(this.skillItems.map(s => s.name))
+        this.selectedSkillNames = this.selectedSkillNames.filter(n => names.has(n))
+      }).catch(() => { /* 保持同步部分的结果 */ })
     },
     toggleSelectedSkill(name) {
       if (this.selectedSkillNames.includes(name)) {
