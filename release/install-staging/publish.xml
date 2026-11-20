@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jsplugins>
-    <jsplugin name="chayuan" type="wps" url="chayuan_6.1.2" version="6.1.2" enable="enable" install="null" customDomain="" debug="code"/>
-    <jsplugin name="chayuan-et" type="et" url="chayuan-et_6.1.2" version="6.1.2" enable="enable" install="null" customDomain="" debug="code"/>
-    <jsplugin name="chayuan-wpp" type="wpp" url="chayuan-wpp_6.1.2" version="6.1.2" enable="enable" install="null" customDomain="" debug="code"/>
+    <jsplugin name="chayuan" type="wps" url="chayuan_6.2.0" version="6.2.0" enable="enable" install="null" customDomain=""/>
+    <jsplugin name="chayuan-et" type="et" url="chayuan-et_6.2.0" version="6.2.0" enable="enable" install="null" customDomain=""/>
+    <jsplugin name="chayuan-wpp" type="wpp" url="chayuan-wpp_6.2.0" version="6.2.0" enable="enable" install="null" customDomain=""/>
 </jsplugins>
