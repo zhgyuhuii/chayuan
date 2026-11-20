@@ -2230,7 +2230,7 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
-        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen }">
+        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen || skillPickerOpen }">
           <div class="composer-doc-binding" :title="docBindingLabel">{{ docBindingLabel }}</div>
           <div v-if="attachments.length" class="composer-meta-row">
             <div
