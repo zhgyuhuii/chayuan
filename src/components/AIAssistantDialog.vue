@@ -2230,7 +2230,7 @@
 
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
-        <div class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen || skillPickerOpen }">
+        <div ref="composerShell" class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen || skillPickerOpen }">
           <div class="composer-doc-binding" :title="docBindingLabel">{{ docBindingLabel }}</div>
           <div v-if="attachments.length" class="composer-meta-row">
             <div
@@ -2538,7 +2538,7 @@
               </svg>
               <span v-if="selectedSkillNames.length" class="composer-tool-badge">{{ selectedSkillNames.length }}</span>
             </button>
-            <div v-if="skillPickerOpen" class="skill-picker-dropdown" @mousedown.prevent>
+            <div v-if="skillPickerOpen" class="skill-picker-dropdown" @mousedown.prevent @scroll="pickerTip = null">
               <input
                 v-model.trim="skillSearchText"
                 type="search"
@@ -2547,16 +2547,35 @@
               >
               <template v-if="filteredSkillGroups.length">
                 <div v-for="[cat, list] in filteredSkillGroups" :key="cat" class="skill-picker-group">
-                  <div class="skill-picker-group-label">{{ skillCategoryLabel(cat) }}</div>
-                  <label v-for="s in list" :key="s.name" class="skill-picker-row" :title="s.description">
-                    <input
-                      type="checkbox"
-                      :checked="selectedSkillNames.includes(s.name)"
-                      @change="toggleSelectedSkill(s.name)"
+                  <button
+                    type="button"
+                    class="skill-picker-group-head"
+                    @click="togglePickerGroup(cat)"
+                  >
+                    <span
+                      class="skill-picker-caret"
+                      :class="{ collapsed: pickerGroupCollapsed[cat] && !pickerSearchActive }"
+                    ></span>
+                    <span class="skill-picker-group-label">{{ skillCategoryLabel(cat) }}</span>
+                    <span class="skill-picker-group-count">{{ list.length }}</span>
+                  </button>
+                  <template v-if="pickerSearchActive || !pickerGroupCollapsed[cat]">
+                    <label
+                      v-for="s in list"
+                      :key="s.name"
+                      class="skill-picker-row"
+                      @mouseenter="showPickerTip(s, $event)"
+                      @mouseleave="pickerTip = null"
                     >
-                    <span class="skill-picker-row-name">{{ s.name }}</span>
-                    <span class="skill-picker-row-desc">{{ s.description }}</span>
-                  </label>
+                      <input
+                        type="checkbox"
+                        :checked="selectedSkillNames.includes(s.name)"
+                        @change="toggleSelectedSkill(s.name)"
+                      >
+                      <span class="skill-picker-row-name">{{ s.name }}</span>
+                      <span class="skill-picker-row-desc">{{ s.description }}</span>
+                    </label>
+                  </template>
                 </div>
               </template>
               <div v-else class="skill-picker-empty">没有匹配的技能；可在「设置 → 技能设置」启用或导入。</div>
@@ -2641,6 +2660,20 @@
             @keydown="handleComposerKeydown"
           />
         </div>
+        </div>
+        <!-- 附加技能悬停详情浮层：锚定 composer-shell（relative），固定宽卡片，
+             超出右缘自动翻到左侧；跟随悬停行，移开即消失 -->
+        <div
+          v-if="pickerTip"
+          class="skill-picker-tip"
+          :style="{ left: pickerTip.left + 'px', top: pickerTip.top + 'px' }"
+        >
+          <div class="skill-picker-tip-head">
+            <span class="skill-picker-tip-name">{{ pickerTip.name }}</span>
+            <span v-if="pickerTip.category" class="skill-picker-tip-badge">{{ skillCategoryLabel(pickerTip.category) }}</span>
+            <span v-if="pickerTip.version" class="skill-picker-tip-badge">v{{ pickerTip.version }}</span>
+          </div>
+          <div class="skill-picker-tip-desc">{{ pickerTip.description }}</div>
         </div>
         <div v-if="selectionContextSnapshot" class="context-sense-panel" :class="{ collapsed: selectionContextCollapsed }">
           <div v-if="!selectionContextCollapsed" class="context-sense-bar">
@@ -4492,6 +4525,9 @@ export default {
       skillSearchText: '',
       skillItems: [],
       selectedSkillNames: [],
+      // 技能选择器分组折叠（cat → 是否折叠；搜索激活时强制全展开）与悬停详情浮层
+      pickerGroupCollapsed: {},
+      pickerTip: null,
       mcpServerList: [],
       sidebarWidth: 300,
       sidebarCollapsed: false,
@@ -4631,6 +4667,10 @@ export default {
     },
     maxAttachedSkills() {
       return MAX_ATTACHED_SKILLS
+    },
+    // 技能选择器搜索激活时分组强制全展开（折叠只对浏览态有意义）
+    pickerSearchActive() {
+      return !!String(this.skillSearchText || '').trim()
     },
     // 当前窗口形态：浮窗 or 停靠方向。优先读 PluginStorage 记忆（停靠间互切
     // 快路径只改 DockPosition 不换 URL，路由里的 dock 参数会过期，不能作准）
@@ -5082,6 +5122,10 @@ export default {
     }
   },
   watch: {
+    // 技能选择器关闭 → 悬停详情浮层一并消失
+    skillPickerOpen(open) {
+      if (!open) this.pickerTip = null
+    },
     isWindowBusy: {
       flush: 'sync',
       handler() {
@@ -6384,6 +6428,29 @@ export default {
     },
     clearSelectedSkills() {
       this.selectedSkillNames = []
+    },
+    // 技能选择器分组折叠：整对象替换保持响应式（cat 为动态键）
+    togglePickerGroup(cat) {
+      this.pickerGroupCollapsed = { ...this.pickerGroupCollapsed, [cat]: !this.pickerGroupCollapsed[cat] }
+    },
+    // 悬停详情浮层：锚定 composer-shell，贴行右侧；右缘放不下翻到行左侧，
+    // 垂直方向收敛在 shell 可视范围内
+    showPickerTip(skill, ev) {
+      try {
+        const shell = this.$refs.composerShell
+        const row = ev?.currentTarget
+        if (!shell || !row) { this.pickerTip = null; return }
+        const shellR = shell.getBoundingClientRect()
+        const rowR = row.getBoundingClientRect()
+        const TIP_W = 264
+        let left = rowR.right - shellR.left + 10
+        if (left + TIP_W > shellR.width - 8) left = Math.max(8, rowR.left - shellR.left - TIP_W - 10)
+        let top = rowR.top - shellR.top - 8
+        const maxTop = shellR.height - 150
+        if (top > maxTop) top = Math.max(8, maxTop)
+        if (top < 0) top = 8
+        this.pickerTip = { name: skill.name, category: skill.category, version: skill.version, description: skill.description, left: Math.round(left), top: Math.round(top) }
+      } catch { this.pickerTip = null }
     },
     skillCategoryLabel(key) {
       return CATEGORY_LABELS[key] || CATEGORY_LABELS.other
@@ -22122,11 +22189,42 @@ export default {
 .skill-picker-group + .skill-picker-group {
   margin-top: 4px;
 }
+/* 分组头：可点击折叠/展开（箭头 + 名称 + 计数） */
+.skill-picker-group-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 6px 2px;
+  cursor: pointer;
+  text-align: left;
+}
+.skill-picker-caret {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #8a8f99;
+  transition: transform 0.15s ease;
+}
+.skill-picker-caret.collapsed {
+  transform: rotate(-90deg);
+}
+.skill-picker-group-head:hover .skill-picker-group-label {
+  color: #1f2430;
+}
 .skill-picker-group-label {
   font-size: 10.5px;
   font-weight: 650;
   color: #8a8f99;
-  padding: 4px 6px 2px;
+}
+.skill-picker-group-count {
+  font-size: 10px;
+  color: #b3b9c4;
 }
 .skill-picker-row {
   display: flex;
@@ -22177,6 +22275,45 @@ export default {
 .skill-picker-count {
   font-size: 11px;
   color: #8a8f99;
+}
+/* 悬停详情浮层：锚定 composer-shell（relative），position:absolute + rect 计算定位；
+   pointer-events:none 保证不挡行悬停，移开即消失 */
+.skill-picker-tip {
+  position: absolute;
+  width: 264px;
+  z-index: 70;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  padding: 10px 12px;
+  pointer-events: none;
+}
+.skill-picker-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.skill-picker-tip-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2430;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.skill-picker-tip-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+.skill-picker-tip-desc {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #4a5160;
+  white-space: pre-wrap;
 }
 .composer-skill-row {
   display: flex;
