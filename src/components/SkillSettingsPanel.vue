@@ -94,8 +94,15 @@
         <button class="skill-btn" :disabled="importing" @click="pickImport">
           {{ importing ? '导入中…' : '导入 SKILL.md' }}
         </button>
+        <button class="skill-btn" :disabled="importing" @click="pickImportZip">
+          导入 ZIP
+        </button>
+        <button class="skill-btn" :disabled="importing" @click="pickImportDir">
+          导入文件夹
+        </button>
         <span class="skill-import-hint">
-          选择本机 SKILL.md 文件（需含 name 与 description 的 frontmatter），导入后即可在对话中附加。
+          支持 SKILL.md 单文件、整包 zip 或文件夹（SKILL.md 需在包根或恰一个顶层文件夹下，
+          需含 name 与 description frontmatter，整包 ≤2MB）。导入后与内置技能使用方式一致。
         </span>
         <input
           ref="importInput"
@@ -103,6 +110,21 @@
           accept=".md,.markdown,text/markdown"
           style="display: none"
           @change="onImportFile"
+        >
+        <input
+          ref="importZipInput"
+          type="file"
+          accept=".zip,application/zip"
+          style="display: none"
+          @change="onImportZip"
+        >
+        <input
+          ref="importDirInput"
+          type="file"
+          webkitdirectory
+          multiple
+          style="display: none"
+          @change="onImportDir"
         >
       </div>
       <div v-if="notice" class="skill-notice" :class="notice.kind">
@@ -120,6 +142,7 @@
             <div class="skill-card-title">
               <span class="skill-name">{{ s.name }}</span>
               <span class="skill-badge">{{ categoryLabel(s.category) }}</span>
+              <span v-if="s.entries?.length > 1" class="skill-badge">{{ s.entries.length }} 个文件</span>
             </div>
             <div class="skill-desc" :title="s.description">{{ s.description || '（无描述）' }}</div>
           </div>
@@ -180,10 +203,8 @@ import { SKILL_HELP_MD } from './skillSettingsHelp.js'
 import {
   listBuiltinSkills,
   searchSkills,
-  parseImportedSkill,
   CATEGORY_LABELS,
-  CATEGORY_ORDER,
-  MAX_SKILL_BODY_CHARS
+  CATEGORY_ORDER
 } from '../utils/skillLibrary.js'
 import {
   readSkillSettings,
@@ -192,8 +213,11 @@ import {
   upsertCustomSkill,
   removeCustomSkill
 } from '../utils/skillSettings.js'
-
-const IMPORT_MAX_CHARS = 128 * 1024
+import {
+  parsePackFromMdBytes,
+  parsePackFromZipBytes,
+  parsePackFromDirFiles
+} from '../utils/skillPackImport.js'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -270,6 +294,28 @@ export default {
     pickImport() {
       this.$refs.importInput?.click()
     },
+    pickImportZip() {
+      this.$refs.importZipInput?.click()
+    },
+    pickImportDir() {
+      this.$refs.importDirInput?.click()
+    },
+    /** 入库一个技能包对象（skillPackImport 产出），失败给中文提示 */
+    async commitPack(pack) {
+      const r = upsertCustomSkill(pack)
+      if (!r.ok) {
+        const msg = {
+          limit: '「我的技能」数量已达上限（32 个）。',
+          persist: '写入存储失败：技能包超出面板存储配额，未导入（可精简包内附属文件后重试）。',
+          invalid: '导入内容无效。'
+        }[r.reason] || '导入内容无效。'
+        this.flashNotice('failed', msg)
+        return false
+      }
+      this.reload()
+      this.flashNotice('done', `已导入技能「${pack.name}」${pack.entries?.length > 1 ? `（${pack.entries.length} 个文件）` : ''}。`)
+      return true
+    },
     async onImportFile(event) {
       const file = event?.target?.files?.[0]
       // 复位 input.value，让同一文件可重复选择
@@ -277,29 +323,55 @@ export default {
       if (!file) return
       this.importing = true
       try {
-        if (file.size > IMPORT_MAX_CHARS) {
-          this.flashNotice('failed', `文件过大（${Math.round(file.size / 1024)}KB > 128KB），未导入。`)
-          return
-        }
-        const text = await file.text()
-        const parsed = parseImportedSkill(text)
-        if (!parsed.ok) {
-          this.flashNotice('failed', parsed.reason === 'frontmatter'
-            ? '未找到有效 frontmatter（文件需以 --- 开头的 YAML 块，且含 name 与 description），未导入。'
-            : '导入内容无效。')
-          return
-        }
-        if (parsed.card.body.length > MAX_SKILL_BODY_CHARS) {
-          this.flashNotice('failed', `技能正文超过 ${MAX_SKILL_BODY_CHARS} 字符上限，未导入。`)
-          return
-        }
-        const r = upsertCustomSkill(parsed.card)
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const r = parsePackFromMdBytes(file.name, bytes)
         if (!r.ok) {
-          this.flashNotice('failed', r.reason === 'limit' ? '「我的技能」数量已达上限（32 个）。' : '导入内容无效。')
+          this.flashNotice('failed', r.message)
           return
         }
-        this.reload()
-        this.flashNotice('done', `已导入技能「${parsed.card.name}」。`)
+        await this.commitPack(r.pack)
+      } catch (e) {
+        this.flashNotice('failed', `导入失败：${e?.message || e}`)
+      } finally {
+        this.importing = false
+      }
+    },
+    async onImportZip(event) {
+      const file = event?.target?.files?.[0]
+      if (event?.target) event.target.value = ''
+      if (!file) return
+      this.importing = true
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const r = await parsePackFromZipBytes(file.name, bytes)
+        if (!r.ok) {
+          this.flashNotice('failed', r.message)
+          return
+        }
+        await this.commitPack(r.pack)
+      } catch (e) {
+        this.flashNotice('failed', `导入失败：${e?.message || e}`)
+      } finally {
+        this.importing = false
+      }
+    },
+    async onImportDir(event) {
+      const files = [...(event?.target?.files || [])]
+      if (event?.target) event.target.value = ''
+      if (!files.length) return
+      this.importing = true
+      try {
+        const entries = []
+        for (const f of files) {
+          const rel = String(f.webkitRelativePath || f.name)
+          entries.push({ relativePath: rel, bytes: new Uint8Array(await f.arrayBuffer()) })
+        }
+        const r = parsePackFromDirFiles(entries)
+        if (!r.ok) {
+          this.flashNotice('failed', r.message)
+          return
+        }
+        await this.commitPack(r.pack)
       } catch (e) {
         this.flashNotice('failed', `导入失败：${e?.message || e}`)
       } finally {

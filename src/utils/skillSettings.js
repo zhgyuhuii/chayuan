@@ -75,13 +75,18 @@ export function listCustomSkills() {
   return readSkillSettings().customSkills
 }
 
-export function upsertCustomSkill({ name, description, category, version, body }) {
+export function upsertCustomSkill({ name, description, category, version, body, entries }) {
   const cur = readSkillSettings()
   const cleanName = String(name || '').trim()
   const cleanBody = String(body || '')
   if (!cleanName || !cleanBody) return { ok: false, reason: 'invalid' }
   const rest = cur.customSkills.filter(s => s.name !== cleanName)
   if (rest.length >= MAX_CUSTOM_SKILLS) return { ok: false, reason: 'limit' }
+  const cleanEntries = Array.isArray(entries)
+    ? entries
+      .filter(e => e && typeof e.path === 'string' && typeof e.bytesB64 === 'string')
+      .slice(0, 512)
+    : []
   const next = [
     ...rest,
     {
@@ -90,10 +95,19 @@ export function upsertCustomSkill({ name, description, category, version, body }
       category: String(category || '').trim() || 'other',
       version: String(version || '').trim(),
       body: cleanBody,
+      ...(cleanEntries.length ? { entries: cleanEntries } : {}),
       addedAt: Date.now()
     }
   ]
-  writeSkillSettings({ ...cur, customSkills: next })
+  const nextState = { ...cur, customSkills: next }
+  // 写入 + 回读双确认：PluginStorage/localStorage 配额拒绝可能静默丢包
+  // （zip/文件夹导入的整包 base64 体积不小），失败必须让导入方知晓
+  if (!writeSkillSettings(nextState)) return { ok: false, reason: 'persist' }
+  const back = readSkillSettings().customSkills.find(s => s.name === cleanName)
+  if (!back) return { ok: false, reason: 'persist' }
+  if (cleanEntries.length && (!Array.isArray(back.entries) || back.entries.length !== cleanEntries.length)) {
+    return { ok: false, reason: 'persist' }
+  }
   return { ok: true }
 }
 
