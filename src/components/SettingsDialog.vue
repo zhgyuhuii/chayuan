@@ -31,10 +31,12 @@
           </div>
         </div>
 
-        <!-- 第二列：模型清单 / 分类（宽度可拖拽调整，见列尾 resizer） -->
+        <!-- 第二列：模型清单 / 分类（宽度可拖拽调整，见列尾 resizer）。
+             技能设置无二级清单，整列隐藏（含列尾 resizer），三栏退化两栏、右栏铺满 -->
         <div
+          v-show="activeMainMenu !== 'skill-settings'"
           class="settings-column column-2"
-          :class="{ 'column-2-narrow': (activeMainMenu === 'general' && activeSubMenu === 'kb') || activeMainMenu === 'skill-settings' }"
+          :class="{ 'column-2-narrow': activeMainMenu === 'general' && activeSubMenu === 'kb' }"
           :style="{ width: column2Width + 'px' }"
         >
           <!-- 模型设置 → 第二级：模型清单（本地+在线，支持对话/嵌入/图像，按厂商分组） -->
@@ -451,8 +453,10 @@
           </div>
         </div>
 
-        <!-- 第二/三列分割线：按住左右拖动调整模型厂商列宽度（松开记忆） -->
+        <!-- 第二/三列分割线：按住左右拖动调整模型厂商列宽度（松开记忆）。
+             技能设置页中栏已隐藏，resizer 一并隐藏 -->
         <div
+          v-show="activeMainMenu !== 'skill-settings'"
           class="column-resizer"
           :class="{ 'column-resizer-active': column2Resizing }"
           @mousedown.prevent="startColumn2Resize"
