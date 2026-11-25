@@ -7,7 +7,7 @@
                  + 更多表格助手▾（高频带参配方收纳，点击预填） -->
             <tab id="tabAssistantEt" label="察元AI助理">
                 <group id="groupAIAssistantEt" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistantEt" label="AI表格助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistantEt" label="察元AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtFormula" label="公式助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtInsight" label="数据洞察" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtChart" label="一键图表" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>

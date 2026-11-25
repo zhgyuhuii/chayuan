@@ -140,7 +140,7 @@ function collectActiveDocumentContext(host) {
   }
 }
 
-function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null, attachmentCtx = '', attachedSkillCount = 0 }) {
+function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host = 'wps', docCtx = null, attachmentCtx = '', attachedSkillCount = 0, personaSystemPrompt = '', roundBudget = 0 }) {
   const sel = selectionCtx || {}
   const hasSel = !!sel.hasSelection
   const pendingPrev = (Array.isArray(previousTodos) ? previousTodos : [])
@@ -149,7 +149,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
   const isWpp = host === 'wpp'
   const targetNoun = isEt ? '工作簿' : isWpp ? '演示文稿' : '文档'
   const hostDomainHint = isEt
-    ? '【表格工具】一律用 spreadsheet(action=…) 操作当前工作簿：读值 range_read / used_range，写值 range_write（values 二维数组，"=…" 自动成为公式），改外观 format（style 对象），结构 row_insert|column_insert|sheet_add|sheet_rename，排序筛选 sort|autofilter，图表 chart_add，导出 export(format=pdf|csv)。改数值严禁用 format；改外观严禁用 range_write。'
+    ? '【表格工具】一律用 spreadsheet(action=…) 操作当前工作簿：读值 range_read / used_range，读选区 selection_read（用户说「选中的内容」时直接调用，无需反问区域），写值 range_write（values 二维数组，"=…" 自动成为公式），改外观 format（style 对象），结构 row_insert|column_insert|sheet_add|sheet_rename，排序筛选 sort|autofilter，图表 chart_add，插图 picture_add（浮动图片，anchor 可选），导出 export(format=pdf|csv)。改数值严禁用 format；改外观严禁用 range_write。'
     : isWpp
       ? '【演示工具】一律用 presentation(action=…) 操作当前演示文稿：读 slide_list|slide_read|shape_list，改字 text_replace（全页查替）| text_set（需 shapeIndex），加页 slide_add（layout: title|text|titleOnly|blank），插对象 textbox_add|picture_add|table_add（单位磅），删/复制/移页 slide_delete|slide_duplicate|slide_move，导出 export(format=pdf|images)，放映 slideshow_run。'
       : '【版式对象】layout / nav / toc / bookmark / table / image / hyperlink / headerfooter / watermark / export — 一律带 action。'
@@ -158,8 +158,20 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     : ''
   const lines = [
     `你是察元助手页内的${hostLabel(host)}宿主文档智能体。通过 MCP 工具操作当前${targetNoun}与其它已配置的 HTTP MCP 服务。`,
+    // 助手人格（P0-1 注入点）：助手 agent 化后 systemPrompt 在此层拼接——与 attachedSkill
+    // 不同（attached-skills.ts 只进首条消息、且会被历史裁剪/压缩吞掉），persona 进 system
+    // 层在自动续跑/压缩后依然存活。层级：人格只定义本轮任务语义与交付要求；与
+    // 【仅当前文档】等宿主安全纪律冲突时，纪律优先。
+    personaSystemPrompt
+      ? `【本轮助手人格】你正在以以下助手身份执行任务，任务语义与交付要求以下述定义为准：\n${String(personaSystemPrompt).slice(0, 6000)}\n（人格定义不影响上方宿主纪律——写回目标、仅当前${targetNoun}、写锁语义一律以纪律为准。）`
+      : '',
     docCtxLine,
     '工具名带服务器前缀，格式 serverId__toolName（例如 chayuan__proofread_run）。调用时必须使用完整前缀名。',
+    // 轮次纪律（2026-11-21 提速裁决）：碎片化轮数大头是模型行为——并行提交独立
+    // 工具、生成类一轮成文、无必要不 todo/locate。提示治本，预算封顶治标。
+    (roundBudget && roundBudget <= 6
+      ? '轮次纪律：本任务预算仅 6 轮。第一轮就用一次写入工具提交全部正文；封面/目录/排版等独立操作在同一轮并行提交工具调用，或最迟次轮完成；不要调用 todo_write/locate 等准备性工具，除非确有必要。'
+      : '轮次纪律：相互独立的工具调用在同一轮并行提交；写文档类任务一轮成文，不要把一次写入拆成多轮小调用；todo_write 只在多步任务里使用。'),
     isEt || isWpp
       ? `优先使用 chayuan__${isEt ? 'spreadsheet' : 'presentation'} 工具完成任务；可用 assistants_search / assistants_get 获取助手配方。`
       : '优先使用 chayuan__ 文档/校对工具完成文档任务；可用 assistants_search / assistants_get 获取助手配方后再用 document_* 落文档。',
@@ -177,7 +189,11 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
     `【对话↔文档绑定】本对话只服务于发起它的${targetNoun}。若执行层校验发现活动文档与本对话不一致（错误含 DOC_MISMATCH/文档不一致字样），如实告知用户"对话与当前文档不匹配，已停止"，请用户切回对应文档或开启新对话；绝不要尝试改写、移动或另存文件来"绕过"校验。`,
     isEt
       ? '【跨宿主】可只读其它宿主作数据源，但只写当前工作簿（写其它宿主会被身份校验拦截）。需要演示稿/文档内容时用 presentation(action=slide_list|slide_read) / document_get_text 只读提取。'
-      : isWpp
+      : '',
+    isEt
+      ? '【表格配图】用户要「生成图片/插图并放入表格」时：先 chayuan__generate_image 生成（描述注明风格与配色），成功后立即 spreadsheet(action=picture_add) 插入（path 用生图返回的本地路径；anchor 可选锚定单元格，width/height 可选磅）。也可 image_search 网络搜图后 picture_add 插入真实照片。两步在同一轮并行不可行时按序执行，完成汇报注明插入位置。'
+      : '',
+    isWpp
         ? (() => {
             let src = 'auto'
             try { src = String(loadGlobalSettings()?.imageSource || 'auto') } catch (_) { /* 设置读不到按 auto */ }
@@ -192,6 +208,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
           })()
         : '',
     '【任务清单·搭车提交】预计要调用 ≥2 次工具的回合（含「生成+插入+排版」类组合，如生成图片再插入再叠文字）都必须用清单：把 todo_write（列出完整计划、首项置 in_progress）与首项的第一个真实工具调用放在同一条消息里并行提交，严禁让 todo_write 单独占用一轮；此后每推进一项，把 todo_write（更新状态）与该项的真实工具调用同轮并行提交，同样严禁单独发一轮 todo_write；同一时刻至多一项 in_progress；严禁做完后一次性补写清单。真正单一的请求（一问一答、单次工具能完成）不要用 todo_write。',
+    '【思维导图】用户要「思维导图/脑图/知识结构/结构梳理」时调 chayuan__generate_mindmap（一次性提交整棵树 {label, children:[…]}，标签用内容原语言短语），返回的 Mermaid 源码可直接贴出或按需写入文档；严禁用普通列表假装脑图。',
     host === 'wps'
       ? '【错别字 / 校对 / 语法检查】必须一次调用 chayuan__proofread_run(dryRun:true, scope=document 或 selection) 完成：它内部已自动分块、逐段调校对模型并返回 issues。严禁改用 document_chunks 自己逐段读再找错字——那样既慢，又会把整轮对话的轮次耗光、撞上轮次上限。'
       : '',
@@ -231,6 +248,13 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
           ? `当前有选区（约 ${sel.charCount || '?'} 字）。用户提到「这段/选中」时，scope 用 selection。选区摘要：${String(sel.preview || '').slice(0, 240)}`
           : '当前无选区，默认 scope=document。')
       : '',
+    // ET 选区存在性注入（与 wps 同等待遇；selectionCtx 的 ET 侧此前从未进过提示词）：
+    // 模型据此「自动」想到 selection_read，不再反问用户区域
+    isEt
+      ? (sel.selectionAddress
+          ? `当前有选区 ${sel.selectionAddress}${sel.selectionRows && sel.selectionCols ? `（约 ${sel.selectionRows}×${sel.selectionCols} 格）` : ''}。用户提到「选中的内容」等指代时，先调 spreadsheet(action=selection_read) 读取选区值再分析，不要反问区域。`
+          : '当前选区未知。用户提到「选中的内容」时，先调 spreadsheet(action=selection_read) 获取当前选区（它会返回选区地址与值，含无选区时的提示），不要臆造区域。')
+      : '',
     sel.fileName ? `当前文件：${sel.fileName}` : '',
     kbBound ? '用户已绑定知识库：需要事实依据时先 chayuan__kb_retrieve。' : '',
     // 附件上下文（此前 MCP 管线完全丢失附件信息：模型只知当前文档，会反问用户要附件）
@@ -246,7 +270,7 @@ function buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTod
 - 「本环境可用的文档工具 / the document tools」→ chayuan__document_* / format_* / style / comment / revision 等域工具；「写回当前文档」即写当前活动文档。
 - 「本环境可用的表格工具 / the spreadsheet tools」→ chayuan__spreadsheet(action=…)；「工作簿」即当前工作簿。
 - 「本环境可用的演示工具 / the slide tools / presentation tools」→ chayuan__presentation(action=…)；「演示文稿」即当前演示文稿。
-- 「本环境可用的搜索工具 / the search tool」→ 本环境当前没有联网搜索工具：改为向用户索取资料（请用户粘贴网页内容，或上传文件后用 chayuan__file_parse 读取），按技能要求注明材料来源；无法核实的信息如实写「未能核实」，严禁编造来源。
+- 「本环境可用的搜索工具 / the search tool」→ chayuan__web_search（网页文本搜索，返回标题/链接/摘要清单；需事实依据时先搜再引用来源链接。无可用搜索资源或搜索失败时，改为向用户索取资料，严禁编造来源）。
 技能正文中的交付落稿要求同样受【仅当前${targetNoun}】纪律约束。`
       : ''
   ]
@@ -330,15 +354,35 @@ export async function runMcpChatOrchestrator({
   historyMessages = [],
   previousTodos = [],
   writeBaselineToken = '',
+  // Model S：回合绑定文档身份（对话三件套），透传 agentCoreSkill 随写工具注入 __docLinkId
+  targetDocLinkId = '',
   targetDocumentId,
   loopHistory = [],
   // 附加技能（技能库收割，2026-11）：[{ name, body }]，调用方已按上限整形
   // （≤4 个、单条正文 ≤16KB，见 src/utils/skillLibrary.js buildAttachments）。
   // 仅该条消息携带（withAttachedSkills 包进驱动指令），追问不带——上游同语义。
   attachedSkills = [],
+  // 助手人格（助手 agent 化 P0-1）：助手 systemPrompt 经此进入 system 层，
+  // 自动续跑/压缩后依然存活（区别于 attachedSkills 只进首条消息）
+  personaSystemPrompt = '',
   signal,
   onProgress,
   onTurnText,
+  // 思考流（对话栏实时思考区）：reasoning 增量 (delta, acc) 透传给调用方
+  onTurnReasoning,
+  // 分档轮数预算（2026-11-21 用户裁决 A）：生成类 6 / 改写类 12 / 缺省 MAX_ROUNDS。
+  // 每轮 = 一次模型调用全额延迟，任务自适应预算比全局砍上限更治本
+  roundBudget = 0,
+  // 思考模式开关（用户可控）：false=智谱系模型注入 thinking disabled（快速出结果）
+  thinkingDisabled = false,
+  // ToolDisplay 增量回调（2026-11-25「图像先输出到对话」）：每个带 display 的工具
+  // 执行完立即回调（生图完成即上屏，不等回合结束）；d = display 对象
+  onToolDisplay = null,
+  // 视觉输入（上游 AgentImage 收割对接，2026-11-25）：附件图片 base64 数组
+  // [{base64(裸), mime}]，随首条 user 消息进模型（loop.run 第二参）；上限由调用方
+  // 把关（面板 ≤2 张、单张 ≤1.5MB）。模型不支持 vision 时回合报 model_error——
+  // 返回体带 usedImages 标记，调用方提示用户换支持视觉的模型
+  images = null,
   onTodos,
   onSnapshot
 } = {}) {
@@ -349,7 +393,23 @@ export async function runMcpChatOrchestrator({
     servers: (getEnabledMcpServers() || []).map(s => s.id).join(','),
     textPreview: String(userText || '').slice(0, 80)
   })
-  let todos = []
+  // 种子清单（助手 agent 化）：调用方预置的任务清单起步——UI 立即可见进度，
+  // 模型 todo_write 后整卡覆盖；工具成功时的「代推进」从这里的第一项开始
+  let todos = (Array.isArray(previousTodos) && previousTodos.length)
+    ? previousTodos.map((t, i) => ({ ...t, status: i === 0 ? 'in_progress' : (t.status || 'pending') }))
+    : []
+  if (todos.length) onTodos?.(todos.slice())
+  // 执行过的工具名集合（A-2 写回契约检测：expectedWriteTool 是否被模型执行）
+  const executedToolNames = new Set()
+  // ToolDisplay 侧信道采集（上游 types.ts 契约：UI-only，永不进 LLM 上下文）：
+  // 生图/搜图带 images 网格、思维导图带 mindmap 树——面板据此渲染缩略图/图卡
+  const toolDisplays = []
+  // 代推进作用域闸（2026-11-21 冒烟 S22 回归修复）：代推进只作用于【调用方种子清单】。
+  // 模型 todo_write 接管清单后以模型为准——模型对自己清单的诚实状态是「轮次上限+
+  // 未完成 → 自动续跑」的触发依据；代推进若继续越权标记完成，会把实际未做的项
+  // 假标完成（24 个 locate「做完」了排版/目录），续跑门永不触发，撞上限的回合以
+  // 中断文案收尾而非补完交付。
+  let modelOwnsTodos = false
   const pushStep = (label, detail = '') => {
     const step = { at: Date.now(), label, detail }
     steps.push(step)
@@ -462,7 +522,7 @@ export async function runMcpChatOrchestrator({
   const host = detectAddonType()
   const docCtx = collectActiveDocumentContext(host)
   const attachedSkillCount = Array.isArray(attachedSkills) ? attachedSkills.filter(s => s && s.name && s.body).length : 0
-  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx, attachmentCtx, attachedSkillCount })
+  const system = buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos, host, docCtx, attachmentCtx, attachedSkillCount, personaSystemPrompt, roundBudget })
   const seed = seedHistoryFrom(historyMessages)
   let proofreadCard = null
 
@@ -477,9 +537,15 @@ export async function runMcpChatOrchestrator({
       if (!doc) return undefined
       const text = String(doc.Content?.Text || '')
       if (text.length > SNAPSHOT_MAX_TEXT_CHARS) return undefined
+      // ⚠️ 文件级备份已移除（WPS 崩溃源）：在 AgentLoop 写工具钩子时机执行
+      // doc.Save()+文件复制（重 COM 操作）在 ksojscore 引擎内触发 SIGBUS
+      // （17:11/17:30/17:41 三崩同栈 ksojscore+jswpsapi+wpsapi）。撤销功能挂账
+      // 重设计（写后异步备份或 WPS 内建 undo）。快照仅保留文本（一致性校验），
+      // backupId 缺省 → 撤销卡提示「暂不可用」，绝不走文本回写。
       return {
         docId: String(doc.FullName || doc.Name || ''),
         text,
+        backupId: '',
         at: Date.now()
       }
     } catch {
@@ -516,10 +582,13 @@ export async function runMcpChatOrchestrator({
       mergedTools,
       pushProgress,
       writeBaselineToken,
+      writeDocLinkId: targetDocLinkId,
       targetDocumentId,
       kbBinding,
       onTodoWrite: (list) => {
         todos = normalizeTodoList(list)
+        // 模型接管清单：此后代推进闸关闭（诚实清单状态是续跑门的触发依据）
+        modelOwnsTodos = true
         onTodos?.(todos)
       },
       onProofreadCard: (card) => {
@@ -533,7 +602,30 @@ export async function runMcpChatOrchestrator({
       transport: createAgentCoreTransport({
         model,
         signal,
-        onTurnStart: (turnNo) => pushStep(`模型思考（第 ${turnNo} 轮${opts.phaseLabel ? ` · ${opts.phaseLabel}` : ''}）`, model?.name || model?.modelId || '')
+        thinkingDisabled,
+        onTurnStart: (turnNo) => pushStep(`模型思考（第 ${turnNo} 轮${opts.phaseLabel ? ` · ${opts.phaseLabel}` : ''}）`, model?.name || model?.modelId || ''),
+        // 思考流展示：reasoning 增量 200ms 节流，原地更新「模型思考」步骤的
+        // detail（尾部 200 字）——用户在执行过程列表里看到具体思考内容
+        onTurnReasoning: (() => {
+          let buf = ''
+          let lastAt = 0
+          let stepPushed = false
+          return (text) => {
+            buf += String(text || '')
+            // 调用方累计透传（对话栏思考区实时渲染）
+            onTurnReasoning?.(String(text || ''), buf)
+            const now = Date.now()
+            if (now - lastAt < 200) return
+            lastAt = now
+            const tail = buf.slice(-200)
+            if (!stepPushed) {
+              stepPushed = true
+              pushProgress?.({ label: '模型思考中', detail: tail, progress: 0 })
+            } else {
+              pushProgress?.({ label: '模型思考中', detail: tail })
+            }
+          }
+        })()
       }),
       skill,
       events: {
@@ -542,20 +634,55 @@ export async function runMcpChatOrchestrator({
         onText: (text) => onTurnText?.(text),
         onToolStart: (call) => pushStep(`调用 ${call.name}`, JSON.stringify(call.input ?? {}).slice(0, 200)),
         onToolExecuted: ({ call, execution, snapshotBefore }) => {
+          // 执行过的工具名收集（助手 agent 化 A-2 写回契约检测：expectedWriteTool
+          // 是否真的被模型执行过，未执行由调用方兜底补写）。只记成功执行——失败的
+          // 写调用（如 LOCATE_NOT_FOUND）计入会让兜底检测误判「已写回」（三审 P0-2）。
+          if (call?.name && execution && !execution.isError) {
+            executedToolNames.add(String(call.name))
+            // 编排器代推进（任务清单节点标记修复）：真实工具成功后顺序推进清单——
+            // in_progress 项标完成、下一 pending 置进行中。模型 todo_write 更新时
+            // 以模型为准（覆盖）；模型忘记更新时由这里兜底（用户反馈清单节点停滞）。
+            // 排除 todo_write/生图等客户端与媒体工具自身的清单操作。
+            const toolName = String(call.name || '').replace(/^chayuan__/, '')
+            if (todos.length && !modelOwnsTodos && toolName !== 'todo_write') {
+              const ip = todos.findIndex(t => t && t.status === 'in_progress')
+              if (ip >= 0) {
+                todos[ip] = { ...todos[ip], status: 'completed' }
+                const next = todos.findIndex(t => t && t.status === 'pending')
+                if (next >= 0) todos[next] = { ...todos[next], status: 'in_progress' }
+                onTodos?.(todos.slice())
+              }
+            }
+          }
           const detail = execution.isError ? toolErrorDetail(execution.output) : String(execution.output || '')
           pushStep(`${execution.isError ? '失败' : '完成'} ${call.name}`, detail.slice(0, 160))
+          // 侧信道展示数据（images/mindmap）透传面板（成功执行才带）——
+          // 增量回调让图片「生成完立即上屏」，不等回合收尾
+          if (execution && !execution.isError && execution.display) {
+            const displayEntry = { tool: String(call?.name || ''), ...execution.display }
+            toolDisplays.push(displayEntry)
+            try { onToolDisplay?.(execution.display) } catch (_) { /* UI 回调失败不影响回合 */ }
+          }
           // 首个写操作的写前快照透出给 UI（撤销卡数据源）
           if (snapshotBefore) onSnapshot?.(snapshotBefore)
         },
         onDone: (result) => settle({ result }),
         onError: (error) => settle({ error })
       },
-      maxTurns: MAX_ROUNDS,
+      maxTurns: roundBudget > 0 ? Math.max(3, Math.min(roundBudget, MAX_ROUNDS)) : MAX_ROUNDS,
       maxHistory: Infinity, // 单轮编排内不裁历史；跨轮由 loopHistory restore + compaction 承接
-      // 压缩预算收紧 + 禁用 LLM 摘要：跨回合上下文按轻量原则保留（128KB 时代每回合
+      // 压缩预算收紧 + LLM 摘要默认禁用：跨回合上下文按轻量原则保留（128KB 时代每回合
       // 全量 prefill 旧工具输出，回合耗时随对话单调上涨；超阈值时的 LLM 摘要调用还会
       // 在下一回合开头同步阻塞最多 30s）。机械摘要零额外延迟，质量对本场景够用。
-      compaction: { maxBytes: 48 * 1024, keepRecentBytes: 16 * 1024, disableLlmSummary: true },
+      // 设置项 aiCompactionLlmSummary:true 可开启 LLM 摘要（P2 审计项：上游能力
+      // 默认闲置是成本权衡——开关化后需要时一行打开，不改默认行为）
+      compaction: {
+        maxBytes: 48 * 1024,
+        keepRecentBytes: 16 * 1024,
+        disableLlmSummary: (() => {
+          try { return loadGlobalSettings()?.aiCompactionLlmSummary !== true } catch (_) { return true }
+        })()
+      },
       captureSnapshot: captureDocSnapshot
     })
     loopRef = loop
@@ -575,7 +702,9 @@ export async function runMcpChatOrchestrator({
     const runInstruction = attachedSkillCount > 0 && !opts.skipAttachedSkills
       ? withAttachedSkills(String(opts.runText ?? userText), attachedSkills)
       : String(opts.runText ?? userText)
-    loop.run(runInstruction)
+    // 视觉输入只随首条 user 消息进模型（loop 会挂到消息 images 字段）；续跑 restore
+    // 的历史里已含该消息，不再重传
+    loop.run(runInstruction, Array.isArray(images) && images.length ? images : undefined)
   })
 
   let out = await runLoop()
@@ -596,7 +725,7 @@ export async function runMcpChatOrchestrator({
         '请继续调用工具完成上述剩余任务；已完成的部分不要重做，全部完成后按惯例总结交付。'
       ].join('\n')
       out = await runLoop({
-        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx, attachedSkillCount }),
+        systemPrompt: buildSystemPrompt({ selectionCtx, kbBound, proofreadIntent, previousTodos: pending, host, docCtx, attachmentCtx, attachedSkillCount, personaSystemPrompt, roundBudget }),
         restoreMessages: loopRef.messages,
         runText: continueText,
         phaseLabel: '续跑',
@@ -611,7 +740,20 @@ export async function runMcpChatOrchestrator({
   if (typeof out.error === 'string' && out.error) {
     if (signal?.aborted) throw abortError()
     logEvent('mcp_turn_end', { outcome: 'model_error', ms: Date.now() - turnLogT0, steps: steps.length })
-    return { ok: false, fallback: true, reason: 'model_error', content: localizeLoopError(out.error), steps, usedServers, todos }
+    // toolsUnsupported 标记（P0-4 双轨分流）：调用方据此 markModelFcUnsupported 并
+    // 自动降级 direct 轨重跑，弱模型用户无感
+    return {
+      ok: false,
+      fallback: true,
+      reason: 'model_error',
+      toolsUnsupported: isToolsUnsupportedError(out.error),
+      content: localizeLoopError(out.error) + (Array.isArray(images) && images.length
+        ? '\n（本回合携带了图片附件：若错误提示与图片/多模态相关，当前模型可能不支持视觉输入——请去掉图片后重试，或换支持视觉的模型。）'
+        : ''),
+      steps,
+      usedServers,
+      todos
+    }
   }
   const r = out.result || {}
   if (r.cancelled || signal?.aborted) throw abortError()
@@ -619,14 +761,27 @@ export async function runMcpChatOrchestrator({
     ? (continued ? '已自动续跑一段仍达到轮次上限，请根据上方步骤继续或重试。' : '已达到工具调用轮次上限，请根据上方步骤继续或重试。')
     : '已完成。'
   logEvent('mcp_turn_end', { outcome: r.turnLimit ? 'turn_limit' : 'ok', continued, ms: Date.now() - turnLogT0, steps: steps.length })
+  // 供应商用量（P1 审计收割：transport onUsage 已接通，供应商回报时才存在——缺席
+  // 语义，无网关 usage 不造假数）。随 mcp_turn_end 一起落日志，便于事后成本分析。
+  if (r.usage && (r.usage.inputTokens || r.usage.outputTokens)) {
+    logEvent('mcp_turn_usage', {
+      input: r.usage.inputTokens ?? 0,
+      output: r.usage.outputTokens ?? 0,
+      cacheRead: r.usage.cacheReadTokens ?? 0,
+      turns: continued ? 2 : 1
+    })
+  }
   return {
     ok: true,
     content: String(r.text || '').trim() || fallbackText,
     steps,
+    executedTools: Array.from(executedToolNames),
     proofreadCard,
     usedServers,
     proofreadIntent,
     todos,
+    usage: r.usage || null,
+    toolDisplays,
     // 跨回合上下文：本回合结束后 loop 内的完整历史（含工具结论），调用方按 chat
     // 持久化，下回合经 loopHistory 参数 restore 回来
     loopMessages: trimLoopHistoryForStorage(loopRef?.messages || [])

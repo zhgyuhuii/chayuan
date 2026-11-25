@@ -11,9 +11,10 @@ import { getDesktopModels, DESKTOP_PROVIDER_PREFIX } from '../services/desktop/d
 const STORAGE_KEY = 'modelConfigs'
 const CUSTOM_PROVIDERS_KEY = 'customModelProviders'
 const MODEL_ORDER_KEY = 'modelOrder'
-
-// 默认在察元AI助理中开启的模型（ChatGPT、Ollama、阿里百炼、DeepSeek、百度云千帆）
-const DEFAULT_ENABLED_PROVIDERS = ['OPENAI', 'OLLAMA', 'DEEPSEEK', 'baidu-qianfan', 'aliyun-bailian']
+// 「默认启用」一次性迁移标记（2026-11-21）：历史版本只默认启用 5 家厂商，用户配置了
+// 密钥的厂商仍停在 enabled:false（未开启），下拉里选不到。迁移把「已配置密钥/地址
+// 但 enabled===false」的存量配置自动开启一次；之后用户手动勾掉的（停用）不再被翻转。
+const AUTO_ENABLE_MIGRATED_KEY = 'modelEnabledAutoMigratedAt'
 
 /**
  * 获取所有模型配置
@@ -31,17 +32,14 @@ export function getAllModelConfigs() {
 export function getModelConfig(modelId) {
   const configs = getAllModelConfigs()
   const raw = configs[modelId]
-  const defaultEnabled = DEFAULT_ENABLED_PROVIDERS.includes(
-    String(modelId || '').trim()
-  ) || DEFAULT_ENABLED_PROVIDERS.includes(
-    String(modelId || '').trim().toLowerCase()
-  )
   if (raw) {
     const modelSeries = raw.modelSeries || raw.models || []
     return {
       apiKey: raw.apiKey || '',
       apiUrl: raw.apiUrl || '',
-      enabled: raw.enabled !== undefined ? !!raw.enabled : defaultEnabled,
+      // 默认启用：未显式存过 enabled 的（含历史只存了密钥的）一律视为启用；
+      // 用户手动勾掉（停用）会显式写入 false，不会被默认值覆盖
+      enabled: raw.enabled !== undefined ? !!raw.enabled : true,
       modelSeries,
       models: modelSeries
     }
@@ -49,33 +47,37 @@ export function getModelConfig(modelId) {
   return {
     apiKey: '',
     apiUrl: '',
-    enabled: defaultEnabled,
+    enabled: true,
     modelSeries: [],
     models: []
   }
 }
 
 /**
- * 获取已开启的模型 provider id 集合（用于察元AI助理下拉过滤）
- * @returns {Set<string>}
+ * 一次性迁移：把「已配置密钥（本地类已填地址）但 enabled===false」的存量配置自动开启。
+ * 幂等：迁移完成后写时间戳标记，重复调用只读一次设置即返回。
+ * @returns {boolean} 是否发生了翻转
  */
-export function getEnabledProviderIds() {
-  const configs = getAllModelConfigs()
-  const enabled = new Set()
-  const configKeys = new Set(Object.keys(configs).map(k => String(k).toLowerCase()))
-  for (const [id, cfg] of Object.entries(configs)) {
-    if (cfg && cfg.enabled) {
-      enabled.add(String(id).toLowerCase())
+export function migrateAutoEnableConfiguredModels() {
+  const settings = loadGlobalSettings()
+  if (settings[AUTO_ENABLE_MIGRATED_KEY]) return false
+  const configs = settings[STORAGE_KEY] || {}
+  let flipped = 0
+  for (const [id, raw] of Object.entries(configs)) {
+    if (!raw || typeof raw !== 'object') continue
+    if (raw.enabled !== false) continue
+    const hasKey = !!String(raw.apiKey || '').trim()
+    const hasUrl = !!String(raw.apiUrl || '').trim()
+    if (hasKey || (isOllamaLikeProvider(id) && hasUrl)) {
+      raw.enabled = true
+      flipped += 1
     }
   }
-  // 无配置的 provider 使用默认开启状态
-  DEFAULT_ENABLED_PROVIDERS.forEach(p => {
-    const key = String(p).toLowerCase()
-    if (!configKeys.has(key)) {
-      enabled.add(key)
-    }
-  })
-  return enabled
+  saveGlobalSettings({ [AUTO_ENABLE_MIGRATED_KEY]: new Date().toISOString() })
+  if (flipped > 0) {
+    saveGlobalSettings({ [STORAGE_KEY]: configs })
+  }
+  return flipped > 0
 }
 
 /**
@@ -129,8 +131,13 @@ export function isRibbonModelEnabled(ribbonModelId) {
   const provider = RIBBON_MODEL_TO_PROVIDER[ribbonModelId] ||
     RIBBON_MODEL_TO_PROVIDER[String(ribbonModelId).toLowerCase()] ||
     ribbonModelId
-  const enabled = getEnabledProviderIds()
-  return enabled.has(String(provider).toLowerCase())
+  // 大小写无关查找：RIBBON_MODEL_TO_PROVIDER 是大写 id（DEEPSEEK），存量配置键
+  // 可能是小写（deepseek）——旧 getEnabledProviderIds 实现按小写比对，语义须保持
+  const configs = getAllModelConfigs()
+  const lower = String(provider).toLowerCase()
+  const hitKey = Object.keys(configs).find(k => String(k).toLowerCase() === lower)
+  if (!hitKey) return true // 无存量配置 → 默认启用
+  return !!getModelConfig(hitKey).enabled
 }
 
 /**

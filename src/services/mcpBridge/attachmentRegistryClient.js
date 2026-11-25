@@ -45,28 +45,33 @@ async function ensureToken() {
 }
 
 /**
- * 登记一条附件落盘记录。fire-and-forget，任何失败静默。
+ * 登记一条附件落盘记录。返回 {ok, error}——不再静默吞失败（2026-11-25 审计：
+ * 注册失败静默 → 模型按别名调 file_parse 时才炸 PATH_UNRESOLVED，用户一头雾水）。
+ * 不 throw，调用方决定如何透出。
  * @param {{ alias: string, name: string, path: string, bytes?: number, scopeKey?: string }} entry
+ * @returns {Promise<{ok: boolean, error?: string}>}
  */
-export function registerAttachmentPath(entry) {
-  ;(async () => {
-    try {
-      const tk = await ensureToken()
-      if (!tk || !entry?.path) return
-      const res = await fetch(`${SIDECAR_BASE}/attachments/register`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Chayuan-Token': tk },
-        body: JSON.stringify({
-          alias: String(entry.alias || '').slice(0, 60),
-          name: String(entry.name || '').slice(0, 200),
-          path: String(entry.path || ''),
-          bytes: Number(entry.bytes) || 0,
-          scopeKey: String(entry.scopeKey || '').slice(0, 120)
-        })
+export async function registerAttachmentPath(entry) {
+  try {
+    const tk = await ensureToken()
+    if (!tk) return { ok: false, error: 'sidecar 令牌不可用（服务可能未启动）' }
+    if (!entry?.path) return { ok: false, error: '附件落盘失败，无本地路径可登记' }
+    const res = await fetch(`${SIDECAR_BASE}/attachments/register`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Chayuan-Token': tk },
+      body: JSON.stringify({
+        alias: String(entry.alias || '').slice(0, 60),
+        name: String(entry.name || '').slice(0, 200),
+        path: String(entry.path || ''),
+        bytes: Number(entry.bytes) || 0,
+        scopeKey: String(entry.scopeKey || '').slice(0, 120)
       })
-      if (!res?.ok) throw new Error(`register http ${res?.status}`)
-    } catch (_) { /* 注册失败不影响发送主流程 */ }
-  })()
+    })
+    if (!res?.ok) return { ok: false, error: `登记请求失败 HTTP ${res?.status}` }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e).slice(0, 120) }
+  }
 }
 
 export default { registerAttachmentPath }

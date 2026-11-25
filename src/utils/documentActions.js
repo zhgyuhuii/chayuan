@@ -1,4 +1,3 @@
-import { ensureDir, getEffectiveDataDir, pathJoin, pathSep } from './dataPathSettings.js'
 import { parseMarkdownBlocks, markdownHasRichContent, renderMarkdownBlocksToDocument } from './markdownDocumentRenderer.js'
 import { findIssueRangeDetailed } from './spellCheckService.js'
 import { trimDocumentRangeEndMarks } from './documentAnchorResolve.js'
@@ -57,9 +56,11 @@ export function hasMeaningfulSelectionText(text, minLength = 2) {
   return String(text || '').trim().length >= Math.max(1, Number(minLength || 2))
 }
 
-export function getDocumentText() {
-  const doc = getActiveDocument()
-  if (doc) return normalizeText(doc?.Content?.Text || '')
+export function getDocumentText(doc = null) {
+  // Model S：可注入绑定文档（对话驻留+按文档路由，plans/Model S 共识定稿）；
+  // 缺省保持 ActiveDocument 旧语义
+  const d = doc || getActiveDocument()
+  if (d) return normalizeText(d?.Content?.Text || '')
   // 宿主感知：演示/表格宿主没有 ActiveDocument，旧实现恒返回空串，
   // 导致助手技能在 PPT/表格里误报"当前文档为空"。逐项 try：部分宿主访问
   // 非本宿主的活动对象属性会抛 COM 异常而非返回 undefined。
@@ -448,63 +449,9 @@ function buildWriteTarget(action, payload = {}) {
   }
 }
 
-function arrayBufferToBinaryString(arr) {
-  const bytes = new Uint8Array(arr)
-  let bin = ''
-  const chunk = 8192
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunk, bytes.length)))
-  }
-  return bin
-}
-
-function base64ToBinaryString(base64) {
-  return atob(String(base64 || '').trim())
-}
-
-function getGeneratedMediaDir() {
-  const app = getApplication()
-  const fs = app?.FileSystem
-  if (!fs) throw new Error('FileSystem 不可用，无法保存生成媒体')
-  let dir = ''
-  if (app?.Env?.GetTempPath) {
-    dir = String(app.Env.GetTempPath() || '').replace(/^file:\/\//i, '').replace(/\\/g, '/').replace(/\/+$/, '')
-  }
-  if (!dir && getEffectiveDataDir()) {
-    dir = pathJoin(getEffectiveDataDir(), '_generated_media')
-  }
-  if (!dir) {
-    dir = pathJoin(pathSep() === '\\' ? 'C:\\Temp' : '/tmp', 'chayuan_generated_media')
-  }
-  ensureDir(fs, dir)
-  return pathSep() === '\\' ? dir.replace(/\//g, '\\') : dir.replace(/\\/g, '/')
-}
-
-function buildGeneratedMediaPath(extension = 'bin', prefix = 'chayuan_media') {
-  const dir = getGeneratedMediaDir()
-  const ext = String(extension || 'bin').replace(/^\.+/, '') || 'bin'
-  return pathJoin(dir, `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`)
-}
-
-export function saveGeneratedAssetToFile(asset, options = {}) {
-  const app = getApplication()
-  const fs = app?.FileSystem
-  if (!fs?.writeAsBinaryString) {
-    throw new Error('当前环境不支持保存生成媒体文件')
-  }
-  const filePath = buildGeneratedMediaPath(asset?.extension || options.extension || 'bin', options.prefix || 'chayuan_media')
-  const content = asset?.bytes
-    ? arrayBufferToBinaryString(asset.bytes)
-    : base64ToBinaryString(asset?.base64 || '')
-  if (!content) {
-    throw new Error('生成媒体内容为空，无法保存')
-  }
-  const ok = fs.writeAsBinaryString(filePath, content)
-  if (!ok) {
-    throw new Error('保存生成媒体文件失败')
-  }
-  return filePath
-}
+// 生成媒体落盘已抽到 generatedMediaWriter.js（agentImageTier 需轻量引用，
+// 不能拖 documentActions 的重依赖链）；此处 re-export 保持既有调用方零改动
+export { saveGeneratedAssetToFile } from './generatedMediaWriter.js'
 
 function splitReplacementParagraphs(text) {
   const parts = normalizeText(text).split('\n')
@@ -1666,7 +1613,8 @@ function applyScopedCommentSegmentsFromPlan(doc, plan, finalAction, options = {}
 
 export function applyStructuredExecutionPlan(plan, options = {}) {
   const finalAction = String(plan?.requestContext?.documentAction || options.action || 'none').trim()
-  const doc = getActiveDocument()
+  // Model S：绑定文档可注入（options.doc）；缺省活动文档旧语义
+  const doc = options.doc || getActiveDocument()
   if (!doc) {
     throw new Error('当前没有打开文档')
   }
@@ -1860,7 +1808,8 @@ function replaceOrInsert(text) {
 }
 
 function insertAtRange(text, options = {}) {
-  const doc = getActiveDocument()
+  // Model S：绑定文档可注入；缺省活动文档旧语义
+  const doc = options.doc || getActiveDocument()
   const range = getActionRange('insert', options)
   if (!doc || !range) {
     throw new Error('无法获取可插入位置')
@@ -2000,7 +1949,8 @@ export function applyDocumentAction(action, text, options = {}) {
   const commentBody = String(options.commentText || resultText || '').trim()
   const strictTargetAction = options.strictTargetAction === true || options.strictAssistantDefaults === true
   const app = getApplication()
-  const doc = app?.ActiveDocument
+  // Model S：绑定文档可注入（options.doc，requireDoc 解析产物）；缺省活动文档旧语义
+  const doc = options.doc || app?.ActiveDocument
 
   if (!doc) {
     throw new Error('当前没有打开文档')
@@ -2272,6 +2222,27 @@ export function applyDocumentAction(action, text, options = {}) {
         throw new Error('无法获取文档内容范围')
       }
       const insertText = ensureParagraphSpacing(resultText)
+      // 富 Markdown(标题/表格/加粗/列表)：渲染成真实格式（2026-11-21 直出轨「排版规范」
+      // 落点——append 此前裸写文本，## 原样进文档）。渲染器逐块兜底，失败退回纯文本。
+      if (options.outputFormat === 'markdown' || markdownHasRichContent(insertText)) {
+        try {
+          const endPos = Number(doc.Content?.End || 0)
+          const renderedEnd = renderMarkdownBlocksToDocument(doc, Math.max(0, endPos), parseMarkdownBlocks(insertText))
+          return {
+            ok: true,
+            action: 'append',
+            rendered: 'markdown',
+            message: '已追加到文末（富格式）',
+            writeTargets: [buildWriteTarget('append', {
+              start: endPos,
+              end: renderedEnd,
+              outputText: insertText
+            })]
+          }
+        } catch (e) {
+          console.warn('markdown 渲染失败,退回纯文本追加:', e)
+        }
+      }
       if (typeof content.InsertAfter === 'function') {
         content.Collapse?.(0)
         content.InsertAfter(toDocumentText(insertText))

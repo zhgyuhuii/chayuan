@@ -184,7 +184,17 @@ export async function applyKbRetrievalIfBound(ctx) {
  *   context 非空 → 命中片段拼接;为空时 notice 给出原因(未绑定/未连接/未命中/失败)。
  */
 export async function retrieveKbContextForAssistant(rawBinding, queryText, { signal, chatCompletion } = {}) {
-  try { if (!_isFlagEnabled('kbRemoteIntegration')) return { context: '', notice: '', sources: [] } } catch (e) { /* 缺 flag 默认放行 */ }
+  // 灰度开关关闭 ≠ 静默空返回（2026-11-25 审计：notice 为空串时模型无从告知用户
+  // 「知识库被关闭」，只会当成"没查到"）——给模型可转述的明确原因
+  try {
+    if (!_isFlagEnabled('kbRemoteIntegration')) {
+      return {
+        context: '',
+        notice: '知识库集成功能当前未启用（kbRemoteIntegration 开关关闭）。请如实告知用户：知识库检索不可用，可粘贴关键资料代替，或开启知识库集成后重试。',
+        sources: []
+      }
+    }
+  } catch (e) { /* 缺 flag 默认放行 */ }
   const binding0 = _normalizeBinding(rawBinding)
   if (!binding0?.kbNames?.length) return { context: '', notice: '未绑定知识库,无法对比;请先在对话侧栏选择知识库后重试。', sources: [] }
   const connection = (binding0.connectionId ? getConnection(binding0.connectionId) : null) || getCurrentConnection()

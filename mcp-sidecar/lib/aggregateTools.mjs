@@ -130,7 +130,11 @@ export function resolveAggregateCall(toolName, args = {}) {
       list: { method: 'image.list', args: rest },
       insert: { method: 'image.insert', args: rest, requireConfirmed: true },
       delete: { method: 'image.delete', args: rest, requireConfirmed: true },
-      export: { method: 'image.export', args: rest, requireConfirmed: true }
+      // export 与 table.export 同语义（把已有图导出为文件，不改文档）——只读。
+      // 此前带 requireConfirmed 与 agentCoreSkill 只读白名单冲突：confirmed 单一来源
+      // 下模型入参被剥、客户端又不注入 → 页内调用永远停在 preview 信封（死 action，
+      // 2026-11-25 工具面快照测试实证）
+      export: { method: 'image.export', args: rest }
     },
     hyperlink: {
       list: { method: 'hyperlink.list', args: rest },
@@ -160,6 +164,11 @@ export function resolveAggregateCall(toolName, args = {}) {
     export: {
       file: { method: 'document.export', args: rest, requireConfirmed: true }
     },
+    footnote: {
+      list: { method: 'footnote.list', args: rest },
+      add: { method: 'footnote.add', args: rest, requireConfirmed: true },
+      delete: { method: 'footnote.delete', args: rest, requireConfirmed: true }
+    },
     spreadsheet: {
       status: { method: 'spreadsheet.status', args: rest },
       sheet_list: { method: 'spreadsheet.sheet_list', args: rest },
@@ -168,6 +177,7 @@ export function resolveAggregateCall(toolName, args = {}) {
       sheet_delete: { method: 'spreadsheet.sheet_delete', args: rest, requireConfirmed: true },
       used_range: { method: 'spreadsheet.used_range', args: rest },
       range_read: { method: 'spreadsheet.range_read', args: rest },
+      selection_read: { method: 'spreadsheet.selection_read', args: rest },
       range_write: { method: 'spreadsheet.range_write', args: rest, requireConfirmed: true },
       find: { method: 'spreadsheet.find', args: rest },
       find_replace: { method: 'spreadsheet.find_replace', args: rest, requireConfirmed: true },
@@ -181,6 +191,7 @@ export function resolveAggregateCall(toolName, args = {}) {
       chart_add: { method: 'spreadsheet.chart_add', args: rest, requireConfirmed: true },
       chart_list: { method: 'spreadsheet.chart_list', args: rest },
       chart_export: { method: 'spreadsheet.chart_export', args: rest, requireConfirmed: true },
+      picture_add: { method: 'spreadsheet.picture_add', args: rest, requireConfirmed: true },
       export: { method: 'spreadsheet.export', args: rest, requireConfirmed: true },
       security_encrypt_save: { method: 'spreadsheet.security_encrypt_save', args: rest, requireConfirmed: true },
       security_decrypt_save: { method: 'spreadsheet.security_decrypt_save', args: rest, requireConfirmed: true }
@@ -243,6 +254,7 @@ export const AGGREGATE_TOOL_NAMES = [
   'watermark',
   'style',
   'export',
+  'footnote',
   'spreadsheet',
   'presentation'
 ]
@@ -664,13 +676,13 @@ export const AGGREGATE_TOOLS = [
   }),
 
   tool({
-    name: 'spreadsheet',
+    name: 'footnote',
     description: [
-      'WHAT: WPS 表格(ET/Spreadsheet) domain — operates the ACTIVE WORKBOOK in the WPS Spreadsheets host. status / sheet management (sheet_list|sheet_add|sheet_rename|sheet_delete) / cell IO (used_range|range_read|range_write) / search (find|find_replace) / structure (row_insert|row_delete|column_insert|column_delete) / sort|autofilter / format / charts (chart_add|chart_list|chart_export) / export (pdf|csv).',
-      'WHEN: user asks anything about 表格/Excel/工作簿/单元格/sheet/公式/图表 while WPS 表格 is the host, e.g. 「把A1写入姓名」「读取A1:C10」「按B列降序排序」「给表头加底色」「做个柱状图」「导出PDF/CSV」.',
-      'NOT: Not for tables inside a Writer document (use table). Not for reading files without WPS. range_write replaces cell values — it does not append; read first, then write.',
-      'HOW: Ranges are A1 notation ("A1:C10"). range_write takes values as 2-D array + startCell (default A1); strings starting with "=" are written as formulas. security_encrypt_save/security_decrypt_save: 给当前工作簿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存为副本；密码遗忘无法找回，建议先另存副本）。 format takes style {bold,italic,fontSize,fontName,fontColor,bgColor,numberFormat,align,wrapText,border,merge,columnWidth,rowHeight} with hex colors ("#FF0000"). Writes need confirmed=true (preview returned first without it). Large sheets: read in batches (≤50000 cells/call), write in batches (≤5000 cells/call fallback).',
-      'EXAMPLE: {"action":"status"} ; {"action":"range_read","range":"A1:C10"} ; {"action":"range_write","startCell":"A1","values":[["姓名","分数"],["张三",90]],"confirmed":true} ; {"action":"sort","range":"A1:C20","keyColumn":2,"order":"desc","header":true,"confirmed":true} ; {"action":"format","range":"A1:C1","style":{"bold":true,"bgColor":"#DDEBF7"},"confirmed":true} ; {"action":"chart_add","dataRange":"A1:B10","type":"column","title":"月度销量","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+      'WHAT: Footnotes/endnotes domain for the ACTIVE Writer document — list / add / delete (footnote or endnote).',
+      'WHEN: 「加脚注/尾注」「列出脚注」「删掉第N条脚注」「给这句话加个注释来源」.',
+      'NOT: Not for comments at text position (use comment). Not for ET/PPT (Writer only).',
+      'HOW: add needs anchor (originalText auto-locates first occurrence / start-end char range / selection 默认当前选区) + text 内容; kind=footnote(默认)|endnote; add/delete need confirmed=true. list returns index+text, delete takes that index.',
+      'EXAMPLE: {"action":"add","originalText":"第六次全国人口普查","text":"数据来源：国家统计局2020年公报","confirmed":true} ; {"action":"list","kind":"both"} ; {"action":"delete","index":2,"confirmed":true}'
     ].join(' '),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     inputSchema: {
@@ -678,7 +690,36 @@ export const AGGREGATE_TOOLS = [
       additionalProperties: false,
       required: ['action'],
       properties: {
-        action: { type: 'string', enum: ['status', 'sheet_list', 'sheet_add', 'sheet_rename', 'sheet_delete', 'used_range', 'range_read', 'range_write', 'find', 'find_replace', 'row_insert', 'row_delete', 'column_insert', 'column_delete', 'sort', 'autofilter', 'format', 'chart_add', 'chart_list', 'chart_export', 'export', 'security_encrypt_save', 'security_decrypt_save'] },
+        action: { type: 'string', enum: ['list', 'add', 'delete'] },
+        confirmed: { type: 'boolean' },
+        kind: { type: 'string', enum: ['footnote', 'endnote', 'both'], description: 'list 支持 both；add/delete 只支持 footnote(默认)|endnote' },
+        limit: { type: 'number', description: 'list 返回上限（默认 100）' },
+        text: { type: 'string', description: 'add：脚注/尾注内容' },
+        originalText: { type: 'string', description: 'add：正文锚文本（自动定位首次出现）' },
+        start: { type: 'number', description: 'add：锚点字符区间起点' },
+        end: { type: 'number', description: 'add：锚点字符区间终点' },
+        scope: { type: 'string', enum: ['selection', 'paragraph'], description: 'add：锚点缺省时取当前选区/所在段落' },
+        index: { type: 'number', description: 'delete：list 返回的 1-based 序号' }
+      }
+    }
+  }),
+
+  tool({
+    name: 'spreadsheet',
+    description: [
+      'WHAT: WPS 表格(ET/Spreadsheet) domain — operates the ACTIVE WORKBOOK in the WPS Spreadsheets host. status / sheet management (sheet_list|sheet_add|sheet_rename|sheet_delete) / cell IO (used_range|range_read|selection_read|range_write) / search (find|find_replace) / structure (row_insert|row_delete|column_insert|column_delete) / sort|autofilter / format / charts (chart_add|chart_list|chart_export) / picture_add (浮动插图) / export (pdf|csv).',
+      'WHEN: user asks anything about 表格/Excel/工作簿/单元格/sheet/公式/图表/插图 while WPS 表格 is the host, e.g. 「把A1写入姓名」「读取A1:C10」「选中的内容有哪些型号 列出来」「按B列降序排序」「给表头加底色」「做个柱状图」「生成一张图片 插入表格中」「导出PDF/CSV」.',
+      'NOT: Not for tables inside a Writer document (use table). Not for reading files without WPS. range_write replaces cell values — it does not append; read first, then write.',
+      'HOW: Ranges are A1 notation ("A1:C10"). selection_read takes NO range: 读取当前选中区域的地址与值（用户说「选中的内容」时直接调用，无需向用户询问区域；整行/整列大选区自动与 UsedRange 求交集，多区域逐块返回）。picture_add: 插入浮动图片，path 必须是本地可读路径（generate_image 产物直接可用，webview 通道生成即可插）；anchor 可选（A1 锚点，缺省=当前选区），width/height 可选（磅，缺省原始尺寸），先 generate_image 再 picture_add 即完成「生成图片插入表格」。range_write takes values as 2-D array + startCell (default A1); strings starting with "=" are written as formulas. security_encrypt_save/security_decrypt_save: 给当前工作簿设置/移除打开密码并另存（需 confirmed + password，可选 savePath 另存为副本；密码遗忘无法找回，建议先另存副本）。 format takes style {bold,italic,fontSize,fontName,fontColor,bgColor,numberFormat,align,wrapText,border,merge,columnWidth,rowHeight} with hex colors ("#FF0000"). Writes need confirmed=true (preview returned first without it). Large sheets: read in batches (≤50000 cells/call), write in batches (≤5000 cells/call fallback).',
+      'EXAMPLE: {"action":"status"} ; {"action":"selection_read"} ; {"action":"range_read","range":"A1:C10"} ; {"action":"range_write","startCell":"A1","values":[["姓名","分数"],["张三",90]],"confirmed":true} ; {"action":"picture_add","path":"/path/plane.png","anchor":"E5","confirmed":true} ; {"action":"sort","range":"A1:C20","keyColumn":2,"order":"desc","header":true,"confirmed":true} ; {"action":"format","range":"A1:C1","style":{"bold":true,"bgColor":"#DDEBF7"},"confirmed":true} ; {"action":"chart_add","dataRange":"A1:B10","type":"column","title":"月度销量","confirmed":true} ; {"action":"export","format":"pdf","path":"/Users/me/Desktop/out.pdf","confirmed":true}'
+    ].join(' '),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['action'],
+      properties: {
+        action: { type: 'string', enum: ['status', 'sheet_list', 'sheet_add', 'sheet_rename', 'sheet_delete', 'used_range', 'range_read', 'selection_read', 'range_write', 'find', 'find_replace', 'row_insert', 'row_delete', 'column_insert', 'column_delete', 'sort', 'autofilter', 'format', 'chart_add', 'chart_list', 'chart_export', 'picture_add', 'export', 'security_encrypt_save', 'security_decrypt_save'] },
         confirmed: { type: 'boolean' },
         sheet: { type: ['string', 'number'], description: '工作表名称或 1-based 序号；缺省=活动表' },
         range: { type: 'string', description: 'A1 记法区域，如 A1:C10；缺省=UsedRange' },
@@ -711,6 +752,7 @@ export const AGGREGATE_TOOLS = [
           }
         },
         dataRange: { type: 'string', description: 'chart_add 数据区域（A1 记法）' },
+        anchor: { type: 'string', description: 'picture_add 锚点单元格（A1，如 E5），缺省=当前选区/活动单元格' },
         type: { type: 'string', enum: ['column', 'columnStacked', 'bar', 'line', 'pie', 'doughnut', 'scatter', 'area', 'radar'], description: 'chart_add 图表类型（默认 column）' },
         title: { type: 'string' },
         left: { type: 'number' }, top: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' },

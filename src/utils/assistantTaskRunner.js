@@ -1,5 +1,5 @@
 import { buildChatCompletionsRequestSnapshot, chatCompletion, getChatApiConfigByProvider } from './chatApi.js'
-import { withDocumentWriteLock } from '../services/documentWriteLock.js'
+import { withDocumentWriteLock, setWriteBaseline } from '../services/documentWriteLock.js'
 import { isVisionCapable } from './chatApiMultimodal.js'
 import { yieldToUI } from './yieldToUI.js'
 import { runConcurrently } from './concurrentRunner.js'
@@ -1801,6 +1801,13 @@ async function executeAssistantTask(assistantId, overrides = {}) {
   // 领域助手包是懒加载的;在独立 WPS 子窗口(如任务进度窗「用新模型重跑」)里其上下文
   // 可能尚未注册领域包,会导致按 id 解析不到定义。执行前先确保已加载,覆盖所有入口。
   try { await ensureDomainPacksLoaded() } catch (_) { /* 加载失败仍尝试解析(基础包可用) */ }
+  // OCC 基线刷新（匿名槽）：助手任务的写回统一走 withDocumentWriteLock 不带
+  // baselineToken → 校验匿名槽。匿名槽会被任何 chat 回合的 setWriteBaseline 顺带
+  // 刷新——若本任务不自己记录，写回时对齐的是「上一次 chat 回合」的陈旧基线，
+  // 用户切换过文档/保存过未保存文档都会误报「活动文档已切换」拦下写回。
+  // 在任务启动（读文档之前）记录基线，OCC 语义回到本意：「任务读到的内容之后
+  // 文档没被改动/切走，才允许写回」。
+  try { setWriteBaseline() } catch (_) { /* 基线记录失败时退回旧行为（匿名槽维持原值） */ }
   const launchInfo = getAssistantLaunchInfoInternal(assistantId, overrides)
   const {
     definition,
@@ -2873,6 +2880,14 @@ export function getAssistantLaunchInfo(assistantId, overrides = {}) {
     hasSelection: info.inputInfo.hasSelection === true,
     usesDocument: info.inputInfo.source === 'document',
     inputLength: info.inputText.length,
+    // agent 通道（助手 agent 化 B-1/B-2）需要的完整输入三件套：选区/全文解析结果、
+    // 生效动作、内部 inputInfo——面板卡片与 ribbon 的 agent 回合按此取值
+    inputText: info.inputText,
+    effectiveDocumentAction: info.effectiveDocumentAction,
+    inputInfo: { ...info.inputInfo },
+    // 选区偏移快照（agent 快速轨 replace/insert 的 start/end 定位数据源）
+    selectionStart: Number(info.inputInfo.selectionStart) || undefined,
+    selectionEnd: Number(info.inputInfo.selectionEnd) || undefined,
     // 生成/起草/追加类(insert/append/prepend)是「新增内容」,并不处理文档既有正文,
     // 不弹「将处理全文(约X字)」确认(尤其空文档约0字时该提示不合适)。
     requiresFullDocumentConfirm: info.inputInfo.source === 'document'

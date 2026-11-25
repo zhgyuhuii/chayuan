@@ -26,6 +26,11 @@ import {
 } from './hostDispatch.js'
 import { runVarsProbe } from './varsProbe.js'
 import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
+import {
+  MAX_SELECTION_AREAS,
+  parseA1Loose,
+  planSelectionRead
+} from './spreadsheetSelection.js'
 
 /** 写 action 集合（dispatch.js 写锁判定用；其余为只读） */
 export const SPREADSHEET_WRITE_ACTIONS = new Set([
@@ -34,6 +39,7 @@ export const SPREADSHEET_WRITE_ACTIONS = new Set([
   'row_insert', 'row_delete', 'column_insert', 'column_delete',
   'sort', 'autofilter', 'format',
   'chart_add', 'chart_export',
+  'picture_add',
   'export',
   'security_encrypt_save', 'security_decrypt_save'
 ])
@@ -203,6 +209,119 @@ function handleRangeRead(params) {
     values: result.values,
     bulk: result.bulk,
     truncated: result.truncated
+  }
+}
+
+/* ------------------------- 选区读取（selection_read） ------------------------- */
+
+/** 守卫：ET Selection 可能是形状/图表（无 Address/Rows/Columns），不是单元格区域 */
+function isCellRangeSelection(obj) {
+  if (!obj) return false
+  if (readAddress(obj)) return true
+  const rows = Number(safeGet(() => obj.Rows?.Count, 0))
+  const cols = Number(safeGet(() => obj.Columns?.Count, 0))
+  return rows > 0 && cols > 0
+}
+
+/**
+ * 按规划读取单个选区矩形。planSelectionRead 负责大选区治理（与 UsedRange
+ * 求交集 / 限行），budgetRows 由跨区域共享余额换算。
+ */
+function readSelectionRect(ws, rect, usedRect, remainingCells) {
+  const cols = rect.c2 - rect.c1 + 1
+  const plan = planSelectionRead(rect, usedRect, {
+    budgetRows: cols > 0 ? Math.floor(remainingCells / cols) : Infinity
+  })
+  if (!plan) return null
+  const { r1, c1, r2, c2 } = plan.readRect
+  const read = readRangeValues(ws, ws.Range(rangeAddr(c1, r1, c2, r2)))
+  return {
+    address: rangeAddr(rect.c1, rect.r1, rect.c2, rect.r2),
+    readAddress: read.address || rangeAddr(c1, r1, c2, r2),
+    rows: read.rows,
+    cols: read.cols,
+    values: read.values,
+    bulk: read.bulk,
+    truncated: plan.truncated || read.truncated,
+    clippedToUsed: plan.clippedToUsed
+  }
+}
+
+/**
+ * selection_read：读取当前选中区域的地址与值。用户说「选中的内容」时模型
+ * 直接调它，无需向用户询问区域。只读 action（不进 SPREADSHEET_WRITE_ACTIONS、
+ * 不进 AGGREGATE_READ_ACTIONS 之外的写路径）。
+ */
+function handleSelectionRead() {
+  const app = getApp()
+  const sel = safeGet(() => app.Selection)
+  if (!isCellRangeSelection(sel)) {
+    throw hostError('NOT_CELL_SELECTION', '当前选中的不是单元格区域（可能是形状/图表/图片）。请先在表格中选中要分析的单元格。')
+  }
+  const wb = getActiveWorkbook()
+  const ws = safeGet(() => sel.Worksheet) || resolveSheet(wb, undefined)
+  const address = readAddress(sel)
+  const activeCell = readAddress(safeGet(() => app.ActiveCell))
+
+  // 多区域（Ctrl 多选）逐块读取；Areas 不可用退化单区域
+  const areaCount = Number(safeGet(() => sel.Areas?.Count, 1)) || 1
+  const areaRanges = []
+  if (areaCount > 1) {
+    for (let i = 1; i <= Math.min(areaCount, MAX_SELECTION_AREAS); i++) {
+      const a = safeGet(() => sel.Areas.Item(i))
+      if (isCellRangeSelection(a)) areaRanges.push(a)
+    }
+  }
+  if (!areaRanges.length) areaRanges.push(sel)
+
+  const usedRect = parseA1Loose(readAddress(safeGet(() => ws.UsedRange, null)) || '')
+  let remaining = MAX_READ_CELLS
+  let truncated = false
+  const results = []
+  for (const area of areaRanges) {
+    if (remaining <= 0) { truncated = true; break }
+    const addr = readAddress(area) || address
+    const rect = parseA1Loose(addr)
+    if (!rect) {
+      // 地址解析不了（罕见形态）：整块直读，readRangeValues 内部 MAX_READ_CELLS 截断兜底
+      const read = readRangeValues(ws, area)
+      remaining -= read.rows * read.cols
+      truncated = truncated || read.truncated
+      results.push({
+        address: addr, readAddress: read.address, rows: read.rows, cols: read.cols,
+        values: read.values, truncated: read.truncated, clippedToUsed: false
+      })
+      continue
+    }
+    const r = readSelectionRect(ws, rect, usedRect, remaining)
+    if (!r) { truncated = true; break }
+    remaining -= r.rows * r.cols
+    truncated = truncated || r.truncated
+    results.push(r)
+  }
+
+  const head = results[0] || { address, readAddress: address, rows: 0, cols: 0, values: [], truncated, clippedToUsed: false }
+  const multi = results.length > 1
+  return {
+    ok: true,
+    host: 'et',
+    sheet: safeGet(() => ws.Name),
+    address,
+    activeCell,
+    ...(multi
+      ? {
+          areaCount,
+          moreAreas: areaCount > MAX_SELECTION_AREAS,
+          areas: results
+        }
+      : {
+          readAddress: head.readAddress,
+          rows: head.rows,
+          cols: head.cols,
+          values: head.values,
+          truncated: truncated || head.truncated,
+          clippedToUsed: head.clippedToUsed
+        })
   }
 }
 
@@ -688,6 +807,75 @@ function handleExport(params) {
   throw hostError('INVALID_PARAMS', `不支持的导出格式：${format}（支持 pdf|csv）`)
 }
 
+/* ------------------------- 插图（picture_add） ------------------------- */
+
+/**
+ * 工作表插图：浮动 Shapes.AddPicture，锚定单元格左上角（坐标磅，Excel VBA 口径）。
+ * 路径需为本宿主可读的本地路径——generate_image 的 webview 落盘通道
+ * （GetTempPath，容器内）产物直接可用；sidecar dataDir 回落路径读不到会如实报错。
+ * 插入成败以 Shapes.Count 增量为准（AddPicture 真机纪律：对象实参形态不兼容会静默 no-op）。
+ */
+function handlePictureAdd(params) {
+  const wb = getActiveWorkbook()
+  const ws = resolveSheet(wb, params.sheet)
+  const path = requirePath(params)
+  const app = getApp()
+
+  // 锚点：anchor(A1) 优先，缺省当前选区/活动单元格，再退 A1
+  const anchorAddr = String(params.anchor || '').trim()
+  let rng = null
+  if (anchorAddr) {
+    const parsed = parseA1(anchorAddr)
+    if (!parsed) throw hostError('INVALID_RANGE', `非法 anchor：${anchorAddr}（示例 E5）`)
+    rng = ws.Range(rangeAddr(parsed.c1, parsed.r1, parsed.c1, parsed.r1))
+  } else {
+    rng = safeGet(() => app.Selection) || safeGet(() => app.ActiveCell) || ws.Range(rangeAddr(1, 1, 1, 1))
+  }
+  const left = Number(safeGet(() => rng.Left, 0)) || 0
+  const top = Number(safeGet(() => rng.Top, 0)) || 0
+
+  const shapes = safeGet(() => ws.Shapes)
+  if (!shapes) throw hostError('SHAPES_UNAVAILABLE', '当前 JSAPI 不支持工作表 Shapes 对象（插图不可用）')
+  const before = Number(safeGet(() => shapes.Count, 0)) || 0
+
+  const w = Number(params.width) || 0
+  const h = Number(params.height) || 0
+  let added = false
+  let lastError = ''
+  try {
+    if (w > 0 && h > 0) shapes.AddPicture(path, false, true, left, top, w, h)
+    else shapes.AddPicture(path, false, true, left, top)
+    added = true
+  } catch (e) {
+    lastError = String(e?.message || e)
+    try {
+      shapes.AddPicture(path, false, true)
+      added = true
+    } catch (e2) {
+      lastError = String(e2?.message || e2)
+    }
+  }
+  const after = Number(safeGet(() => shapes.Count, 0)) || 0
+  if (!added && !(after > before)) {
+    throw hostError(
+      'PICTURE_ADD_FAILED',
+      `插图未生效（Shapes.Count 未增长）。请确认 path 是本宿主可读的本地路径${lastError ? `；底层错误：${lastError.slice(0, 120)}` : ''}`
+    )
+  }
+  return {
+    ok: true,
+    host: 'et',
+    sheet: safeGet(() => ws.Name),
+    anchor: anchorAddr || readAddress(rng),
+    left,
+    top,
+    width: w > 0 ? w : null,
+    height: h > 0 ? h : null,
+    shapes: after,
+    path
+  }
+}
+
 /* --------------------------- 入口 --------------------------- */
 
 const READ_HANDLERS = {
@@ -695,6 +883,7 @@ const READ_HANDLERS = {
   sheet_list: handleSheetList,
   used_range: handleUsedRange,
   range_read: handleRangeRead,
+  selection_read: handleSelectionRead,
   find: handleFind,
   chart_list: handleChartList,
   // T1 三维探针（临时排查：ET Variables 存在/可写/持久），结论已回填第十节，保留供复测
@@ -723,6 +912,7 @@ const WRITE_HANDLERS = {
   format: handleFormat,
   chart_add: handleChartAdd,
   chart_export: handleChartExport,
+  picture_add: handlePictureAdd,
   export: handleExport
 }
 

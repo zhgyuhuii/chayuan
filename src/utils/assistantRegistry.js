@@ -724,12 +724,12 @@ const CORE_BUILTIN_ASSISTANTS = [
     defaultModelCategory: 'chat',
     supportsRibbon: true,
     defaultDisplayLocations: ['ribbon-main'],
-    allowedActions: ['replace', 'insert', 'comment', 'comment-replace', 'append', 'none'],
+    allowedActions: ['comment'],
     defaultAction: 'comment',
     defaultOutputFormat: 'plain',
     defaultInputSource: INPUT_SOURCE_SELECTION_PREFERRED,
-    description: '模型生成修正说明或全文后，按助手设置的文档动作写回；默认以批注形式提示，可在设置中改为替换等。',
-    systemPrompt: '你是一位中文校对与润色助手。请优先修正错别字、别字、同音误字、近形误字、语法和标点问题，不要漏掉明显的单字错误或常见固定词误写。',
+    description: '用校对引擎对选中内容或全文做拼写与语法检查，检查结果直接以文档批注形式逐条标出（原文+问题+建议）。',
+    systemPrompt: '你是一位中文校对与语法检查助手。执行校对时一律调用 chayuan__proofread_run（scope 按 selection/document，dryRun=true 只读校对）。拿到 issues 后必须立即调用 chayuan__proofread_apply_comments（issues 参数直接传 proofread_run 返回的 issues 数组）把每一条问题写成文档批注——批注写完才算完成。然后在回答里输出完整问题清单（逐条：原文→问题→建议），禁止只回复「已完成」而不列明细。用户明确要求改正正文时，才用 chayuan__document_replace 逐条应用修改。',
     userPromptTemplate: `请纠正下面内容中的拼写、语法和标点问题，并直接输出修正后的完整文本。
 
 要求：
@@ -1550,7 +1550,7 @@ const BUILTIN_ASSISTANTS = [
   ...EXTRA_BUILTIN_ASSISTANTS,
   ...P5_BUILTIN_ASSISTANTS,
   ...P5_PLUS_BUILTIN_ASSISTANTS
-].filter(item => item.id !== 'analysis.correct-spell')
+]
 
 // ── 领域助手包:懒加载(动态 import → Vite 拆独立 chunk,不打进主包) ──
 // 基础包(CORE/EXTRA/P5/P5PLUS)保持静态、随主包加载;领域包(legal/audit/未来几百个)

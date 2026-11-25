@@ -621,7 +621,7 @@ function buildLongDocumentHint(textLength) {
 
 function confirmFullDocumentSubmit(taskTitle, textLength) {
   const title = String(taskTitle || '当前任务').trim()
-  const message = `当前未选中文档内容，将对全文执行“${title}”。\n\n点击“确定”后开始处理全文。${buildLongDocumentHint(textLength)}`
+  const message = `当前未选中文档内容，将对全文执行“${title}”。\n点击“确定”后开始处理全文。${buildLongDocumentHint(textLength)}`
   return confirm(message)
 }
 
@@ -639,6 +639,8 @@ function openSpellCheckDialog(preferredMode = 'auto') {
 }
 
 function launchSpellCheckFromRibbon() {
+  // 统一对话框执行：拼写检查=agent 回合（proofread_run 只读校对，清单在消息卡），
+  // 不再弹独立任务窗。全文需确认（与助手确认弹窗同口径）。
   const hasSelection = hasSelectionText()
   if (!hasSelection) {
     const documentText = String(getDocumentText() || '').trim()
@@ -652,9 +654,33 @@ function launchSpellCheckFromRibbon() {
     )
     if (!confirmed) return
   }
-  openSpellCheckDialog(hasSelection ? 'selection' : 'all')
+  const scope = hasSelectionText() ? 'selection' : 'document'
+  try {
+    writePrefillPromptPayload({
+      at: Date.now(),
+      assistantRun: {
+        assistantId: 'analysis.correct-spell',
+        label: getAssistantDisplayEntry('spell-check')?.title || '拼写与语法检查',
+        documentAction: 'none',
+        inputSource: scope,
+        hasSelection: hasSelection
+      }
+    })
+  } catch (e) {
+    window.alert(`无法投递校对任务（${String(e?.message || e).slice(0, 120)}）。`)
+    return
+  }
+  openAIAssistant({ reopen: true })
 }
 
+// 右键/常驻按钮预填载荷：双通道写入（2026-11-21「跨窗格右键无反应」修复）——
+// 多窗口下 PluginStorage 按文档窗格隔离，已开面板可能在另一窗格读不到；
+// localStorage 按 file:// 同源跨窗格共享，写它保跨窗格可达，PluginStorage 保旧兼容。
+function writePrefillPromptPayload(payload) {
+  const json = JSON.stringify(payload)
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('ai_chat_prefill_prompt', json) } catch (_) { /* ignore */ }
+  try { window.Application.PluginStorage.setItem('ai_chat_prefill_prompt', json) } catch (_) { /* ignore */ }
+}
 function executeConfiguredAssistant(assistantId, fallbackTitle) {
   if (assistantId === 'spell-check') {
     launchSpellCheckFromRibbon()
@@ -786,7 +812,11 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
     strictAssistantDefaults: true,
     launchSource: 'ribbon-direct'
   }
-  const { startAssistantTask, getAssistantLaunchInfo } = await _loadAssistantTaskRunner()
+  // ── 助手 agent 通道（B-2）：ribbon 一键助手走 headless 执行容器 + 轻通知 ──
+  // 不再开任务进度窗：执行经 sidecar 派发（写锁/身份校验在 dispatch 侧），
+  // 完成后 alert 轻通知（写回了文档 / 未写回时给出结果）。sidecar 离线时
+  // headless 返回 fallback，alert 带指引。
+  const { getAssistantLaunchInfo } = await _loadAssistantTaskRunner()
   // 领域助手可能尚未懒加载到注册表,执行前确保已加载,避免按 id 解析不到定义
   try { await ensureDomainPacksLoaded() } catch (_) { /* 加载失败则按现有定义继续 */ }
   const launchInfo = getAssistantLaunchInfo(assistantId, ribbonOptions)
@@ -796,22 +826,64 @@ async function executeAssistantFromRibbon(assistantId, options = {}) {
       return { cancelled: true }
     }
   }
-  const ret = startAssistantTask(assistantId, ribbonOptions)
-  if (ret.gated) return { gated: true }
-  const { taskId, promise } = ret
-  if (!taskId) {
-    throw new Error('任务启动失败，未能创建任务')
+  // 能力门控（审查三 P0-修正）：免费额度计数与购买引导不能随任务管道退役而断
+  const { ensureCapability } = await import('../utils/license/capabilityGate.js')
+  if (!ensureCapability(assistantId)) {
+    return { gated: true }
   }
-  window.Application.ShowDialog(
-    Util.GetUrlPath() + Util.GetRouterHash() + `/task-progress-dialog?taskId=${encodeURIComponent(taskId)}`,
-    options.taskTitle || '任务进度',
-    // 真常量,不乘 dpr —— 与 AI 对话框入口(openDialogRoute rawPixels)传相同的数,
-    // 保证从顶部 ribbon 和从对话框打开的任务进度窗口尺寸一致(不同 webview 的 dpr 不同)。
-    560,
-    600,
-    false
-  )
-  return promise
+  const definitionMod = await import('../utils/assistantRegistry.js')
+  const settingsMod = await import('../utils/assistantSettings.js')
+  const definition = definitionMod.getBuiltinAssistantDefinition(assistantId) || {}
+  // 回落守卫（三审 P1-2，与面板/聊天同口径）：多模态（mediaKind，mediaTier 挂账）
+  // 与保密/脱密类（declassify_* 工具系统级禁调）回落旧任务链路
+  const mediaKind = definition?.runtimeCapabilities?.mediaKind
+  const securityAssistant = /^analysis\.(security-check|secret-keyword-extract)$/.test(String(assistantId || ''))
+  if (mediaKind || securityAssistant) {
+    const { startAssistantTask: legacyStart } = await _loadAssistantTaskRunner()
+    const ret = legacyStart(assistantId, ribbonOptions)
+    if (ret.gated) return { gated: true }
+    const { taskId, promise } = ret
+    if (!taskId) throw new Error('任务启动失败，未能创建任务')
+    window.Application.ShowDialog(
+      Util.GetUrlPath() + Util.GetRouterHash() + `/task-progress-dialog?taskId=${encodeURIComponent(taskId)}`,
+      options.taskTitle || '任务进度', 560, 600, false
+    )
+    return promise
+  }
+  // 统一对话框执行（产品定稿）：agent 类助手经 prefill 通道(assistantRun) 投递到
+  // AI 助手面板，在消息卡里跑 agent 回合——有提示词、有进度，与普通对话/文档
+  // 智能体回合同形态。面板未开则先写通道再打开（mount 首个 tick 拾取）。
+  const label = String(options.taskTitle || definition.label || '助手')
+  // 载荷只留面板实际消费的字段（AIAssistantDialog.consumeAssistantRunFromRibbon 只读
+  // assistantId/label/documentAction/targetLanguage；选区/全文由面板侧
+  // getAssistantLaunchInfo 现读，与 ET/WPP 预填通道同约定）。不要把 launchInfo.inputText
+  // （整篇文档/整个选区的文本）塞进 PluginStorage——大字符串 native 写入是 2026-11-21
+  // 右键助手双 SIGBUS 崩溃的头号新增嫌疑；旧载荷里 hasSelection/inputSource 本就不在
+  // getAssistantLaunchInfo 返回值上，恒为空/ false，一并清掉。
+  try {
+    writePrefillPromptPayload({
+      at: Date.now(),
+      assistantRun: {
+        assistantId,
+        label,
+        documentAction: String(launchInfo.effectiveDocumentAction || ''),
+        targetLanguage: String(options.targetLanguage || '')
+      }
+    })
+  } catch (e) {
+    window.alert(`无法投递助手任务（${String(e?.message || e).slice(0, 120)}）。`)
+    return { error: e }
+  }
+  // 开面板的窗口态变更 native 调用（GetTaskPane / pane.Visible / ShowDialog /
+  // CreateTaskPane）延后到引擎空栈上执行，不要留在「OnAction 分发 → 微任务续体 →
+  // JS 调 native」的嵌套调用栈里：WPS 主进程（ksojscore 基座）会在这些调用中同步
+  // 回调 JS（WindowActivate / ribbon 刷新），2026-11-21 双崩溃栈显示该再入场景下
+  // 引擎跳了野指针（PC=0x000000000000ffff）。延后即收敛为 btnAIAssistant 同款已验证时序。
+  // reopen 传字符串 '1'：aiAssistantWindowManager.normalizeQuery 只认 '1'，布尔 true 会被丢弃。
+  window.setTimeout(() => {
+    try { openAIAssistant({ reopen: '1' }) } catch (e) { console.warn('[ribbon] 助手面板打开失败:', e) }
+  }, 0)
+  return { dispatched: true }
 }
 
 function openAssistantSettings(itemKey = 'create-custom-assistant') {
@@ -3393,7 +3465,7 @@ function OnAction(control) {
       }
       if (preset?.prompt) {
         try {
-          window.Application.PluginStorage.setItem('ai_chat_prefill_prompt', JSON.stringify({ prompt: preset.prompt, autoSend: !!preset.autoSend, at: Date.now() }))
+          writePrefillPromptPayload({ prompt: preset.prompt, autoSend: !!preset.autoSend, at: Date.now() })
         } catch (e) { console.warn('[ribbon] 写预填提示词失败:', e) }
       }
       openAIAssistant()
@@ -3929,10 +4001,11 @@ function getRibbonImageRelative(control) {
     // AI助手分组（menuModelSelect 已在上方单独处理）
     'menuTableBatch': 'images/menu-table-batch.svg',
     'menuImageBatch': 'images/select-images.svg',
-    'btnAIAssistant': 'images/ai-assistant.svg',
-    // 表格/演示宿主常驻助手按钮——语义化图标（images/assistants/ 目录）
-    'btnAIAssistantEt': 'images/assistants/et-formula.svg',
-    'btnAIAssistantWpp': 'images/assistants/wpp-gen.svg',
+    'btnAIAssistant': 'images/chayuan-ai-assistant.png',
+    // 表格/演示宿主常驻助手按钮——三宿主统一「察元AI助手」品牌图标（Agnes 生图，
+    // 参照 chayuan-office 应用图标：红橙渐变圆角方块 + 白色带翼 C）
+    'btnAIAssistantEt': 'images/chayuan-ai-assistant.png',
+    'btnAIAssistantWpp': 'images/chayuan-ai-assistant.png',
     'btnEtFormula': 'images/assistants/et-formula.svg',
     'btnEtInsight': 'images/assistants/et-insight.svg',
     'btnEtChart': 'images/assistants/et-chart.svg',

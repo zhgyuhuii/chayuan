@@ -176,11 +176,15 @@ export function resetWriteBaselines() {
 function verifyWriteBaseline(ownerToken) {
   const baseline = baselines.get(String(ownerToken || ANON_TOKEN))
   if (!baseline || !baseline.fp) return { ok: true }
+  const fp = getDocumentFingerprint()
   const docId = getActiveDocId()
   if (baseline.docId && docId && docId !== baseline.docId) {
+    // docId 变了但内容指纹一致：最常见是未保存文档被保存——docId 从 Name 兜底值
+    // （如「文档1」）变成 FullName 完整路径，内容一字未动。内容没变 + 写回目标
+    // 就是当前活动文档，放行（防「任务运行期间保存」误报活动文档已切换）。
+    if (fp === baseline.fp) return { ok: true }
     return { ok: false, reason: '活动文档已切换' }
   }
-  const fp = getDocumentFingerprint()
   if (fp !== baseline.fp) {
     return { ok: false, reason: '文档内容在本回合期间已被修改（可能为手动编辑或其它操作）' }
   }
@@ -252,14 +256,18 @@ export function forceReleaseLock(lockId) {
  * 持锁执行 fn。等待期间可 cancel()；轮到时依次校验：
  * 取消 → 活动文档身份 → OCC 基线（仅校验调用者的 baselineToken，PR5 起各回合
  * 互不洗白），任一失败即拒绝并抛错（不占用写窗口）。
- * @param {{ label?: string, expectDocId?: string, baselineToken?: string }} opts
+ * @param {{ label?: string, expectDocId?: string, baselineToken?: string|null, occAdvisory?: boolean }} opts
+ *   baselineToken=null 与 ''/缺省语义不同：null=显式跳过 OCC（跨 webview 直写，基线表不可达），
+ *   ''/缺省=匿名槽（最近一次基线，UI 直调旧语义）；occAdvisory=true 时 OCC 整体降级放行。
  * @param {() => Promise<any>} fn
  */
 export function withDocumentWriteLock(opts = {}, fn) {
   const label = String(opts.label || 'document-write')
   const lockId = `wl-${++lockSeq}`
   const expectDocId = opts.expectDocId !== undefined ? opts.expectDocId : getActiveDocId()
-  const baselineToken = String(opts.baselineToken || ANON_TOKEN)
+  // null 必须原样穿透到 OCC 闸门——String(null||'') 会把它吞成匿名槽，派发写就拿
+  // 陈旧基线硬校验误报「活动文档已切换」（2026-11-21 真机写回失败根因之一）
+  const baselineToken = opts.baselineToken === null ? null : String(opts.baselineToken || ANON_TOKEN)
   const waiter = { label, cancelled: false, handle: null, rejectEarly: null }
   waiter.handle = {
     cancel: () => {
@@ -293,9 +301,17 @@ export function withDocumentWriteLock(opts = {}, fn) {
       // 链式队列理论上不会出现；兜底防御
       throw makeError('DOC_WRITE_LOCK_BUSY', '文档写锁被占用，本次写回未执行。')
     }
-    const verdict = verifyWriteBaseline(baselineToken)
-    if (!verdict.ok) {
-      throw makeError('DOCUMENT_MODIFIED_SINCE_BASELINE', `写回前校验失败：${verdict.reason}。请重新读取文档内容后重试，或改用带备份的写回方式。`)
+    // baselineToken=null（跨 webview 直写，2026-11-21 真机）：OCC 指纹校验跳过——
+    // 基线表 per-webview 内存态，跨引擎实例校验必然误报；身份校验+写锁串行仍生效。
+    // occAdvisory（2026-11-21 真机多轮实证）：MCP 派发写（跨 webview token）OCC 降级为
+    // 放行——指纹校验在此架构误报率 100%（面板/基座/执行侧三实例基线不可达）；
+    // 防误写由三道硬防线承担：__expectedDocId 身份校验 + originalText 文本匹配 +
+    // 写锁 FIFO 串行。同 webview 本地调用（不带 occAdvisory）OCC 语义不变。
+    if (baselineToken !== null && !opts.occAdvisory) {
+      const verdict = verifyWriteBaseline(baselineToken)
+      if (!verdict.ok) {
+        throw makeError('DOCUMENT_MODIFIED_SINCE_BASELINE', `写回前校验失败：${verdict.reason}。请重新读取文档内容后重试，或改用带备份的写回方式。`)
+      }
     }
     const myToken = { label, id: lockId, linkSettle: waiter.linkSettle }
     owner = myToken
@@ -315,8 +331,10 @@ export function withDocumentWriteLock(opts = {}, fn) {
         } catch { /* ignore */ }
         owner = null
         // 回合基线不能因写后沉淀期间切换文档而重新绑定到另一篇文档。
+        // baselineToken=null（OCC 显式跳过）不滚任何槽——null 写连基线采样都不做，
+        // 也不能借道把匿名槽洗成跨 webview 写后态（匿名槽属于本 webview 的 UI 直调链路）。
         const rollDocId = getActiveDocId()
-        if (baselineToken === ANON_TOKEN || rollDocId === nowDocId) {
+        if (baselineToken !== null && (baselineToken === ANON_TOKEN || rollDocId === nowDocId)) {
           const rollFp = getDocumentFingerprint()
           baselines.set(baselineToken, { docId: rollDocId, fp: rollFp })
           if (baselineToken !== ANON_TOKEN) {

@@ -100,7 +100,9 @@ const STUBS = {
       // 工具调用统计），按 m.activeDoc 应答活动对象身份（null = 无打开文档）。
       if (name === 'wps_status' || ((name === 'spreadsheet' || name === 'presentation') && args && args.action === 'status')) {
         const doc = m.activeDoc == null ? '' : String(m.activeDoc)
-        if (!doc) return { structuredContent: {} }
+        // 2026-11-21 探针容错契约：空 structuredContent 会被判「读不到→降级放行」，
+        // 无文档场景必须显式 open:false（confirmedNoDoc）才触发硬拦（S21 语义保持）
+        if (!doc) return { structuredContent: { document: { open: false } } }
         return { structuredContent: { document: { fullName: doc, name: doc }, workbook: { fullName: doc }, presentation: { fullName: doc } } }
       }
       m.localCalls.push({ name, args })
@@ -530,6 +532,19 @@ const run = (m) => import('./ORCH_IMPORT').then(mod => mod.runMcpChatOrchestrato
   A(r.isError && JSON.parse(r.output).error === 'NO_ACTIVE_DOCUMENT', 'S21 no-document turn cannot write')
   A(m.localCalls.length === 1, 'S21 no-document turn never reaches host')
   console.log('S21 原文档身份不可伪造，无文档回合禁止写入')
+}
+
+// 场景 21b：分档轮数预算（2026-11-21 裁决 A）——roundBudget=6 时第 7 个工具轮被截断
+{
+  const m = baseMock()
+  for (let i = 1; i <= 8; i++) m.chatScript.push({ tool_calls: [toolCall('b' + i, 'chayuan__document_locate', { text: 'x' + i })] })
+  m.chatScript.push({ content: '不该到这里。' })
+  const r = await run({ roundBudget: 6 })
+  A(r.ok === true, 'S21b ok')
+  A(r.content.includes('轮次上限'), 'S21b 预算截断走轮次上限收尾: ' + r.content)
+  A(!(r.steps || []).some(x => x.label.includes('自动续跑')), 'S21b 无 todo 不续跑')
+  A((m.requests || []).length === 7, 'S21b 请求数=预算轮+收尾轮, got ' + (m.requests || []).length)
+  console.log('S21b 生成档轮数预算 6 生效（7 次模型调用封顶）')
 }
 
 // 场景 22：轮次上限 + todo 有未完成项 → 自动续跑补完（MAX_ROUNDS 首段 + 续跑段）

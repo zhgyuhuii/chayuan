@@ -219,6 +219,7 @@
             @click="switchChat(chat.id)"
           >
             <span class="history-title">{{ chat.title || `对话 ${idx + 1}` }}</span>
+            <span v-if="chat.docName" class="history-doc-chip" :title="`绑定：${chat.docName}`">{{ chat.docName }}</span>
             <button
               type="button"
               class="icon-action-btn danger"
@@ -406,8 +407,20 @@
         @error="onToolError"
         @close="activeToolId = ''"
       />
+      <!-- Model S 提示条：对话驻留后绑定≠活动时的一次性显式切换入口（共识 Q5） -->
+      <div v-if="docHint.visible" class="doc-hint-bar">
+        <span class="doc-hint-text">当前对话绑定「{{ docHint.boundName }}」· 正在看「{{ docHint.activeName }}」</span>
+        <button type="button" class="doc-hint-switch" @click="switchToDocScope(docHint.activeScope)">切到「{{ docHint.activeName }}」的对话</button>
+        <button type="button" class="doc-hint-close" title="知道了" @click="docHint.visible = false">×</button>
+      </div>
+      <!-- Model S 孤儿横幅（Q7）：绑定文档已关闭 → 常驻重开/改绑出路（发前可见） -->
+      <div v-if="docCapsule.state === 'closed'" class="doc-hint-bar doc-hint-bar--closed">
+        <span class="doc-hint-text">绑定文档「{{ docCapsule.name }}」已关闭——写文档类操作无法执行，仅对话历史问答可用。</span>
+        <button type="button" class="doc-hint-switch" @click="reopenBoundDocument">重新打开</button>
+        <button type="button" class="doc-hint-switch" @click="rebindCurrentChatToActiveDoc">改绑当前文档</button>
+      </div>
       <!-- 消息区域 -->
-      <div v-if="!activeToolId" class="messages-container" :class="{ 'has-ruler': composerRulerTicks.length > 0 }" ref="messagesRef">
+      <div v-if="!activeToolId" class="messages-container" :class="{ 'has-ruler': composerRulerTicks.length > 0 }" ref="messagesRef" @scroll="onMessagesScroll">
         <!-- 历史刻度尺:每颗刻度=当前会话一轮提问,悬停变长+预览,点击定位 -->
         <div v-if="composerRulerTicks.length" class="composer-ruler" aria-label="对话历史刻度">
           <button
@@ -815,19 +828,37 @@
                   <div class="message-waiting-state">
                     <div class="message-waiting-head">
                       <span class="message-waiting-title">{{ getAssistantLoadingLabel(msg) }}</span>
-                      <span class="message-waiting-percent">{{ getAssistantLoadingPercentText(msg) }}</span>
+                      <span v-if="msg.lane !== 'mcp'" class="message-waiting-percent">{{ getAssistantLoadingPercentText(msg) }}</span>
                     </div>
-                    <div class="message-waiting-detail">{{ getAssistantLoadingDetail(msg) }}</div>
-                    <div class="message-waiting-progress" aria-hidden="true">
-                      <span
-                        class="message-waiting-progress-bar"
-                        :style="{ width: `${getAssistantLoadingPercent(msg)}%` }"
-                      ></span>
-                    </div>
+                    <div v-if="msg.lane !== 'mcp'" class="message-waiting-detail">{{ getAssistantLoadingDetail(msg) }}</div>
+                    <!-- lane=mcp（文档智能体/助手 agent 回合）：进度与思考已在任务清单卡
+                         + 执行过程步骤列表实时呈现（含模型思考流），等待卡不再重复
+                         进度条/流式文本——下方 composer 已有停止/发送按钮 -->
                     <div
-                      v-if="String(msg.mcpStreamingText || '').trim()"
+                      v-if="msg.lane !== 'mcp' && String(msg.mcpStreamingText || '').trim()"
                       class="message-waiting-stream"
                     >{{ msg.mcpStreamingText }}<span class="cursor">▊</span></div>
+                    <!-- 思考区（对话栏实时输出）：有思考流时实时滚动；空态显示占位说明
+                         （思考模式关闭/快速轨任务无思考链——🧠 开启后可实时查看推理） -->
+                    <div v-if="msg.lane === 'mcp'" class="mcp-thinking-block">
+                      <div
+                        class="mcp-thinking-head"
+                        @click.stop="msg.mcpThinkingCollapsed = !msg.mcpThinkingCollapsed"
+                      >
+                        {{ msg.isLoading ? '思考中…' : '深度思考（已完成）' }}
+                        <span class="mcp-thinking-toggle">{{ msg.mcpThinkingCollapsed ? '展开' : '收起' }}</span>
+                      </div>
+                      <div
+                        v-show="!msg.mcpThinkingCollapsed"
+                        class="mcp-thinking-body"
+                        :data-thinking-for="msg.id"
+                        @scroll="onThinkingScroll(msg, $event)"
+                      >
+                        <template v-if="String(msg.mcpThinkingText || '').trim()">{{ msg.mcpThinkingText }}<span v-if="msg.isLoading" class="cursor">▊</span></template>
+                        <template v-else-if="msg.isLoading">{{ thinkingModeEnabled ? '等待模型输出思考内容…' : '思考模式未开启（点输入区 🧠 开启后可实时查看模型推理）——任务直接执行中' }}</template>
+                        <template v-else>本回合无思考链输出（思考模式关闭或模型未输出 reasoning）</template>
+                      </div>
+                    </div>
                     <LongTaskRunCard
                       v-for="taskRun in getMessageLongTaskRunEntries(msg, { onlyRunning: true })"
                       :key="`${msg.id}-${taskRun.key}-inline`"
@@ -840,18 +871,19 @@
                       @toggle-details="toggleDocumentRevisionDetails(taskRun.run)"
                       @toggle-backup="handleLongTaskRunToggleBackup(taskRun.stopAction, msg, $event)"
                     />
-                    <button
-                      v-if="msg.lane === 'mcp' && activeMcpTurnContexts[currentChatId]?.messageId === msg.id"
-                      type="button"
-                      class="message-error-action-btn"
-                      style="margin-top: 8px;"
-                      @click.stop="stopActiveMcpTurn()"
-                    >
-                      停止
-                    </button>
                   </div>
                 </template>
                 <template v-else>
+                  <div
+                    v-if="msg.lane === 'mcp' && String(msg.mcpThinkingText || '').trim()"
+                    class="mcp-thinking-block is-done"
+                  >
+                    <div class="mcp-thinking-head" @click.stop="msg.mcpThinkingCollapsed = !msg.mcpThinkingCollapsed">
+                      深度思考（已完成）
+                      <span class="mcp-thinking-toggle">{{ msg.mcpThinkingCollapsed ? '展开' : '收起' }}</span>
+                    </div>
+                    <div v-show="!msg.mcpThinkingCollapsed" class="mcp-thinking-body">{{ msg.mcpThinkingText }}</div>
+                  </div>
                   <span v-html="getRenderedMessageHtml(msg)" :class="{ 'md-body': isMessageMarkdown(msg) }"></span>
                   <span v-if="activeChatStreaming && msg.role === 'assistant' && i === visibleMessages.length - 1 && String(msg.content || '').trim()" class="cursor">▊</span>
                   <KbSourceStrip
@@ -985,6 +1017,34 @@
                       >
                         {{ step.label }}<span v-if="step.detail"> · {{ step.detail }}</span>
                       </div>
+                    </div>
+                  </div>
+                  <!-- 生图/搜图产物缩略图（ToolDisplay.images 侧信道，2026-11-25）：
+                       点击放大（lightbox）+ 下载；数据永不进模型上下文 -->
+                  <div
+                    v-if="msg.role === 'assistant' && Array.isArray(msg.mcpToolImages) && msg.mcpToolImages.length"
+                    class="mcp-tool-images"
+                  >
+                    <div
+                      v-for="(img, imgIdx) in msg.mcpToolImages"
+                      :key="`${msg.id}-mcp-img-${imgIdx}`"
+                      class="mcp-tool-image-wrap"
+                    >
+                      <img
+                        class="mcp-tool-image"
+                        :src="toolImageRenderSrc(img)"
+                        :title="(img.title ? img.title + '（' : '') + '点击放大查看' + (img.title ? '）' : '')"
+                        loading="lazy"
+                        @error="hideMcpToolImage(msg, imgIdx)"
+                        @mouseenter.once="ensureSidecarImageSrc(img)"
+                        @click="openToolImageLightbox(img)"
+                      />
+                      <button
+                        type="button"
+                        class="mcp-tool-image-download"
+                        title="下载图片"
+                        @click.stop="downloadToolImage(img)"
+                      >⬇</button>
                     </div>
                   </div>
                 </template>
@@ -2195,6 +2255,26 @@
                   </div>
                 </div>
               </div>
+              <!-- 消息操作行（zcode 模式，2026-11-25）：气泡下方独立行，悬浮/聚焦显隐；
+                   助手消息左下角、用户消息右下角。复制通道 = copyTextToClipboard
+                   （execCommand 兜底，绕开 WPS 宿主对 Ctrl+C 的抢键） -->
+              <div
+                class="message-actions"
+                :class="[`is-${msg.role}`, { 'has-just-copied': copiedMessageId === msg.id }]"
+              >
+                <button
+                  v-if="String(msg.content || '').trim()"
+                  class="message-action-btn"
+                  :class="{ 'just-copied': copiedMessageId === msg.id }"
+                  :title="copiedMessageId === msg.id ? '已复制' : '复制消息内容'"
+                  @click.stop="copyMessageContent(msg)"
+                >
+                  <svg v-if="copiedMessageId !== msg.id" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 9h10v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V9zM5 15V5a2 2 0 0 1 2-2h10" />
+                  </svg>
+                  <span v-else class="message-action-done">✓ 已复制</span>
+                </button>
+              </div>
             </div>
           </div>
           <!-- 支持我们随缘提示:任务成功完成后低频出现(见 tipJar.js 频控),
@@ -2231,7 +2311,29 @@
       <!-- 底部输入区：单行 模型选择|输入框|附件|发送 -->
       <div v-if="!activeToolId" class="input-area">
         <div ref="composerShell" class="composer-shell" :class="{ 'composer-shell--model-open': modelDropdownOpen || mcpDropdownOpen || skillPickerOpen }">
-          <div class="composer-doc-binding" :title="docBindingLabel">{{ docBindingLabel }}</div>
+          <div class="composer-doc-binding-wrap">
+            <div
+              class="composer-doc-binding"
+              :class="[`doc-capsule--${docCapsule.state}`, { 'doc-capsule-clickable': openDocMenu.length > 0 }]"
+              :title="docBindingLabel"
+              @click="toggleDocBindingMenu()"
+            >{{ docBindingLabel }}<span v-if="openDocMenu.length" class="doc-capsule-caret">▾</span></div>
+            <div v-if="docMenuOpen && openDocMenu.length" class="doc-capsule-menu">
+              <div
+                v-for="entry in openDocMenu"
+                :key="entry.scopeKey"
+                class="doc-capsule-menu-item"
+                :title="entry.fullName"
+                @click="onDocMenuPick(entry)"
+              >
+                <span class="doc-capsule-menu-name">{{ entry.name }}</span>
+                <span class="doc-capsule-menu-meta">
+                  <button type="button" class="doc-capsule-rebind" title="把当前对话迁移绑定到该文档" @click.stop="rebindCurrentChatToScope(entry.scope)">改绑到此</button>
+                  {{ entry.metaLabel }}
+                </span>
+              </div>
+            </div>
+          </div>
           <div v-if="attachments.length" class="composer-meta-row">
             <div
               v-if="selectionHintLabel"
@@ -2322,6 +2424,23 @@
             @change="onAttachmentChange"
           />
           <div class="composer-tools">
+          <!-- 思考模式开关：选中=模型完整思考链（慢但推理强）；不选=智谱系禁思考（快速出结果，
+               实测扩写 16.7s→5.1s）。状态持久化 globalSettings.thinkingModeEnabled -->
+          <div class="thinking-toggle-wrap">
+            <button
+              type="button"
+              class="composer-tool-btn thinking-toggle-btn"
+              :class="{ 'is-active': thinkingModeEnabled }"
+              :title="thinkingModeEnabled ? '思考模式已开启（深度推理，较慢）' : '思考模式已关闭（快速出结果）'"
+              aria-label="思考模式"
+              @click="toggleThinkingMode"
+            >
+              <svg class="composer-tool-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3a6 6 0 0 0-6 6c0 1.6.6 3 1.6 4.1.5.6.9 1.3 1.1 2l.3 1.4c.1.5.5.9 1 .9h4c.5 0 .9-.4 1-.9l.3-1.4c.2-.7.6-1.4 1.1-2A6 6 0 0 0 18 9a6 6 0 0 0-6-6Z" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M10 20.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
           <div class="model-select-wrap" ref="modelSelectRef">
             <button
               type="button"
@@ -2883,6 +3002,22 @@ node mcp-sidecar/server.mjs</pre>
         </div>
       </div>
     </div>
+    <!-- 生成图像 lightbox：点击消息卡缩略图放大查看 + 下载（2026-11-25） -->
+    <div
+      v-if="toolImageLightbox.visible"
+      class="tool-image-lightbox"
+      role="dialog"
+      @click.self="closeToolImageLightbox"
+    >
+      <div class="tool-image-lightbox-body">
+        <img :src="toolImageLightbox.src" :alt="toolImageLightbox.title || '生成图像'" />
+        <div class="tool-image-lightbar">
+          <span class="tool-image-lighttitle">{{ toolImageLightbox.title || '生成图像' }}</span>
+          <button type="button" class="tool-image-lightbtn" @click="downloadToolImage(toolImageLightbox)">⬇ 下载</button>
+          <button type="button" class="tool-image-lightbtn" @click="closeToolImageLightbox">关闭</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -2896,6 +3031,7 @@ import {
   computeFallbackScopeKeys,
   isSameDocumentScopeChange
 } from '../utils/chat/docScope.js'
+import { enumerateHostDocuments, normalizeDocTargetKey } from '../utils/chat/docTarget.js'
 import { putSessionStore, fetchSessionStore } from '../services/mcpBridge/sessionStoreClient.js'
 import { registerAttachmentPath } from '../services/mcpBridge/attachmentRegistryClient.js'
 import { extractHtmlText } from '../utils/fileTextExtractor.js'
@@ -2910,7 +3046,7 @@ import {
   loadDialogAutoContinueSeconds,
   saveDialogAutoContinueSeconds
 } from '../services/toolPermission.js'
-import { getModelGroupsFromSettings, setDefaultModelId } from '../utils/modelSettings.js'
+import { getModelGroupsFromSettings, migrateAutoEnableConfiguredModels, setDefaultModelId } from '../utils/modelSettings.js'
 import { desktopStore } from '../services/desktop/index.js'
 import { getModelLogoPath, hasKnownModelLogo } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
@@ -3000,6 +3136,8 @@ import {
 import { buildAssistantCapabilityFingerprint, buildAssistantEvaluationSamples, buildAssistantRealComparison, evaluateAssistantCandidate } from '../utils/assistantEvaluationService.js'
 import { buildAssistantRepairDraft } from '../utils/assistantRepairService.js'
 import { applyAssistantTaskPlan, getAssistantLaunchInfo, startAssistantTask, stopAssistantTask } from '../utils/assistantTaskRunner.js'
+import { runAssistantAgentExecution } from '../services/agentAssistant/assistantAgentTurn.js'
+import { isFastLaneEligible } from '../utils/assistantAgentDispatch.js'
 import { startAssistantPromptRecommendationTask, stopAssistantPromptRecommendationTask } from '../utils/assistantPromptRecommendationService.js'
 import { startDocumentCommentTask, stopDocumentCommentTask, undoDocumentCommentTask } from '../utils/documentCommentService.js'
 import { initSync as initTaskListSync, subscribe as subscribeTaskList, getTaskById, updateTask } from '../utils/taskListStore.js'
@@ -3032,8 +3170,10 @@ import {
 } from '../services/mcpBridge/mcpServerRegistry.js'
 import {
   callLocalTool,
-  probeMcpHealthBundle
+  probeMcpHealthBundle,
+  ensureSidecarToken
 } from '../services/mcpBridge/mcpHttpClient.js'
+import { MCP_BASE_URL } from '../services/mcpBridge/config.js'
 import { getChatApiConfigByProvider } from '../utils/chatApi.js'
 import { detectAddonType, resetAddonTypeCache } from '../utils/host/hostType.js'
 import {
@@ -3041,6 +3181,10 @@ import {
   applyProofreadTextFixes,
   runMcpChatOrchestrator
 } from '../services/mcpBridge/mcpChatOrchestrator.js'
+// 直出车道共享核心（与远程 chat_turn 同一条实现——2026-11-25 审计：此前直出只在
+// 远程路径，本地 fallback 回合同一个「写一篇…」走完整 agent 轨，行为分裂）
+import { isGenerationIntent, generateDirectContent } from '../services/mcpBridge/directGeneration.js'
+import { resolveBoundDocument } from '../utils/chat/docTarget.js'
 import {
   listBuiltinSkills,
   groupByCategory,
@@ -3112,6 +3256,7 @@ import { setAssistantKbBindingGetter, publishAssistantKbBinding } from '../utils
 import services from '../services/index.js'
 import { ensureCapability as licenseEnsureCapability } from '../utils/license/capabilityGate.js'
 import { getLicense, getQuotaRemaining, getQuotaLimit, isPaidPlan, evalLicense } from '../utils/licenseStore.js'
+import { loadGlobalSettings, saveGlobalSettings } from '../utils/globalSettings.js'
 // qrcode(独立 24KB chunk)仅购买二维码用 → 按需动态 import,见 loadPurchaseQr
 import { getFingerprint as getPurchaseFingerprint } from '../utils/license/fingerprint.js'
 const STORAGE_KEY_HISTORY = 'ai_assistant_chat_history'
@@ -3477,6 +3622,23 @@ function readBrowserFileAsText(file) {
     reader.onload = () => resolve(String(reader.result || ''))
     reader.onerror = () => reject(new Error('读取文件失败'))
     reader.readAsText(file, 'utf-8')
+  })
+}
+
+/** 图片附件 → dataURL（vision 输入用；返回 {base64, mime} 或 null） */
+function readBrowserFileAsImage(file) {
+  return new Promise((resolve) => {
+    if (!file) {
+      resolve(null)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const m = /^data:([^;,]+);base64,(.+)$/.exec(String(reader.result || ''))
+      resolve(m ? { base64: m[2], mime: m[1] } : null)
+    }
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
   })
 }
 
@@ -4478,10 +4640,23 @@ function getFilteredModelGroups() {
 function getSelectedModelId() {
   const groups = getFilteredModelGroups()
   const flat = groups.flatMap(g => g.models)
-  const stored = window.Application?.PluginStorage?.getItem(STORAGE_KEY_SELECTED_ID)
-  if (stored && flat.some(m => m.id === stored)) return stored
-  const legacyStored = window.Application?.PluginStorage?.getItem('selectedModelId')
-  if (legacyStored && flat.some(m => m.id === legacyStored)) return legacyStored
+  // 双通道读取（2026-11-25 修复「重开面板丢模型记忆」）：写侧是双通道
+  // （PluginStorage + localStorage），读侧此前只读 PluginStorage——而 PluginStorage
+  // 按窗格/宿主进程隔离，跨宿主/跨窗格重开面板时读不到（比如文字宿主选的模型，
+  // 切到演示稿再回来就丢了），回落到列表第一个。localStorage 同源跨窗格共享，
+  // 与 prefill 双通道同纪律：localStorage 优先跨上下文可达，PluginStorage 保旧。
+  const read = (key) => {
+    let v = ''
+    try { v = window.Application?.PluginStorage?.getItem(key) || '' } catch (_) { v = '' }
+    if (!v) {
+      try { v = window.localStorage?.getItem(key) || '' } catch (_) { v = '' }
+    }
+    return String(v || '').trim()
+  }
+  for (const key of [STORAGE_KEY_SELECTED_ID, 'selectedModelId']) {
+    const stored = read(key)
+    if (stored && flat.some(m => m.id === stored)) return stored
+  }
   return flat[0]?.id || null
 }
 
@@ -4509,6 +4684,7 @@ export default {
       mcpUrlCopyHint: '',
       showMcpGuideDialog: false,
       mcpEnabled: true,
+      thinkingModeEnabled: false,
       dialogAutoContinueSecondsValue: 5,
       mcpHealthLevel: 'gray',
       mcpHealthHint: '点击刷新 MCP 状态',
@@ -4563,7 +4739,21 @@ export default {
       activeLegacyTurnContexts: {},
       sendRoutingLocks: {},
       docWriteLockState: { locked: false, ownerLabel: '', queue: [] },
+      // Model S 胶囊/提示条状态（plans/Model S 共识定稿 Q5）：纯派生，轮询刷新
+      docCapsule: { state: 'none', name: '' }, // none=无绑定对话 | open | closed | unsaved
+      docMenuOpen: false,
+      // Model S UX：流式自动跟随尾巴；用户上滑 >90px 即接管（不再拽底），滚回底部自动恢复
+      msgAutoFollow: true,
+      docUiCache: null,
+      allowEmptyHistoryWrite: false,
+      docUiLastActiveKey: '',
+      docUiBackoffUntil: 0,
+      docHint: { visible: false, boundName: '', activeName: '', activeScope: null },
       selectionContextSnapshot: null,
+      // 消息气泡复制反馈（当前已复制的那条消息 id，1.6s 后清除）
+      copiedMessageId: '',
+      // 生成图像 lightbox（点击缩略图放大查看/下载）
+      toolImageLightbox: { visible: false, src: '', title: '', download: '' },
       selectionContextCollapsed: true,
       tooltipLayouts: {},
       aiAssistantWindowSession: null,
@@ -4756,15 +4946,45 @@ export default {
       return host === 'et' || host === 'wpp'
     },
     /** 对话绑定文档指示：肉眼可见"本对话管哪个文件"（也是隔离问题的决定性诊断） */
-    docBindingLabel() {
-      const host = detectAddonType()
-      const noun = host === 'et' ? '当前工作簿' : host === 'wpp' ? '当前演示稿' : '当前文档'
-      const docId = String(this.historyStorageDocId || '').trim()
-      if (!docId || this.historyStorageScopeKey === 'no_active_document') {
-        return `${noun}：未绑定（当前没有打开的文件）`
+    /** Model S 胶囊下拉数据源：全部打开文档 → 各自 scope + 会话数（显式切换用） */
+    openDocMenu() {
+      if (!this.docMenuOpen) return []
+      let items = []
+      try { items = enumerateHostDocuments(window.Application, detectAddonType()) } catch (_) { items = [] }
+      const menus = []
+      const seen = new Set()
+      for (const it of items) {
+        let scope = null
+        try { scope = resolveDocumentScope(it.doc, { ignoreIdentity: false }) } catch (_) { continue }
+        const key = String(scope?.scopeKey || '')
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        menus.push({
+          scopeKey: key,
+          scope,
+          name: String(it.name || it.fullName.split('/').pop() || key),
+          fullName: String(it.fullName || ''),
+          metaLabel: it.isActive ? '当前活动' : ''
+        })
       }
-      const base = docId.split('/').pop().split('\\').pop() || docId
-      return `${noun}：${base}`
+      return menus
+    },
+    docBindingLabel() {
+      // Model S Q5：胶囊 = 当前对话的绑定文档（不再显示面板 scope 的活动文档）
+      const capsule = this.docCapsule || { state: 'none', name: '' }
+      const host = detectAddonType()
+      const noun = host === 'et' ? '绑定工作簿' : host === 'wpp' ? '绑定演示稿' : '绑定文档'
+      if (capsule.state === 'none') {
+        const scopeId = String(this.historyStorageDocId || '').trim()
+        if (!scopeId || this.historyStorageScopeKey === 'no_active_document') {
+          return `${noun}：未绑定（当前没有打开的文件）`
+        }
+        const base = scopeId.split('/').pop().split('\\').pop() || scopeId
+        return `${noun}：${base}`
+      }
+      if (capsule.state === 'closed') return `${noun}：${capsule.name}（已关闭）`
+      if (capsule.state === 'unsaved') return `${noun}：${capsule.name}（未保存）`
+      return `${noun}：${capsule.name}`
     },
     selectedModelName() {
       return this.selectedModel?.name || this.selectedModel?.modelId || (this.hasConfiguredChatModels ? '选择模型' : '配置模型')
@@ -5288,6 +5508,11 @@ export default {
       bootMeasure('$nextTick → adjustComposerHeight', () => this.adjustComposerHeight())
       bootMark('AIAssistantDialog $nextTick 完成(视觉上窗口已可交互)')
     })
+    // 面板剪贴板快捷键截获（capture 阶段，见 handlePanelClipboardKeydown 注释：
+    // WPS 宿主抢 Ctrl+C/Ctrl+V 把面板复制粘贴作用到文档）
+    try { document.addEventListener('keydown', this.handlePanelClipboardKeydown, true) } catch (_) { /* ignore */ }
+    // composer 弹层外点关闭（文档绑定菜单此前无外点关闭，与模型树叠层遮挡）
+    try { document.addEventListener('click', this.closeDocBindingMenuIfOutside) } catch (_) { /* ignore */ }
     bootMeasure('initTaskListSync', () => initTaskListSync())
     this.taskListUnsubscribe = subscribeTaskList(() => {
       this.syncGeneratedOutputTaskRuns()
@@ -5304,7 +5529,10 @@ export default {
     // 会话作用域切换，否则切到别的文档后对话不跟随（2026-09-30 VM 实测缺口）
     try {
       window.Application?.ApiEvent?.AddApiEventListener?.('WindowActivate', () => {
-        this.syncHistoryScopeWithActiveDocument()
+        // 【卡死修复 2026-11-21】激活事件内绝不同步回打 COM：WPS 主进程正在处理
+        // 切换，此刻同步枚举/读档 = COM 重入互等（真机实证整只 WPS 冻结）。延迟
+        // 到切换尘埃落定后再刷新（轮询 1.5s 兜底，不丢事件）。
+        this.scheduleScopeSync(450)
       })
     } catch (_) { /* 宿主无 ApiEvent 时退化为仅 window focus 驱动 */ }
     // 安全网轮询：ApiEvent 注册可能因 Application 注入时序静默失败，部分宿主
@@ -5390,6 +5618,9 @@ export default {
     this.runWhenIdle(() => this.requestAssistantEvolutionSuggestionCheck())
     try {
       this.mcpEnabled = loadMcpEnabled()
+      // 思考模式默认关闭（实测思考链占 60-70% 耗时——reasoning 纠结 todo 礼仪上千 token）；
+      // 🧠 点亮 = 完整推理（复杂任务）。历史设置 true 才开。
+      try { this.thinkingModeEnabled = loadGlobalSettings()?.thinkingModeEnabled === true } catch { /* 默认关：快速出结果 */ }
     } catch {
       this.mcpEnabled = true
     }
@@ -5410,6 +5641,9 @@ export default {
   beforeUnmount() {
     this.stopActiveMcpTurn()
     this.stopFloatSnapWatch()
+    try { document.removeEventListener('keydown', this.handlePanelClipboardKeydown, true) } catch (_) { /* ignore */ }
+    try { document.removeEventListener('click', this.closeDocBindingMenuIfOutside) } catch (_) { /* ignore */ }
+    clearTimeout(this._copiedMsgTimer)
     if (this._scopeSyncTimer) {
       clearInterval(this._scopeSyncTimer)
       this._scopeSyncTimer = null
@@ -6383,6 +6617,7 @@ export default {
     },
     toggleMcpDropdown() {
       this.modelDropdownOpen = false
+      this.docMenuOpen = false
       this.mcpDropdownOpen = !this.mcpDropdownOpen
       if (this.mcpDropdownOpen) {
         this.reloadMcpServerList()
@@ -6398,6 +6633,7 @@ export default {
     toggleSkillPicker() {
       this.modelDropdownOpen = false
       this.mcpDropdownOpen = false
+      this.docMenuOpen = false
       this.skillPickerOpen = !this.skillPickerOpen
       if (this.skillPickerOpen) this.refreshSkillItems()
     },
@@ -6576,13 +6812,24 @@ export default {
     },
     buildMcpSelectionCtx() {
       const snap = this.selectionContextSnapshot
-      const text = String(snap?.text || '').trim()
-      return {
+      // ET 快照把选区内容放 selectionText（text 恒空）——不取会漏掉表格宿主选区，
+      // 模型永远看不到「当前有选区」（2026-11-25 表格 selection_read 治理）
+      const text = String(snap?.text || snap?.selectionText || '').trim()
+      const ctx = {
         hasSelection: !!text,
         charCount: text.length,
         preview: text.slice(0, 240),
-        fileName: String(snap?.fileName || snap?.name || '').trim()
+        fileName: String(snap?.fileName || snap?.name || snap?.documentName || '').trim()
       }
+      // ET 选区地址/规模透传（orchestrator 据此注入「先调 spreadsheet(selection_read)」提示）
+      const hc = snap?.hostContext
+      if (hc?.type === 'et') {
+        ctx.selectionAddress = String(hc.selectionAddress || '')
+        ctx.selectionRows = Number(hc.selectionRows || 0)
+        ctx.selectionCols = Number(hc.selectionCols || 0)
+        if (!ctx.hasSelection && ctx.selectionAddress) ctx.hasSelection = true
+      }
+      return ctx
     },
     // ── 远程回合（AI助手对话跟随文档）────────────────────────────────
     // 面板页在文档切换时被 WPS 强制重挂载（2026-09-30 真机实验），生成循环
@@ -6600,8 +6847,16 @@ export default {
         const result = await callLocalTool('chat_turn', {
           turnId,
           scopeKey: this.historyStorageScopeKey || 'no_active_document',
-          docId: this.historyStorageDocId || '',
+          // Model S：执行目标 = 会话绑定三件套（对话驻留，不随面板当前 scope 漂移）
+          docId: String(this.currentChat?.docId || this.historyStorageDocId || ''),
+          docLinkId: String(this.currentChat?.docLinkId || ''),
+          docName: String(this.currentChat?.docName || ''),
+          // 思考模式开关随回合下发（2026-11-24 修复）：此前只有本地 orchestrator
+          // 调用拿到开关，远程托管回合（绝大多数）执行侧拿不到 → 思考卡永远空
+          thinkingEnabled: this.thinkingModeEnabled === true,
           host: detectAddonType(),
+          // 视觉输入（附件图片 base64，≤2 张）：经内存/HTTP 到基座执行侧，不进状态体
+          images: Array.isArray(this._turnVisionImages) ? this._turnVisionImages.slice(0, 2) : [],
           userText: String(text || ''),
           model: {
             id: model.id,
@@ -6649,6 +6904,17 @@ export default {
       if (Array.isArray(state.steps)) assistantMsg.mcpSteps = state.steps.slice()
       if (typeof state.streamText === 'string' && state.streamText) {
         assistantMsg.mcpStreamingText = state.streamText
+      }
+      // ToolDisplay 增量上屏（生成图完成即显示，不等回合收尾；2026-11-25）
+      const incrementalImages = this.collectToolImageItems(state.toolDisplays)
+      if (incrementalImages.length && incrementalImages.length !== (assistantMsg.mcpToolImages || []).length) {
+        assistantMsg.mcpToolImages = incrementalImages
+      }
+      // 思考流实时渲染（2026-11-24 修复「开了思考模式卡片不显示」）：执行侧
+      // state.thinkingText（🧠 开启时 reasoning_content 累计）；保留已完成态的文本
+      if (typeof state.thinkingText === 'string' && state.thinkingText) {
+        assistantMsg.mcpThinkingText = state.thinkingText.slice(-2000)
+        this.scrollThinkingIntoFollow(assistantMsg)
       }
       if (Array.isArray(state.todos) && state.todos.length) assistantMsg.mcpTodos = state.todos
       const last = state.steps?.[state.steps.length - 1]
@@ -6706,6 +6972,10 @@ export default {
       if (state.phase === 'done') {
         assistantMsg.content = String(state.content || '已完成。')
         assistantMsg.mcpSteps = Array.isArray(state.steps) ? state.steps : []
+        // 撤销快照（直出/远程链路写前采集）：有文本才有撤销依据
+        if (state.snapshot && String(state.snapshot.text || '')) {
+          assistantMsg.mcpSnapshot = { ...state.snapshot, at: Date.now() }
+        }
         if (state.proofreadCard) {
           assistantMsg.mcpProofreadCard = { ...state.proofreadCard, applied: false, applying: false }
         }
@@ -6718,6 +6988,9 @@ export default {
           assistantMsg.mcpLoopHistory = state.loopMessages
         }
         if (Array.isArray(state.todos) && state.todos.length) assistantMsg.mcpTodos = state.todos
+        // ToolDisplay 侧信道 → 消息卡缩略图（生图/搜图产物；UI-only 数据）
+        const toolImages = this.collectToolImageItems(state.toolDisplays)
+        if (toolImages.length) assistantMsg.mcpToolImages = toolImages
       } else if (state.phase === 'cancelled') {
         const prev = String(assistantMsg.content || '').trim()
         assistantMsg.content = prev ? `${prev}\n\n（已停止）` : '已停止文档智能体本轮执行。'
@@ -6726,6 +6999,8 @@ export default {
         assistantMsg.content = String(state.content || '文档智能体调用模型失败')
         assistantMsg.mcpSteps = Array.isArray(state.steps) ? state.steps : []
       }
+      // 历史落盘前剥离 thumb（渲染期已显示，落盘只留路径防历史膨胀）
+      this.stripMcpToolImageThumbs(assistantMsg)
       this.stopAssistantLoadingProgress(assistantMsg)
       assistantMsg.isLoading = false
       assistantMsg.mcpStepsExpanded = false
@@ -7003,9 +7278,15 @@ export default {
       const mcpAttSnapshot = (Array.isArray(prepared?.attachmentsSnapshot) && prepared.attachmentsSnapshot.length)
         ? prepared.attachmentsSnapshot
         : (Array.isArray(this.attachments) ? this.attachments : [])
-      const mcpAttachmentCtx = mcpAttSnapshot.length
-        ? this.buildAttachmentContext(text, mcpAttSnapshot).attachmentPrompt
+      // 附件别名登记失败透出（P0 审计修复）：模型若按「附件N」调 file_parse 必然
+      // PATH_UNRESOLVED——提前告知，让它向用户要粘贴内容而不是空烧一轮工具
+      const mcpRegisterFails = Array.isArray(this._attachmentRegisterFailures) ? this._attachmentRegisterFailures : []
+      const mcpRegisterWarn = mcpRegisterFails.length
+        ? `\n【附件登记提醒】以下附件的 file_parse 别名登记失败，无法按「附件N」读取文件内容：${mcpRegisterFails.map(f => `${f.name}（${f.error}）`).join('；')}。如任务依赖该附件，请如实告知用户重新上传，或请用户直接粘贴关键内容；不要反复尝试 file_parse。`
         : ''
+      const mcpAttachmentCtx = mcpAttSnapshot.length
+        ? this.buildAttachmentContext(text, mcpAttSnapshot).attachmentPrompt + mcpRegisterWarn
+        : mcpRegisterWarn
       // 附加技能快照：仅本条消息携带，发送即清空（追问不带——上游同语义）。
       // buildAttachments 负责上限（≤4 个）与超长截断（单条 ≤16KB）。
       const mcpAttachedSkills = buildAttachments(
@@ -7030,10 +7311,38 @@ export default {
         return { handled: true }
       }
 
+      // 直出车道（与远程 chat_turn 共用 directGeneration.js——2026-11-25 行为一致化：
+      // 此前直出只在远程路径，本地 fallback 回合同一个「写一篇…」走完整 agent 轨）。
+      // 门控与远程一致：生成意图 + 无选区/KB/附件/技能（带技能必须走 agent 轨兑现技能）
+      // + 仅 wps 宿主（直出写回 document_insert 是 Writer 语义，ET/WPP 会写错宿主）。
+      // 失败（模型/网络）落回下方 agent 轨。
+      if (
+        detectAddonType() === 'wps' &&
+        isGenerationIntent(text) &&
+        !(this.currentChatKbBinding?.kbNames?.length) &&
+        !mcpAttachmentCtx &&
+        !(Array.isArray(mcpAttachedSkills) && mcpAttachedSkills.length)
+      ) {
+        const selCtxForDirect = this.buildMcpSelectionCtx()
+        if (!selCtxForDirect.hasSelection) {
+          const directHandled = await this.tryRunLocalDirectGeneration({
+            text,
+            model,
+            assistantMsg,
+            ctrl,
+            turnChatId,
+            historyMessages,
+            targetDocumentId: getWriteBaseline(writeBaselineToken).docId
+          })
+          if (directHandled) return { handled: true }
+        }
+      }
+
       try {
         const result = await runMcpChatOrchestrator({
           userText: text,
           model,
+          images: Array.isArray(this._turnVisionImages) ? this._turnVisionImages.slice(0, 2) : [],
           attachmentCtx: mcpAttachmentCtx,
           attachedSkills: mcpAttachedSkills,
           selectionCtx: this.buildMcpSelectionCtx(),
@@ -7053,6 +7362,19 @@ export default {
             if (now - mcpStreamRenderAt < 100) return
             mcpStreamRenderAt = now
             assistantMsg.mcpStreamingText = t
+          },
+          // 思考流透传（对话栏思考区）：普通文档智能体回合同样实时输出思考内容
+          onTurnReasoning: (text) => {
+            const d = String(text || '')
+            if (!d) return
+            // 缓冲上限 50k（ksojscore 引擎稳定性：超长 reasoning 字符串拼接+渲染防护）
+            const buf = String(this._thinkingBuf || '')
+            this._thinkingBuf = buf.length > 50000 ? buf + d.slice(0, 2000) : buf + d
+            const now = Date.now()
+            if (now - (this._thinkingRenderAt || 0) >= 200) {
+              this._thinkingRenderAt = now
+              assistantMsg.mcpThinkingText = this._thinkingBuf
+            }
           },
           onProgress: (step, steps) => {
             assistantMsg.mcpSteps = steps.slice()
@@ -7082,6 +7404,16 @@ export default {
           onSnapshot: (snapshot) => {
             // 首次变更前快照：撤销卡数据源（自动执行档的安全网，各档通用）
             if (snapshot && snapshot.text) assistantMsg.mcpSnapshot = snapshot
+          },
+          // ToolDisplay 增量（生成图完成即上屏，2026-11-25「先输出到对话」）：
+          // 本地轨直接追加到消息卡；远程轨走 chatTurnRunner onToolDisplay → state
+          onToolDisplay: (d) => {
+            const items = this.collectToolImageItems([d])
+            if (items.length) {
+              assistantMsg.mcpToolImages = [...(assistantMsg.mcpToolImages || []), ...items]
+              for (const item of items) this.ensureSidecarImageSrc(item)
+              this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
+            }
           }
         })
 
@@ -7165,6 +7497,10 @@ export default {
         }
         assistantMsg.mcpSteps = result.steps || assistantMsg.mcpSteps || []
         if (Array.isArray(result.todos) && result.todos.length) assistantMsg.mcpTodos = result.todos
+        // ToolDisplay 侧信道 → 消息卡缩略图（生图/搜图产物；UI-only 数据）
+        const toolImagesLocal = this.collectToolImageItems(result.toolDisplays)
+        if (toolImagesLocal.length) assistantMsg.mcpToolImages = toolImagesLocal
+        this.stripMcpToolImageThumbs(assistantMsg)
         this.stopAssistantLoadingProgress(assistantMsg)
         assistantMsg.isLoading = false
         assistantMsg.mcpStepsExpanded = false
@@ -7299,6 +7635,20 @@ export default {
       if (!anyTurn && !anyDocTask) this.isStreaming = false
     },
     /**
+     * 回合成功且已写回 → 创建文件级备份（skipSave：磁盘仍是写入前状态），
+     * 撤销卡凭 backupId 走「Close+复制回+reopen」保格式恢复。
+     */
+    async ensureUndoBackupForMessage(msg) {
+      // 2026-11-21 废除假 backupId：文件级备份已移除（Save+copy 三崩 WPS），撤销走
+      // v3 原生 Undo+写前文本收敛（undoMcpSnapshot）。此前伪造的 backupId 会让撤销
+      // 进 restore 分支对假记录查询必败。仅保留 docId 兜底。
+      try {
+        const snap = msg?.mcpSnapshot
+        if (!snap) return
+        if (!snap.docId) snap.docId = String(this.historyStorageDocId || '')
+      } catch { /* ignore */ }
+    },
+    /**
      * 撤销本回合文档修改（PR7）：用首次变更前快照整体回写。
      * 走文档写锁串行；回滚用独立基线 token（回滚本身就是一次合法的全量写，
      * 不应被本回合或其它回合的旧基线拦截）。快照与活动文档不一致时拒绝，防跨文档误写。
@@ -7313,23 +7663,52 @@ export default {
       snap.restoring = true
       snap.message = ''
       this.saveHistory()
+      // 撤销 v3（2026-11-21）：WPS 原生 Undo 收敛——agent 写回（replace/insert/apply_ops）
+      // 都是常规 WPS 操作、在宿主 undo 栈里。逐次 app.Undo() 并比对快照文本（归一换行）
+      // 收敛即停（上限 40 次防越撤）。保格式（原生 undo 天然保留样式），不碰 Content.Text。
+      // backupId 路径保留给未来文件级备份（当前已移除——Save+copy 在回合钩子时机崩 WPS）。
       const undoToken = `undo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const normalizeDocText = (t) => String(t || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
       try {
         const { promise } = withDocumentWriteLock({ label: 'mcp.snapshot-undo', baselineToken: undoToken }, async () => {
+          const app = window.Application
           const doc = window.Application?.ActiveDocument
           if (!doc) throw new Error('当前没有活动文档，无法撤销。')
           const nowId = String(doc.FullName || doc.Name || '')
           if (snap.docId && nowId && snap.docId !== nowId) {
-            throw new Error('活动文档已切换（快照属于另一篇文档），为避免误写已取消撤销。')
+            throw new Error('活动文档已切换（快照属于另一篇文档），为避免误撤销已取消。')
           }
-          // 全量回写快照全文（与既有备份→替换链路同型）；undoToken 无基线记录，
-          // OCC 校验放行，写后回滚各槽基线到回写后的状态
-          doc.Content.Text = String(snap.text)
+          if (snap.backupId) {
+            // 文件级恢复路径（未来备份方案就绪后启用）
+            const { restoreDocumentBackupRecordById } = await import('../utils/documentBackupStore.js')
+            return restoreDocumentBackupRecordById(snap.backupId)
+          }
+          const target = normalizeDocText(snap.text)
+          if (!target) throw new Error('快照为空，无法撤销。')
+          if (typeof app.Undo !== 'function') {
+            throw new Error('当前 WPS 版本不支持自动撤销，请手动 ⌘Z 恢复到本回合修改前状态。')
+          }
+          let undone = 0
+          for (let i = 0; i < 40; i++) {
+            const cur = normalizeDocText(doc.Content?.Text)
+            if (cur === target) break
+            try { app.Undo() } catch (e) { break }
+            undone += 1
+          }
+          const finalText = normalizeDocText(doc.Content?.Text)
+          if (finalText !== target) {
+            throw new Error(
+              undone === 0
+                ? '没有可撤销的操作（可能已超出 WPS 撤销栈范围），请手动 ⌘Z 恢复。'
+                : `撤销 ${undone} 步后未能完全恢复到修改前状态，请手动 ⌘Z 继续恢复。`
+            )
+          }
+          return { undone }
         })
         await promise
         snap.undone = true
         snap.restoring = false
-        snap.message = '已撤销：文档已恢复到本回合修改前的状态。'
+        snap.message = '已撤销：文档已恢复到本回合修改前的状态（格式完整）。'
         msg.content = `${String(msg.content || '').trim()}\n\n（已撤销本次修改）`.trim()
         this.refreshSelectionContext?.()
       } catch (e) {
@@ -8139,6 +8518,9 @@ export default {
       }
     },
     refreshModelSelection(options = {}) {
+      // 一次性迁移：已配置密钥但历史版本停在「未开启」的厂商自动启用（幂等，
+      // 迁移过只读一次设置即返回）。面板下拉/欢迎页门控都从这里过，保证首屏即生效
+      try { migrateAutoEnableConfiguredModels() } catch (_) { /* 迁移失败按存量状态展示 */ }
       this.modelGroupsVersion += 1
       this.selectedModelId = getSelectedModelId()
       if (options.refreshWelcomePrompt && this.currentMessages.length === 0) {
@@ -8391,7 +8773,7 @@ export default {
       this.saveSidebarLayout()
     },
     handleWindowFocus() {
-      this.syncHistoryScopeWithActiveDocument()
+      this.scheduleScopeSync(200)
       this.loadAssistantItems()
       this.requestAssistantEvolutionSuggestionCheck()
       this.refreshModelSelection({ refreshWelcomePrompt: true })
@@ -8406,16 +8788,47 @@ export default {
      * 消费 ribbon 常驻助手按钮写入的预填提示词（ai_chat_prefill_prompt）。
      * 以 at 时间戳判重：面板已开时点击按钮 → 轮询通道 1.5s 内拾取；未开时
      * 新面板 mount 首个 tick 拾取。只预填不发送（用户补充占位内容后发送）。
+     *
+     * 消费即清（2026-11-25 真机事故治理：每次打开助手自动执行【扩写】）——
+     * 载荷是「单实例消息」不是持久配置：此前消费后不清，面板重挂载（文档切换/
+     * 关闭重开会强制重挂载）后内存去重字段归零，残留载荷里的 assistantRun 被
+     * 当成新投递重新执行。双通道同步删除 + 冷挂载陈旧载荷（>15 分钟）静默丢弃
+     * （覆盖历史受害者的残留载荷，不补执行；忙时挂起的排队载荷窗口内不受影响）。
      */
     tryConsumeRibbonPrefillPrompt() {
+      const clearPayload = () => {
+        try { if (typeof localStorage !== 'undefined') localStorage.removeItem('ai_chat_prefill_prompt') } catch (_) { /* ignore */ }
+        try { window.Application?.PluginStorage?.removeItem('ai_chat_prefill_prompt') } catch (_) { /* ignore */ }
+      }
       let data = null
       try {
-        const raw = window.Application?.PluginStorage?.getItem('ai_chat_prefill_prompt')
+        // 双通道读取（2026-11-21「跨窗格右键无反应」修复）：多窗口下 PluginStorage 按文档
+        // 窗格隔离——B 文档右键写的载荷落在 B 窗格存储，A 窗格的已开面板永远读不到。
+        // localStorage 按 file:// 同源跨窗格共享（chat handoff/视图记忆同款通道），
+        // 优先读它；PluginStorage 保底兼容单窗格旧写入。
+        let raw = ''
+        try { raw = (typeof localStorage !== 'undefined' && localStorage.getItem('ai_chat_prefill_prompt')) || '' } catch (_) { raw = '' }
+        if (!raw) raw = window.Application?.PluginStorage?.getItem('ai_chat_prefill_prompt') || ''
         data = raw ? JSON.parse(raw) : null
-      } catch (_) { return }
+      } catch (_) { clearPayload(); return }
       const at = Number(data?.at || 0)
+      if (!at) { if (data) clearPayload(); return }
+      // 冷挂载（内存去重未暖）+ 载荷超过投递窗口 → 过期投递，静默清理不执行
+      if (!this._lastPrefillConsumedAt && Date.now() - at > 15 * 60_000) { clearPayload(); return }
+      if (at <= Number(this._lastPrefillConsumedAt || 0)) return
+      // 助手 agent 回合投递（统一对话框执行）：ribbon 右键/顶部菜单点击经此通道
+      // 在面板消息卡里跑 agent 回合（有提示词有进度）。忙时不消费时间戳——天然排队，
+      // 回合结束后下轮轮询补拾取（同挂载内去重字段仍在，不重放）。
+      if (data.assistantRun?.assistantId) {
+        if (this.isStreaming || this.sendRoutingLocks?.[this.currentChatId]) return
+        this._lastPrefillConsumedAt = at
+        clearPayload()
+        this.$nextTick(() => this.consumeAssistantRunFromRibbon(data.assistantRun))
+        return
+      }
       if (!data?.prompt || at <= Number(this._lastPrefillConsumedAt || 0)) return
       this._lastPrefillConsumedAt = at
+      clearPayload()
       // 正在执行回合时不打断输入区（预填覆盖用户未发送的草稿）
       if (this.isStreaming || this.sendRoutingLocks?.[this.currentChatId]) return
       this.userInput = String(data.prompt)
@@ -8426,6 +8839,33 @@ export default {
       this.$nextTick(() => {
         try { this.$refs?.composerInputRef?.focus?.() } catch (_) { /* ignore */ }
       })
+    },
+
+    /**
+     * 消费 ribbon 投递的助手 agent 回合（统一对话框执行）：构造 item/launchInfo
+     * 后复用 runAssistantAgentFromCard（消息卡+流式+写回），与面板直接点击一致。
+     */
+    async consumeAssistantRunFromRibbon(run = {}) {
+      const assistantId = String(run.assistantId || '')
+      if (!assistantId) return
+      try { await ensureDomainPacksLoaded() } catch { /* 加载失败按现有定义继续 */ }
+      const item = this.getAssistantItemByKey(assistantId) || {
+        key: assistantId,
+        label: String(run.label || '助手'),
+        shortLabel: String(run.label || '助手')
+      }
+      if (this.assistantRunLoadingKey) this.assistantRunLoadingKey = ''
+      const launchInfo = getAssistantLaunchInfo(assistantId, {
+        strictAssistantDefaults: true,
+        launchSource: 'ribbon-direct',
+        ...(run.documentAction ? { documentAction: run.documentAction } : {}),
+        ...(run.targetLanguage ? { targetLanguage: run.targetLanguage } : {})
+      })
+      // ribbon 投递时已带确认（confirmFullDocumentSubmit）；这里尊重 requiresFullDocumentConfirm
+      // 但不再二次弹窗（ribbon 已确认过全文场景）
+      const variables = {}
+      if (run.targetLanguage) variables.targetLanguage = run.targetLanguage
+      await this.runAssistantAgentFromCard(item, launchInfo, variables)
     },
 
     loadAssistantItems() {
@@ -8988,6 +9428,32 @@ export default {
       this.touchScopeLru(scopeKey)
       return scopeKey
     },
+    /** Model S 视图驻留：跨重挂载的面板视图记忆。localStorage 跨窗格共享
+     * （file:// 同源，chat handoff 同款通道；PluginStorage 按文档窗格隔离不可用）。 */
+    readViewState() {
+      try {
+        const raw = (typeof localStorage !== 'undefined' && localStorage.getItem('ai_chat_view_state')) || ''
+        if (!raw) return null
+        const payload = JSON.parse(raw)
+        const age = Date.now() - Number(payload?.at || 0)
+        if (!payload?.scope?.scopeKey || age > 12 * 60 * 60 * 1000) return null
+        return payload
+      } catch (_) { return null }
+    },
+    persistViewState() {
+      try {
+        const scope = {
+          scopeKey: String(this.historyStorageScopeKey || ''),
+          documentLinkId: String(this.historyStorageDocumentLinkId || ''),
+          docId: String(this.historyStorageDocId || ''),
+          source: String(this.historyStorageSource || '')
+        }
+        if (!scope.scopeKey) return
+        const payload = { scope, currentChatId: String(this.currentChatId || ''), at: Date.now() }
+        if (typeof localStorage !== 'undefined') localStorage.setItem('ai_chat_view_state', JSON.stringify(payload))
+        try { window.Application?.PluginStorage?.setItem('ai_chat_view_state', JSON.stringify(payload)) } catch (_) { /* 双通道 best-effort */ }
+      } catch (_) { /* 视图记忆失败退回活动文档锚定 */ }
+    },
     getHistoryStorageKeys(scopeKey = '') {
       const normalizedScope = String(scopeKey || this.historyStorageScopeKey || 'no_active_document').trim() || 'no_active_document'
       return {
@@ -9025,68 +9491,210 @@ export default {
         } catch (_) { /* 单次解析失败继续等 */ }
       }
     },
+    /** 切档同步调度器：去抖 + 重入守卫（激活事件内禁同步 COM） */
+    scheduleScopeSync(delayMs = 0) {
+      clearTimeout(this._scopeSyncDebounce)
+      this._scopeSyncDebounce = setTimeout(() => {
+        this._scopeSyncDebounce = null
+        this.syncHistoryScopeWithActiveDocument()
+      }, delayMs)
+    },
     syncHistoryScopeWithActiveDocument() {
-      // 只挡"本地执行"：本地回合在本 webview 内改文档，切会话确实危险；
-      // 远程回合跑在基座 webview 且带 docId 绑定守卫，切会话安全——若也挡住，
-      // 一次回合异常/卡顿就把会话隔离焊死（所有文档标签共用同一对话，实测缺陷）。
-      // 真机复测补充（用户报告 A/B 面板同显一份对话）：anyChatTurnRunning 含
-      // 其它 tab 会话的远程回合，也曾把 sync 全禁——远程回合有执行侧 docId 守卫，
-      // 不构成切会话风险，故不列入 localBusy。本地危险面只剩：当前流式、写锁、路由闩锁。
-      const localBusy = this.isStreaming ||
-        !!(this.docWriteLockState?.locked || this.docWriteLockState?.queue?.length) ||
-        Object.values(this.sendRoutingLocks || {}).some(Boolean)
-      const nextScope = this.resolveHistoryStorageScope()
-      const nextScopeKey = String(nextScope.scopeKey || '').trim()
-      if (!nextScopeKey) return false
-      // busy 期间文档已切换（用户报告的隔离失效根场景）：**绝不继续显示旧
-      // 文档的会话**——立即把 scope 元数据切到新文档并清空消息视图；新文档
-      // 的历史加载推迟到 busy 解除后的下一次 sync。此处不做 saveHistory：
-      // 旧会话属于旧 scope（发送硬校准已保证），乱 save 会把它写进新键。
-      // 例外——同文档身份升级翻转（发消息时懒嵌身份，path_→doc_，docId 不变，
-      // isSameDocumentScopeChange 判定）：消息对象引用必须活过整个回合，
-      // 此处既不清屏也不切键，推迟到 busy 解除后的空闲路径无缝迁移
-      // （save 旧键 → 采纳并入 → 载入 doc_ 键）。
-      if (localBusy) {
-        if (this.historyStorageScopeKey && nextScopeKey !== this.historyStorageScopeKey) {
-          const sameDocument = isSameDocumentScopeChange(nextScope, this.historyStorageDocId)
-          if (!sameDocument) {
-            this.applyHistoryStorageScope(nextScope)
-            this.chatHistory = []
-            this.currentChatId = null
-            // 记录待回填：busy 解除后的下一次 sync 必须补 loadHistory——
-            // 否则若 scope 不再变化，sync 走"相同键 return false"，被清空的
-            // 视图永远不回填、进行中任务也不显示（用户实测缺陷）
-            this._pendingScopeReload = nextScopeKey
-            this.initOpenChatTabsAfterLoad()
-          }
-        }
-        return false
+      // 重入守卫：上一拍未结束（COM 慢/主进程忙）时直接跳过本轮——宁晚勿堵
+      if (this._scopeSyncRunning) return false
+      this._scopeSyncRunning = true
+      try {
+        return this.syncHistoryScopeWithActiveDocumentInner()
+      } finally {
+        this._scopeSyncRunning = false
       }
-      // busy 已解除：补上 busy 期间推迟的历史加载（回填 + 进行中回合恢复）
-      if (this._pendingScopeReload && this._pendingScopeReload === nextScopeKey) {
-        this._pendingScopeReload = ''
-        this.applyHistoryStorageScope(nextScope)
-        this.loadHistory({ skipScopeResolve: true })
-        return true
-      }
-      if (!this.historyStorageScopeKey) {
-        this.applyHistoryStorageScope(nextScope)
-        this.loadHistory({ skipScopeResolve: true })
-        return true
-      }
-      if (nextScopeKey === this.historyStorageScopeKey) {
-        // 身份未变但 FullName/Name 可能已变（另存为/改名）：docId 是执行侧
-        // DOC_SWITCHED 守卫的绑定凭据，必须跟着刷新，否则另存后所有回合误触
-        // "活动对象已切换"拒绝执行
+    },
+    syncHistoryScopeWithActiveDocumentInner() {
+      // Model S（plans/Model S 共识定稿 Q5）：面板对话驻留——活动文档切换【绝不】
+      // 自动切会话/清屏/换存储键。旧实现的三重 busy 防线（busy 安全切换/跨文档拒发/
+      // 孤儿回合回收钉死）随「隐式跟随」整体退役：它们全是为跟随语义擦屁股的。
+      // 本函数瘦身为纯读轮询：①视图 scope 身份刷新（另存改名 → docId 凭据跟随）
+      // ②胶囊/提示条派生状态。存储键跟随视图 scope（saveHistory 写键语义不变），
+      // 显式切换入口 = 提示条/胶囊（switchToDocScope）。
+      let nextScope = null
+      try { nextScope = this.resolveHistoryStorageScope() } catch (_) { nextScope = null }
+      const nextKey = String(nextScope?.scopeKey || '').trim()
+      // 视图 scope 与活动文档同 scope 时：身份刷新（另存为/改名，docId 是执行侧凭据兜底）
+      if (this.historyStorageScopeKey && nextKey && nextKey === String(this.historyStorageScopeKey)) {
         if (nextScope.docId && nextScope.docId !== this.historyStorageDocId) {
           this.historyStorageDocId = nextScope.docId
         }
-        return false
+        if (nextScope.documentLinkId && nextScope.documentLinkId !== this.historyStorageDocumentLinkId) {
+          this.historyStorageDocumentLinkId = nextScope.documentLinkId
+        }
+        // 键内对话身份跟随刷新：无 docLinkId 的补绑对话（存量兼容）同步最新 docId；
+        // 有身份的对话不动（身份随文件走，另存不改 linkId）
+        for (const chat of this.chatHistory) {
+          if (!String(chat.docLinkId || '').trim() && String(chat.docId || '').trim() && chat.docId !== nextScope.docId) {
+            chat.docId = nextScope.docId
+          }
+        }
       }
-      this.saveHistory({ skipScopeResolve: true, immediate: true })
-      this.applyHistoryStorageScope(nextScope)
+      this.refreshDocBindingUiState(nextScope)
+      return false
+    },
+    /** Model S 胶囊/提示条派生（纯读 + 节流）：绑定文档开关态 + 绑定≠活动提示。
+     * 性能铁律（2026-11-21 真机「切文档卡死」回归）：全集合 COM 枚举是重操作，
+     * ①只在「活动文档键变化」或缓存超 2.5s 时才枚举，空闲拍零 COM；②枚举不带
+     * 身份读取（withIdentity=false，身份读是写路径专属）；③异常时退避一拍。 */
+    refreshDocBindingUiState(activeScope) {
+      const chat = this.currentChat
+      const boundId = String(chat?.docId || '').trim()
+      const activeId = String(activeScope?.docId || '').trim()
+      if (!boundId && !String(chat?.docLinkId || '').trim()) {
+        this.docCapsule = { state: 'none', name: '' }
+        this.docHint = { visible: false, boundName: '', activeName: '', activeScope: null }
+        return
+      }
+      const activeKey = normalizeDocTargetKey(activeId)
+      const now = Date.now()
+      const changed = activeKey !== this.docUiLastActiveKey
+      const fresh = this.docUiCache && (now - this.docUiCache.at) < 2500 && !changed
+      if (this.docUiBackoffUntil && now < this.docUiBackoffUntil && !changed) return
+      let items = this.docUiCache?.items || []
+      if (!fresh) {
+        const t0 = now
+        try {
+          items = enumerateHostDocuments(window.Application, detectAddonType())
+          this.docUiCache = { items, at: Date.now() }
+          this.docUiBackoffUntil = 0
+        } catch (_) { items = this.docUiCache?.items || [] }
+        // 单次枚举超 120ms：退避 3s（WPS 主进程忙时绝不火上浇油）
+        if (Date.now() - t0 > 120) this.docUiBackoffUntil = Date.now() + 3000
+      }
+      this.docUiLastActiveKey = activeKey
+      const hit = boundId
+        ? items.find(it => it.key === normalizeDocTargetKey(boundId))
+          || items.find(it => it.key.includes(normalizeDocTargetKey(boundId)) || normalizeDocTargetKey(boundId).includes(it.key))
+        : null
+      const name = String(chat?.docName || (boundId ? boundId.split('/').pop() : '') || '未知文档')
+      const state = hit ? (hit.saved ? 'open' : 'unsaved') : 'closed'
+      // 同值不写：避免每拍对象换新触发无谓的 Vue 重渲染
+      if (this.docCapsule.state !== state || this.docCapsule.name !== name) {
+        this.docCapsule = { state, name }
+      }
+      const boundKey = hit ? hit.key : normalizeDocTargetKey(boundId)
+      const showHint = !!hit && !!activeKey && boundKey !== activeKey
+      const hintNext = {
+        visible: showHint,
+        boundName: name,
+        activeName: String(activeScope?.name || activeId.split('/').pop() || ''),
+        activeScope: showHint ? (activeScope || null) : null
+      }
+      if (this.docHint.visible !== hintNext.visible || this.docHint.boundName !== hintNext.boundName || this.docHint.activeName !== hintNext.activeName) {
+        this.docHint = hintNext
+      } else if (!showHint && this.docHint.activeScope) {
+        this.docHint = { ...this.docHint, activeScope: null }
+      }
+    },
+    /** Model S 改绑墓碑（Q6）：防旧键残余（sidecar/file 异步写穿的陈旧副本回填）
+     * 把已迁走的对话「复活」成两条。容量上限 200，FIFO 淘汰。 */
+    readRebindTombstones() {
+      try {
+        const raw = window.Application?.PluginStorage?.getItem('ai_chat_rebind_tombstones')
+        const list = raw ? JSON.parse(raw) : []
+        return Array.isArray(list) ? list : []
+      } catch (_) { return [] }
+    },
+    addRebindTombstone(chatId, fromScopeKey) {
+      try {
+        const list = this.readRebindTombstones()
+        list.push({ id: String(chatId || ''), fromScopeKey: String(fromScopeKey || ''), at: Date.now() })
+        while (list.length > 200) list.shift()
+        window.Application?.PluginStorage?.setItem('ai_chat_rebind_tombstones', JSON.stringify(list))
+      } catch (_) { /* 墓碑失败不阻塞改绑（采纳迁移 savedAt 守卫兜底） */ }
+    },
+    /** Model S 改绑（Q6 裁决）：整条对话原子迁移到目标 scope——从当前视图列表移除
+     * 并落盘旧键（迁移后状态），加载目标键、追加对话、刷新三件套、墓碑防复活。
+     * 进行中回合按发起时绑定继续（S2 后台路由），终态落库跟随对话容器。 */
+    async rebindCurrentChatToScope(scopeInfo) {
+      const chat = this.currentChat
+      const scope = scopeInfo && scopeInfo.scopeKey ? scopeInfo : null
+      if (!chat || !scope) return
+      const fromKey = String(this.historyStorageScopeKey || '')
+      const targetKey = String(scope.scopeKey || '')
+      if (!targetKey || targetKey === fromKey) return
+      // 1) 从当前视图移除并落盘旧键（此刻 historyStorageScopeKey 仍是旧键）
+      this.chatHistory = this.chatHistory.filter(c => c.id !== chat.id)
+      if (this.currentChatId === chat.id) {
+        this.currentChatId = this.chatHistory[0]?.id || null
+      }
+      try { this.saveHistory({ skipScopeResolve: true, immediate: true }) } catch (_) { /* ignore */ }
+      // 2) 墓碑：旧键此后加载时过滤这条 id
+      this.addRebindTombstone(chat.id, fromKey)
+      // 3) 切到目标 scope、追加对话、刷新绑定三件套
+      this.applyHistoryStorageScope(scope)
       this.loadHistory({ skipScopeResolve: true })
-      return true
+      // 目标键里若有同 id（异常残留），去掉旧的再追加（对话原子唯一）
+      this.chatHistory = this.chatHistory.filter(c => c.id !== chat.id)
+      chat.docLinkId = String(scope.documentLinkId || '')
+      chat.docId = String(scope.docId || '')
+      chat.docName = String(scope.name || (scope.docId || '').split('/').pop() || '')
+      this.chatHistory.unshift(chat)
+      this.currentChatId = chat.id
+      this.openChatTab(chat.id)
+      this.saveHistory({ skipScopeResolve: true, immediate: true })
+      await this.$nextTick()
+    },
+    /** 孤儿会话出路一（Q7）：重新打开绑定文档（对未开文档 Open 是安全路径；
+     * SIGBUS 雷点只在对已开文档二次 Open——胶囊 closed 态保证这里不会撞上） */
+    async reopenBoundDocument() {
+      const chat = this.currentChat
+      const docPath = String(chat?.docId || '').trim()
+      if (!docPath || !docPath.includes('/')) {
+        await inAppAlert('该对话绑定的文档没有保存路径（未保存过的空白稿无法自动重开）。请手动打开文档后用「改绑」接上。', { title: '无法自动重开' })
+        return
+      }
+      try {
+        await callLocalTool('document_open', { path: docPath, viaOs: true }, { timeoutMs: 60000 })
+        // 胶囊状态由轮询刷新；立即刷一次给用户即时反馈
+        this.refreshDocBindingUiState(this.resolveHistoryStorageScopeSafe())
+      } catch (e) {
+        await inAppAlert(`重新打开失败（${String(e?.message || e).slice(0, 120)}）。请手动打开「${chat?.docName || docPath}」后用「改绑到当前文档」接上对话。`, { title: '重新打开失败' })
+      }
+    },
+    /** 孤儿会话出路二（Q7）：改绑到当前活动文档（复用改绑迁移） */
+    async rebindCurrentChatToActiveDoc() {
+      let scope = null
+      try { scope = this.resolveHistoryStorageScope() } catch (_) { scope = null }
+      if (!scope || String(scope.scopeKey || '') === 'no_active_document') {
+        await inAppAlert('当前没有活动文档，无法改绑。请先打开目标文档。', { title: '无法改绑' })
+        return
+      }
+      await this.rebindCurrentChatToScope(scope)
+    },
+    /** resolveHistoryStorageScope 的容错壳（UI 按钮路径用） */
+    resolveHistoryStorageScopeSafe() {
+      try { return this.resolveHistoryStorageScope() } catch (_) { return { scopeKey: this.historyStorageScopeKey || 'no_active_document', docId: this.historyStorageDocId || '' } }
+    },
+    /** 胶囊下拉选中：切到该文档的 scope 视图（无历史时开一条绑定它的新对话） */
+    async onDocMenuPick(entry) {
+      this.docMenuOpen = false
+      if (!entry?.scope) return
+      const targetKey = String(entry.scope.scopeKey || '')
+      // 目标 scope 与当前视图相同：仅收起菜单
+      if (targetKey === String(this.historyStorageScopeKey || '')) return
+      await this.switchToDocScope(entry.scope)
+      // 目标 scope 无历史（首次切换到该文档）：开一条绑定它的新对话
+      if (!Array.isArray(this.chatHistory) || this.chatHistory.length === 0) {
+        this.newChat()
+      }
+    },
+    /** Model S 显式切换（提示条/胶囊下拉入口）：旧 sync 的 save→apply→load 三步，
+     * 改为用户主动触发。目标 scope 无历史时开一条绑定该文档的新对话。 */
+    async switchToDocScope(scopeInfo) {
+      const scope = scopeInfo && scopeInfo.scopeKey ? scopeInfo : null
+      if (!scope) return
+      try { this.saveHistory({ skipScopeResolve: true, immediate: true }) } catch (_) { /* 旧视图落盘失败不阻塞切换 */ }
+      this.applyHistoryStorageScope(scope)
+      this.loadHistory({ skipScopeResolve: true })
+      this.docHint = { visible: false, boundName: '', activeName: '', activeScope: null }
+      await this.$nextTick()
     },
     isCustomAssistant(item) {
       // 宿主自定义助手(表格/演示配方)与文档自定义助手同等待遇:面板显示"自定义"
@@ -9097,7 +9705,17 @@ export default {
     loadHistory(options = {}) {
       try {
         if (!options.skipScopeResolve) {
-          this.ensureHistoryStorageScope()
+          // Model S 视图驻留（2026-11-21「切换文件后对话丢了」修复）：WPS 切文档会
+          // 强制重挂载面板（2026-09-30 真机实验），旧实现挂载即重锚定到【新活动
+          // 文档】的 scope——对话留在旧键里但视图跳走，感知即「对话丢了」。现在
+          // 挂载先读视图记忆（12h 内新鲜标记 → 恢复该 scope：对话比文档活得久，
+          // 文档关了历史仍在可看可问）；无标记/过期才按活动文档锚定（首启不变）。
+          const viewState = this.readViewState()
+          if (viewState?.scope?.scopeKey) {
+            this.applyHistoryStorageScope(viewState.scope)
+          } else {
+            this.ensureHistoryStorageScope()
+          }
         }
         const storage = window.Application?.PluginStorage
         const storageKeys = this.getHistoryStorageKeys()
@@ -9174,8 +9792,15 @@ export default {
           this.backfillHistoryFromSessionStore()
         }
 
+        // Model S 改绑墓碑过滤：本键里出现已迁走的对话 id（陈旧副本回填）→ 丢弃
+        const tombFrom = this.readRebindTombstones().filter(t => t.fromScopeKey === String(this.historyStorageScopeKey || ''))
+        const tombIds = new Set(tombFrom.map(t => String(t.id || '')))
         this.chatHistory = Array.isArray(parsed)
-          ? parsed.map(chat => this.normalizeChatRecord(chat))
+          // Model S 存量零迁移：本键历史的旧对话缺绑定 → 按当前 scope 身份补绑
+          // （键与 scope 同源，键内对话天然属于本文档；Q6 裁决）
+          ? parsed
+            .filter(chat => !tombIds.has(String(chat?.id || '')))
+            .map(chat => this.ensureChatBinding(this.normalizeChatRecord(chat)))
           : []
         if (currentId && this.chatHistory.some(c => c.id === currentId)) {
           this.currentChatId = currentId
@@ -9184,6 +9809,7 @@ export default {
         } else {
           this.currentChatId = null
         }
+        this.persistViewState()
         this.initOpenChatTabsAfterLoad()
         // 远程回合恢复：重挂载后按 pending 指针接回进行中/未合并的回合
         this.resumeRemoteMcpTurnsAfterLoad()
@@ -9264,6 +9890,22 @@ export default {
     },
     writeHistorySavePayload(payload) {
       if (!payload?.storageKeys) return
+      // 【空写防护·数据安全级】空视图（只剩草稿/全空）时禁止把 `[]` 写进 scope 键：
+      // 视图记忆让「空视图 + 异 scope 键」成为常态（重挂载恢复/切文档），无防护时
+      // 任何一次 saveHistory 都会把该键的真实历史覆写成空（2026-11-21 22:10 实证）。
+      // 放行：载荷非空 / 用户刚删除会话（明确清空意图） / 该键本来就为空。
+      try {
+        const parsedLen = (() => { try { return JSON.parse(payload.historyJson || '[]').length } catch (_) { return -1 } })()
+        if (parsedLen === 0 && !this.allowEmptyHistoryWrite) {
+          const existing = window.Application?.PluginStorage?.getItem(payload.storageKeys.history)
+          const existingCount = (() => { try { return JSON.parse(existing || '[]').length } catch (_) { return 0 } })()
+          if (existingCount > 0) {
+            console.warn('[saveHistory] 空视图写被拦截（防跨 scope 覆写）：', payload.scopeKey)
+            return
+          }
+        }
+      } catch (_) { /* 防护检查失败按原流程走 */ }
+      this.allowEmptyHistoryWrite = false
       const storage = window.Application?.PluginStorage
       storage?.setItem(payload.storageKeys.history, payload.historyJson || '[]')
       if (payload.currentChatId) {
@@ -9600,7 +10242,50 @@ export default {
       out.title = String(out.title || '新对话')
       out.messages = Array.isArray(out.messages) ? out.messages : []
       out.kbBindings = normalizeKbBinding(out.kbBindings)
+      // Model S 会话绑定三件套（plans/Model S 共识定稿 Q6）：缺失收敛为空串，
+      // 补绑走 ensureChatBinding（首落库/历史加载时按 scope 快照，存量零迁移）
+      out.docLinkId = String(out.docLinkId || '')
+      out.docId = String(out.docId || '')
+      out.docName = String(out.docName || '')
       return out
+    },
+    /** Model S 绑定快照（Q6）：记录此刻活动文档身份。无文档环境返回空三件套
+     * （落 no_active_document 兜底键，现状语义），首发落库时经 ensureChatBinding 补绑 */
+    buildChatBindingSnapshot() {
+      let scope = null
+      try { scope = this.resolveHistoryStorageScope() } catch (_) { scope = null }
+      const fullName = String(scope?.fullName || '')
+      return {
+        docLinkId: String(scope?.documentLinkId || ''),
+        docId: String(scope?.docId || fullName || ''),
+        docName: String(scope?.name || fullName.split('/').pop() || '')
+      }
+    },
+    /** Model S Q8 选区一致性：选区输入只在「对话绑定 == 活动文档」时合法——
+     * 眼见即所得：用户看到的选区在哪，处理结果就该在哪。不一致拒发并指路
+     * （改绑到当前文档 / 回原文档选中）。无选区输入不拦。
+     * @returns {Promise<boolean>} true=放行 */
+    async assertSelectionDocCoherence() {
+      const selCtx = this.buildMcpSelectionCtx()
+      if (!selCtx?.hasSelection) return true
+      const chat = this.currentChat
+      const boundId = String(chat?.docId || '').trim()
+      let activeScope = null
+      try { activeScope = this.resolveHistoryStorageScope() } catch (_) { activeScope = null }
+      const activeId = String(activeScope?.docId || '').trim()
+      if (!boundId || !activeId || boundId === activeId) return true
+      await inAppAlert(
+        `当前对话绑定「${String(chat?.docName || boundId.split('/').pop() || '未知文档')}」，但选区在「${String(activeScope?.name || activeId.split('/').pop() || '未知文档')}」上。选区处理结果只会写入绑定的文档——请先把对话改绑到当前文档（胶囊 ▾ → 改绑到此），或回到原文档重新选中。`,
+        { title: '选区与对话绑定不一致' }
+      )
+      return false
+    },
+    /** 补绑：仅当三件套全空时按当前 scope 快照（快照绑定语义——已有绑定绝不覆盖） */
+    ensureChatBinding(chatObj) {
+      if (!chatObj || typeof chatObj !== 'object') return chatObj
+      if (String(chatObj.docLinkId || '').trim() || String(chatObj.docId || '').trim()) return chatObj
+      Object.assign(chatObj, this.buildChatBindingSnapshot())
+      return chatObj
     },
     newChat() {
       this.activeToolId = ''
@@ -9617,7 +10302,9 @@ export default {
         title: '新对话',
         messages: [],
         kbBindings: normalizeKbBinding(),
-        draft: true
+        draft: true,
+        // Model S Q6：新对话快照绑定创建瞬间的活动文档（之后永不自动变）
+        ...this.buildChatBindingSnapshot()
       })
       this.openChatTab(id)
     },
@@ -9626,6 +10313,7 @@ export default {
       if (!this.openChatTabs.includes(id)) this.openChatTabs.push(id)
       this.currentChatId = id
       this.saveHistory()
+      this.persistViewState()
     },
     getChatTabLabel(tabId) {
       const chat = this.chatHistory.find(c => c?.id === tabId)
@@ -9661,7 +10349,12 @@ export default {
     },
     switchChat(id) {
       this.activeToolId = ''
+      this.msgAutoFollow = true
       this.openChatTab(id)
+    },
+    /** 删除会话 = 明确清空意图：放行下一次空写（否则空写防护拦下合法删除） */
+    markDeletionIntent() {
+      this.allowEmptyHistoryWrite = true
     },
     initOpenChatTabsAfterLoad() {
       const valid = this.currentChatId && this.chatHistory.some(c => c?.id === this.currentChatId)
@@ -9688,6 +10381,7 @@ export default {
       // 回合会继续跑到自然结束：占用/排队文档写锁、isStreaming 卡 true、且无法停止。
       this.stopActiveMcpTurn(id)
       this.stopActiveLegacyTurn(id)
+      this.allowEmptyHistoryWrite = true
       const remaining = this.chatHistory.filter(chat => chat.id !== id)
       this.chatHistory = remaining
       const tabIdx = this.openChatTabs.indexOf(id)
@@ -10276,8 +10970,24 @@ export default {
       this.modelDropdownOpen = false
     },
     toggleModelDropdown() {
+      // 弹层互斥（2026-11-25 真机：演示稿对话栏开模型厂商树时，残留的文档绑定
+      // 菜单（改绑到此/当前活动）叠在树上面把它遮住——此前只关了 mcp 弹层）
       this.mcpDropdownOpen = false
+      this.docMenuOpen = false
       this.modelDropdownOpen = !this.modelDropdownOpen
+    },
+    /** 文档绑定胶囊菜单开关（与模型/MCP/技能弹层互斥；见 toggleModelDropdown） */
+    toggleDocBindingMenu() {
+      this.modelDropdownOpen = false
+      this.mcpDropdownOpen = false
+      this.skillPickerOpen = false
+      this.docMenuOpen = !this.docMenuOpen
+    },
+    /** 点击绑定胶囊区域之外 → 关闭绑定菜单（外点关闭，与 blur 语义一致） */
+    closeDocBindingMenuIfOutside(e) {
+      if (!this.docMenuOpen) return
+      const inWrap = !!(e.target && typeof e.target.closest === 'function' && e.target.closest('.composer-doc-binding-wrap'))
+      if (!inWrap) this.docMenuOpen = false
     },
     onModelSelectBlur() {
       setTimeout(() => { this.modelDropdownOpen = false }, 150)
@@ -10367,6 +11077,122 @@ export default {
     },
     openSettingsDialog() {
       openSettingsWindow()
+    },
+    /**
+     * 复制任意文本到系统剪贴板（消息气泡复制按钮用）。
+     * 双通道：navigator.clipboard（https/secure context 才有）→ textarea+execCommand
+     * （file:// 的 CEF webview 里唯一可靠通道）。execCommand 会复制「当前选区」，
+     * 所以临时 textarea 选中前先保存面板既有选区、复制后还原（不打断用户选区）。
+     * @returns {Promise<boolean>} 是否成功
+     */
+    async copyTextToClipboard(text) {
+      const value = String(text ?? '')
+      if (!value) return false
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value)
+          return true
+        }
+      } catch (_) { /* 无 secure context / 权限拒绝 → execCommand 兜底 */ }
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = value
+        ta.setAttribute('readonly', 'readonly')
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        ta.style.top = '0'
+        document.body.appendChild(ta)
+        const selection = document.getSelection()
+        const savedRange = selection && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        if (savedRange && selection) {
+          selection.removeAllRanges()
+          selection.addRange(savedRange)
+        }
+        return ok
+      } catch (_) {
+        return false
+      }
+    },
+    /** 复制整条消息内容到剪贴板（气泡按钮入口），带 1.6s 已复制反馈 */
+    async copyMessageContent(msg) {
+      const text = String(msg?.content || '')
+      if (!text.trim()) return
+      const ok = await this.copyTextToClipboard(text)
+      if (!ok) {
+        try {
+          inAppAlert('复制失败，请手动选择文本后复制', { title: '复制消息' })
+        } catch (_) { /* ignore */ }
+        return
+      }
+      this.copiedMessageId = String(msg?.id || '')
+      clearTimeout(this._copiedMsgTimer)
+      this._copiedMsgTimer = setTimeout(() => {
+        this.copiedMessageId = ''
+      }, 1600)
+    },
+    /**
+     * 面板剪贴板快捷键截获（capture 阶段，早于 WPS 宿主抢键——2026-11-25 治理：
+     * 面板里 Ctrl+C/Ctrl+V 作用到宿主文档/表格/演示稿）。
+     * - Ctrl+C：面板 DOM 有非折叠选区（含输入框内选区）→ 截获复制并吞掉事件，
+     *   防止宿主把自己的选区写进剪贴板覆盖面板内容
+     * - Ctrl+V：焦点在可编辑元素 → 放行原生（CEF 自会粘贴进输入框）；焦点不在
+     *   → 尝试 navigator.clipboard.readText 把剪贴板文本塞进输入框并聚焦；
+     *   读取被系统限制时提示用输入框内右键菜单粘贴
+     */
+    handlePanelClipboardKeydown(e) {
+      const mod = !!(e.ctrlKey || e.metaKey)
+      if (!mod) return
+      const key = String(e.key || '').toLowerCase()
+      const t = e.target
+      const inEditable = !!(t && (t.isContentEditable || /^(TEXTAREA|INPUT)$/i.test(String(t.tagName || ''))))
+      if (key === 'c') {
+        const sel = document.getSelection()
+        const hasDomSelection = !!sel && !sel.isCollapsed && String(sel.toString() || '').trim().length > 0
+        let hasInputSelection = false
+        if (inEditable && typeof t.selectionStart === 'number') hasInputSelection = Number(t.selectionEnd) > Number(t.selectionStart)
+        if (hasDomSelection || hasInputSelection) {
+          try { document.execCommand('copy') } catch (_) { /* ignore */ }
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+        return
+      }
+      if (key === 'v') {
+        if (inEditable) return
+        // 焦点不在可编辑元素：宿主会把粘贴落进文档——截获，把剪贴板文本放进输入框
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        const read = navigator?.clipboard?.readText
+        if (!read) {
+          this.showClipboardPasteHint()
+          return
+        }
+        navigator.clipboard.readText().then((text) => {
+          const value = String(text || '').trim()
+          if (!value) return
+          const ta = this.$refs?.composerInputRef
+          if (ta) {
+            ta.focus()
+            const ok = document.execCommand('insertText', false, value)
+            if (!ok) this.userInput = String(this.userInput || '') + (this.userInput ? '\n' : '') + value
+          } else {
+            this.userInput = String(this.userInput || '') + (this.userInput ? '\n' : '') + value
+          }
+        }).catch(() => {
+          this.showClipboardPasteHint()
+        })
+      }
+    },
+    /** 剪贴板读取受限提示（10s 节流，避免连按刷屏） */
+    showClipboardPasteHint() {
+      if (Date.now() - Number(this._pasteHintAt || 0) < 10_000) return
+      this._pasteHintAt = Date.now()
+      try {
+        inAppAlert('系统限制了面板直接读取剪贴板：请先点击底部输入框，再按 Ctrl+V 或右键粘贴。', { title: '粘贴' })
+      } catch (_) { /* ignore */ }
     },
     async copyMcpServiceUrl() {
       const url = String(this.mcpUrl || '').trim()
@@ -12911,26 +13737,271 @@ export default {
      * 全部附件都登记（含文本类）——别名是「最近一次带附件消息的第 N 个」语义；
      * 若文本类跳过，模型调 file_parse 查「附件1」会命中上一份非文本附件的陈旧
      * 登记（真机案例：传 HTML 后模型查附件1，拿到 30 分钟前登记的 PPTX）。
+     * 返回 Promise（可等待）：失败不再静默——收集到 _attachmentRegisterFailures，
+     * 由 MCP 附件上下文组装时透出给模型（2026-11-25 审计：注册失败曾静默，模型
+     * 调 file_parse 才炸 PATH_UNRESOLVED）。
      */
     registerAttachmentPathsForParse() {
-      if (!Array.isArray(this.attachments)) return
-      ;(async () => {
+      this._attachmentRegisterFailures = []
+      if (!Array.isArray(this.attachments)) return Promise.resolve()
+      return (async () => {
         for (const item of this.attachments) {
           try {
             if (!item || item.parseRegistered || !(item.rawFile instanceof File)) continue
             item.parseRegistered = true
             const materialized = await materializeAttachmentToTemp(item.rawFile, { anyFormat: true })
-            if (!materialized?.ok || !materialized.path) continue
-            registerAttachmentPath({
+            if (!materialized?.ok || !materialized.path) {
+              this._attachmentRegisterFailures.push({
+                name: String(item.name || `附件${item.ordinal || 1}`),
+                error: `落盘失败：${String(materialized?.error || '未知原因').slice(0, 80)}`
+              })
+              continue
+            }
+            const reg = await registerAttachmentPath({
               alias: `附件${item.ordinal || 1}`,
               name: String(item.name || ''),
               path: materialized.path,
               bytes: Number(item.size) || 0,
               scopeKey: this.historyStorageScopeKey || ''
             })
-          } catch (_) { /* 注册失败不影响发送 */ }
+            if (!reg?.ok) {
+              this._attachmentRegisterFailures.push({
+                name: String(item.name || `附件${item.ordinal || 1}`),
+                error: String(reg?.error || '登记失败')
+              })
+            }
+          } catch (e) {
+            this._attachmentRegisterFailures.push({
+              name: String(item?.name || '附件'),
+              error: String(e?.message || e).slice(0, 120)
+            })
+          }
         }
       })()
+    },
+
+    /**
+     * ToolDisplay 侧信道 → 消息卡图片条目（2026-11-25 收割对接）：
+     * 仅取 kind='images' 的成功产物（生图/搜图）。thumb = canvas 512px dataURL
+     * （直显/放大/下载兜底）；full = 原图 dataURL（lightbox 锐利显示+下载原图）；
+     * 两者都是内存渲染用——历史落盘前由 stripMcpToolImageThumbs 剥离，只留路径。
+     */
+    collectToolImageItems(displays) {
+      if (!Array.isArray(displays)) return []
+      const out = []
+      for (const d of displays) {
+        if (d?.kind !== 'images' || !Array.isArray(d.items)) continue
+        for (const item of d.items) {
+          if (item?.url) out.push({
+            url: String(item.url),
+            title: String(item.title || ''),
+            ...(item.thumb ? { thumb: String(item.thumb) } : {}),
+            ...(item.full ? { full: String(item.full) } : {})
+          })
+        }
+      }
+      return out.slice(0, 8)
+    },
+    /** 渲染源选择：canvas 缩略图 → sidecar HTTP 直显 URL → 原始路径 */
+    toolImageRenderSrc(img) {
+      return String(img?.thumb || img?.srcUrl || img?.url || '')
+    },
+    /**
+     * 路径型图片（Tier2 生成/搜图，落在 sidecar dataDir——面板读不到容器外文件）
+     * → 构建 sidecar HTTP 直显 URL（token 走 query，img 标签可用）。异步补齐，
+     * 逐条调用，失败静默（@error 兜底隐藏）。
+     */
+    async ensureSidecarImageSrc(img) {
+      try {
+        if (!img || img.srcUrl || img.thumb || img.full) return
+        const p = String(img.url || '')
+        if (!/^(\/|[A-Za-z]:[\\/])/.test(p)) return
+        const m = /[/\\]([^/\\]+)$/.exec(p)
+        const name = m ? m[1] : ''
+        if (!name) return
+        const token = await ensureSidecarToken()
+        if (!token) return
+        // Vue2 响应式：后补属性必须 $set（否则渲染不更新）
+        this.$set(img, 'srcUrl', `${MCP_BASE_URL}/tmp-image/file?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}`)
+      } catch (_) { /* ignore */ }
+    },
+    /** 打开图片放大查看（lightbox：深色遮罩 + 原图 dataURL 优先 + 下载/关闭） */
+    openToolImageLightbox(img) {
+      if (!img) return
+      const src = String(img.full || img.thumb || img.srcUrl || img.url || '')
+      if (!src) return
+      this.toolImageLightbox = {
+        visible: true,
+        src,
+        download: String(img.full || img.thumb || img.srcUrl || img.url || ''),
+        title: String(img.title || '')
+      }
+    },
+    closeToolImageLightbox() {
+      this.toolImageLightbox = { visible: false, src: '', title: '', download: '' }
+    },
+    /** 下载图片：dataURL/sidecar URL → blob → a[download] 触发保存 */
+    async downloadToolImage(imgLike) {
+      const src = String(imgLike?.download || imgLike?.src || '')
+      if (!src) return
+      try {
+        let blob
+        if (/^data:/.test(src)) {
+          blob = await (await fetch(src)).blob()
+        } else if (/^https?:\/\//.test(src)) {
+          blob = await (await fetch(src)).blob()
+        } else {
+          // 纯本地路径：走 sidecar HTTP 服务
+          const m = /[/\\]([^/\\]+)$/.exec(src)
+          const name = m ? m[1] : ''
+          const token = await ensureSidecarToken()
+          if (!name || !token) throw new Error('无法解析图片来源')
+          blob = await (await fetch(`${MCP_BASE_URL}/tmp-image/file?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}`)).blob()
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `chayuan-image-${Date.now()}.png`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 4000)
+      } catch (e) {
+        try {
+          inAppAlert(`下载失败：${String(e?.message || e).slice(0, 120)}`, { title: '下载图片' })
+        } catch (_) { /* ignore */ }
+      }
+    },
+    /** 渲染源链：canvas 缩略图 → sidecar HTTP 直显 URL → 原始路径；顺带异步补 srcUrl */
+    toolImageRenderSrc(img) {
+      try { this.ensureSidecarImageSrc(img) } catch (_) { /* 渲染期副作用兜底 */ }
+      return String(img?.thumb || img?.srcUrl || img?.url || '')
+    },
+    /**
+     * 历史落盘前剥离 thumb/full（base64 data URL 动辄 1-6MB，进 PluginStorage 历史
+     * 会把写穿频率×体积放大）——渲染期已用 thumb 显示，落盘只留路径。
+     */
+    stripMcpToolImageThumbs(assistantMsg) {
+      if (Array.isArray(assistantMsg?.mcpToolImages) && assistantMsg.mcpToolImages.some(i => i?.thumb || i?.full)) {
+        assistantMsg.mcpToolImages = assistantMsg.mcpToolImages.map(({ url, title }) => ({ url, title }))
+      }
+    },
+    hideMcpToolImage(msg, idx) {
+      // 缩略图加载失败（如路径不可达）即移除，不留破图
+      if (Array.isArray(msg?.mcpToolImages) && msg.mcpToolImages[idx]) {
+        msg.mcpToolImages.splice(idx, 1)
+      }
+    },
+
+    /**
+     * 面板本地直出车道（与远程 chat_turn 直出共用 directGeneration.js 生成核心，
+     * 2026-11-25 行为一致化）：一次无工具流式请求产出全文 → 写入绑定文档 → 条件
+     * 目录域。返回 true = 已接管本回合；false = 失败，落回 agent 轨。
+     */
+    async tryRunLocalDirectGeneration({ text, model, assistantMsg, ctrl, turnChatId, historyMessages = [], targetDocumentId = '' }) {
+      const signal = ctrl?.signal
+      try {
+        this.updateAssistantLoadingProgress(assistantMsg, {
+          label: '生成直出（单次调用，边写边出）',
+          detail: String(text || '').slice(0, 120),
+          percent: 30
+        })
+        let streamAt = 0
+        let reasoningBuf = ''
+        let reasoningAt = 0
+        const { content } = await generateDirectContent({
+          userText: text,
+          historyMessages,
+          model,
+          signal,
+          // 思考模式尊重用户 🧠 开关（与远程直出同语义）
+          thinkingEnabled: this.thinkingModeEnabled === true,
+          onText: (acc) => {
+            // 100ms 节流：与 agent 轨 onTurnText 同款防高频重渲染
+            const now = Date.now()
+            if (now - streamAt < 100) return
+            streamAt = now
+            assistantMsg.mcpStreamingText = String(acc || '')
+          },
+          onReasoning: (d) => {
+            reasoningBuf += String(d || '')
+            const now = Date.now()
+            if (now - reasoningAt >= 200) {
+              reasoningAt = now
+              assistantMsg.mcpThinkingText = reasoningBuf.length > 50000 ? reasoningBuf.slice(-40000) : reasoningBuf
+            }
+          }
+        })
+        // 写入绑定文档（Model S：绑定≠活动也写对文档；缺失退活动文档语义）。
+        // 撤销快照与远程直出同款：写前读全文（≤80K 由工具侧截断），随终态一次挂载。
+        let preText = ''
+        try {
+          const snapRes = await callLocalTool('document.get_text', targetDocumentId ? { __expectedDocId: targetDocumentId } : {}, { signal, timeoutMs: 60000 })
+          preText = String(snapRes?.structuredContent?.text || '')
+        } catch (_) { preText = '' }
+        let writeNote = '已直出写入文档（单次生成，可用下方撤销卡回滚）。'
+        try {
+          await callLocalTool('document_insert', {
+            text: content,
+            position: 'append',
+            confirmed: true,
+            title: '察元AI 写作',
+            ...(targetDocumentId ? { __expectedDocId: targetDocumentId } : {})
+          }, { signal, timeoutMs: 180000 })
+        } catch (e) {
+          const reason = String(e?.code || '') + ' ' + String(e?.message || '')
+          assistantMsg.content = `${content}\n\n— 写入未完成（${reason.slice(0, 120)}）：正文保留在上方，可直接复制到文档。`
+          this._finishLocalDirectGeneration(assistantMsg, { snapshot: preText && targetDocumentId ? { docId: targetDocumentId, text: preText } : null }, turnChatId)
+          return true
+        }
+        // 确定性后处理（与远程直出同款）：指令点名「目录」且绑定文档在前台 → 补自动目录域
+        if (/目录/.test(String(text || ''))) {
+          let boundActive = false
+          try {
+            const bound = resolveBoundDocument({
+              docLinkId: String(this.currentChat?.docLinkId || ''),
+              docId: String(targetDocumentId || '')
+            })
+            boundActive = !!(bound.ok && bound.isActive)
+          } catch (_) { boundActive = false }
+          if (boundActive) {
+            try {
+              await callLocalTool('toc_insert', { confirmed: true, upperLevel: 1, lowerLevel: 2, title: '目录' }, { signal, timeoutMs: 60000 })
+              writeNote = '已直出写入文档 + 插入自动目录域（可随页码刷新）。'
+            } catch (_) { /* 目录失败正文已写入 */ }
+          } else {
+            writeNote = '已直出写入文档。目录域需要文档在前台——切到该文档后对模型说「刷新目录」即可补插。'
+          }
+        }
+        assistantMsg.content = `${content}\n\n— ${writeNote}`
+        this._finishLocalDirectGeneration(assistantMsg, { snapshot: preText && targetDocumentId ? { docId: targetDocumentId, text: preText } : null }, turnChatId)
+        return true
+      } catch (e) {
+        if (e?.name === 'AbortError' || signal?.aborted) {
+          // 停止语义与 agent 轨一致：保留已流出内容并追加标记
+          const prevContent = String(assistantMsg.mcpStreamingText || '').trim()
+          assistantMsg.content = prevContent ? `${prevContent}\n\n（已停止）` : '已停止。'
+          this._finishLocalDirectGeneration(assistantMsg, null, turnChatId)
+          return true
+        }
+        // eslint-disable-next-line no-console
+        console.warn('[mcp] local direct generation failed, fallback to agent lane:', String(e?.message || e).slice(0, 200))
+        // 失败落回 agent 轨（清流式残留）
+        assistantMsg.mcpStreamingText = ''
+        return false
+      }
+    },
+
+    _finishLocalDirectGeneration(assistantMsg, { snapshot = null } = {}, turnChatId = '') {
+      if (snapshot && snapshot.text) assistantMsg.mcpSnapshot = snapshot
+      this.stopAssistantLoadingProgress(assistantMsg)
+      assistantMsg.isLoading = false
+      assistantMsg.mcpStepsExpanded = false
+      assistantMsg.mcpStreamingText = ''
+      this.clearMcpTurnCtx(turnChatId)
+      this.settleGlobalStreamingFlag()
+      this.saveHistory()
+      this.$nextTick(() => this.scrollToBottomIfChatActive(turnChatId))
     },
 
     async resolveTemplateAttachmentParams(message, params = {}) {
@@ -14907,6 +15978,12 @@ export default {
     },
     inferPrimaryConversationIntentByRule(text = '', attachments = null) {
       const normalized = String(text || '').trim()
+      // 宿主车道守卫（2026-11-25 表格宿主劫持治理，非 Exclusive 回退链路）：
+      // document-operation（文档处理/扩写/校对/批注/翻译选区）与 generated-output
+      // （报告/图片/音视频产物管线）的执行器是 Writer/独立文件语义——ET/WPP 宿主
+      // 一律不再命中，落 chat/agent 轨（ Exclusive 主路径另有 wps-capability 模板族豁免）
+      const routeHost = detectAddonType()
+      const writerLaneAllowed = routeHost === 'wps'
       // 附件快照优先（2026-10-16 真机根因）：composer 发送后 this.attachments 已清空，
       // 附件感知模板路由必须用 sendMessage 传入的 attachmentsSnapshot，否则永远不命中
       const attachmentPool = (Array.isArray(attachments) && attachments.length)
@@ -14938,7 +16015,9 @@ export default {
       }
       // 察元AI直接能力（保存/加密/模板生成…）优先于一切创作类判断：
       // 「根据模板生成一篇文章」同时也是创作请求，但必须走能力确认卡（模板来源/交付路径）
-      const capabilityRoute = routeWpsCapabilityByRule(normalized)
+      // 宿主感知（2026-11-25）：ET/WPP 短路 Writer 专属能力规则——「生成图 插入表格中」
+      // 在表格宿主指插进工作簿，曾被劫持成 insert-table 报「当前环境不支持插入表格」
+      const capabilityRoute = routeWpsCapabilityByRule(normalized, { host: detectAddonType() })
       if (capabilityRoute) {
         return {
           kind: 'wps-capability',
@@ -14960,7 +16039,7 @@ export default {
           reason: '用户明确提到了助手或创建助手。'
         }
       }
-      if (/保存文档|另存为|另存文档|加密文档|文档加密|插入表格|插入空白页|插入分页符|分页符|空白页/.test(normalized)) {
+      if (detectAddonType() === 'wps' && /保存文档|另存为|另存文档|加密文档|文档加密|插入表格|插入空白页|插入分页符|分页符|空白页/.test(normalized)) {
         return {
           kind: 'wps-capability',
           confidence: 'high',
@@ -14988,15 +16067,17 @@ export default {
         }
       }
       if (
-        this.shouldTryDocumentOperationRouting(normalized) ||
-        this.shouldTryDocumentRelocationIntent(normalized) ||
-        this.shouldTryDocumentTextEditIntent(normalized) ||
-        this.shouldTryDocumentDeleteIntent(normalized) ||
-        this.shouldTryDocumentFormatIntent(normalized) ||
-        this.shouldTryDocumentRevisionIntent(normalized) ||
-        !!detectDocumentCommentIntent(normalized) ||
-        !!detectDocumentScopeIntent(normalized) ||
-        !!detectSelectionTranslateIntent(normalized, getAssistantSetting('translate')?.targetLanguage || '英文')
+        writerLaneAllowed && (
+          this.shouldTryDocumentOperationRouting(normalized) ||
+          this.shouldTryDocumentRelocationIntent(normalized) ||
+          this.shouldTryDocumentTextEditIntent(normalized) ||
+          this.shouldTryDocumentDeleteIntent(normalized) ||
+          this.shouldTryDocumentFormatIntent(normalized) ||
+          this.shouldTryDocumentRevisionIntent(normalized) ||
+          !!detectDocumentCommentIntent(normalized) ||
+          !!detectDocumentScopeIntent(normalized) ||
+          !!detectSelectionTranslateIntent(normalized, getAssistantSetting('translate')?.targetLanguage || '英文')
+        )
       ) {
         return {
           kind: 'document-operation',
@@ -15005,13 +16086,15 @@ export default {
         }
       }
       if (
-        REPORT_FILE_REQUEST_PATTERN.test(normalized) ||
-        IMAGE_REQUEST_PATTERN.test(normalized) ||
-        VIDEO_REQUEST_PATTERN.test(normalized) ||
-        AUDIO_REQUEST_PATTERN.test(normalized) ||
-        DOCUMENT_IMAGE_EXPORT_REQUEST_PATTERN.test(normalized) ||
-        DOCUMENT_OBJECT_EXPORT_REQUEST_PATTERN.test(normalized) ||
-        maybeNeedsGeneratedOutputAnalysis(normalized, this.attachments.length)
+        writerLaneAllowed && (
+          REPORT_FILE_REQUEST_PATTERN.test(normalized) ||
+          IMAGE_REQUEST_PATTERN.test(normalized) ||
+          VIDEO_REQUEST_PATTERN.test(normalized) ||
+          AUDIO_REQUEST_PATTERN.test(normalized) ||
+          DOCUMENT_IMAGE_EXPORT_REQUEST_PATTERN.test(normalized) ||
+          DOCUMENT_OBJECT_EXPORT_REQUEST_PATTERN.test(normalized) ||
+          maybeNeedsGeneratedOutputAnalysis(normalized, this.attachments.length)
+        )
       ) {
         return {
           kind: 'generated-output',
@@ -17655,6 +18738,32 @@ export default {
           ...options.mediaOptions
         }
       }
+      // ── 助手 agent 通道分流（B-2）：聊天链路 4 个调用点统一收口于此 ──
+      // 文档智能体开关+本机服务在线时走 agent 回合（消息卡即当前 message，复用
+      // mcpSteps 字段族）；多模态（mediaKind）与保密/脱密类回落旧链（安全边界
+      // + mediaTier 挂账）；不在线/参数卡特有字段（reportSettings 等）仍走旧任务链路。
+      const chatDef = getBuiltinAssistantDefinition(assistantId)
+      const chatMediaKind = chatDef?.runtimeCapabilities?.mediaKind
+      const chatSecurityAssistant = /^analysis\.(security-check|secret-keyword-extract)$/.test(String(assistantId || ''))
+      const chatCustomAssistant = !!getCustomAssistantById(assistantId)
+      const chatCommentAction = ['link-comment', 'comment-replace'].includes(String(effectiveDocumentAction || ''))
+      const chatFastLane = isFastLaneEligible({ inputText: String(options.requirementText || ''), effectiveDocumentAction: effectiveDocumentAction || definition.defaultAction || 'insert' })
+      if (this.mcpEnabled && !chatMediaKind && !chatSecurityAssistant && !chatCustomAssistant && !chatCommentAction && !options.reportSettings && !(options.mediaOptions && typeof options.mediaOptions === 'object')) {
+        if (!licenseEnsureCapability(assistantId)) return
+        try {
+          const health = await this.refreshMcpHealthBundle()
+          if (health?.chayuanOk) {
+            const handled = await this.runAssistantAgentFromMessage(message, assistantId, {
+              label: taskTitle,
+              effectiveDocumentAction: effectiveDocumentAction,
+              inputSourceHint: effectiveInputSource,
+              requirementText: String(options.requirementText || '').trim(),
+              fastLaneEligible: chatFastLane
+            })
+            if (handled) return
+          }
+        } catch { /* health 失败走旧链路 */ }
+      }
       const ret = startAssistantTask(assistantId, overrides)
       if (ret.gated) return
       const { taskId, promise } = ret
@@ -17686,6 +18795,155 @@ export default {
       })
       this.saveHistory()
       this.$nextTick(() => this.scrollToBottom())
+    },
+    /**
+     * 聊天链路助手 agent 回合（B-2）：message 卡由调用方建好传入，本方法在其上
+     * 接线 mcpSteps 字段族并跑 agent 回合。返回 true=已 handled（调用方不再走
+     * 旧任务链路）；false=回落（sidecar 不在线等）。
+     */
+    async runAssistantAgentFromMessage(message, assistantId, { label = '助手', effectiveDocumentAction = '', inputSourceHint = '', requirementText = '', fastLaneEligible = false } = {}) {
+      const definition = getBuiltinAssistantDefinition(assistantId) || {}
+      const setting = getAssistantSetting(assistantId) || {}
+      const model = this.selectedModel
+      if (!model) return false
+      const action = String(effectiveDocumentAction || definition.defaultAction || 'insert')
+      const inputSource = String(inputSourceHint || definition.defaultInputSource || 'document')
+      // 聊天链路的输入=用户需求文本（requirementText）；选区/全文输入由 agent
+      // 回合内的文档工具自主读取（与 exclusive lane 同语义）
+      const inputText = String(requirementText || '')
+      const hasSelection = false
+      const inputLength = inputText.length
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const turnChatId = this.currentChatId
+      const writeBaselineToken = `assistant-agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      // OCC 基线播种（三审 P1-3，与面板同款）
+      try { setWriteBaseline(undefined, undefined, writeBaselineToken) } catch { /* 基线失败退化为身份校验 */ }
+      // hostPins 种子（与面板同款，真机 NO_ACTIVE_DOCUMENT 根因修复）
+      const turnTargetDocId = (() => {
+        try {
+          const app = window.Application
+          const doc = app?.ActiveDocument || app?.ActiveWorkbook || app?.ActivePresentation
+          return doc ? String(doc.FullName || doc.Name || '') : ''
+        } catch { return '' }
+      })()
+      const turnSelectionRange = (() => {
+        try {
+          const sel = window.Application?.ActiveDocument?.Active || window.Application?.ActiveDocument?.ActiveWindow?.Selection
+          const start = Number(sel?.Start)
+          const end = Number(sel?.End)
+          if (Number.isFinite(start) && Number.isFinite(end) && end >= start && end > 0) return { start, end }
+          return null
+        } catch { return null }
+      })()
+      message.lane = 'mcp'
+      message.primaryRoute = {
+        kind: 'assistant-agent',
+        confidence: 'high',
+        reason: '助手已走 agent 通道（AgentLoop + 文档工具，写回经文档写锁派发）。'
+      }
+      message.mcpSteps = []
+      message.mcpStepsExpanded = true
+      message.mcpStreamingText = ''
+      message.isLoading = true
+      this.activeMcpTurnContexts[turnChatId] = {
+        messageId: message.id,
+        abortController: ctrl,
+        cancelled: false,
+        chatId: turnChatId,
+        startedAt: Date.now()
+      }
+      let streamBuf = ''
+      let streamRenderAt = 0
+      try {
+        const result = await runAssistantAgentExecution({
+          assistantId,
+          label,
+          systemPrompt: String(setting.systemPrompt || definition.systemPrompt || ''),
+          userPromptTemplate: String(setting.userPromptTemplate || definition.userPromptTemplate || '{{input}}'),
+          inputText,
+          inputSource,
+          hasSelection,
+          inputLength,
+          effectiveDocumentAction: action,
+          fastLaneEligible,
+          thinkingEnabled: this.thinkingModeEnabled,
+          selectionRange: turnSelectionRange,
+          targetDocumentId: turnTargetDocId || undefined,
+          model,
+          host: (() => { try { return String(detectAddonType() || 'wps') } catch { return 'wps' } })(),
+          writeBaselineToken,
+          signal: ctrl?.signal,
+          events: {
+            onProgress: (step, steps) => {
+              if (Array.isArray(steps)) message.mcpSteps = steps.slice()
+              else if (step) message.mcpSteps = [...(message.mcpSteps || []), step]
+            },
+            onTurnText: (text) => {
+              streamBuf = String(text || '')
+              const now = Date.now()
+              if (now - streamRenderAt >= 100) {
+                streamRenderAt = now
+                message.mcpStreamingText = streamBuf
+              }
+            },
+            onTodos: (todos) => { message.mcpTodos = Array.isArray(todos) ? todos : [] },
+            onSnapshot: (snap) => { if (snap) message.mcpSnapshot = snap },
+            onTurnReasoning: (text) => {
+              // ksojscore 稳定性：零拷贝数组增量 + 低频 join（尾部窗口渲染）
+              if (!this._thinkingParts) this._thinkingParts = []
+              this._thinkingParts.push(String(text || '').slice(0, 4000))
+              const now = Date.now()
+              if (now - (this._thinkingRenderAt || 0) >= 250) {
+                this._thinkingRenderAt = now
+                const joined = this._thinkingParts.join('')
+                if (joined.length > 60000) this._thinkingParts = [joined.slice(-40000)]
+                message.mcpThinkingText = joined.slice(-2000)
+                this.scrollThinkingIntoFollow(message)
+                this._thinkingFull = joined
+              }
+            }
+          }
+        })
+        message.mcpStreamingText = streamBuf
+        if (result?.ok) {
+          const writeNote = result.wroteBack
+            ? '已写回文档（写锁派发，可用撤销卡回滚）。'
+            : '结果如上；未自动写回文档。'
+          message.content = `${result.content || ''}\n\n— ${writeNote}`.trim()
+          if (Array.isArray(result.steps) && result.steps.length) message.mcpSteps = result.steps
+          if (result.wroteBack) {
+            if (result.snapshot && String(result.snapshot.text || '')) {
+              message.mcpSnapshot = { docId: String(result.snapshot.docId || turnTargetDocId || ''), text: result.snapshot.text, at: Date.now() }
+            }
+            if (!message.mcpSnapshot) message.mcpSnapshot = { docId: turnTargetDocId || '', at: Date.now() }
+            await this.ensureUndoBackupForMessage(message)
+            if (!String(message.mcpSnapshot.text || '') && !message.mcpSnapshot.backupId) message.mcpSnapshot = null
+          }
+          return true
+        }
+        if (result?.handled === false) {
+          // 撤 agent 接线痕迹，返回 false 让调用链继续走旧任务链路
+          delete message.lane
+          delete message.primaryRoute
+          message.mcpSteps = []
+          return false
+        }
+        message.content = result?.content || '助手执行失败。'
+        message.mcpStepsExpanded = false
+        return true
+      } catch (e) {
+        message.content = e?.name === 'AbortError' ? '已停止。' : `助手执行失败：${e?.message || e}`
+        return true
+      } finally {
+        if (this.activeMcpTurnContexts[turnChatId]?.messageId === message.id) {
+          delete this.activeMcpTurnContexts[turnChatId]
+        }
+        if (this._thinkingBuf) message.mcpThinkingText = this._thinkingBuf
+        this._thinkingBuf = ''
+        message.isLoading = false
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+      }
     },
     async confirmPendingAssistantExecutionChoice(message, options = {}) {
       const pending = message?.pendingAssistantExecutionChoice
@@ -19079,6 +20337,8 @@ export default {
       if (chatObj.draft) {
         // 首条消息落库:草稿转为正式会话,此后左栏历史/持久化可见
         chatObj.draft = false
+        // Model S Q6：草稿期未绑上（创建时无文档环境）→ 首发落库这一刻按活动文档定绑
+        this.ensureChatBinding(chatObj)
         this.saveHistory()
       }
       if (!chatObj.title || chatObj.title === '新对话') {
@@ -19640,6 +20900,30 @@ export default {
           this.showAssistantRunParameterCollection(item)
           return
         }
+        // ── 助手 agent 通道分流（助手 agent 化 B-1）──
+        // 文档智能体开关即 agent 通道总开关；无参数收集、无附件的直跑助手优先走
+        // agent 回合（消息卡流式 + 写锁派发写回 + FC 弱模型自动降直调）；sidecar
+        // 不在线时静默回落下方旧任务链路。回落矩阵：参数收集/带附件/自定义助手
+        // （custom_* 走 normalizeCustomAssistant 解析链，agent 通道未覆盖）/多模态
+        // （mediaKind，mediaTier 挂账）/保密脱密类（declassify_* 工具系统级禁调）。
+        // 能力门控前置（审查三 P0-修正）：免费额度计数与购买引导不随执行引擎改变。
+        const agentDef = getBuiltinAssistantDefinition(item.key)
+        const mediaKind = agentDef?.runtimeCapabilities?.mediaKind
+        const securityAssistant = /^analysis\.(security-check|secret-keyword-extract)$/.test(String(item.key || ''))
+        const customAssistant = !!getCustomAssistantById(item.key)
+        const commentAction = ['link-comment', 'comment-replace'].includes(String(launchInfo.effectiveDocumentAction || ''))
+        const fastLane = isFastLaneEligible({ inputText: launchInfo.inputText, inputLength: launchInfo.inputLength, effectiveDocumentAction: launchInfo.effectiveDocumentAction })
+        if (this.mcpEnabled && !mediaKind && !securityAssistant && !customAssistant && !commentAction && !(this.buildAssistantRunAttachments() || []).length) {
+          if (!licenseEnsureCapability(item.key)) { this.assistantRunLoadingKey = ''; return }
+          try {
+            const health = await this.refreshMcpHealthBundle()
+            if (health?.chayuanOk) {
+              this.assistantRunLoadingKey = ''
+              await this.runAssistantAgentFromCard(item, launchInfo, {}, fastLane)
+              return
+            }
+          } catch { /* health 检查失败走旧链路 */ }
+        }
         const taskTitle = item.shortLabel || item.label || '任务进度'
         const ret = startAssistantTask(item.key, {
           taskTitle,
@@ -19674,6 +20958,241 @@ export default {
         await inAppAlert(error?.message || '助手执行失败', { title: '助手执行失败' })
       }
     },
+    /**
+     * 助手 agent 回合（B-1）：面板卡片点击的 agent 通道执行体。
+     * 消息卡复用 lane='mcp' 字段族（mcpSteps/mcpStreamingText/mcpSnapshot/mcpTodos），
+     * 停止按钮复用 activeMcpTurnContexts；任务管道不参与（无任务卡/进度窗）。
+     * 失败/基础设施不在线 → 提示并保留消息卡内容，不自动重开任务窗（人工可控）。
+     */
+
+    /**
+     * direct 轨思考流接线：增量 200ms 节流，原地更新「模型思考中」__progress 步骤
+     * （与 agent 轨 orchestrator pushProgress 同款视觉）。
+     */
+    pushDirectThinkingStep(stepsRef, deltaText) {
+      if (!Array.isArray(stepsRef.value)) return
+      const last = stepsRef.value[stepsRef.value.length - 1]
+      const tail = String(deltaText || '').slice(-200)
+      const now = Date.now()
+      if (!(now - (this._directThinkingAt || 0) >= 200)) return
+      this._directThinkingAt = now
+      if (last && last.__progress && last.label === '模型思考中') {
+        last.detail = tail
+        last.at = now
+      } else {
+        stepsRef.value.push({ at: now, label: '模型思考中', detail: tail, __progress: true })
+      }
+    },
+    async toggleThinkingMode() {
+      this.thinkingModeEnabled = !this.thinkingModeEnabled
+      try {
+        saveGlobalSettings({ thinkingModeEnabled: this.thinkingModeEnabled })
+        this.showMessage(this.thinkingModeEnabled
+          ? '思考模式已开启：模型将完整深度推理（更慢、适合复杂任务）'
+          : '思考模式已关闭：智谱系模型跳过思考链（更快出结果）', 'info')
+      } catch { /* 保存失败不影响本回合 */ }
+    },
+
+    async runAssistantAgentFromCard(item, launchInfo, variables = {}, fastLaneEligible = false) {
+      const assistantId = item.key
+      const definition = getBuiltinAssistantDefinition(assistantId) || {}
+      const setting = getAssistantSetting(assistantId) || {}
+      const label = String(item.shortLabel || item.label || definition.label || '助手')
+      const model = this.selectedModel
+      const effectiveDocumentAction = String(launchInfo.effectiveDocumentAction || definition.defaultAction || 'insert')
+      const inputSource = String(launchInfo.inputInfo?.source || 'document')
+      const hasSelection = launchInfo.inputInfo?.hasSelection === true
+      const inputLength = Number(launchInfo.inputInfo?.inputLength || launchInfo.inputText?.length || 0)
+      const inputText = String(launchInfo.inputText || '')
+
+      // Model S Q8：ribbon 直启 = 显式动作 → 新开对话快照绑定当前活动文档
+      //（点按钮的窗口就是目标文档，天然一致；面板既有对话不受影响）
+      if (String(launchInfo.launchSource || '') === 'ribbon-direct') {
+        this.newChat()
+      }
+      // Model S Q8：选区输入一致性强制（绑定≠活动的选区拒发并指路）
+      const hasSelInput = String(launchInfo.inputInfo?.source || '') === 'selection'
+        || launchInfo.inputInfo?.hasSelection === true
+      if (hasSelInput && !(await this.assertSelectionDocCoherence())) return
+      const chatObj = this.currentChat
+      if (!chatObj) {
+        await inAppAlert('没有活动会话，请先打开 AI 助手面板。', { title: '无法执行' })
+        return
+      }
+      const scopeText = hasSelection ? `处理选中内容（约 ${inputLength} 字）` : `处理文档全文（约 ${inputLength} 字）`
+      const assistantMsg = this.appendChatTurn(chatObj, `【${label}】${scopeText}`)
+      assistantMsg.lane = 'mcp'
+      assistantMsg.primaryRoute = {
+        kind: 'assistant-agent',
+        confidence: 'high',
+        reason: '助手已走 agent 通道（AgentLoop + 文档工具，写回经文档写锁派发）。'
+      }
+      const agentSystemPrompt = String(setting.systemPrompt || definition.systemPrompt || '')
+      assistantMsg.mcpSteps = [{
+        at: Date.now(),
+        label: `技能配方 · ${label}`,
+        detail: agentSystemPrompt ? agentSystemPrompt.slice(0, 160) : '按助手定义执行（写回经文档写锁派发）'
+      }]
+      // 任务清单乐观预置：仅 agent 轨（多步任务）——direct 快速轨无 todo 工具，
+      // 进度由执行器直报（生成中→写回中→完成），预置反而诱导模型纠结清单规则
+      const seedTodos = fastLaneEligible ? [] : [
+        { content: '读取与准备目标内容', status: 'in_progress' },
+        { content: `生成${label}结果`, status: 'pending' },
+        { content: '写回文档', status: 'pending' }
+      ]
+      if (seedTodos.length) assistantMsg.mcpTodos = seedTodos
+      assistantMsg.mcpStepsExpanded = true
+      assistantMsg.mcpStreamingText = ''
+      assistantMsg.isLoading = true
+      this.$nextTick(() => this.scrollToBottom())
+      this.saveHistory()
+
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      const turnChatId = this.currentChatId
+      const writeBaselineToken = `assistant-agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      // OCC 基线播种（三审 P1-3）：基线表是 per-webview 内存 Map，token 不播种则
+      // verifyWriteBaseline 查无基线直接放行——回合期间手动改文档的防线失效
+      try { setWriteBaseline(undefined, undefined, writeBaselineToken) } catch { /* 基线失败退化为身份校验 */ }
+      // hostPins 种子（真机 2026-11-21 NO_ACTIVE_DOCUMENT 根因）：面板挂在文档窗口，
+      // 本 webview 直读活动文档 FullName 作回合 pin——写工具带 __expectedDocId，
+      // dispatch 身份校验生效；同时绕开基座 wps.status 读空的缺陷（status 探针不再依赖）
+      const turnTargetDocId = (() => {
+        try {
+          const app = window.Application
+          const doc = app?.ActiveDocument || app?.ActiveWorkbook || app?.ActivePresentation
+          return doc ? String(doc.FullName || doc.Name || '') : ''
+        } catch { return '' }
+      })()
+      // 选区偏移快照（direct 轨 replace/insert-after 的 start/end 定位数据源）
+      const turnSelectionRange = (() => {
+        try {
+          const sel = window.Application?.ActiveDocument?.Active || window.Application?.ActiveDocument?.ActiveWindow?.Selection
+          const start = Number(sel?.Start)
+          const end = Number(sel?.End)
+          if (Number.isFinite(start) && Number.isFinite(end) && end >= start && end > 0) return { start, end }
+          return null
+        } catch { return null }
+      })()
+      this.activeMcpTurnContexts[turnChatId] = {
+        messageId: assistantMsg.id,
+        abortController: ctrl,
+        cancelled: false,
+        chatId: turnChatId,
+        startedAt: Date.now()
+      }
+
+      // 流式节流接线（与 runMcpExclusiveTurn 同款：100ms 节流写 mcpStreamingText）
+      let streamBuf = ''
+      let streamRenderAt = 0
+      try {
+        const result = await runAssistantAgentExecution({
+          assistantId,
+          label,
+          systemPrompt: agentSystemPrompt,
+          userPromptTemplate: String(setting.userPromptTemplate || definition.userPromptTemplate || '{{input}}'),
+          inputText,
+          inputSource,
+          hasSelection,
+          inputLength,
+          effectiveDocumentAction,
+          fastLaneEligible,
+          thinkingEnabled: this.thinkingModeEnabled,
+          variables,
+          expectDocId: turnTargetDocId || undefined,
+          selectionRange: turnSelectionRange,
+          targetDocumentId: turnTargetDocId || undefined,
+          previousTodos: seedTodos,
+          model,
+          host: (() => {
+            // 宿主感知（et/wpp 面板同样有助手列表）：宿主探测失败按 wps
+            try { return String(detectAddonType() || 'wps') } catch { return 'wps' }
+          })(),
+          writeBaselineToken,
+          signal: ctrl?.signal,
+          events: {
+            onProgress: (step, steps) => {
+              if (Array.isArray(steps)) assistantMsg.mcpSteps = steps.slice()
+              else if (step) assistantMsg.mcpSteps = [...(assistantMsg.mcpSteps || []), step]
+            },
+            onTurnText: (text) => {
+              streamBuf = String(text || '')
+              const now = Date.now()
+              if (now - streamRenderAt >= 100) {
+                streamRenderAt = now
+                assistantMsg.mcpStreamingText = streamBuf
+              }
+            },
+            onTodos: (todos) => { assistantMsg.mcpTodos = Array.isArray(todos) ? todos : [] },
+            onSnapshot: (snap) => { if (snap) assistantMsg.mcpSnapshot = snap },
+            // 思考区实时流：增量累计到 mcpThinkingText（200ms 节流刷渲染），
+            // 对话消息卡内灰字实时滚动——对标智谱/DeepSeek 深度思考体验
+            onTurnReasoning: (text) => {
+              if (!this._thinkingParts) this._thinkingParts = []
+              this._thinkingParts.push(String(text || '').slice(0, 4000))
+              const now = Date.now()
+              if (now - (this._thinkingRenderAt || 0) >= 250) {
+                this._thinkingRenderAt = now
+                const joined = this._thinkingParts.join('')
+                if (joined.length > 60000) this._thinkingParts = [joined.slice(-40000)]
+                assistantMsg.mcpThinkingText = joined.slice(-2000)
+                this._thinkingFull = joined
+                this.scrollThinkingIntoFollow(assistantMsg)
+              }
+            }
+          }
+        })
+        assistantMsg.mcpStreamingText = streamBuf
+        if (result?.ok) {
+          const writeNote = result.wroteBack
+            ? '已写回文档（写锁派发，可用下方撤销卡回滚）。'
+            : (result.writeBackError)
+              ? `写回失败（${String(result.writeBackError?.message || result.writeBackError).slice(0, 120)}），结果保留在下方；可直接复制到文档。`
+              : ''
+          assistantMsg.content = `${result.content || ''}${writeNote ? '\n\n— ' + writeNote : ''}`.trim()
+          if (Array.isArray(result.steps) && result.steps.length) assistantMsg.mcpSteps = result.steps
+          // 撤销卡：写回成功 → 回合结束创建文件级备份（skipSave 磁盘=写入前状态）
+          if (result.wroteBack) {
+            if (result.snapshot && String(result.snapshot.text || '')) {
+              assistantMsg.mcpSnapshot = { docId: String(result.snapshot.docId || turnTargetDocId || ''), text: result.snapshot.text, at: Date.now() }
+            }
+            if (!assistantMsg.mcpSnapshot) assistantMsg.mcpSnapshot = { docId: turnTargetDocId || '', at: Date.now() }
+            await this.ensureUndoBackupForMessage(assistantMsg)
+            // 撤销卡可用性 = 有写前文本或真实文件备份；两者皆无 → 不显示空头支票卡
+            if (!String(assistantMsg.mcpSnapshot.text || '') && !assistantMsg.mcpSnapshot.backupId) assistantMsg.mcpSnapshot = null
+          }
+        } else if (result?.handled === false) {
+          // 基础设施不在线：从消息流撤卡，交给用户决定（不自动重开任务窗）
+          this.removeAssistantAgentMessage(chatObj, assistantMsg.id)
+          await inAppAlert(`本机服务暂不可用（${result.fallbackReason || '未知原因'}），助手未执行。可稍后重试，或在设置中检查本机服务状态。`, { title: 'agent 通道不可用' })
+        } else {
+          assistantMsg.content = result?.content || '助手执行失败。'
+          assistantMsg.mcpStepsExpanded = false
+        }
+      } catch (e) {
+        if (e?.name === 'AbortError') {
+          assistantMsg.content = '已停止。'
+        } else {
+          assistantMsg.content = `助手执行失败：${e?.message || e}`
+        }
+      } finally {
+        if (this.activeMcpTurnContexts[turnChatId]?.messageId === assistantMsg.id) {
+          delete this.activeMcpTurnContexts[turnChatId]
+        }
+        if (this._thinkingBuf) assistantMsg.mcpThinkingText = this._thinkingBuf
+        this._thinkingBuf = ''
+        assistantMsg.isLoading = false
+        this.saveHistory()
+        this.$nextTick(() => this.scrollToBottom())
+      }
+    },
+    removeAssistantAgentMessage(chatObj, messageId) {
+      try {
+        const messages = Array.isArray(chatObj?.messages) ? chatObj.messages : []
+        const idx = messages.findIndex((m) => m?.id === messageId)
+        if (idx >= 0) messages.splice(idx, 1)
+        this.saveHistory()
+      } catch { /* 撤卡失败不影响主流程 */ }
+    },
     onToolInserted(written) {
       const n = (written && written.written) || 0
       inAppAlert(`已插入 ${n} 项到文档`, { title: '插入完成' })
@@ -19691,8 +21210,28 @@ export default {
       }
       // 附件路径注册（file_parse 别名解析）：非纯文本附件落盘到 数据目录/_temp 并
       // 登记 30 分钟记忆——之后对话里说「附件1/刚才那个文件」，外部 MCP 客户端或
-      // 内部 agent 都能用 file_parse 按别名解析。fire-and-forget，失败不阻塞发送。
-      this.registerAttachmentPathsForParse()
+      // 内部 agent 都能用 file_parse 按别名解析。等待完成（本地拷贝+本机 HTTP，
+      // 常规文档毫秒级），失败收集进 _attachmentRegisterFailures 由附件上下文透出——
+      // 不再 fire-and-forget 静默（2026-11-25 审计：静默失败要到模型调 file_parse
+      // 撞 PATH_UNRESOLVED 才暴露）
+      try {
+        await this.registerAttachmentPathsForParse()
+      } catch (_) { /* 收集器自身异常不阻塞发送 */ }
+      // 视觉输入采集（P2 审计收割：附件图片 → loop.run(images)）：此时 composer
+      // 附件还活着（prepareOutgoingMessages 之后才清空），读 dataURL 就必须在这里。
+      // 上限 2 张、单张 ≤1.5MB——防 PluginStorage/网关载荷失控；模型不支持 vision
+      // 时回合会以 model_error 收场并在文案里提示换模型
+      this._turnVisionImages = []
+      try {
+        for (const a of (Array.isArray(this.attachments) ? this.attachments : [])) {
+          if (this._turnVisionImages.length >= 2) break
+          const name = String(a?.name || a?.rawFile?.name || '')
+          if (!/\.(png|jpe?g|jpeg|webp|gif)$/i.test(name)) continue
+          if (!(a?.rawFile instanceof File) || a.rawFile.size > 1.5 * 1024 * 1024) continue
+          const img = await readBrowserFileAsImage(a.rawFile)
+          if (img) this._turnVisionImages.push(img)
+        }
+      } catch (_) { this._turnVisionImages = [] }
       // 兜底：任何入口产生的文本类附件若缺内容（含 rawFile 但 content 空），发送前补读
       if (Array.isArray(this.attachments)) {
         for (const a of this.attachments) {
@@ -19724,38 +21263,24 @@ export default {
           }
         }
       }
-      // 发送前 scope 硬校准（治"多文档共用一份对话"）：轮询 sync 可能被 busy
-      // 或焦点缺失延迟，用户此刻面对的是**当前活动文档**——发送必须绑定它。
-      // 若发送时发现 scope 与活动文档不一致：先落盘滞留会话，再切换加载活动
-      // 文档的会话，本条消息进入正确的 scope（面板 UI 也随之切换，所见即所对）。
+      // Model S（共识定稿 Q5/Q6）：发送跟随【对话绑定】，不再做 scope 硬校准/
+      // busy 拒发——对话驻留后，绑定文档非活动是常态（执行侧 S2 静默路由写对
+      // 文档；存储跟随视图 scope）。仅保留无文档兜底：一个文档都没开时先建空白
+      // 档，让首发补绑有着落（建档失败不阻塞发送）。
       try {
         if (!this.isStreaming && !this.docWriteLockState?.locked) {
-          // 无文档兜底：用户没建任何文档就打开面板开聊——按宿主先新建一个空白
-          // 文档，让本回合立刻有绑定目标（否则消息落在 no_active_document 键，
-          // 后续文档操作无着落）。建档失败不阻塞发送；busy 分支刻意不建档，
-          // 避免新建出来的活动文档反手触发下方跨文档守卫拒发。
           await this.ensureHostDocumentForTurn()
-          const switched = this.syncHistoryScopeWithActiveDocument()
-          if (switched) {
-            // sync 内部已 saveHistory+loadHistory；等待 Vue 渲染出新会话消息
-            await this.$nextTick()
-          }
-        } else {
-          // 本地执行中：活动文档与面板 scope 可能已错位——**拒绝跨文档发送**
-          // （宁可不动手，不可把 A 会话的消息写进 B 的历史/把回复算到 B 头上）
-          const probe = this.resolveHistoryStorageScope()
-          const probeKey = String(probe.scopeKey || '').trim()
-          if (probeKey && probeKey !== this.historyStorageScopeKey) {
-            await inAppAlert(
-              '当前文档已切换，本会话仍绑定原文档。请回到原文档继续，或等当前任务结束后在新文档中开启新对话。',
-              { title: '对话与文档不匹配' }
-            )
-            return
-          }
         }
-      } catch (_) { /* 校准失败按原 scope 发送 */ }
+      } catch (_) { /* 建档失败不阻塞发送 */ }
+      // Model S Q8：选区一致性强制（眼见即所得——选区结果只进绑定的文档）
+      try {
+        if (!(await this.assertSelectionDocCoherence())) return
+      } catch (_) { /* 守卫异常不阻塞发送 */ }
       // 发消息即收起支持提示(兜底:placeholder 场景外的残余气泡)
       if (this.tipJarBubble.visible) this.hideTipJarBubble()
+      // 用户主动发送 = 恢复跟随尾巴（上滑接管状态清零）
+      this.msgAutoFollow = true
+      this.scrollToBottom(true)
       const sendStartedAt = Date.now()
       const text = this.userInput.trim()
       // 并行模型：本会话已有回合（聊天/流式/MCP）时禁止重复发送；其它 tab 的回合不受影响
@@ -19879,7 +21404,7 @@ export default {
         // （模板/生成话术 或 携带office模板附件的生成请求）跳过 Exclusive Lane。
         const templatePipelineClaimed = (() => {
           const t = String(text || '')
-          if (routeWpsCapabilityByRule(t)) return true
+          if (routeWpsCapabilityByRule(t, { host: detectAddonType() })) return true
           // 必须用 attachmentsSnapshot：此时 composer 附件已被 prepareOutgoingMessages 清空
           const atts = (Array.isArray(attachmentsSnapshot) && attachmentsSnapshot.length) ? attachmentsSnapshot : this.attachments
           const hasOfficeTpl = (Array.isArray(atts) ? atts : [])
@@ -20620,11 +22145,39 @@ export default {
         }
       }
     },
-    scrollToBottom() {
+    scrollToBottom(force = false) {
       this.$nextTick(() => {
         const el = this.$refs.messagesRef
-        if (el) el.scrollTop = el.scrollHeight
+        if (!el) return
+        // 用户上滑接管期间不拽底（force=用户主动发消息/切换会话时恢复跟随）
+        if (!force && !this.msgAutoFollow) return
+        el.scrollTop = el.scrollHeight
       })
+    },
+    /** 思考卡片内层（180px 盒子）跟随：贴推理尾巴；用户在内层上滑即接管，回底恢复。
+     * msgAutoFollow=false（外层被接管）时一并不动——用户在看上文时不做任何拽动。 */
+    scrollThinkingIntoFollow(msg) {
+      if (!this.msgAutoFollow) return
+      this.$nextTick(() => {
+        const root = this.$refs.messagesRef
+        const el = root && root.querySelector ? root.querySelector(`[data-thinking-for="${msg.id}"]`) : null
+        if (!el || msg._thinkingFollow === false) return
+        el.scrollTop = el.scrollHeight
+      })
+    },
+    onThinkingScroll(msg, e) {
+      const el = e?.target
+      if (!el) return
+      const d = el.scrollHeight - el.scrollTop - el.clientHeight
+      msg._thinkingFollow = d < 24
+    },
+    /** 流式自动跟随 + 用户滑动接管（2026-11-21 体验裁决）：距底 >90px 判「用户在看上文」
+     * 停止自动跟随；滚回阈值内自动恢复。自身程序化滚底触发的事件距离≈0，不会误判。 */
+    onMessagesScroll() {
+      const el = this.$refs.messagesRef
+      if (!el) return
+      const bottomDistance = el.scrollHeight - el.scrollTop - el.clientHeight
+      this.msgAutoFollow = bottomDistance < 90
     },
     // 流式/回合收尾滚动:仅当回合所属会话仍是当前 tab 时才滚底,避免后台会话的完成动作劫持当前视图
     scrollToBottomIfChatActive(chatId) {
@@ -22723,6 +24276,94 @@ export default {
   border-radius: 10px;
   background: rgba(32, 100, 180, 0.04);
 }
+/* 生图/搜图产物缩略图条（ToolDisplay.images 侧信道，2026-11-25 收割对接） */
+.mcp-tool-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.mcp-tool-image-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+}
+.mcp-tool-image {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(32, 100, 180, 0.18);
+  background: rgba(32, 100, 180, 0.04);
+  cursor: zoom-in;
+  display: block;
+}
+.mcp-tool-image-download {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(17, 24, 39, 0.62);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.mcp-tool-image-wrap:hover .mcp-tool-image-download { opacity: 1; }
+.mcp-tool-image-download:hover { background: rgba(17, 24, 39, 0.85); }
+
+/* 生成图像 lightbox（放大查看 + 下载） */
+.tool-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(10, 12, 18, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tool-image-lightbox-body {
+  max-width: min(92vw, 1100px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tool-image-lightbox-body img {
+  max-width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+}
+.tool-image-lightbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.tool-image-lighttitle {
+  color: #e5e7eb;
+  font-size: 13px;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-image-lightbtn {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.tool-image-lightbtn:hover { background: rgba(255, 255, 255, 0.16); }
 .mcp-todo-header {
   display: flex;
   align-items: center;
@@ -24588,6 +26229,41 @@ export default {
   will-change: transform, opacity, filter;
 }
 
+/* 消息操作行（zcode 模式，2026-11-25）：气泡下方独立行，悬浮/聚焦显隐；
+   助手消息左下角、用户消息右下角。默认透明不占视觉，hover 行或复制反馈时显现 */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.message-row:hover .message-actions,
+.message-actions:focus-within,
+.message-actions.has-just-copied { opacity: 1; }
+.message-actions.is-assistant { justify-content: flex-start; }
+.message-actions.is-user { justify-content: flex-end; }
+.message-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.message-action-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #374151;
+}
+.message-action-btn.just-copied { color: #16a34a; }
+.message-action-done { font-size: 12px; font-weight: 600; }
+
 .message-row.user {
   flex-direction: row-reverse;
 }
@@ -25707,6 +27383,88 @@ export default {
   }
 }
 
+/* ── Model S：提示条 / 胶囊状态 / 文档下拉 / 会话列表文档标注 ── */
+.doc-hint-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 0;
+  background: rgba(59, 130, 246, 0.08);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.18);
+  font-size: 12px;
+  color: #1e40af;
+  flex-shrink: 0;
+}
+.doc-hint-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-hint-switch {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.doc-hint-switch:hover { background: rgba(59, 130, 246, 0.1); }
+.doc-hint-close { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; }
+.doc-hint-bar--closed { background: rgba(220, 38, 38, 0.06); border-bottom-color: rgba(220, 38, 38, 0.18); color: #991b1b; }
+.doc-capsule-rebind {
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  cursor: pointer;
+}
+.doc-capsule-rebind:hover { background: rgba(59, 130, 246, 0.1); }
+.composer-doc-binding-wrap { position: relative; }
+.composer-doc-binding.doc-capsule-clickable { cursor: pointer; }
+.composer-doc-binding.doc-capsule--closed { color: #dc2626; }
+.composer-doc-binding.doc-capsule--unsaved { color: #d97706; }
+.doc-capsule-caret { margin-left: 4px; font-size: 10px; opacity: 0.7; }
+.doc-capsule-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+  z-index: 60;
+}
+.doc-capsule-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.doc-capsule-menu-item:hover { background: rgba(59, 130, 246, 0.08); }
+.doc-capsule-menu-name { font-weight: 500; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-capsule-menu-meta { color: #64748b; white-space: nowrap; font-size: 11px; }
+.history-doc-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #475569;
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 4px;
+  padding: 1px 5px;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .input-area {
   padding: 12px 24px 18px;
   border-top: 1px solid rgba(226, 232, 240, 0.72);
@@ -26128,6 +27886,23 @@ export default {
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.25);
 }
 
+/* 思考模式开关：与模型选择按钮同族，active 态高亮 */
+.thinking-toggle-wrap {
+  position: relative;
+}
+.thinking-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.thinking-toggle-btn.is-active {
+  color: var(--primary-color, #4b6bfb);
+  background: var(--primary-bg, rgba(75, 107, 251, 0.08));
+}
+.thinking-toggle-btn .composer-tool-icon {
+  width: 17px;
+  height: 17px;
+}
 .model-select-wrap {
   position: relative;
   flex-shrink: 0;
@@ -26760,4 +28535,39 @@ export default {
 .pending-tpl-aspect-group-label { font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
 .pending-tpl-aspect { display: inline-flex; align-items: center; gap: 4px; margin: 0 12px 6px 0; font-size: 13px; cursor: pointer; }
 .pending-tpl-aspect input[type='checkbox'] { cursor: pointer; }
+
+/* 思考区（对话栏实时思考流）：灰字小号、弱化边框，完成后可折叠 */
+.mcp-thinking-block {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px;
+  background: var(--bg-muted, #f7f8fa);
+}
+.mcp-thinking-head {
+  font-size: 12px;
+  color: var(--text-secondary, #8a8f99);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mcp-thinking-toggle {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.mcp-thinking-body {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary, #8a8f99);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.mcp-thinking-block.is-done .mcp-thinking-body {
+  max-height: 120px;
+}
 </style>

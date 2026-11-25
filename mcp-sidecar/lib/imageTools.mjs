@@ -32,27 +32,57 @@ async function bingImageSearch(query, maxResults = 8) {
   return urls
 }
 
-function tmpImageDir(dataDir) {
-  // WPS 是沙盒应用：webview 里 Shapes.AddPicture 只能读自己容器内的文件。
-  // ~/.config/chayuan-wps/mcp/tmp-images（dataDir）在容器外——真机实证
-  // 「插入图片失败：…tmp-images/web-*.jpg（请确认是本地可读路径）」。
-  // Mac 上优先落到 WPS 容器内的 Application Support（sidecar 与 WPS 同用户可读写）。
+/**
+ * tmp-images 候选目录（按优先序）。WPS 是沙盒应用：webview 里 Shapes.AddPicture
+ * 只能读自己容器内的文件——~/.config/chayuan-wps/mcp/tmp-images（dataDir）在容器外，
+ * 真机实证「插入图片失败：…tmp-images/web-*.jpg（请确认是本地可读路径）」，
+ * 所以 Mac 上优先 WPS 容器内的 Application Support（sidecar 与 WPS 同用户）。
+ */
+function tmpImageDirCandidates(dataDir) {
+  const dirs = []
   if (process.platform === 'darwin') {
     const home = process.env.HOME || ''
     if (home) {
-      const dir = path.join(
+      dirs.push(path.join(
         home, 'Library', 'Containers', 'com.kingsoft.wpsoffice.mac', 'Data',
         'Library', 'Application Support', 'chayuan-wps', 'tmp-images'
-      )
-      try {
-        fs.mkdirSync(dir, { recursive: true })
-        return dir
-      } catch { /* 容器目录不可建则回落 dataDir */ }
+      ))
     }
   }
-  const dir = path.join(dataDir, 'tmp-images')
-  fs.mkdirSync(dir, { recursive: true })
-  return dir
+  dirs.push(path.join(dataDir, 'tmp-images'))
+  return dirs
+}
+
+/** 全部候选目录都写失败时的统一失败信封：attempts 明细 + 修复指引（EPERM 取证） */
+function persistFailureEnvelope(attempts) {
+  const detail = attempts.map(a => `${a.dir}: ${a.error}`).join('；')
+  return {
+    ok: false,
+    error: `图片落盘失败（已尝试 ${attempts.length} 个目录）：${detail.slice(0, 400)}`,
+    attempts,
+    hint: 'EPERM/权限错误多为 macOS 完全磁盘访问限制：系统设置 → 隐私与安全性 → 完全磁盘访问权限，给 chayuan-mcp sidecar（或运行它的终端/LaunchAgent）授权后重启 WPS 重试。'
+  }
+}
+
+/**
+ * 把 buffer 写进 tmp-images：候选目录逐档 mkdir(recursive)+writeFileSync，
+ * 首个成功即返回 {ok, path}；全败返回 {ok:false, error, attempts, hint}，
+ * 绝不 throw（2026-11-25 真机：容器与 dataDir 双 EPERM 时异常裸冒，模型只看到
+ * 一句"没有写入权限"，无从排查也无从降级）。
+ */
+function writeTmpFile(dataDir, filename, buffer) {
+  const attempts = []
+  for (const dir of tmpImageDirCandidates(dataDir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      const file = path.join(dir, filename)
+      fs.writeFileSync(file, buffer)
+      return { ok: true, path: file }
+    } catch (e) {
+      attempts.push({ dir, error: `${e?.code || ''} ${String(e?.message || e).slice(0, 120)}`.trim() })
+    }
+  }
+  return persistFailureEnvelope(attempts)
 }
 
 function fetchWithTimeout(url, opts = {}, ms = 20000) {
@@ -74,7 +104,6 @@ async function openverseSearch(query, maxResults = 5) {
 
 /** 下载图片到 tmp-images，返回 {path, bytes} */
 async function downloadImage(url, dataDir) {
-  const dir = tmpImageDir(dataDir)
   const resp = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } }, 30000)
   if (!resp.ok) throw new Error(`下载 HTTP ${resp.status}`)
   const buf = Buffer.from(await resp.arrayBuffer())
@@ -84,9 +113,9 @@ async function downloadImage(url, dataDir) {
   if (head[0] === 0x89 && head[1] === 0x50) ext = '.png'
   else if (head[0] === 0x47 && head[1] === 0x49) ext = '.gif'
   else if (!(head[0] === 0xff && head[1] === 0xd8)) throw new Error('非图片内容')
-  const file = path.join(dir, `web-${crypto.randomBytes(5).toString('hex')}${ext}`)
-  fs.writeFileSync(file, buf)
-  return { path: file, bytes: buf.length }
+  const saved = writeTmpFile(dataDir, `web-${crypto.randomBytes(5).toString('hex')}${ext}`, buf)
+  if (!saved.ok) throw new Error([saved.error, saved.hint].filter(Boolean).join('。'))
+  return { path: saved.path, bytes: buf.length }
 }
 
 /** image_search 工具入口：搜索 → 依次尝试下载 → 返回首个成功路径 */
@@ -200,30 +229,53 @@ export async function generateImageTool(dataDir, { prompt, size = '512x512', asp
     return { ok: false, error: `生图失败：${String(e.message || e).slice(0, 160)}` }
   }
   const item = (data.data || [])[0] || {}
-  const dir = tmpImageDir(dataDir)
-  const file = path.join(dir, `gen-${crypto.randomBytes(5).toString('hex')}.png`)
   try {
+    let buf
     if (item.b64_json) {
-      fs.writeFileSync(file, Buffer.from(item.b64_json, 'base64'))
+      buf = Buffer.from(item.b64_json, 'base64')
     } else if (item.url) {
       const resp = await fetchWithTimeout(item.url, { headers: { 'User-Agent': UA } }, 60000)
       if (!resp.ok) throw new Error(`生图结果下载 HTTP ${resp.status}`)
-      fs.writeFileSync(file, Buffer.from(await resp.arrayBuffer()))
+      buf = Buffer.from(await resp.arrayBuffer())
     } else {
       throw new Error('生图响应无 url/b64_json')
     }
+    const saved = writeTmpFile(dataDir, `gen-${crypto.randomBytes(5).toString('hex')}.png`, buf)
+    if (!saved.ok) return saved
+    return { ok: true, source: 'model', path: saved.path, model: cfg.model, prompt: p }
   } catch (e) {
     return { ok: false, error: `生图结果落盘失败：${e.message || e}` }
   }
-  return { ok: true, source: 'model', path: file, model: cfg.model, prompt: p }
 }
 
 /** /tmp-image 端点处理：{base64, ext} → 落盘 → {path}（svg_add 光栅化产物落盘用） */
 export function saveTmpImage(dataDir, { base64, ext = 'png' }) {
   if (!base64) return { ok: false, error: '缺少 base64' }
   const safeExt = ['png', 'jpg', 'jpeg', 'svg'].includes(String(ext)) ? String(ext) : 'png'
-  const dir = tmpImageDir(dataDir)
-  const file = path.join(dir, `tmp-${crypto.randomBytes(5).toString('hex')}.${safeExt}`)
-  fs.writeFileSync(file, Buffer.from(String(base64), 'base64'))
-  return { ok: true, path: file, bytes: fs.statSync(file).size }
+  const saved = writeTmpFile(
+    dataDir,
+    `tmp-${crypto.randomBytes(5).toString('hex')}.${safeExt}`,
+    Buffer.from(String(base64), 'base64')
+  )
+  if (!saved.ok) return saved
+  return { ok: true, path: saved.path, bytes: fs.statSync(saved.path).size }
+}
+
+/**
+ * 按文件名（仅 basename）在 tmp-images 候选目录里查找已落盘图片。
+ * 供 GET /tmp-image/file 端点向面板 webview 提供容器外路径（dataDir 回落）的
+ * HTTP 直显通道——面板读不到容器外文件，但 img/fetch 走 127.0.0.1 没问题。
+ * @returns {string|null} 绝对路径或 null
+ */
+export function findTmpImageFile(dataDir, name) {
+  const safe = String(name || '').replace(/\\/g, '/').split('/').pop()
+  if (!safe || !/^[A-Za-z0-9._-]+\.(png|jpe?g|gif|webp|svg)$/i.test(safe)) return null
+  for (const dir of tmpImageDirCandidates(dataDir)) {
+    try {
+      const file = path.join(dir, safe)
+      const st = fs.statSync(file)
+      if (st.isFile()) return file
+    } catch { /* 下一候选 */ }
+  }
+  return null
 }

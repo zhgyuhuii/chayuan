@@ -21,12 +21,32 @@ import {
 } from '../../utils/documentDeclassifyService.js'
 import { retrieveKbContextForAssistant } from '../../services/kb/retrievalMiddleware.js'
 import { getAssistantKbBinding } from '../../utils/assistant/kbAssistantBinding.js'
+import { resolveBoundDocument } from '../../utils/chat/docTarget.js'
+import { parseMarkdownBlocks } from '../../utils/markdownDocumentRenderer.js'
 
 export const DOCUMENT_GET_TEXT_MAX_CHARS = 80_000
 export const DOCUMENT_CHUNKS_LIMIT_MAX = 8
 export const DOCUMENT_CHUNKS_LIMIT_DEFAULT = 2
 
-function requireDoc() {
+function requireDoc(params = {}) {
+  // Model S（plans/Model S 共识定稿）：dispatch 门已按会话绑定解析成功并留
+  // __boundDocKey/__boundDocLinkId，这里二次解析取新鲜 COM 代理对象——绑定文档
+  // 非活动也照常操作（S2 静默路径，2026-11-21 探针实证）；解析失败报 DOC_NOT_OPEN。
+  // 无绑定标记时回落 ActiveDocument（无 pin 链路旧语义，行为不变）。
+  const boundKey = String(params?.__boundDocKey || '').trim()
+  if (boundKey) {
+    const resolved = resolveBoundDocument({
+      docId: boundKey,
+      docLinkId: String(params?.__boundDocLinkId || '')
+    })
+    if (!resolved.ok) {
+      const err = new Error(resolved.message)
+      err.code = 'DOC_NOT_OPEN'
+      err.docPath = boundKey
+      throw err
+    }
+    return resolved.doc
+  }
   const doc = getActiveDocument()
   if (!doc) {
     const err = new Error('当前没有打开文档')
@@ -190,7 +210,7 @@ function resolveWritableRange(doc, params = {}) {
 }
 
 export async function handleDocumentMeta(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const settings = getChunkSettings()
   const chunkLength = Number(params.chunkLength) > 0 ? Number(params.chunkLength) : settings.chunkLength
   const overlapLength = Number(params.overlapLength) >= 0 ? Number(params.overlapLength) : settings.overlapLength
@@ -199,7 +219,7 @@ export async function handleDocumentMeta(params = {}) {
   try {
     charCount = String(doc.Content?.Text || '').length
   } catch {
-    charCount = String(getDocumentText() || '').length
+    charCount = String(getDocumentText(doc) || '').length
   }
   try {
     paragraphCount = Number(doc.Paragraphs?.Count || 0)
@@ -224,7 +244,7 @@ export async function handleDocumentMeta(params = {}) {
  * 「翻译每一段，把译文插到段落后面」— external LLM translates; client writebacks via insert-after.
  */
 export async function handleDocumentListParagraphs(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   let total = 0
   try {
     total = Number(doc.Paragraphs?.Count || 0)
@@ -276,7 +296,7 @@ export async function handleDocumentListParagraphs(params = {}) {
 }
 
 export async function handleDocumentChunks(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const settings = getChunkSettings()
   const chunkLength = Math.min(
     Math.max(Number(params.chunkLength) || settings.chunkLength, 500),
@@ -347,7 +367,11 @@ export async function handleDocumentGetTextGuarded(params = {}) {
       text = ''
     }
   }
-  if (!text) text = String(getDocumentText() || '')
+  if (!text) {
+    // Model S：按绑定解析取全文（有绑定标记强制可解析；无标记回落活动文档）
+    const doc = requireDoc(params)
+    text = String(getDocumentText(doc) || '')
+  }
   if (!force && text.length > DOCUMENT_GET_TEXT_MAX_CHARS) {
     const err = new Error(
       `Document too large (${text.length} chars). Use document_chunks for pagination, or pass force:true.`
@@ -370,7 +394,7 @@ export async function handleDocumentGetTextGuarded(params = {}) {
 }
 
 export async function handleDocumentLocate(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const text = String(params.text || params.query || params.originalText || '').trim()
   if (!text) {
     const err = new Error('text required')
@@ -388,8 +412,9 @@ export async function handleDocumentLocate(params = {}) {
 }
 
 export async function handleDocumentReplace(params = {}) {
-  const doc = requireDoc()
-  const newText = String(params.newText ?? params.text ?? '')
+  const doc = requireDoc(params)
+  // let（非 const）：replace 通道写前会做 markdown 纯文本化重赋值
+  let newText = String(params.newText ?? params.text ?? '')
   const resolved = resolveWritableRange(doc, params)
   if (params.confirmed !== true) {
     return {
@@ -408,8 +433,70 @@ export async function handleDocumentReplace(params = {}) {
     err.code = 'LOCATE_MISMATCH'
     throw err
   }
+  // replace 通道写前纯文本化（2026-11-21 用户裁决「保持原段落与样式」的最后防线）：
+  // 模型偶尔不守「纯文本输出」契约，把 ##/**/- 带进 newText → 会原样落进文档。
+  // 用渲染解析器反向提取纯文本（粗体等内联标记剥壳保文字、表格摊平为行），
+  // 幂等（纯文本输入原样通过）。仅 replace 通道——append/insert 的 markdown 是
+  // 有意输入（渲染成真实格式）。
+  if (/(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>)|\*\*|\|/.test(newText)) {
+    try {
+      const blocks = parseMarkdownBlocks(newText)
+      const paras = []
+      for (const b of blocks) {
+        if (b.type === 'heading' || b.type === 'paragraph') paras.push(b.runs.map(r => r.text).join(''))
+        else if (b.type === 'list') for (const item of b.items) paras.push(item.map(r => r.text).join(''))
+        else if (b.type === 'table') paras.push(...[b.headers, ...b.rows].map(row => row.map(c => String(c ?? '').trim()).join('  ')))
+      }
+      const plain = paras.filter(x => x.trim()).join('\n').trim()
+      if (plain) newText = plain
+    } catch (_) { /* 解析失败按原文写 */ }
+  }
   const targetRange = doc.Range(resolved.start, resolved.end)
+  // 逐段原位替换（2026-11-21 用户裁决「翻译/重写必须保持原段落与样式」）：输出段数
+  // 与目标区段落数一致时，逐段改写段内文本——每段的样式天然保留（只动文本不动段落
+  // 对象）；逆序处理避免位置漂移。段数不一致 → 回落整段替换（\r 分段）。
+  if (params.paragraphWise === true) {
+    // 逐段原位替换（2026-11-21 用户裁决「翻译/重写必须保持原段落与样式」）：
+    // 正向采集每个非空段落的 [start,end,尾标记]（数值位置），段数与输出一致时
+    // 【逆序】改写段内文本——后面的段先改，前面段的位置不受影响（数值定位无漂移）。
+    // 每段只动文本不动段落对象 → 段落样式天然保留。段数不一致 → 回落整段替换。
+    let srcInfo = null
+    try {
+      const paras = targetRange.Paragraphs
+      const n = Number(paras?.Count || 0)
+      srcInfo = []
+      for (let i = 1; i <= n; i++) {
+        try {
+          const pr = paras.Item(i).Range
+          const t = String(pr?.Text || '')
+          const body = t.replace(/[\r\n]+$/, '')
+          if (body.trim()) srcInfo.push({ start: Number(pr.Start), end: Number(pr.End), body, trailing: t.slice(body.length) })
+        } catch (_) { /* 单段异常跳过 */ }
+      }
+    } catch (_) { srcInfo = null }
+    const outParas = String(newText || '').replace(/\r\n/g, '\n').split('\n').map(x => x.trim()).filter(x => x)
+    if (srcInfo && srcInfo.length && outParas.length === srcInfo.length) {
+      try {
+        for (let i = srcInfo.length - 1; i >= 0; i--) {
+          const seg = srcInfo[i]
+          const pr = doc.Range(seg.start, seg.end)
+          pr.Text = (outParas[i] || '') + (seg.trailing || '\r')
+        }
+        return {
+          ok: true,
+          action: 'replace',
+          rendered: 'paragraph-wise',
+          message: `已按原段落结构替换 ${srcInfo.length} 段（样式保留）`,
+          range: { start: resolved.start, end: resolved.end },
+          document: docInfo(doc)
+        }
+      } catch (e) {
+        console.warn('逐段替换失败，回落整段替换:', e)
+      }
+    }
+  }
   const result = applyDocumentAction('replace', newText, {
+    doc,
     title: params.title || '察元 MCP 替换',
     targetRange,
     strictTargetAction: true,
@@ -429,7 +516,7 @@ export async function handleDocumentReplace(params = {}) {
 }
 
 export async function handleDocumentInsert(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const text = String(params.text || '')
   if (!text) {
     const err = new Error('text required')
@@ -447,7 +534,7 @@ export async function handleDocumentInsert(params = {}) {
   }
   const action = actionMap[position] || 'insert'
 
-  let options = { title: params.title || '察元 MCP 插入' }
+  let options = { doc, title: params.title || '察元 MCP 插入' }
   const hasAnchor =
     params.originalText ||
     params.expectedText ||
@@ -483,7 +570,7 @@ export async function handleDocumentInsert(params = {}) {
 
 export async function handleDocumentAddComment(params = {}) {
   requireConfirmed(params)
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const text = String(params.text || '')
   if (!text) {
     const err = new Error('text required')
@@ -529,7 +616,7 @@ export async function handleDocumentAddComment(params = {}) {
     }
   }
   const hasAnchor = Number.isFinite(Number(params.start)) && Number.isFinite(Number(params.end))
-  const options = { title: params.title || '察元 MCP 批注' }
+  const options = { doc, title: params.title || '察元 MCP 批注' }
   if (hasAnchor) {
     const resolved = resolveWritableRange(doc, params)
     options.targetRange = doc.Range(resolved.start, resolved.end)
@@ -545,7 +632,7 @@ export async function handleDocumentAddComment(params = {}) {
 }
 
 export async function handleDocumentApplyOps(params = {}) {
-  const doc = requireDoc()
+  const doc = requireDoc(params)
   const ops = Array.isArray(params.operations || params.ops) ? (params.operations || params.ops) : []
   if (!ops.length) {
     const err = new Error('operations required')
@@ -629,7 +716,7 @@ export async function handleDocumentApplyOps(params = {}) {
       contentBlocks,
       aggregatedContent: normalized.map((o) => o.outputText).join('\n')
     },
-    { title: params.title || '察元 MCP 批量写回' }
+    { doc, title: params.title || '察元 MCP 批量写回' }
   )
   return {
     preview: false,
@@ -927,7 +1014,9 @@ export async function handleDeclassifyPreview(params = {}) {
     err.code = 'INVALID_PARAMS'
     throw err
   }
-  const text = params.text != null ? String(params.text) : getDocumentText()
+  // Model S：文本缺省时按绑定解析取全文（有绑定标记则强制可解析；无标记回落活动文档）
+  const doc = params.text != null ? null : requireDoc(params)
+  const text = params.text != null ? String(params.text) : getDocumentText(doc)
   const preview = buildDeclassifyPreview(keywords, text)
   return {
     preview: true,

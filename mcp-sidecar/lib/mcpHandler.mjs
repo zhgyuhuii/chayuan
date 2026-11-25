@@ -17,6 +17,7 @@ import {
 } from './platformBridge.mjs'
 import { SERVER_INFO, SERVER_INSTRUCTIONS, TOOLS } from './toolCatalog.mjs'
 import { imageSearchTool, generateImageTool } from './imageTools.mjs'
+import { webSearchTool } from './webSearchTools.mjs'
 import {
   AGGREGATE_TOOL_NAMES,
   LEGACY_TOOL_ALIASES,
@@ -135,6 +136,11 @@ function toolRoutingGuide() {
         tools: ['file_parse'],
         note: '输入侧：把本地文件（txt/md/csv/json/html/docx/xlsx/pptx/pdf/eml/zip + 旧版 doc/ppt/et 自动转换）解析为模型可读文本。多路径；附件别名（附件N，30 分钟记忆）；token 预算 mode=auto|full|chunk，chunk 支持 cursor 翻页与 outline 偏移 range 随机访问。不是读当前打开的文档（那是 L2-read）。'
       },
+      {
+        id: 'L8c-web-input',
+        tools: ['web_search'],
+        note: '联网侧：网页文本搜索（标题/链接/摘要清单），侧车原生执行无需宿主在线。需要外部事实/时事/资料时先搜再引用来源；不抓取正文。配置：设置→网络资源搜索。'
+      },
       { id: 'L9-business', tools: ['proofread_run', 'proofread_apply_comments', 'declassify_preview', 'kb_retrieve', 'assistants_search'] }
     ],
     routes: [
@@ -149,7 +155,8 @@ function toolRoutingGuide() {
       { intent: '插入/更新目录', use: ['toc', 'style'], never: ['document_insert fake TOC'] },
       { intent: '切换到某个已打开的文档', use: ['document_list_open', 'document_activate'], never: ['document_open unless not open'] },
       { intent: '第几页/行号/大纲', use: ['nav'], never: ['document_get_text'] },
-      { intent: '图片/表格/超链接/页眉页脚/水印/导出', use: ['image', 'table', 'hyperlink', 'headerfooter', 'watermark', 'export'], never: [] }
+      { intent: '图片/表格/超链接/页眉页脚/水印/导出', use: ['image', 'table', 'hyperlink', 'headerfooter', 'watermark', 'export'], never: [] },
+      { intent: '联网查资料/事实核对/时事（文本）', use: ['web_search'], never: ['image_search'] }
     ]
   }
 }
@@ -564,6 +571,15 @@ export function createMcpHandler({ agentHub, getServerMeta, audit: rawAudit, lau
       case 'image_search': {
         try {
           const result = await imageSearchTool(dataDir, { query: args?.query, count: args?.count })
+          return jsonResult(result)
+        } catch (e) {
+          return jsonError(e.code || 'ERROR', e.message, e.details)
+        }
+      }
+      // ── web_search（网页文本搜索）：侧车原生执行，无需 webview ──
+      case 'web_search': {
+        try {
+          const result = await webSearchTool(dataDir, { query: args?.query, count: args?.count })
           return jsonResult(result)
         } catch (e) {
           return jsonError(e.code || 'ERROR', e.message, e.details)

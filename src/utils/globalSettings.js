@@ -64,23 +64,79 @@ function loadFromPluginStorage() {
 // 清理会带走 localStorage——从 sidecar 桥接一份宿主侧设置播种进 localStorage，
 // 之后 loadFromLocalStorage 稳定命中（2026-09-30 VM 实测模型配置丢失的根治）。
 let _sidecarSeeded = false
+// 播种是否已收尾（命中本地 / 拉回成功 / 拉回失败都算）。推送 sidecar 必须等它——
+// 否则重装后 localStorage 全空时的早期保存（如迁移标记）会以「空配置+单键」
+// 覆盖 sidecar 磁盘真源里的完整 modelConfigs（覆盖竞态，2026-11-21 复盘补的闸）
+let _sidecarSeedSettled = false
 function seedFromSidecar() {
   if (_sidecarSeeded) return
   _sidecarSeeded = true
+  if (typeof localStorage === 'undefined') { _sidecarSeedSettled = true; return }
   const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
-  if (raw && JSON.parse(raw || '{}')?.modelConfigs && Object.keys(JSON.parse(raw).modelConfigs || {}).length) return
+  if (raw && JSON.parse(raw || '{}')?.modelConfigs && Object.keys(JSON.parse(raw).modelConfigs || {}).length) {
+    _sidecarSeedSettled = true
+    flushSidecarSave()
+    return
+  }
   try {
     const base = String(MCP_BASE_URL_FOR_SETTINGS || '').replace(/\/+$/, '')
-    if (!base) return
+    if (!base) { _sidecarSeedSettled = true; return }
     fetch(`${base}/app-settings`, { headers: { Accept: 'application/json' } })
       .then(r => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data || !data.modelConfigs || !Object.keys(data.modelConfigs).length) return
-        const existing = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}')
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, ...existing, modelConfigs: { ...data.modelConfigs, ...(existing.modelConfigs || {}) } }))
+        if (data && data.modelConfigs && Object.keys(data.modelConfigs).length) {
+          const existing = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}')
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ ...data, ...existing, modelConfigs: { ...data.modelConfigs, ...(existing.modelConfigs || {}) } }))
+          // 本窗口自己 setItem 不触发 storage 事件，而 loadRaw 首跑已把空对象留在
+          // _cache——不失效缓存的话，播种拉回的配置要重启 WPS 才能被读到
+          _invalidateGlobalSettingsCache()
+        }
       })
       .catch(() => {})
-  } catch (_) { /* ignore */ }
+      .finally(() => {
+        // 拉回/拉空/失败都收尾：挂起的推送按（可能已回填的）最新缓存执行
+        _sidecarSeedSettled = true
+        flushSidecarSave()
+      })
+  } catch (_) {
+    _sidecarSeedSettled = true
+  }
+}
+
+// sidecar 磁盘真源推送（debounce 500ms 合并连续保存）：webview 文件层在 macOS
+// 沙盒 WPS 上从未成功过（~/Library/Application Support/chayuan 磁盘不存在——
+// 设置窗口 Env 注入不可靠 → home 解析失败 → 相对路径被 saveToFile 的
+// isAbsolutePath 拒掉，静默失败），重装/清 CEF 缓存会带走 localStorage。
+// 配置落 sidecar（~/.config/chayuan/settings.json，用户态无沙盒、重装不动）后，
+// 下次启动经 seedFromSidecar 拉回——重装不用重新配置。fire-and-forget：失败
+// 静默（localStorage 仍保本会话；sidecar 是跨重装的恢复层，不是本会话读路径）。
+let _sidecarSaveTimer = null
+let _sidecarSavePending = null
+// 播种收尾后（或 debounce 到期且播种已收尾）执行真正的推送。推送前重新
+// loadGlobalSettings：播种可能刚回填过 localStorage 并失效了缓存，直接用调用方
+// 传入的 merged 会退化成「空配置+单键」覆盖真源
+function flushSidecarSave() {
+  if (_sidecarSaveTimer) return // debounce 未到期，timer 到期时自然执行
+  if (!_sidecarSeedSettled) return // 播种未收尾：挂起，收尾时再 flush
+  const base = String(MCP_BASE_URL_FOR_SETTINGS || '').replace(/\/+$/, '')
+  if (!base) return
+  try {
+    const payload = loadGlobalSettings()
+    if (!payload || typeof payload !== 'object') return
+    fetch(`${base}/app-settings/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {})
+  } catch (_) { /* sidecar 不在线时静默：localStorage 仍是本会话读路径 */ }
+}
+function scheduleSidecarSave(merged) {
+  _sidecarSavePending = merged
+  if (_sidecarSaveTimer) return
+  _sidecarSaveTimer = setTimeout(() => {
+    _sidecarSaveTimer = null
+    flushSidecarSave()
+  }, 500)
 }
 
 function loadRaw() {
@@ -260,5 +316,8 @@ export function saveGlobalSettings(partial) {
   // 写盘后刷新缓存,下游 memo 通过 version 判断重算
   _cache = merged
   _cacheVersion++
+  // 推送 sidecar 磁盘真源（debounce 500ms）：与文件层/localStorage 成败无关，
+  // 这里是「重装后恢复」的唯一可靠来源，必须无条件尝试
+  scheduleSidecarSave(merged)
   return true
 }

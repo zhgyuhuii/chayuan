@@ -21,7 +21,24 @@ export function agentMessagesToWire(messages) {
   const out = []
   for (const m of messages || []) {
     if (m?.role === 'user') {
-      out.push({ role: 'user', content: m.text || '' })
+      // 视觉输入（上游 AgentImage 收割对接，2026-11-25）：带图片的 user 消息转
+      // OpenAI 多模态 content parts（data URL）。支持 vision 的网关按 parts 解析；
+      // 不支持的会报错——编排器在 model_error 返回体提示用户去掉图片或换模型
+      const images = Array.isArray(m.images) ? m.images.filter(i => i && i.base64) : []
+      if (!images.length) {
+        out.push({ role: 'user', content: m.text || '' })
+      } else {
+        out.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: m.text || '' },
+            ...images.map(i => ({
+              type: 'image_url',
+              image_url: { url: `data:${String(i.mime || 'image/png')};base64,${i.base64}` }
+            }))
+          ]
+        })
+      }
     } else if (m?.role === 'assistant') {
       out.push({
         role: 'assistant',
@@ -119,16 +136,34 @@ function toOpenAiTools(tools) {
 }
 
 /**
+ * OpenAI usage → agent-core AgentTokenUsage（2026-11-25 审计：此前 transport 从不发
+ * onUsage，引擎的用量统计恒缺席）。流式终块与非流式响应的 usage 字段名通用；
+ * cacheWriteTokens 上游无对应字段，按 types.ts 缺席语义不造零。
+ */
+function mapOpenAiUsage(u) {
+  if (!u || typeof u !== 'object') return null
+  const out = {}
+  const input = Number(u.prompt_tokens)
+  if (Number.isFinite(input)) out.inputTokens = input
+  const output = Number(u.completion_tokens)
+  if (Number.isFinite(output)) out.outputTokens = output
+  const cached = Number(u.prompt_tokens_details?.cached_tokens)
+  if (Number.isFinite(cached)) out.cacheReadTokens = cached
+  return (out.inputTokens !== undefined || out.outputTokens !== undefined) ? out : null
+}
+
+/**
  * @param {object} opts
  * @param {object} opts.model - { providerId, modelId, id(ribbon 兼容), name }
  * @param {AbortSignal} [opts.signal] - 外层取消信号（对话框的 AbortController）
  * @param {(turnNo: number) => void} [opts.onTurnStart] - 每轮模型请求前回调（进度步骤）
  * @returns {import('../../agent-core/index').AgentTransport}
  */
-export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
+export function createAgentCoreTransport({ model, signal, onTurnStart, onTurnReasoning, thinkingDisabled = false } = {}) {
   let turnNo = 0
   return {
     stream(request, cb) {
+
       let settled = false
       const hasLocalCtrl = typeof AbortController !== 'undefined'
       const localCtrl = hasLocalCtrl ? new AbortController() : null
@@ -150,6 +185,9 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
         turnNo += 1
         onTurnStart?.(turnNo)
         const body = {
+          // 思考模式开关（用户可控）：关闭时智谱 GLM 系禁思考（实测扩写 16.7s→5.1s，
+          // 输出质量不损失）；非智谱厂商不注入（未知字段严格解析风险）
+          ...(thinkingDisabled ? { thinking: { type: 'disabled' } } : {}),
           providerId: model?.providerId,
           modelId: model?.modelId,
           ribbonModelId: model?.id,
@@ -166,6 +204,9 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
 
         const toolAgg = createToolCallAggregator()
         let streamedText = ''
+        // 供应商用量：流式在终块 usage（部分网关带 stream_options include_usage 才发，
+        // 被动读取不注入请求字段——未知字段严格解析的网关会报错）
+        let usageFromStream = null
 
         const emitToolCallsAndDone = () => {
           toolAgg.calls().forEach((c, i) => cb.onToolCall(wireToolCallToAgent(c, i)))
@@ -198,6 +239,8 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
                 cb.onError('模型返回为空 (empty stream)')
                 return
               }
+              const usage = mapOpenAiUsage(msg?.raw?.usage || msg?.usage)
+              if (usage) cb.onUsage?.(usage)
               if (content) cb.onDelta(content)
               calls.forEach((c, i) => cb.onToolCall(wireToolCallToAgent(c, i)))
               cb.onDone()
@@ -208,14 +251,19 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
         streamChatCompletion({
           ...body,
           onEvent: (obj) => {
+            if (obj?.usage) usageFromStream = obj.usage
             const delta = obj?.choices?.[0]?.delta
             if (!delta) return
             if (typeof delta.content === 'string' && delta.content) {
               streamedText += delta.content
               cb.onDelta(delta.content)
             }
-            if (typeof delta.reasoning_content === 'string' && delta.reasoning_content && typeof cb.onReasoning === 'function') {
-              cb.onReasoning(delta.reasoning_content)
+            if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+              // 思考流旁路（思考展示）：loop 层消费 onReasoning 做预算守卫但不透出
+              // 事件，transport 在此旁路给编排器写进「模型思考」步骤（项目侧文件，
+              // 不动 agent-core vendor）
+              onTurnReasoning?.(delta.reasoning_content)
+              if (typeof cb.onReasoning === 'function') cb.onReasoning(delta.reasoning_content)
             }
             if (Array.isArray(delta.tool_calls)) {
               for (const frag of delta.tool_calls) toolAgg.push(frag)
@@ -230,6 +278,8 @@ export function createAgentCoreTransport({ model, signal, onTurnStart } = {}) {
             }
             settled = true
             cleanup()
+            const usage = mapOpenAiUsage(usageFromStream)
+            if (usage) cb.onUsage?.(usage)
             emitToolCallsAndDone()
           },
           onError: (err) => fallbackNonStreaming(err || '流式请求失败')

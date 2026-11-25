@@ -99,6 +99,7 @@ const probes = {
   declassify_apply: { password: 'x', keywords: [] },
   declassify_restore: { password: 'x' },
   kb_retrieve: { query: 't' },
+  web_search: { query: '察元AI Office' },
   proofread_run: { dryRun: true },
   proofread_apply_comments: { taskId: 'x' },
   proofread_job_poll: { jobId: 'x' },
@@ -122,8 +123,11 @@ const probes = {
   hyperlink: { action: 'list', limit: 10 },
   headerfooter: { action: 'get' },
   watermark: { action: 'set', text: 'x' },
+  footnote: { action: 'list' },
   style: { action: 'list', limit: 10 },
-  export: { action: 'file', format: 'pdf', path: 'C:\\__missing__.pdf' }
+  export: { action: 'file', format: 'pdf', path: 'C:\\__missing__.pdf' },
+  // spreadsheet 有真实读 action 探针（et 离线时 HOST_MISMATCH 非 fatal）；presentation 无
+  spreadsheet: { action: 'selection_read' }
 }
 
 async function main() {

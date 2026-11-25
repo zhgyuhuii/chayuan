@@ -22,6 +22,9 @@ import { logEvent } from '../../utils/globalErrorLogger.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
 import { getFlatModelsFromSettings } from '../../utils/modelSettings.js'
 import { getToolResultBudgetTokens } from '../../utils/modelContextCatalog.js'
+// 上游 vendored 能力件收割（2026-11-25）：MIND_MAP_TOOL 定义+tidy-tree 布局+Mermaid
+// 导出原本在 src/agent-core/mind-map.ts 躺着零消费，这里注册成 client tool 接进循环
+import { MIND_MAP_TOOL, MIND_MAP_LIMITS, countMindMapNodes, mindMapToMermaid } from '../../agent-core/mind-map'
 
 /**
  * 当前对话模型（面板选中项）——file_parse 内部调用时按模型上下文注入结果预算：
@@ -63,18 +66,37 @@ function fileParseBudgetTokens() {
  * et/wpp 走各自域 status；wps 走 wps_status（document.fullName 宿主感知）。
  */
 async function probeHostDocumentId(host, signal) {
+  // 返回 { pin, error, confirmedNoDoc }：
+  //  - pin=活动对象 FullName；confirmedNoDoc=true=status 明确报告没有打开对象（真没文档）
+  //  - 其余失败（路由错位/读取异常/字段为空）一律 error 透出，不与「真没文档」混判
+  //    ——（真机 2026-11-21 两轮误报：探针把「读不到」吞成 null 硬失败阻塞写回）
   try {
     let sc = null
     if (host === 'et') sc = await callLocalTool('spreadsheet', { action: 'status' }, { signal })
     else if (host === 'wpp') sc = await callLocalTool('presentation', { action: 'status' }, { signal })
-    else sc = await callLocalTool('wps_status', {}, { signal })
+    // 宿主定向：wps_status 支持 U3（args.host → ribbon:wps 基座），必须带上
+    else sc = await callLocalTool('wps_status', host === 'wps' ? { host: 'wps' } : {}, { signal })
     const data = sc?.structuredContent || sc || {}
-    if (host === 'et') return String(data?.workbook?.fullName || '') || null
-    if (host === 'wpp') return String(data?.presentation?.fullName || '') || null
-    const doc = data?.document || {}
-    return String(doc?.fullName || doc?.name || '') || null
-  } catch (_) {
-    return null
+    // wps_status 返回体双层嵌套（真机三连误报真凶）：structuredContent.document
+    // 是 agent 状态壳，真正的活动文档在其内层 document 字段——探针原样取外层的
+    // fullName（不存在）→ null → 误报 NO_ACTIVE_DOCUMENT。et/wpp 分支同构兜底。
+    let docInfo = host === 'et' ? data?.workbook : host === 'wpp' ? data?.presentation : data?.document
+    if (docInfo && docInfo.document && typeof docInfo.document === 'object') {
+      docInfo = docInfo.document
+    }
+    if (docInfo && docInfo.open === false) {
+      return { pin: '', confirmedNoDoc: true, error: String(docInfo?.error || '该宿主未打开文档') }
+    }
+    const pin = String(docInfo?.fullName || docInfo?.name || '')
+    if (pin) return { pin, confirmedNoDoc: false, error: '' }
+    // status 成功但字段为空——透出原始返回供诊断（addonType/agentOnline 等线索）
+    return {
+      pin: '',
+      confirmedNoDoc: false,
+      error: `status 无身份字段（addonType=${data?.addonType || '?'} agentOnline=${data?.agentOnline ?? '?'} keys=${Object.keys(data).slice(0, 6).join(',')}）`
+    }
+  } catch (e) {
+    return { pin: '', confirmedNoDoc: false, error: String(e?.code || '') + ' ' + String(e?.message || e) }
   }
 }
 
@@ -96,7 +118,8 @@ const AGGREGATE_READ_ACTIONS = {
   headerfooter: ['get'],
   watermark: [],
   export: [],
-  spreadsheet: ['status', 'sheet_list', 'used_range', 'range_read', 'find', 'chart_list'],
+  footnote: ['list'],
+  spreadsheet: ['status', 'sheet_list', 'used_range', 'range_read', 'selection_read', 'find', 'chart_list'],
   presentation: ['status', 'slide_list', 'slide_read', 'shape_list']
 }
 
@@ -153,6 +176,53 @@ const TODO_WRITE_TOOL = {
 
 const TODO_STATUSES = new Set(['pending', 'in_progress', 'completed'])
 
+/**
+ * 客户端思维导图工具（上游 mind-map.ts 收割对接，2026-11-25）：模型一次性提交
+ * 整棵树，本地校验/裁剪（深度/标签上限防失控）后返回 Mermaid 源码（可直接贴出
+ * 或写入文档）；display 侧信道带完整树供 UI 渲染（types.ts 契约：永不进 LLM 上下文）。
+ */
+const MIND_MAP_CLIENT_TOOL = {
+  name: MIND_MAP_TOOL.name,
+  description: '生成思维导图：用户要「思维导图/脑图/知识结构/结构梳理」时调用。把整棵树一次性提交（root=主题，children=分支），标签用文档原语言的短语、不得编造文档没有的内容；本工具不修改文档，返回 Mermaid 源码后用一句话回复即可。',
+  inputSchema: MIND_MAP_TOOL.inputSchema
+}
+
+function normalizeMindMapNode(raw, depth = 0) {
+  if (!raw || typeof raw !== 'object') return null
+  const label = String(raw.label || '').trim().slice(0, MIND_MAP_LIMITS.maxLabelChars)
+  if (!label) return null
+  const node = { label }
+  if (depth < MIND_MAP_LIMITS.maxDepth - 1 && Array.isArray(raw.children) && raw.children.length) {
+    const children = raw.children.slice(0, 20).map(c => normalizeMindMapNode(c, depth + 1)).filter(Boolean)
+    if (children.length) node.children = children
+  }
+  return node
+}
+
+function handleGenerateMindMap(args) {
+  const root = normalizeMindMapNode(args?.root, 0)
+  if (!root) {
+    return {
+      output: JSON.stringify({ ok: false, error: 'root 必填：思维导图树对象（{label, children:[…]}），label 必填且不能全空' }),
+      isError: true,
+      summary: '思维导图参数无效'
+    }
+  }
+  const nodeCount = countMindMapNodes(root)
+  const mermaid = mindMapToMermaid(root)
+  return {
+    output: JSON.stringify({
+      ok: true,
+      nodeCount,
+      mermaid,
+      hint: '上面是 Mermaid mindmap 源码，可直接贴给用户或按需写入文档/插入代码块；结构化树已随 display 提供界面渲染，无需在回复里复述整棵树。'
+    }),
+    isError: false,
+    summary: `思维导图已生成（${nodeCount} 节点）`,
+    display: { kind: 'mindmap', tree: root }
+  }
+}
+
 function normalizeTodoList(raw) {
   if (!Array.isArray(raw)) return []
   const out = []
@@ -180,6 +250,22 @@ function summarizeToolResult(result, toolName) {
     return text.length > limit ? `${text.slice(0, limit)}…(truncated)` : text
   } catch {
     return String(result)
+  }
+}
+
+/**
+ * ToolDisplay.images 采集（上游 types.ts 侧信道，2026-11-25 收割对接）：生图/搜图
+ * 成功时带产物路径 → 面板渲染缩略图网格；display 永不进 LLM 上下文。
+ */
+const IMAGE_RESULT_TOOL_RE = /^(generate_image|image_search)$/
+function extractToolDisplay(toolName, result) {
+  if (!IMAGE_RESULT_TOOL_RE.test(String(toolName || '')) || result?.isError) return null
+  const sc = result?.structuredContent || {}
+  const path = String(sc?.path || '')
+  if (!path || !/\.(png|jpe?g|gif|webp)$/i.test(path)) return null
+  return {
+    kind: 'images',
+    items: [{ url: path, title: String(sc?.prompt || sc?.query || '').slice(0, 80) }]
   }
 }
 
@@ -253,6 +339,9 @@ async function callLocalToolWithProofreadProgress(name, args, { signal, pushProg
  * @param {(todos: Array) => void} [opts.onTodoWrite] - todo_write 客户端工具的清单透出
  * @param {string} [opts.writeBaselineToken] - 回合 OCC 基线 token；随写工具参数
  *   透传到加载项 dispatch 层，供写锁按回合隔离校验（__baselineToken 为保留字段）
+ * @param {string} [opts.writeDocLinkId] - 回合绑定文档身份（Model S 对话驻留）；随写
+ *   工具参数透传（__docLinkId 为保留字段），dispatch 按 docLinkId 优先解析目标，
+ *   非活动文档照常静默写入（S2 路径）
  */
 export function createMcpDocumentSkill({
   systemPrompt,
@@ -261,6 +350,7 @@ export function createMcpDocumentSkill({
   onProofreadCard,
   onTodoWrite,
   writeBaselineToken = '',
+  writeDocLinkId = '',
   targetDocumentId,
   initialHostPins,
   kbBinding = null
@@ -295,6 +385,7 @@ export function createMcpDocumentSkill({
     systemPrompt,
     tools: [
       TODO_WRITE_TOOL,
+      MIND_MAP_CLIENT_TOOL,
       ...(mergedTools || []).filter(t => {
         const { serverId, toolName } = parseNamespacedTool(t.name)
         return serverId !== CHAYUAN_SERVER_ID || isToolAllowedCrossHost(toolName)
@@ -338,6 +429,9 @@ export function createMcpDocumentSkill({
             ...extra
           })
         } catch { /* 日志失败不影响工具执行 */ }
+      }
+      if (call?.name === MIND_MAP_CLIENT_TOOL.name) {
+        return handleGenerateMindMap(args)
       }
       if (call?.name === TODO_WRITE_TOOL.name) {
         const todos = normalizeTodoList(call?.input?.todos)
@@ -397,13 +491,27 @@ export function createMcpDocumentSkill({
               let pin = hostPins[targetHost]
               if (!pin) {
                 pushProgress?.({ label: `校验 ${hostLabel(targetHost)} 写入目标`, detail: '跨宿主写入前自动探测活动对象身份' })
-                pin = await probeHostDocumentId(targetHost, signal)
-                if (!pin) {
+                const probe = await probeHostDocumentId(targetHost, signal)
+                if (probe?.confirmedNoDoc) {
+                  // status 明确报告该宿主没打开文档：真实失败，如实阻塞
                   throw Object.assign(new Error(`目标${hostLabel(targetHost)}没有打开的文件，无法跨宿主写入。请先在${hostLabel(targetHost)}中打开目标文件后重试。`), { code: 'NO_ACTIVE_DOCUMENT' })
                 }
-                hostPins[targetHost] = pin
+                pin = probe?.pin || ''
+                // 探针读不到（路由错位/status 字段缺失等）≠ 确认没文档：降级为无 pin
+                // 继续执行——dispatch 写锁 + requireDoc 写当前活动文档兜底，身份校验由
+                // 发起侧种子（targetDocumentId→__expectedDocId）承担。阻塞会把「探测
+                // 不到」错当成「文档没开」，功能完全不可用（真机两轮误报教训）。
+                if (!pin) {
+                  pushProgress?.({ label: `写入目标探测失败，按当前活动${hostLabel(targetHost)}写入`, detail: String(probe?.error || '探针无返回').slice(0, 160) })
+                } else {
+                  hostPins[targetHost] = pin
+                }
               }
-              args.__expectedDocId = pin
+              if (pin) args.__expectedDocId = pin
+            }
+            if (writeDocLinkId) {
+              // Model S：绑定身份随写工具走（dispatch 按 docLinkId 优先解析目标）
+              args.__docLinkId = writeDocLinkId
             }
             if (writeBaselineToken) {
               args.__baselineToken = writeBaselineToken
@@ -413,9 +521,11 @@ export function createMcpDocumentSkill({
             result = await callLocalToolWithProofreadProgress(toolName, args, { signal, pushProgress })
           } else if (toolName === 'generate_image') {
             // 三级生图 Tier1：先用设置页启用的图像生成模型（webview 侧直连，
-            // 产物落盘 WPS 容器可读路径）。失败/未配置 → 回落 sidecar 原生
-            // generate_image（image-gen.json 配置面）；两级都失败返回 ok:false，
-            // 模型按配图策略降级 image_search / svg_add（铁律：不静默替位）。
+            // 落盘双通道：sidecar 容器路径 → webview 临时目录兜底）。模型阶段
+            // 失败/未配置 → 回落 sidecar 原生 generate_image（image-gen.json
+            // 配置面）；落盘失败（persist-failed）不回落——换模型只会重复付费
+            // 且必然同点失败，直接把带指引的错误交给模型；两级都失败返回
+            // ok:false，模型按配图策略降级 image_search / svg_add（铁律：不静默替位）。
             // 宿主感知尺寸：WPP 宿主且模型未显式指定比例 → 按当前演示稿页面
             // 宽高比自动选 16:9/9:16（否则生图模型默认 1:1，铺不满 PPT 页）
             let genAspectRatio = args?.aspectRatio || args?.size || ''
@@ -445,19 +555,40 @@ export function createMcpDocumentSkill({
                 model: tier1.modelId,
                 prompt: String(args?.prompt || '')
               })
+              // thumb = canvas 512px dataURL（agentImageTier 产出，小而稳——对话直显/
+              // lightbox/下载兜底）；full = 原图 dataURL（≤6MB 才带，放大锐利+下载原图）
               return {
                 output,
                 isError: false,
-                summary: `生图完成（模型 ${tier1.modelId}）`
+                summary: `生图完成（模型 ${tier1.modelId}）`,
+                display: {
+                  kind: 'images',
+                  items: [{
+                    url: tier1.path,
+                    title: String(args?.prompt || '').slice(0, 80),
+                    ...(tier1.thumb ? { thumb: tier1.thumb } : {}),
+                    ...(tier1.full && tier1.full.length <= 6_000_000 ? { full: tier1.full } : {})
+                  }]
+                }
               }
             }
-            if (tier1.reason === 'model-failed' || tier1.reason === 'no-model') {
-              pushProgress?.({
-                label: '模型生图未走通，尝试本机生图服务',
-                detail: tier1.errors?.join('；') || tier1.error || ''
-              })
+            if (tier1.reason === 'persist-failed') {
+              // 图片已生成成功但落盘两通道全败（sidecar+webview）——回落 Tier2
+              // 只会再付一次生成费并在同一点失败；直接把带修复指引的错误当工具
+              // 结果交给模型（isError 语义，走通用 summarize/log 出口）
+              result = {
+                isError: true,
+                content: [{ type: 'text', text: JSON.stringify({ ok: false, error: tier1.error, hint: tier1.hint || '' }) }]
+              }
+            } else {
+              if (tier1.reason === 'model-failed' || tier1.reason === 'no-model') {
+                pushProgress?.({
+                  label: '模型生图未走通，尝试本机生图服务',
+                  detail: tier1.errors?.join('；') || tier1.error || ''
+                })
+              }
+              result = await callLocalTool(toolName, args, { signal })
             }
-            result = await callLocalTool(toolName, args, { signal })
           } else {
             result = await callLocalTool(toolName, args, { signal })
           }
@@ -468,6 +599,7 @@ export function createMcpDocumentSkill({
         if (card) onProofreadCard?.(card)
         let output = summarizeToolResult(result, toolName)
         const summaryBase = output.slice(0, 120)
+        const toolDisplay = extractToolDisplay(toolName, result)
         // 催单（仅一次）：真实工具已在跑但清单还没立——提醒模型下一条消息立即补
         // todo_write（已完成项标 completed），与下一个工具调用并行提交
         if (!todosWritten && !todoNudgeGiven && serverId === CHAYUAN_SERVER_ID && result?.isError !== true) {
@@ -482,7 +614,8 @@ export function createMcpDocumentSkill({
           isError: result?.isError === true,
           summary: summaryBase || nsName,
           // 写工具成功落笔才视为变更：退避守卫据此豁免「重复相同写操作」的熔断
-          mutated
+          mutated,
+          ...(toolDisplay ? { display: toolDisplay } : {})
         }
       } catch (e) {
         toolLogEnd(false, { code: e?.code || '', message: String(e?.message || '').slice(0, 160) })
@@ -496,5 +629,6 @@ export function createMcpDocumentSkill({
   }
 }
 
-// 供编排器/冒烟测试复用的领域谓词与抽取器
-export { isWriteTool, needsAutoConfirm, extractProofreadCard, summarizeToolResult, normalizeTodoList }
+// 供编排器/冒烟测试复用的领域谓词与抽取器（AGGREGATE_READ_ACTIONS 导出供
+// toolFace.unit.test.js 快照校验「只读 action 必须可路由且不要求 confirmed」）
+export { isWriteTool, needsAutoConfirm, extractProofreadCard, summarizeToolResult, normalizeTodoList, AGGREGATE_READ_ACTIONS }

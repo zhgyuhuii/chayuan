@@ -27,13 +27,13 @@ export const SERVER_INFO = { name: 'chayuan-wps-mcp', version: '0.13.0' }
 
 export const SERVER_INSTRUCTIONS = [
   'You are connected to 察元AI MCP. End users speak natural Chinese/English only — they never name tools.',
-  'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export/spreadsheet/presentation). Do not invent fine-grained tool names.',
+  'Architecture: prefer DOMAIN tools with action=… (comment/revision/layout/nav/toc/bookmark/table/image/hyperlink/headerfooter/watermark/style/export/footnote/spreadsheet/presentation). Do not invent fine-grained tool names.',
   'Hosts: wps_status.agent.hosts shows which hosts are online. spreadsheet.* actions operate the ACTIVE WORKBOOK in WPS 表格 (requires et host online); presentation.* operate the ACTIVE PRESENTATION in WPS 演示 (requires wpp host online); document_*/format_*/table/comment/… operate Writer documents. Tool calls are auto-routed to the matching host.',
   'Map intent → tools yourself using each tool description (WHEN / NOT / EXAMPLE). Prefer resource chayuan://guide/tool-routing for layer routing.',
   'Division of labor: YOU (the LLM) reason, translate, rewrite, decide; WPS Agent only reads/locates/writes/exports.',
   'Write generated content into the currently open document; preserve existing text unless replacement was requested. Automatic document creation is disabled for document_* lifecycle tools (including blank files and template copies); the ONE exception is template_generate — it creates a NEW file from a user-provided template (pptx/docx/xlsx) and auto-opens it. If no document is open, ask the user to open one manually; never create or reopen a document as error recovery.',
   'Template generation (模板编制): template_generate takes a template file + reference material and produces a new document — pptx→演示, docx→文字, xlsx→表格 (host auto-routed and auto-launched). Prefer it over manual fill when the user says 按/根据模板生成. It already runs multi-round checks (placeholder residue, text overflow, font consistency, content/copy quality, contract items) before opening the result.',
-  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_* → file_parse (input side: parse local files/attachments into LLM-readable text; NOT for the open document).',
+  'Layer order: wps_* → document_* (read/locate/words/lifecycle/switch) → format_run|format_para|format_apply_ops → style(action) → comment|revision → layout|nav|toc|bookmark → table|caption|field|image|hyperlink|headerfooter|watermark|export|footnote → spreadsheet(action) [ET host] | presentation(action) [WPP host] → proofread_*/declassify_*/kb_*/assistants_* → web_search (web text results: title/url/snippet; host-agnostic) → file_parse (input side: parse local files/attachments into LLM-readable text; NOT for the open document).',
   'Destructive writes need confirmed=true after preview (confirmed=false or omit).',
   'Never confuse replace with format: 改错别字 → document_replace / document_apply_ops; 加粗变色字号 → format_run; 对齐行距 → format_para; 标题样式 → style action=apply. In ET: 改值 → spreadsheet range_write; 改外观 → spreadsheet format.',
   'Multi-span edits: one format_apply_ops or document_apply_ops — never N×(locate+single write).',
@@ -1578,6 +1578,30 @@ const IMAGE_TOOLS = [
   })
 ]
 
+// ── 网络搜索（web_search）：侧车原生执行，宿主无关（2026-11-25 收割对接）──
+const SEARCH_TOOLS = [
+  tool({
+    name: 'web_search',
+    description: [
+      'WHAT: Search the web for TEXT information (pages: title/url/snippet). Sidecar-native, host-agnostic, no webview needed.',
+      'WHEN: 需要联网查资料/事实核对/时事/行情/政策等（「搜一下」「查一下最新」「网上说」），或文档任务需要外部事实依据时。仅返回结果清单（标题/链接/摘要），不抓取正文。',
+      'NOT: Not for images (image_search). 结果真实性以摘要为准——引用时注明来源链接；无可用搜索资源时如实告知用户，不要编造检索结果。',
+      'HOW: {"query":"2026 新能源汽车销量 政策","count":6}. 按「设置→网络资源搜索」启用清单（Serper/Tavily/Linkup/SearXNG）顺序优先，免Key兜底必应/DuckDuckGo。',
+      'EXAMPLE: {"query":"GB/T 9704 公文格式 最新版","count":5}'
+    ].join(' '),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['query'],
+      properties: {
+        query: { type: 'string', description: '网页搜索词（建议含关键实体与限定词）' },
+        count: { type: 'number', description: '结果条数（默认 6，上限 10）' }
+      }
+    }
+  })
+]
+
 const TEMPLATE_TOOLS = [
   tool({
     name: 'template_generate',
@@ -1647,6 +1671,7 @@ export const TOOLS = [
   ...CORE_TOOLS.filter((t) => !REPLACED_FINE_GRAINED.has(t.name)),
   ...AGGREGATE_TOOLS,
   ...IMAGE_TOOLS,
+  ...SEARCH_TOOLS,
   ...FILE_TOOLS
 ]
 

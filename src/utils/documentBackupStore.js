@@ -144,7 +144,12 @@ export function createDocumentBackupRecord(options = {}) {
   }
 
   // 先落盘当前文档状态，再复制到备份目录，避免备份内容落后于用户当前看到的正文。
-  saveActiveDocument()
+  // skipSave（agent 回合结束时备份）：写回后未触发保存，磁盘文件仍是「写入前」状态
+  // ——正好是撤销所需快照，跳过 Save 直接复制（Save 在回合钩子时机会崩 WPS 引擎，
+  // 详见 mcpChatOrchestrator captureDocSnapshot 注释；回合结束的普通 UI 上下文安全）。
+  if (options.skipSave !== true) {
+    saveActiveDocument()
+  }
   if (!copyFile(sourcePath, backupPath)) {
     throw new Error('复制源文件到备份目录失败')
   }

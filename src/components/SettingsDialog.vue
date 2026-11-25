@@ -107,7 +107,7 @@
                         class="inventory-icon"
                         @error="handleImageError"
                       />
-                      <span class="inventory-name">{{ item.name }}</span>
+                      <span class="inventory-name" :title="item.name">{{ item.name }}</span>
                       <span
                         v-if="vendorFreeBadge(item.id)"
                         class="vendor-badge"
@@ -2671,6 +2671,20 @@
     </div>
 
     <div class="dialog-footer">
+      <!-- 模型设置：启用复选框（默认选中；勾掉=停用）。与右侧面板头部开关共用
+           currentModelConfig.enabled，保存时随表单一并落盘 -->
+      <label
+        v-if="activeMainMenu === 'model-settings' && selectedModel"
+        class="model-enabled-check"
+        :title="currentModelConfig.enabled ? '已启用：该厂商出现在察元AI助理模型下拉中' : '已停用：勾选后恢复显示'"
+      >
+        <input
+          type="checkbox"
+          v-model="currentModelConfig.enabled"
+          @change="updateModelConfig"
+        />
+        <span>启用该模型</span>
+      </label>
       <button class="btn btn-secondary" @click="onClose">取消</button>
       <button class="btn btn-primary" @click="onSave">保存</button>
     </div>
@@ -2687,7 +2701,7 @@
 
 <script>
 import { activateHostWindow } from '../utils/windowActivation.js'
-import { buildChatUrl } from '../utils/chatApi.js'
+import { buildChatUrl, relayAwareFetch } from '../utils/chatApi.js'
 import { getLocalEngineSpec, probeLocalEngine, installLocalEngine, getPullHint } from '../utils/localEngineSetup.js'
 import { getDataPath, setDataPath, getDefaultDataPath } from '../utils/dataPathSettings.js'
 import { getErrorLogDirectoryForDataPath } from '../utils/globalErrorLogger.js'
@@ -2706,7 +2720,8 @@ import {
   getCustomModelProviders,
   saveCustomModelProviders,
   getModelOrder,
-  saveModelOrder
+  saveModelOrder,
+  migrateAutoEnableConfiguredModels
 } from '../utils/modelSettings.js'
 import { getModelLogoPath } from '../utils/modelLogos.js'
 import { publicAssetUrl } from '../utils/publicAssetUrl.js'
@@ -2890,8 +2905,10 @@ const VENDOR_GROUP_BY_ID = new Map()
 
 // 模型清单列（第二列）宽度：默认 240，拖拽分割线调整后记忆到 localStorage
 const COLUMN2_WIDTH_STORAGE_KEY = 'settingsColumn2Width'
-const COLUMN2_WIDTH_DEFAULT = 240
-const COLUMN2_WIDTH_MIN = 170
+// 模型清单列宽：MIN 220 = 悬停手柄收起后「图标28+免费额度徽标52+状态徽标49+padding32」
+// 约 161px 的下限再加 ~60px 名称缩略空间；低于它名称会被压成一个字符级省略号
+const COLUMN2_WIDTH_DEFAULT = 260
+const COLUMN2_WIDTH_MIN = 220
 const COLUMN2_WIDTH_MAX = 420
 
 // 免费可用标记（与 chayuan-harness vendor-catalog 同源）：
@@ -4153,6 +4170,10 @@ export default {
     }, true)
     this.settingsWindowSession = createSettingsWindowSession((query) => {
       this.handleSettingsWindowRequest(query)
+    }, () => {
+      // 被 openSettingsWindow 的「撤销+重开」撤掉（macOS 焦点通道抬不动 ShowDialog
+      // 窗口）：释放锁已在 session 内完成，这里自关给重开的新窗口让路。
+      try { this.closeWindow() } catch (_) { /* 窗口关闭失败不影响新窗口接管 */ }
     })
     const claimed = this.settingsWindowSession.claimOwnership(this.$route?.query || {})
     if (!claimed.ok && claimed.reason === 'duplicate') {
@@ -4162,6 +4183,9 @@ export default {
       return
     }
     try {
+      // 一次性迁移：已配置密钥但停在「未开启」的存量厂商自动启用（幂等）。
+      // 放在清单加载前，厂商行「已开启/已配置」徽标首屏就反映迁移结果
+      try { migrateAutoEnableConfiguredModels() } catch (_) { /* 迁移失败按存量状态展示 */ }
       this.refreshModelInventoryList()
       this.loadModels()
       this.loadDataPath()
@@ -6272,7 +6296,10 @@ export default {
       const isLocalLike = this.isOllamaLikeProvider(providerId)
       const configured = hasKey || (isLocalLike && hasUrl)
       const err = this.vendorDetectErrors[providerId]
-      if (config.enabled) {
+      // 启用默认值改为「全厂商默认开启」后，未配置的厂商 enabled 也是 true——
+      // 徽标必须反映真实可用性：只有「已配置且启用」才显示已开启（未配置的
+      // 厂商进不了模型下拉，显示已开启会误导）
+      if (config.enabled && configured) {
         return { key: 'enabled', text: '已开启', title: '已开启：显示在察元AI助理模型下拉中（在右侧设置面板可关闭）' }
       }
       if (err) {
@@ -6584,10 +6611,24 @@ export default {
       }
       return defaultUrls[modelId] || ''
     },
+    // 当前表单值是否已达到「可对话」配置（有密钥；本地类有地址即可）
+    isModelConfiguredValues(providerId, config = {}) {
+      const hasKey = !!String(config.apiKey || '').trim()
+      const hasUrl = !!String(config.apiUrl || '').trim()
+      return hasKey || (this.isOllamaLikeProvider(providerId) && hasUrl)
+    },
     // 更新模型配置
     updateModelConfig() {
       if (!this.selectedModel) return
-      saveModelConfig(this.selectedModel.id, this.currentModelConfig)
+      const providerId = this.selectedModel.id
+      const wasConfigured = this.isModelConfiguredValues(providerId, getModelConfig(providerId))
+      const nowConfigured = this.isModelConfiguredValues(providerId, this.currentModelConfig)
+      // 配置密钥后自动启用：首次从「未配置」变为「已配置」时自动开启（用户明确
+      // 勾掉的场景不在此路径——勾掉时配置值未发生 未配置→已配置 跳变）
+      if (!wasConfigured && nowConfigured && !this.currentModelConfig.enabled) {
+        this.currentModelConfig.enabled = true
+      }
+      saveModelConfig(providerId, this.currentModelConfig)
       this.modelConfigVersion += 1 // 厂商行状态徽标刷新
       this.notifyRibbonRefreshModelMenu()
     },
@@ -6698,7 +6739,8 @@ export default {
       this.showMessage('正在检测连接...', 'info')
       try {
         const { url, options } = this.buildProbeRequest(apiUrl, apiKey, this.selectedModel?.id)
-        const res = await fetch(url, options)
+        // 经 relayAwareFetch：智谱等预检死厂商的探测自动回落 sidecar 转发
+        const res = await relayAwareFetch(url, options, { providerId: this.selectedModel?.id, signal: options?.signal })
         if (res.ok) {
           this.showMessage('连接成功，API 可用', 'success')
           clearVendorDetectError(this.selectedModel?.id)
@@ -6785,7 +6827,8 @@ export default {
       this.showMessage('正在获取模型列表...', 'info')
       try {
         const { url, options } = this.buildProbeRequest(apiUrl, apiKey, this.selectedModel?.id)
-        const res = await fetch(url, options)
+        // 经 relayAwareFetch：智谱等预检死厂商的模型列表拉取自动回落 sidecar 转发
+        const res = await relayAwareFetch(url, options, { providerId: this.selectedModel?.id, signal: options?.signal })
         if (!res.ok) {
           // LongCat 等部分 API 不支持 GET /v1/models，404 时使用预设模型
           const pid = this.selectedModel?.id
@@ -8159,10 +8202,11 @@ export default {
   flex-direction: column;
 }
 
-/* 第二列：模型清单。默认宽度 240px（内联 style 覆盖），拖动列间分割线可调，
-   宽度记忆在 localStorage（settingsColumn2Width），双击分割线恢复默认 */
+/* 第二列：模型清单。默认宽度 260px（内联 style 覆盖，真源在 COLUMN2_WIDTH_DEFAULT），
+   拖动列间分割线可调，宽度记忆在 localStorage（settingsColumn2Width），
+   双击分割线恢复默认。名称单行省略（.inventory-name），列再窄也不会折行 */
 .column-2 {
-  width: 240px;
+  width: 260px;
   flex: 0 0 auto;
   min-height: 0;
   overflow-y: auto;
@@ -8429,6 +8473,8 @@ export default {
   border-radius: 9px;
   border: 1px solid transparent;
   white-space: nowrap;
+  /* 与名称/免费徽标的间距：此前零间距，窄列下徽标互相贴死 */
+  margin-left: 6px;
 }
 
 .vendor-status-badge.is-enabled {
@@ -8463,6 +8509,8 @@ export default {
   padding: 0 5px;
   border-radius: 8px;
   white-space: nowrap;
+  /* 紧跟名称之后，与名称留出呼吸空间 */
+  margin-left: 6px;
 }
 
 .vendor-badge-nokey {
@@ -8519,6 +8567,12 @@ export default {
 .inventory-name {
   flex: 1;
   min-width: 0;
+  /* 单行省略号：名称是行内唯一可压缩项。列宽再窄也不能让名称折行——
+     折行会和多枚徽标（免Key/免费额度/状态）叠在一起（2026-11-21 真机反馈），
+     截断后完整名称由 title 提示 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .inventory-row-add {
@@ -10366,8 +10420,27 @@ input:checked + .slider:before {
   border-top: 1px solid #f0f0f0;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* 模型设置 footer 启用复选框：贴取消/保存按钮左侧，勾掉即停用 */
+.model-enabled-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
+}
+
+.model-enabled-check input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
 }
 
 .btn {
@@ -10759,6 +10832,15 @@ input:checked + .slider:before {
   font-size: 12px;
   cursor: grab;
   user-select: none;
+  /* 悬停才显示（不占常驻宽度）：厂商行右侧有「免费额度+状态」两枚徽标，
+     常驻手柄会让 240px 列宽下的名称只剩 ~55px。拖拽事件绑在行本身
+     （draggable=true），手柄消失不影响功能 */
+  display: none;
+}
+
+.inventory-row:hover .inventory-drag-handle,
+.inventory-row.inventory-row-dragging .inventory-drag-handle {
+  display: inline-block;
 }
 
 .inventory-drag-handle:active {

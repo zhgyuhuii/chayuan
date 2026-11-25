@@ -7,7 +7,7 @@
                  + 更多演示助手▾（高频配方收纳，点击预填） -->
             <tab id="tabAssistantWpp" label="察元AI助理">
                 <group id="groupAIAssistantWpp" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistantWpp" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistantWpp" label="察元AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppGen" label="生成PPT" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppSummary" label="整套摘要" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppBeautify" label="美化统一" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>

@@ -239,13 +239,18 @@ const DOCUMENT_LIFECYCLE_TOOLS = new Set([
   'wps_launch'
 ])
 
+// 页内智能体 INTERNAL 工具：面板→ribbon 基座的回合派发通道（Model S），只供
+// 面板 callLocalTool 直调。绝不能进模型工具面——模型调它会经 sidecar 再派发一个
+// 嵌套 agent 回合（2026-11-25 审计 F4：此前仅靠工具描述压制）。
+const PAGE_AGENT_INTERNAL_TOOLS = new Set(['chat_turn'])
+
 // 各宿主在页内智能体可见的聚合域工具：本宿主工具 + 宿主无关工具。
 // 其它宿主的工具必须屏蔽——它们的调用会被 sidecar 路由到对应宿主的 webview，
 // 页内智能体在 ET 宿主里调 document.replace 会去改文字宿主里的另一篇文档。
 const HOST_DOMAIN_TOOLS = {
   wps: new Set([
     'comment', 'revision', 'layout', 'nav', 'toc', 'bookmark', 'table', 'caption',
-    'field', 'image', 'hyperlink', 'headerfooter', 'watermark', 'style', 'export'
+    'field', 'image', 'hyperlink', 'headerfooter', 'watermark', 'style', 'export', 'footnote'
   ]),
   et: new Set(['spreadsheet']),
   wpp: new Set(['presentation'])
@@ -285,6 +290,7 @@ export function isToolAllowedCrossHost(toolName) {
   if (!n) return false
   if (n.startsWith('declassify')) return false
   if (DOCUMENT_LIFECYCLE_TOOLS.has(n)) return false
+  if (PAGE_AGENT_INTERNAL_TOOLS.has(n)) return false
   return true
 }
 
@@ -296,7 +302,7 @@ export function chayuanToolTargetHost(toolName) {
   if (n === 'wps_status' || n.startsWith('assistants') || n.startsWith('kb_')) return null
   if (n.startsWith('wps_')) return null
   // 文件级能力：宿主无关（sidecar 按 any/显式 target 路由）
-  if (n === 'file_parse' || n === 'generate_image' || n === 'image_search' || n === 'template_generate') return null
+  if (n === 'file_parse' || n === 'generate_image' || n === 'image_search' || n === 'web_search' || n === 'template_generate') return null
   return 'wps'
 }
 

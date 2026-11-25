@@ -8,6 +8,7 @@
  */
 import http from 'node:http'
 import fs from 'node:fs'
+import { Readable } from 'node:stream'
 // Node <18（Win7/8 回落运行时装 Node 14/16）补全局 fetch/AbortController；Node 18+ 零副作用
 import './lib/fetchPolyfill.mjs'
 import {
@@ -30,6 +31,7 @@ import { writeMcpServerJson, findWpsExecutable, launchWps, openFileWithOs } from
 import { createUpstreamProxy } from './lib/upstreamProxy.mjs'
 import { imageSearchTool, generateImageTool, saveTmpImage } from './lib/imageTools.mjs'
 import { listSkillPacks, saveSkillPack, removeSkillPack } from './lib/skillPackStore.mjs'
+import { loadAppSettings, saveAppSettings } from './lib/appSettingsStore.mjs'
 import { probeResource, saveWebResourcesConfig, loadWebResourcesConfig } from './lib/webResources.mjs'
 
 const dataDir = ensureDataDir()
@@ -528,6 +530,69 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    // 厂商请求转发（直连预检死厂商，如智谱 WAF 把 OPTIONS 短路成 200 空头）：WPS webview
+    // 是浏览器环境、带 Authorization+JSON 必须预检，直连必死；本端点以 Node 进程代发
+    // （无 CORS 概念），chayuan-office 桌面版同构机制的 sidecar 版。路径名沿用
+    // /proxy/chat（兼容已发布调用方），语义已扩展为通用转发（method 可选，GET /v1/models
+    // 探测同样适用）。
+    // 门禁与 /clipboard 同级（token + 仅环回监听）；/upstream 那套 allowlist 不适配
+    // 「用户可在设置里填任意厂商 URL」的形态，scheme 白名单 + token 门禁足够
+    // （token 持有方经 /session-store 等路由本已有同等本地权限）。
+    if (pathname === '/proxy/chat' && req.method === 'POST') {
+      if (!isTrusted(req)) { unauthorized(res); return }
+      const payload = (await readBody(req)) || {}
+      let target
+      try { target = new URL(String(payload?.url || '')) } catch {
+        sendJson(res, 400, { error: 'bad_url', message: 'payload.url must be an absolute http(s) URL' })
+        return
+      }
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        sendJson(res, 400, { error: 'bad_scheme', message: 'only http/https upstream allowed' })
+        return
+      }
+      const headers = { ...(payload?.headers && typeof payload.headers === 'object' ? payload.headers : {}) }
+      // hop-by-hop 与自证头不过桥：host 由 fetch 自决，body 本侧已重新序列化
+      for (const h of ['host', 'content-length', 'connection', 'x-chayuan-token']) delete headers[h]
+      const method = ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'].includes(String(payload?.method || '').toUpperCase())
+        ? String(payload.method).toUpperCase()
+        : 'POST'
+      // body 本侧按 JSON 重发；调用方漏带 content-type 时（Node fetch 会默认
+      // text/plain，部分厂商拒收）补 application/json 兜底。GET 探测无 body。
+      const hasBody = payload?.body != null && method !== 'GET' && method !== 'HEAD'
+      if (hasBody && !Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+        headers['Content-Type'] = 'application/json'
+      }
+      const ctrl = new AbortController()
+      // 客户端断连（用户停止生成/超时 abort）→ 同步掐断上游；连接保活时
+      // res 'close' 只在响应结束后触发，writableEnded 守卫避免误杀已完成请求
+      res.on('close', () => { if (!res.writableEnded) { try { ctrl.abort() } catch { /* already aborted */ } } })
+      let up
+      try {
+        up = await fetch(target, {
+          method,
+          headers,
+          body: hasBody ? JSON.stringify(payload.body) : undefined,
+          signal: ctrl.signal
+        })
+      } catch (e) {
+        if (!res.headersSent) sendJson(res, 502, { error: 'upstream_unreachable', message: String(e?.message || e) })
+        return
+      }
+      const contentType = (typeof up.headers?.get === 'function' && up.headers.get('content-type'))
+        || (payload?.stream ? 'text/event-stream' : 'application/json')
+      // 流式桥接仅在有 web body 流的运行时可用（Node>=17 / Bun）；Node 14/16 polyfill
+      // 无 body 属性，回落全量缓冲（旧部署机失去逐字出字，不失去正确性）
+      if (payload?.stream && up.body && typeof Readable.fromWeb === 'function') {
+        res.writeHead(up.status, { 'Content-Type': contentType, 'Cache-Control': 'no-cache' })
+        Readable.fromWeb(up.body).on('error', () => res.destroy()).pipe(res)
+      } else {
+        const text = await up.text().catch(() => '')
+        res.writeHead(up.status, { 'Content-Type': contentType })
+        res.end(text)
+      }
+      return
+    }
+
     if (pathname.startsWith('/agent/')) {
       await handleAgent(req, res, pathname)
       return
@@ -618,6 +683,23 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, saveTmpImage(dataDir, body))
       return
     }
+    // GET /tmp-image/file?name=xx.png&token=..：向面板 webview 提供 tmp-images
+    // 已落盘图片的 HTTP 直显/下载通道（面板读不到容器外 dataDir 路径，但
+    // 127.0.0.1 的 img/fetch 没问题；token 走 query——img 标签不能带 header）
+    if (pathname === '/tmp-image/file' && req.method === 'GET') {
+      const u = new URL(req.url, 'http://x')
+      const qToken = String(u.searchParams.get('token') || '').trim()
+      if (!isTrusted(req) && (!qToken || qToken !== token)) { unauthorized(res); return }
+      const { findTmpImageFile } = await import('./lib/imageTools.mjs')
+      const file = findTmpImageFile(dataDir, u.searchParams.get('name') || '')
+      if (!file) { sendJson(res, 404, { error: 'not found' }); return }
+      const ext = (/\.([a-z0-9]+)$/i.exec(file)?.[1] || 'png').toLowerCase()
+      const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' }
+      cors(res)
+      res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream', 'Cache-Control': 'private, max-age=3600' })
+      fs.createReadStream(file).pipe(res)
+      return
+    }
     // 附件落盘路径注册表（file_parse 的「附件N」别名源）：面板把非纯文本附件
     // materialize 到 数据目录/_temp 后登记（trusted），file_parse 按别名解析。
     if (pathname === '/attachments/register' && req.method === 'PUT') {
@@ -675,15 +757,25 @@ const server = http.createServer(async (req, res) => {
     }
     // 配置桥：把宿主侧用户设置（~/.config/chayuan/settings.json）暴露给加载项
     // webview 引导自身 localStorage——WPS 沙盒里 webview 直接读该文件不可靠，
-    // 且 CEF 缓存清理会带走 localStorage（2026-09-30 实测模型配置丢失根因）
+    // 且 CEF 缓存清理会带走 localStorage（2026-09-30 实测模型配置丢失根因）。
+    // 2026-11-21 起该文件成为配置磁盘真源（webview 保存时 POST /app-settings/save
+    // 落盘，重装后经本端点拉回）。【不挂 token 门禁】——播种场景恰是重装后
+    // localStorage 清空、token 引导链也可能为空，挂门禁会让恢复通道永久 401
+    // （旧实现带 isTrusted 但 seedFromSidecar 不带 token = 播种从未工作过）。
+    // 安全面与 /skillpack/* 同款：仅绑定 127.0.0.1。
     if (pathname === '/app-settings' && req.method === 'GET') {
-      if (!isTrusted(req)) { unauthorized(res); return }
-      let body = {}
-      try {
-        const p = path.join(dataDir, '..', 'chayuan', 'settings.json')
-        body = JSON.parse(fs.readFileSync(p, 'utf8'))
-      } catch (_) { body = {} }
-      sendJson(res, 200, body)
+      sendJson(res, 200, loadAppSettings())
+      return
+    }
+    // 全局设置落盘（webview saveGlobalSettings 异步推送，整体 JSON 覆盖写）。
+    // 覆盖语义与 webview 端一致：调用方先 load merge 再整体 POST。
+    if (pathname === '/app-settings/save' && req.method === 'POST') {
+      const body = (await readBody(req)) || {}
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        sendJson(res, 400, { ok: false, error: 'body must be a JSON object' })
+        return
+      }
+      sendJson(res, 200, { ok: true, ...saveAppSettings(body) })
       return
     }
     if (pathname === '/image/search' && req.method === 'POST') {

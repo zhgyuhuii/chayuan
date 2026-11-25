@@ -14,7 +14,7 @@
                 </group> 
                 <!-- AI助手分组 -->
                 <group id="groupAIAssistant" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistant" label="AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistant" label="察元AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnSpellGrammar" label="拼写与语法检查" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnGenerateSummary" label="生成摘要" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <menu id="menuTextAnalysis" label="文本分析" getLabel="ribbon.OnGetLabel" getVisible="ribbon.OnGetVisible" getImage="ribbon.GetImage" size="large">
@@ -134,7 +134,7 @@
                  文字宿主通过 OnGetWriterTabVisible 隐藏这两个 tab。 -->
             <tab id="tabAssistantEt" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
                 <group id="groupAIAssistantEt" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistantEt" label="AI表格助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistantEt" label="察元AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtFormula" label="公式助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtInsight" label="数据洞察" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnEtChart" label="一键图表" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
@@ -165,7 +165,7 @@
             </tab>
             <tab id="tabAssistantWpp" label="察元AI助理" getVisible="ribbon.OnGetHostTabVisible">
                 <group id="groupAIAssistantWpp" label="AI助手" autoScale="true">
-                    <button id="btnAIAssistantWpp" label="AI演示助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
+                    <button id="btnAIAssistantWpp" label="察元AI助手" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppGen" label="生成PPT" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppSummary" label="整套摘要" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>
                     <button id="btnWppBeautify" label="美化统一" onAction="ribbon.OnAction" getImage="ribbon.GetImage" size="large"/>

@@ -52,7 +52,8 @@ function sidecarAccessToken() {
 }
 
 /** 兜底第三条：localhost bootstrap 直取（/token?bootstrap=1，仅环回可达）并回写缓存与播种 */
-async function ensureSidecarToken() {
+/** 暴露 token 解析（面板构建 sidecar HTTP 图片直显 URL 用，2026-11-25） */
+export async function ensureSidecarToken() {
   if (sidecarAccessToken()) return sidecarAccessToken()
   try {
     const res = await fetch(`${MCP_BASE_URL}/token?bootstrap=1`, { method: 'GET' })
@@ -175,6 +176,11 @@ export async function uploadTmpImage(base64, ext = 'png', { signal, timeoutMs = 
     { base64, ext },
     { headers: token ? { 'X-Chayuan-Token': token } : {}, signal, timeoutMs })
   if (!res.ok) throw new Error(res.json?.error || `落盘失败 HTTP ${res.status}`)
+  // sidecar 落盘失败（双候选目录 EPERM 等）按 200+ok:false 返回——在此抛出，
+  // 不让调用方拿到无 error 的空 ok（2026-11-25 生图落盘 EPERM 治理）
+  if (res.json?.ok === false) {
+    throw new Error([res.json.error, res.json.hint].filter(Boolean).join('。'))
+  }
   return res.json
 }
 
@@ -187,6 +193,25 @@ export async function sidecarPost(path, body, { signal, timeoutMs = 30000 } = {}
     headers: token ? { 'X-Chayuan-Token': token } : {},
     signal,
     timeoutMs
+  })
+  let res = await send(await ensureSidecarToken())
+  if (res.status === 401) res = await send(await ensureSidecarToken())
+  return res
+}
+
+/**
+ * sidecar 原生端点 POST —— 与 sidecarPost 同款 token 纪律，但返回原始 Response：
+ * /proxy/chat 的流式桥接要读 body 流（postJson 会整体缓冲 text，SSE 用不了）。
+ * 不设 HTTP 级超时、不包一层 AbortController——调用方（chatApi）自己的 signal
+ * 携带空闲/硬超时语义，直接透传才能让「停止生成」一路掐到 sidecar 上游。
+ * 调用方自判 res.ok / res.status / res.text() / res.body.getReader()。
+ */
+export async function sidecarPostRaw(path, body, { signal } = {}) {
+  const send = async (token) => fetch(`${MCP_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Chayuan-Token': token } : {}) },
+    body: JSON.stringify(body),
+    signal
   })
   let res = await send(await ensureSidecarToken())
   if (res.status === 401) res = await send(await ensureSidecarToken())

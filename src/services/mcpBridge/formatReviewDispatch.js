@@ -92,7 +92,12 @@ function locateFirst(doc, text, hintStart = 0) {
   return best
 }
 
-function resolveAnchorRange(doc, params = {}) {
+/**
+ * 锚点解析（footnoteDispatch 复用收割，2026-11-25 导出）：start/end 数值区间 >
+ * originalText 定位 > scope(selection/paragraph/document) > 当前选区。
+ * @returns {{start:number, end:number, range:object, how:string}|null}
+ */
+export function resolveAnchorRange(doc, params = {}) {
   const app = getApplication()
   const start = Number(params.start)
   const end = Number(params.end)

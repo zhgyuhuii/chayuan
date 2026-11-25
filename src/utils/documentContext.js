@@ -268,7 +268,8 @@ export function getSelectionContextSnapshot(options = {}) {
       try { rows = Number(used?.Rows?.Count || 0) } catch { /* ignore */ }
       try { cols = Number(used?.Columns?.Count || 0) } catch { /* ignore */ }
       // 表格宿主选区：Range.Text 多单元格为 Null，走 Value 读取（单/多单元格通吃）
-      const workbookSelectionText = normalizeContextText(readRangeValuesAsText(getSelection()))
+      const selection = getSelection()
+      const workbookSelectionText = normalizeContextText(readRangeValuesAsText(selection))
       return {
         kind: 'workbook',
         text: '',
@@ -293,7 +294,11 @@ export function getSelectionContextSnapshot(options = {}) {
           activeSheet: String(safeGet(() => sheet?.Name || '', '') || ''),
           usedRange: readAddressSafe(used),
           usedRows: rows,
-          usedCols: cols
+          usedCols: cols,
+          // 选区地址与规模（selection_read 提示词注入用）：无选区时地址为空串
+          selectionAddress: readAddressSafe(selection),
+          selectionRows: Number(safeGet(() => selection?.Rows?.Count, 0)) || 0,
+          selectionCols: Number(safeGet(() => selection?.Columns?.Count, 0)) || 0
         }
       }
     } catch { /* 落到下方 unknown */ }

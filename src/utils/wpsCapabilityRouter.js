@@ -22,7 +22,27 @@ function parseJsonCandidate(raw) {
   }
 }
 
-export function routeWpsCapabilityByRule(text = '') {
+/**
+ * Writer 文档专属能力（执行器全部走 ActiveDocument/段落/字体模型，已逐个核验
+ * documentFileActions/documentSecurityActions/documentInsertActions）：在 ET/WPP
+ * 宿主路由直接短路——「生成一张飞机图 插入表格中」这类口语在表格宿主里指
+ * 「插进工作簿」，被这里劫持成 Writer 的 insert-table 必然报「当前环境不支持
+ * 插入表格」（2026-11-25 真机案例）。保存/加密族同样 Writer 专属（更糟：后台若
+ * 恰好开着 Writer 文档会被静默保存）。模板族执行器宿主感知（save-current-as-
+ * template 走 ActiveDocument||Workbook||Presentation，生成管线按扩展名派发），不短路。
+ */
+export const WRITER_ONLY_CAPABILITY_KEYS = new Set([
+  'insert-table', 'insert-page-break', 'insert-blank-page',
+  'replace-selection-text', 'paste-text', 'append-text-to-document',
+  'copy-current-paragraph', 'duplicate-selection-text',
+  'set-font-name', 'set-font-size', 'set-font-color', 'set-background-color',
+  'toggle-bold', 'toggle-italic', 'toggle-underline',
+  'set-alignment', 'set-line-spacing',
+  'save-document', 'save-document-as', 'save-document-with-dialog',
+  'encrypt-document', 'encrypt-document-with-dialog', 'decrypt-document'
+])
+
+export function routeWpsCapabilityByRule(text = '', { host = 'wps' } = {}) {
   const normalized = String(text || '').trim()
   if (!normalized) return null
   // 模板生成/模板新建（必须先于「另存为」等规则，避免「用模板生成后另存为」被抢路由）
@@ -41,7 +61,14 @@ export function routeWpsCapabilityByRule(text = '') {
     }
     return { capabilityKey: 'new-document-from-template', confidence: 'high', reason: '命中了从模板新建文件的表述。' }
   }
-  if (/(另存为|另存文档|保存到|导出到).{0,24}(文档|文件)?/.test(normalized)) {
+  // ── ET/WPP 宿主分界：模板族（执行器宿主感知，按扩展名派发宿主）之上保留；
+  // 以下 save/encrypt 族（执行器 getActiveDocument——Writer 专属，后台开着 Writer
+  // 文档时还会静默保存错对象）与 Writer 文档域规则全部短路——改值/改外观走
+  // spreadsheet/presentation 域工具，「插入表格中」= 插进工作簿，进 MCP agent 轨。
+  if (host === 'et' || host === 'wpp') return null
+  // 「导出到X」不劫持为另存（曾经 (文档|文件)? 可选导致任何「导出到」全命中）：
+  // 导出 PDF/CSV/图片应走 MCP export 工具（format 语义正确）；此处只收「另存」语义
+  if (/(另存为|另存文档|保存到).{0,24}(文档|文件)?/.test(normalized)) {
     return { capabilityKey: 'save-document-as', confidence: 'high', reason: '命中了另存为/保存到路径的直接操作表述。' }
   }
   if (/(弹出|打开|选择).{0,12}(保存框|保存窗口|保存路径|另存为窗口)/.test(normalized)) {
@@ -59,6 +86,7 @@ export function routeWpsCapabilityByRule(text = '') {
   if (/(选择路径|弹出保存框|另存为).{0,12}(加密|密码保护)/.test(normalized)) {
     return { capabilityKey: 'encrypt-document-with-dialog', confidence: 'high', reason: '命中了先选择保存路径再加密保存的直接操作表述。' }
   }
+  // ── Writer 文档域专属规则（仅 wps 宿主）──
   if (/(插入|新增|加一个).{0,12}(表格)/.test(normalized)) {
     return { capabilityKey: 'insert-table', confidence: 'high', reason: '命中了插入表格的直接操作表述。' }
   }
@@ -110,7 +138,7 @@ export function routeWpsCapabilityByRule(text = '') {
   return null
 }
 
-export async function inferWpsCapabilityWithModel(text = '', model = null) {
+export async function inferWpsCapabilityWithModel(text = '', model = null, { host = 'wps' } = {}) {
   if (!model?.providerId || !model?.modelId) return null
   const catalog = getWpsCapabilityCatalog().map(item => ({
     capabilityKey: item.capabilityKey,
@@ -146,6 +174,8 @@ export async function inferWpsCapabilityWithModel(text = '', model = null) {
     const parsed = parseJsonCandidate(raw)
     const capabilityKey = String(parsed?.capabilityKey || '').trim()
     if (!capabilityKey || !getWpsCapabilityByKey(capabilityKey)) return null
+    // LLM 路由同样宿主守卫：ET/WPP 禁 Writer 专属能力（规则路由同口径）
+    if ((host === 'et' || host === 'wpp') && WRITER_ONLY_CAPABILITY_KEYS.has(capabilityKey)) return null
     return {
       capabilityKey,
       confidence: String(parsed?.confidence || 'low').trim() || 'low',
@@ -156,8 +186,8 @@ export async function inferWpsCapabilityWithModel(text = '', model = null) {
   }
 }
 
-export async function resolveWpsCapabilityRoute(text = '', model = null) {
-  const byRule = routeWpsCapabilityByRule(text)
+export async function resolveWpsCapabilityRoute(text = '', model = null, { host = 'wps' } = {}) {
+  const byRule = routeWpsCapabilityByRule(text, { host })
   if (byRule) return byRule
-  return inferWpsCapabilityWithModel(text, model)
+  return inferWpsCapabilityWithModel(text, model, { host })
 }

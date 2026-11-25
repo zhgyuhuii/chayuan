@@ -7,6 +7,7 @@
 
 import { getModelConfig, RIBBON_MODEL_TO_PROVIDER, parseModelCompositeId } from './modelSettings.js'
 import { getBaseUrl as getDesktopBaseUrl, isDesktopProviderId } from '../services/desktop/desktopStore.js'
+import { sidecarPostRaw } from '../services/mcpBridge/mcpHttpClient.js'
 
 const OLLAMA_LIKE = ['ollama', 'OLLAMA', 'xinference', 'XINFERENCE', 'oneapi', 'ONEAPI', 'fastchat', 'FASTCHAT', 'lm-studio', 'new-api']
 // 空闲超时：从"请求开始的固定总超时"改为"连续多久没有收到新数据才中断"。
@@ -41,6 +42,92 @@ function isLocalLikeProvider(providerId) {
 // 按 provider 选空闲超时阈值:本地类(含桌面版镜像)用更长阈值(可能跑本地慢推理)。
 function defaultIdleTimeoutForProvider(providerId) {
   return isLocalLikeProvider(providerId) ? LOCAL_IDLE_TIMEOUT_MS : DEFAULT_IDLE_TIMEOUT_MS
+}
+
+// —— 直连失败自动回落本机转发（收割 chayuan-office 桌面版模型代理机制）——
+// 背景：部分厂商网关把浏览器 CORS OPTIONS 预检短路成无 Access-Control 头的响应
+// （智谱 open.bigmodel.cn 的 WAF，2026-11 实测全线端点如此），webview 直连必报
+// TypeError: Failed to fetch，而 key/URL/网络均无错。sidecar /proxy/chat 以 Node
+// 进程代发（无 CORS 概念），与桌面版 62581 转发同构。
+// 会话级记忆：标记过的 provider 后续直接走转发，不再每次先撞一次死预检。
+const _relayProviders = new Set()
+
+function isLoopbackUrl(url) {
+  try {
+    const { hostname } = new URL(String(url || ''))
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
+  } catch (_) {
+    return false
+  }
+}
+
+async function relayViaSidecar(cfg, init, { stream, signal }) {
+  let res
+  try {
+    res = await sidecarPostRaw('/proxy/chat', {
+      url: cfg.apiUrl,
+      method: init.method || 'POST',
+      headers: init.headers,
+      // GET 探测（/v1/models）无 body；POST JSON body 反序列化后桥接
+      body: init.body ? JSON.parse(init.body) : null,
+      stream: !!stream
+    }, { signal })
+  } catch (e) {
+    throw new Error(
+      `直连 ${cfg.apiUrl} 被浏览器 CORS 预检拦截（该厂商网关不支持浏览器直连），` +
+      '且本机转发服务（chayuan-mcp sidecar, 127.0.0.1:62588）不可用。' +
+      '请重启 WPS 或重新运行安装包以恢复 sidecar 自启动（开发态可执行 npm run mcp:sidecar）。'
+    )
+  }
+  if (res.status === 502) {
+    // sidecar 已收到转发但连不上上游：透出 sidecar 的原因便于诊断真实网络问题
+    // （用 text+parse 而非 res.json()，兼容最小 Response 形状）
+    const raw = await res.text().catch(() => '')
+    let data = null
+    try { data = JSON.parse(raw) } catch (_) { /* 非 JSON 保留原文 */ }
+    throw new Error(`本机转发服务无法连接上游 ${cfg.apiUrl}：${data?.message || raw?.slice(0, 200) || `HTTP ${res.status}`}`)
+  }
+  return res
+}
+
+/**
+ * 厂商请求统一入口：先按原样直连；直连在网络层死亡（TypeError，预检被拦或不可达）
+ * 且 provider 非本地类时，自动经 sidecar /proxy/chat 转发重试一次。
+ * 返回值与直连 fetch 的 Response 同构（status/headers/body），调用方解析逻辑零改动。
+ */
+async function providerFetch(cfg, init, { providerId, stream, signal } = {}) {
+  if (!providerId || _relayProviders.has(providerId) || isLocalLikeProvider(providerId) || isLoopbackUrl(cfg.apiUrl)) {
+    if (providerId && _relayProviders.has(providerId)) {
+      return relayViaSidecar(cfg, init, { stream, signal })
+    }
+    return fetch(cfg.apiUrl, init)
+  }
+  try {
+    return await fetch(cfg.apiUrl, init)
+  } catch (e) {
+    // 仅网络层死亡回落；AbortError/超时等由调用方现有逻辑处理
+    if (!(e instanceof TypeError)) throw e
+    _relayProviders.add(providerId)
+  }
+  return relayViaSidecar(cfg, init, { stream, signal })
+}
+
+/**
+ * 通用厂商请求入口（chatApi 内部三处 chat 调用之外的消费方，如设置对话框的
+ * 检测连接/刷新模型）：同一套「直连 → TypeError 自动回落 sidecar 转发」语义。
+ * @param {string} url 完整上游 URL（GET /v1/models 或 POST /chat/completions 等）
+ * @param {object} init 与 fetch 的 RequestInit 同形（method/headers/body…）
+ * @param {{ providerId?: string, signal?: AbortSignal }} [opts] providerId 用于
+ *   本地类判定与回落记忆；body 必须是 JSON 字符串（转发桥接按 JSON 解析）。
+ */
+export async function relayAwareFetch(url, init = {}, { providerId, signal } = {}) {
+  const cfg = { apiUrl: url }
+  const method = String(init.method || 'GET').toUpperCase()
+  return providerFetch(cfg, { ...init, method }, {
+    providerId,
+    stream: false,
+    signal: signal || init.signal
+  })
 }
 
 export function createRequestAbortSignal(signal, idleMs = DEFAULT_IDLE_TIMEOUT_MS, maxMs = HARD_TOTAL_TIMEOUT_MS) {
@@ -322,12 +409,12 @@ export async function streamChatCompletion({ ribbonModelId, providerId, modelId,
   const timeout = requestTimeoutMs ?? timeoutMs ?? defaultIdleTimeoutForProvider(pid)
   const abort = createRequestAbortSignal(signal, timeout)
   try {
-    const res = await fetch(cfg.apiUrl, {
+    const res = await providerFetch(cfg, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: abort.signal
-    })
+    }, { providerId: pid, stream: true, signal: abort.signal })
     if (!res.ok) {
       const text = await res.text()
       onError?.(normalizeChatApiErrorMessage(res.status, text, '请求失败'))
@@ -512,12 +599,12 @@ export async function chatCompletion({ ribbonModelId, providerId, modelId, messa
   let res
   let text
   try {
-    res = await fetch(cfg.apiUrl, {
+    res = await providerFetch(cfg, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: abort.signal
-    })
+    }, { providerId: pid, stream: false, signal: abort.signal })
     // 非流式：只有响应头到达时续期一次空闲计时器；body 读取阶段无逐块通知，
     // 故此路径的空闲超时近似为"headers 到达后重新计时的总超时"，与流式逐块续期不同。
     abort.notifyActivity()
@@ -587,12 +674,12 @@ export async function chatCompletionMessage({
   let res
   let text
   try {
-    res = await fetch(cfg.apiUrl, {
+    res = await providerFetch(cfg, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: abort.signal
-    })
+    }, { providerId: pid, stream: false, signal: abort.signal })
     abort.notifyActivity()
     text = await res.text()
   } catch (e) {

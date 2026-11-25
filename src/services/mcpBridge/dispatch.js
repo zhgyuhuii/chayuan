@@ -105,10 +105,12 @@ import { activateHostWindow } from '../../utils/windowActivation.js'
 import { logEvent } from '../../utils/globalErrorLogger.js'
 import { detectAddonType, hostLabel } from '../../utils/host/hostType.js'
 import { handleSpreadsheetAction, SPREADSHEET_WRITE_ACTIONS } from './spreadsheetDispatch.js'
+import { handleFootnoteAction } from './footnoteDispatch.js'
 import { handlePresentationAction, PRESENTATION_WRITE_ACTIONS } from './presentationDispatch.js'
 import { runVarsProbe } from './varsProbe.js'
 import { describeDocumentIdentity } from '../../utils/documentIdentity.js'
 import { getHostActiveObjectId } from './hostDispatch.js'
+import { resolveBoundDocument } from '../../utils/chat/docTarget.js'
 import { runTemplateGenerationTask } from '../../utils/templateGenerationTask.js'
 
 // 聊天回合托管（AI助手对话跟随文档）：懒加载——只有 ribbon 基座真正接到 chat.*
@@ -221,6 +223,47 @@ function pathMatchesDoc(doc, filePath) {
   } catch {
     return false
   }
+}
+
+/**
+ * 在全部打开文档里按路径找已开的窗口对象（Windows 集合优先，Documents 兜底）。
+ * 【SIGBUS 雷点护栏，2026-11-21 真机】Documents.Open 对一个已打开（哪怕非活动）的
+ * 云缓存文档二次打开会带崩整个 WPS 主进程（ksojscore→jswpsapi，CrBrowserMain）——
+ * document.open/ensure_open 必须先走本探测，命中即 Activate 既有窗口，绝不重 Open。
+ */
+function findOpenedWindowByPath(filePath) {
+  const app = window.Application
+  if (!app) return null
+  const tryDoc = (doc) => {
+    if (!pathMatchesDoc(doc, filePath)) return null
+    try { return doc?.ActiveWindow || doc?.Window || null } catch (_) { return null }
+  }
+  // Writer：Windows.Item(i).Document 直取（顺带拿到窗口对象，Activate 精准）
+  try {
+    const windows = app.Windows
+    const n = Number(windows?.Count || 0)
+    for (let i = 1; i <= n; i++) {
+      let w = null
+      let doc = null
+      try { w = windows.Item(i); doc = w?.Document } catch (_) { continue }
+      if (pathMatchesDoc(doc, filePath)) return { window: w, doc }
+    }
+  } catch (_) { /* ignore */ }
+  // 兜底：Documents 集合逐项比对（窗口对象从文档的 ActiveWindow 回取）
+  try {
+    const docs = app.Documents
+    const n = Number(docs?.Count || 0)
+    for (let i = 1; i <= n; i++) {
+      let doc = null
+      try { doc = docs.Item(i) } catch (_) { continue }
+      if (pathMatchesDoc(doc, filePath)) {
+        let w = null
+        try { w = doc?.ActiveWindow || null } catch (_) { w = null }
+        return { window: w, doc }
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return null
 }
 
 async function sleep(ms) {
@@ -482,7 +525,10 @@ const DOC_WRITE_METHODS = new Set([
   'declassify.restore',
   'document.security_encrypt_save',
   'document.security_decrypt_save',
-  'proofread.apply_comments'
+  'proofread.apply_comments',
+  // 脚注/尾注（footnote 聚合域，2026-11-25 收割对接）：写动作走文档写锁串行
+  'footnote.add',
+  'footnote.delete'
 ])
 
 /**
@@ -588,28 +634,53 @@ export async function dispatchMcpJob(job = {}) {
   const handler = (async () => {
     const params = { ...(job.params || {}) }
     // __baselineToken 为页面回合的 OCC 基线保留字段（agentCoreSkill 注入）：
-    // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数
-    const baselineToken = String(params.__baselineToken || '')
+    // 写锁按回合隔离校验基线，此字段不得进入真实 WPS 调用参数。
+    // 缺失（direct 快速轨/programmatic 直写，2026-11-21 真机）→ baselineToken=null
+    // 显式跳过 OCC 指纹校验——跨 webview 基线不可达（面板刷的基线在另一个引擎
+    // 实例里，dispatch 校验必然误报 DOCUMENT_MODIFIED）；文档身份校验（__expectedDocId）
+    // 与写锁串行仍生效，防误写防线不降级。
+    const hasBaselineToken = !!String(params.__baselineToken || '').trim()
+    const baselineToken = hasBaselineToken ? String(params.__baselineToken) : null
     delete params.__baselineToken
     const expectDocId = params.__expectedDocId
     delete params.__expectedDocId
-    if (expectDocId !== undefined) {
-      // 宿主感知身份校验：文字/表格/演示分别对 ActiveDocument/ActiveWorkbook/
-      // ActivePresentation 比对，防止排队期间切档/切簿/切稿后写错对象
-      const activeId = getHostActiveObjectId()
-      const host = detectAddonType()
-      if (!expectDocId || !activeId) {
-        throw Object.assign(new Error(`当前没有可写的目标${host === 'et' ? '工作簿' : host === 'wpp' ? '演示文稿' : '文档'}，请手动打开后重新发送指令。`), { code: 'NO_ACTIVE_DOCUMENT' })
+    const docLinkIdPin = String(params.__docLinkId || '').trim()
+    delete params.__docLinkId
+    if (docLinkIdPin || expectDocId) {
+      // Model S 绑定解析（plans/Model S 共识定稿 Q1/Q4；S2 探针实证集合解析可用）：
+      // 绑定文档「在打开集合里可解析」即放行——非活动允许（写入走对象模型静默路径，
+      // 焦点零打扰），只有解析不到（文档已关）才失败 DOC_NOT_OPEN（孤儿会话执行侧形态，
+      // 上层据此给重开/改绑出路）。docLinkId 优先（随另存/改名/拷贝走），docId 兜底。
+      // 旧「活动对象比对」语义废弃：切走文档不再误杀回合（2026-11-21 写回失败根因链）。
+      let resolved
+      try {
+        resolved = resolveBoundDocument({ docLinkId: docLinkIdPin, docId: expectDocId || '' })
+      } catch (resolverError) {
+        // 门层容错（2026-11-21 const 全灭教训）：解析器自身抛错（bug 类）≠ 绑定可解析
+        // ——按 DOC_NOT_OPEN 拒绝并带出真实错误，绝不静默回落活动文档（误写风险）
+        throw Object.assign(
+          new Error(`绑定解析失败：${String(resolverError?.message || resolverError).slice(0, 120)}`),
+          { code: 'DOC_NOT_OPEN', docPath: expectDocId || '' }
+        )
       }
-      if (activeId !== expectDocId) {
-        throw Object.assign(new Error(`活动${hostLabel(host)}对象已切换，本回合仍绑定原对象，已停止操作以免写入其它文件。`), { code: 'DOC_SWITCHED' })
+      if (!resolved.ok) {
+        throw Object.assign(new Error(resolved.message), { code: 'DOC_NOT_OPEN', docPath: expectDocId || '' })
       }
+      // 解析结果留给 handler 层 requireDoc 二次解析取新鲜 COM 代理
+      params.__boundDocKey = resolved.key
+      params.__boundDocLinkId = docLinkIdPin || resolved.docLinkId || ''
     }
     if (isWrite) {
       // 多会话并行的写互斥：拿不到锁自动 FIFO 排队，轮到时校验活动文档身份与
       // 本回合（baselineToken）的 OCC 基线——其它回合开新基线不会洗白本校验
+      // occAdvisory（2026-11-21 真机多轮实证）：MCP 派发写的 baselineToken 来自其它
+      // webview 实例（面板/执行侧），基线表 per-webview 内存态不可达 → 指纹校验
+      // 误报率 100%。降级为放行：防误写由 __expectedDocId 身份校验 + originalText
+      // 文本匹配 + 写锁 FIFO 三道硬防线承担（occAdvisory 语义见 documentWriteLock）。
       const lock = withDocumentWriteLock(
-        { label: method, ...(baselineToken ? { baselineToken } : {}), ...(expectDocId !== undefined ? { expectDocId } : {}) },
+        // baselineToken 显式传透（null 含）——spread 条件会把它展开成缺省，写锁里
+        // String(null||'') 退回匿名槽拿陈旧基线硬校验（2026-11-21 真机误报根因）
+        { label: method, occAdvisory: true, baselineToken, ...(expectDocId !== undefined ? { expectDocId } : {}) },
         () => dispatchMcpJobInner(method, params)
       )
       lockHandle = lock
@@ -673,6 +744,10 @@ async function dispatchMcpJobInner(method, params) {
   }
   if (method.startsWith('presentation.')) {
     return handlePresentationAction(method.slice('presentation.'.length), params)
+  }
+  // 脚注/尾注（Writer 宿主专属；agentHub 默认前缀路由到 wps 宿主）
+  if (method.startsWith('footnote.')) {
+    return handleFootnoteAction(method.slice('footnote.'.length), params)
   }
   switch (method) {
     case 'wps.status':
@@ -785,6 +860,22 @@ async function dispatchMcpJobInner(method, params) {
           ...reveal
         }
       }
+      // SIGBUS 护栏（2026-11-21 真机）：已开但非活动的文档绝不二次 Open——
+      // 激活既有窗口返回（Documents.Open 对已开云文档二次打开 = 主进程崩溃）
+      const openedWindow = findOpenedWindowByPath(filePath)
+      if (openedWindow) {
+        try { openedWindow.window?.Activate?.() } catch (_) { /* 激活失败不致命 */ }
+        const reveal = revealOpenedDocument(activate)
+        return {
+          ok: true,
+          opened: false,
+          alreadyOpen: true,
+          reactivated: true,
+          path: filePath,
+          document: getActiveDocumentInfo(),
+          ...reveal
+        }
+      }
       await openLocalDocument(filePath)
       const info = getActiveDocumentInfo()
       if (!pathMatchesDoc(app?.ActiveDocument, filePath)) {
@@ -811,6 +902,20 @@ async function dispatchMcpJobInner(method, params) {
         return {
           open: true,
           alreadyOpen: true,
+          path: filePath,
+          document: getActiveDocumentInfo(),
+          ...reveal
+        }
+      }
+      // SIGBUS 护栏（同 document.open）：已开非活动 → 激活既有窗口，绝不二次 Open
+      const ensureOpenedWindow = findOpenedWindowByPath(filePath)
+      if (ensureOpenedWindow) {
+        try { ensureOpenedWindow.window?.Activate?.() } catch (_) { /* 激活失败不致命 */ }
+        const reveal = revealOpenedDocument(activate)
+        return {
+          open: true,
+          alreadyOpen: true,
+          reactivated: true,
           path: filePath,
           document: getActiveDocumentInfo(),
           ...reveal
